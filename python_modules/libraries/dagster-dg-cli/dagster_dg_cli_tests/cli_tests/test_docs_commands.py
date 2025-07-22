@@ -274,3 +274,12 @@ def test_docs_component_type_json():
         assert_runner_result(result)
         output_json = json.loads(result.output)
         assert output_json["type"] == "dagster.FunctionComponent"
+
+
+def test_docs_integrations_json():
+    with ProxyRunner.test() as runner:
+        result = runner.invoke("docs", "integrations", "--json")
+        assert_runner_result(result)
+        output_json = json.loads(result.output)
+        assert isinstance(output_json, list)
+        assert isinstance(output_json[0], dict)

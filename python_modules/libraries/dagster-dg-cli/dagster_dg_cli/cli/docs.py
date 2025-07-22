@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import requests
 from dagster_dg_core.component import EnvRegistry, EnvRegistryKey
 from dagster_dg_core.config import normalize_cli_config
 from dagster_dg_core.context import DgContext
@@ -15,6 +16,8 @@ from dagster_dg_core.shared_options import dg_global_options, dg_path_options
 from dagster_dg_core.utils import DgClickCommand, DgClickGroup, exit_with_error, pushd
 from dagster_dg_core.utils.telemetry import cli_telemetry_wrapper
 from dagster_shared.serdes.objects.package_entry import json_for_all_components
+from rich.console import Console
+from rich.table import Table
 from yaspin import yaspin
 
 DEV_DOCS_DIR = (
@@ -206,3 +209,43 @@ Description: {entry.description}
     docs += f"\nOwners: {entry.owners}" if entry.owners else ""
     docs += f"\nTags: {entry.tags}" if entry.tags else ""
     click.echo(docs)
+
+
+@docs_group.command(
+    name="integrations",
+    cls=DgClickCommand,
+)
+@click.option(
+    "--json",
+    "output_json",
+    is_flag=True,
+    default=False,
+    help="Output as JSON.",
+)
+@cli_telemetry_wrapper
+def integrations_docs_command(output_json: bool) -> None:
+    """View an index of available Dagster integrations."""
+    response = requests.get("https://dagster-marketplace.vercel.app/api/integrations/index.json")
+    response.raise_for_status()
+
+    payload = response.json()
+    if output_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    console = Console()
+    table = Table(border_style="dim", show_lines=True)
+    table.add_column("Name")
+    table.add_column("Description")
+    table.add_column("PyPI")
+
+    for integration in payload:
+        # filter out incomplete entries
+        if integration.get("name") and integration.get("description") and integration.get("pypi"):
+            table.add_row(
+                integration["name"],
+                integration["description"],
+                integration["pypi"],
+            )
+
+    console.print(table)

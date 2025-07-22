@@ -91,6 +91,7 @@ dg list defs --assets <asset selection> # Show selected asset definitions
 dg list component-tree # Show the component tree
 dg list components # Show available component types
 dg docs component <component type> # Show documentation for a component type
+dg docs integrations # An index of available Dagster integrations
 ```
 * The `dg` CLI will be effective in accomplishing tasks. Use --help to better understand how to use commands.
 * Prefer `dg list defs` over searching the files system when looking for Dagster definitions.
