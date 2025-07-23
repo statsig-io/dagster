@@ -481,6 +481,9 @@ def test_matching_partitions_with_different_subsets():
     assets_by_repo_name = {"repo": matching_partitions_with_different_subsets}
     asset_graph = get_asset_graph(assets_by_repo_name)
 
+    # target a subset that results in different subsets being excluded from parent
+    # and child (the parts of parent that are downstream of grandparent get filtered out,
+    # and the parts of child that are downstream of other_parent get filtered out)
     target_asset_graph_subset = AssetGraphSubset(
         partitions_subsets_by_asset_key={
             AssetKey(["grandparent"]): asset_graph.get(
@@ -530,8 +533,8 @@ def test_matching_partitions_with_different_subsets():
             backfill_id, asset_backfill_data, asset_graph, instance, assets_by_repo_name
         )
         # doesn't try to materialize child yet, even though it has the same targeted
-        # subset as parent, becasue different subsets are eligible on the first iteration
-        # and cannot be grouped together into a run
+        # subset as parent, because different subsets of parent and child are eligible
+        # on the first iteration and thus cannot be grouped together into a run
         assert asset_backfill_data.requested_subset == AssetGraphSubset(
             non_partitioned_asset_keys=set(),
             partitions_subsets_by_asset_key={
