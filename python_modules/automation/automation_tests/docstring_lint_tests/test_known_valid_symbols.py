@@ -8,6 +8,7 @@ doesn't produce false positives for any public API symbols.
 """
 
 import importlib
+import inspect
 
 import pytest
 from automation.docstring_lint.validator import DocstringValidator
@@ -28,15 +29,86 @@ SYMBOLS_WITH_KNOWN_DOCSTRING_ISSUES = {
     "dagster.config_mapping",  # Module resolution error
     "dagster.configured",  # Module resolution error
     "dagster.scaffold_with",  # Module resolution error
-    "dagster.sys",  # Import issue (conflicts with built-in sys)
+    # Components with YAML code snippets that should use .. code-block:: yaml instead
+    "dagster.Component",  # Contains literal YAML with "attributes:" that gets flagged as section header
+    "dagster.DefsFolderComponent",  # Contains literal YAML with "attributes:" that gets flagged as section header
+    "dagster.PythonScriptComponent",  # Contains literal YAML with "attributes:" that gets flagged as section header
+    "dagster.UvRunComponent",  # Contains literal YAML with "attributes:" that gets flagged as section header
 }
 
 
 def _get_all_dagster_public_symbols():
-    """Get all public symbols from the dagster package."""
+    """Get all public symbols from the dagster package, excluding problematic imports."""
     dagster_module = importlib.import_module("dagster")
-    public_symbols = [name for name in dir(dagster_module) if not name.startswith("_")]
+
+    # Symbols that should be excluded from testing (imports from other modules that cause issues)
+    EXCLUDED_SYMBOLS = {
+        "sys",  # Conflicts with built-in sys module, not actually part of Dagster's public API
+    }
+
+    public_symbols = []
+    for name in dir(dagster_module):
+        if not name.startswith("_") and name not in EXCLUDED_SYMBOLS:
+            public_symbols.append(name)
+
     return [f"dagster.{name}" for name in sorted(public_symbols)]
+
+
+def _get_all_dagster_public_class_methods():
+    """Get all @public methods from @public classes in the dagster package."""
+    from dagster._annotations import is_public
+
+    dagster_module = importlib.import_module("dagster")
+
+    # Symbols that should be excluded from testing (imports from other modules that cause issues)
+    EXCLUDED_SYMBOLS = {
+        "sys",  # Conflicts with built-in sys module, not actually part of Dagster's public API
+    }
+
+    methods = []
+    for name in dir(dagster_module):
+        if not name.startswith("_") and name not in EXCLUDED_SYMBOLS:
+            try:
+                symbol = getattr(dagster_module, name)
+                # Only process classes (not functions, constants, etc.)
+                if inspect.isclass(symbol):
+                    # Get all methods from this class (whether it's @public or not)
+                    for method_name in dir(symbol):
+                        if not method_name.startswith("_"):
+                            try:
+                                method = getattr(symbol, method_name)
+
+                                # Handle different method types
+                                is_valid_method = False
+                                target_for_public_check = method
+
+                                if isinstance(method, property):
+                                    # For properties, check the @public decorator on the getter function
+                                    is_valid_method = True
+                                    target_for_public_check = method.fget
+                                elif isinstance(method, (staticmethod, classmethod)):
+                                    # For static/class methods, check the decorator on the underlying function
+                                    is_valid_method = True
+                                    target_for_public_check = method
+                                elif callable(method) and (
+                                    inspect.ismethod(method) or inspect.isfunction(method)
+                                ):
+                                    # For regular instance methods and functions
+                                    is_valid_method = True
+                                    target_for_public_check = method
+
+                                # Only include methods that are valid and have @public decorator
+                                if is_valid_method and is_public(target_for_public_check):
+                                    full_path = f"dagster.{name}.{method_name}"
+                                    methods.append(full_path)
+                            except Exception:
+                                # Skip methods that can't be accessed
+                                continue
+            except Exception:
+                # Skip symbols that can't be accessed
+                continue
+
+    return sorted(methods)
 
 
 class TestKnownValidSymbols:
@@ -107,6 +179,36 @@ class TestKnownValidSymbols:
 
         # Should still be considered valid (warnings don't fail validation)
         assert result.is_valid()
+
+    @pytest.mark.parametrize("method_path", _get_all_dagster_public_class_methods())
+    def test_all_public_class_method_docstrings(self, validator, method_path):
+        """Test that all @public methods on Dagster classes have valid docstrings.
+
+        This test validates every @public method on all classes in the dagster package to ensure:
+        1. The method can be imported successfully
+        2. The docstring has valid RST/Google-style formatting
+        3. No syntax errors that would break documentation builds
+
+        This provides comprehensive coverage of method docstrings across the entire Dagster codebase.
+
+        Args:
+            validator: DocstringValidator instance
+            method_path: Dotted path to the method to test (e.g., 'dagster.AssetExecutionContext.log')
+        """
+        result = validator.validate_symbol_docstring(method_path)
+
+        # The method should be importable - this is the core requirement
+        assert result.parsing_successful, f"Failed to parse {method_path}: {result.errors}"
+
+        # All @public methods should have valid docstrings
+        assert result.is_valid(), (
+            f"@public method {method_path} should have valid docstring but got errors: {result.errors}. "
+            f"Method docstrings must follow the same standards as top-level symbols."
+        )
+
+        # Log warnings for awareness
+        if result.has_warnings():
+            print(f"Docstring warnings for {method_path}: {result.warnings}")  # noqa: T201
 
 
 class TestDocstringTextValidation:

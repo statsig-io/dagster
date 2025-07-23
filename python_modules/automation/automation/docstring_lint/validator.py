@@ -3,6 +3,7 @@
 import importlib
 import inspect
 import io
+import re
 import sys
 import warnings
 from pathlib import Path
@@ -20,6 +21,10 @@ from sphinx.util.docutils import docutils_namespace
 # Sphinx extensions loaded, but docutils alone doesn't recognize them.
 # Set to False to see all role-related errors/warnings for debugging.
 DO_FILTER_OUT_SPHINX_ROLE_WARNINGS = True
+
+# Regex pattern for potential section headers: uppercase letter followed by letters/spaces, ending with colon
+# Examples: "Args:", "Example usage:", "See Also:" but not "http://", "def function():", etc.
+SECTION_HEADER_PATTERN = re.compile(r"^[A-Z][A-Za-z\s]{2,30}:$")
 
 # Setup paths to match Dagster's Sphinx configuration
 DAGSTER_ROOT = Path(__file__).parent.parent.parent.parent.parent
@@ -141,18 +146,19 @@ class SymbolInfo:
                             line_number = inspect.getsourcelines(symbol)[1]
                         except (OSError, TypeError):
                             pass
-                    else:
-                        # Fall back to inspect methods
-                        file_path = inspect.getfile(symbol)
-                        line_number = inspect.getsourcelines(symbol)[1]
-                else:
-                    # Fall back to inspect methods
-                    file_path = inspect.getfile(symbol)
-                    line_number = inspect.getsourcelines(symbol)[1]
-            else:
-                # No module info, fall back to inspect methods
-                file_path = inspect.getfile(symbol)
-                line_number = inspect.getsourcelines(symbol)[1]
+                        return SymbolInfo(
+                            symbol=symbol,
+                            dotted_path=dotted_path,
+                            name=name,
+                            module=module,
+                            docstring=docstring,
+                            file_path=file_path,
+                            line_number=line_number,
+                        )
+
+            # Single fallback: use inspect methods directly
+            file_path = inspect.getfile(symbol)
+            line_number = inspect.getsourcelines(symbol)[1]
         except (OSError, TypeError, ImportError):
             pass
 
@@ -543,8 +549,10 @@ class DocstringValidator:
         """Check basic docstring structure issues."""
         lines = docstring.split("\n")
 
-        # Check for common section headers
-        sections = [
+        # All section headers currently used in the Dagster codebase
+        # Based on analysis of all public symbols
+        allowed_sections = {
+            # Standard Google-style sections
             "Args:",
             "Arguments:",
             "Parameters:",
@@ -555,18 +563,61 @@ class DocstringValidator:
             "Raises:",
             "Examples:",
             "Example:",
-        ]
+            "Note:",
+            "Notes:",
+            "Warning:",
+            "Warnings:",
+            "See Also:",
+            "Attributes:",
+            # Dagster-specific sections that are commonly used
+            "Example usage:",
+            "Example definition:",
+            "Definitions:",
+            # Common example section variations
+            "For example:",
+            "For example::",  # RST code block style
+            "Example enumeration:",
+        }
 
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
 
-            # Check for malformed section headers
-            for section in sections:
-                if section.lower() in stripped.lower() and section not in stripped:
-                    result = result.with_warning(
-                        f"Possible malformed section header: '{stripped}' (should be '{section}')",
+            # Use regex to identify potential section headers
+            if SECTION_HEADER_PATTERN.match(stripped):
+                # Skip if it's already in our allowed list
+                if stripped in allowed_sections:
+                    continue
+
+                # Check for case-insensitive exact matches (wrong case)
+                exact_case_match = None
+                for section in allowed_sections:
+                    if stripped.lower() == section.lower():
+                        exact_case_match = section
+                        break
+
+                if exact_case_match:
+                    result = result.with_error(
+                        f"Invalid section header: '{stripped}'. Did you mean '{exact_case_match}'?",
                         i,
                     )
+                else:
+                    # Check for obvious corruptions of known sections using simple string containment
+                    possible_match = None
+                    for section in allowed_sections:
+                        section_base = section[:-1].lower()  # Remove colon, lowercase
+                        stripped_base = stripped[:-1].lower()  # Remove colon, lowercase
+
+                        # Check if the section name appears intact within the stripped version
+                        # This catches cases like "Argsdkjfkdjkfjd" containing "args"
+                        if len(section_base) >= 4 and section_base in stripped_base:
+                            possible_match = section
+                            break
+
+                    if possible_match:
+                        result = result.with_error(
+                            f"Invalid section header: '{stripped}'. Did you mean '{possible_match}'?",
+                            i,
+                        )
 
         return result
 
@@ -639,3 +690,67 @@ class SymbolImporter:
                     continue
 
         return symbols
+
+    @staticmethod
+    def get_all_public_class_methods(module_path: str) -> list[SymbolInfo]:
+        """Get all methods from classes that are marked with @public decorator.
+
+        Args:
+            module_path: The dotted path to the module
+
+        Returns:
+            List of SymbolInfo objects for all methods on @public classes
+        """
+        try:
+            module = importlib.import_module(module_path)
+        except ImportError as e:
+            raise ImportError(f"Could not import module '{module_path}': {e}")
+
+        # Import the is_public function to check for @public decorator
+        from dagster._annotations import is_public
+
+        methods = []
+        for name in dir(module):
+            if not name.startswith("_"):
+                try:
+                    symbol = getattr(module, name)
+                    # Check if this symbol is a class and has @public annotation
+                    if inspect.isclass(symbol) and is_public(symbol):
+                        # Get all methods from this public class
+                        for method_name in dir(symbol):
+                            if not method_name.startswith("_"):
+                                try:
+                                    method = getattr(symbol, method_name)
+
+                                    # Handle different method types
+                                    is_valid_method = False
+                                    target_for_public_check = method
+
+                                    if isinstance(method, property):
+                                        # For properties, check the @public decorator on the getter function
+                                        is_valid_method = True
+                                        target_for_public_check = method.fget
+                                    elif isinstance(method, (staticmethod, classmethod)):
+                                        # For static/class methods, check the decorator on the underlying function
+                                        is_valid_method = True
+                                        target_for_public_check = method
+                                    elif callable(method) and (
+                                        inspect.ismethod(method) or inspect.isfunction(method)
+                                    ):
+                                        # For regular instance methods and functions
+                                        is_valid_method = True
+                                        target_for_public_check = method
+
+                                    # Only include methods that are valid and have @public decorator
+                                    if is_valid_method and is_public(target_for_public_check):
+                                        full_path = f"{module_path}.{name}.{method_name}"
+                                        method_info = SymbolInfo.create(method, full_path)
+                                        methods.append(method_info)
+                                except Exception:
+                                    # Skip methods that can't be accessed
+                                    continue
+                except Exception:
+                    # Skip symbols that can't be accessed
+                    continue
+
+        return methods

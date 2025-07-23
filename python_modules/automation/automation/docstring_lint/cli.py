@@ -26,6 +26,11 @@ def main() -> int:
         help="Validate all public symbols in the specified module",
     )
     parser.add_argument(
+        "--public-methods",
+        action="store_true",
+        help="Validate all methods marked with @public decorator on @public classes in the specified module",
+    )
+    parser.add_argument(
         "--watch",
         action="store_true",
         help="Watch the file containing the symbol for changes and re-validate automatically",
@@ -34,8 +39,12 @@ def main() -> int:
     args = parser.parse_args()
 
     # Validate argument combinations
-    if args.watch and args.all_public:
-        print("Error: --watch cannot be used with --all-public")  # noqa: T201
+    if args.watch and (args.all_public or args.public_methods):
+        print("Error: --watch cannot be used with --all-public or --public-methods")  # noqa: T201
+        return 1
+
+    if args.all_public and args.public_methods:
+        print("Error: --all-public and --public-methods cannot be used together")  # noqa: T201
         return 1
 
     # Core use case - validate single docstring efficiently
@@ -45,7 +54,7 @@ def main() -> int:
         if args.watch:
             return _run_watch_mode(args.symbol_path, validator, args.verbose)
         elif args.all_public:
-            # Batch validation mode
+            # Batch validation mode for all public symbols
             importer = SymbolImporter()
             symbols = importer.get_all_public_symbols(args.symbol_path)
             print(f"Validating {len(symbols)} public symbols in {args.symbol_path}\n")  # noqa: T201
@@ -60,6 +69,38 @@ def main() -> int:
 
                 if result.has_errors() or result.has_warnings():
                     print(f"--- {symbol_info.dotted_path} ---")  # noqa: T201
+
+                    for error in result.errors:
+                        print(f"  ERROR: {error}")  # noqa: T201
+                        total_errors += 1
+
+                    for warning in result.warnings:
+                        print(f"  WARNING: {warning}")  # noqa: T201
+                        total_warnings += 1
+
+                    print()  # noqa: T201
+
+            print(f"Summary: {total_errors} errors, {total_warnings} warnings")  # noqa: T201
+            return 1 if total_errors > 0 else 0
+
+        elif args.public_methods:
+            # Batch validation mode for @public methods on @public classes
+            importer = SymbolImporter()
+            methods = importer.get_all_public_class_methods(args.symbol_path)
+            print(  # noqa: T201
+                f"Validating {len(methods)} @public methods on @public classes in {args.symbol_path}\n"
+            )
+
+            total_errors = 0
+            total_warnings = 0
+
+            for method_info in methods:
+                result = validator.validate_docstring_text(
+                    method_info.docstring or "", method_info.dotted_path
+                )
+
+                if result.has_errors() or result.has_warnings():
+                    print(f"--- {method_info.dotted_path} ---")  # noqa: T201
 
                     for error in result.errors:
                         print(f"  ERROR: {error}")  # noqa: T201
