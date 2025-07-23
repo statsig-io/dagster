@@ -328,23 +328,37 @@ def record_custom(
     checked: bool = True,
     field_to_new_mapping: Optional[Mapping[str, str]] = None,
 ) -> Union[TType, Callable[[TType], TType]]:
-    """Variant of the record decorator to use to opt out of the dataclass_transform decorator behavior.
-    This is done when overriding __new__ so that the type checker knows that is what is used.
+    """Variant of the record decorator to use when overriding __new__.
 
-    @record_custom
-    class Coerced(IHaveNew):
-        name: str
+    Must be used with the IHaveNew marker class and requires a custom __new__ method.
+    The __new__ method must call super().__new__(cls, field1=value1, field2=value2, ...)
+    using keyword arguments that match the field names.
 
-        def __new__(cls, name: Optional[str] = None)
-            if not name:
-                name = "bob"
+    Example:
+        @record_custom
+        class MyRecord(IHaveNew):
+            name: str
+            value: int
 
-            return super().__new__(
-                cls,
-                name=name,
-            )
+            def __new__(cls, name: str, value: int = 42):
+                # Custom logic here
+                if not name:
+                    name = "default"
+                return super().__new__(
+                    cls,
+                    name=name,
+                    value=value,
+                )
 
+    Important requirements:
+    - Must inherit from IHaveNew
+    - Must define a custom __new__ method
+    - Must call super().__new__(cls, **kwargs) with keyword arguments
+    - Keyword arguments must match the field names exactly
+    - Cannot be used with @record inheritance
 
+    This approach is useful when you need custom validation, default value logic,
+    or type coercion in the constructor that can't be handled with simple defaults.
 
     It would have been cool if we could do that with an argument and @overload but
     from https://peps.python.org/pep-0681/ "When applied to an overload,
