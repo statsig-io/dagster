@@ -1,3 +1,6 @@
+# mypy: ignore-errors
+
+
 from typing import ContextManager, Optional
 
 import dagster._check as check
@@ -70,9 +73,13 @@ class PostgresScheduleStorage(SqlScheduleStorage, ConfigurableClass):
             should_autocreate_tables, "should_autocreate_tables"
         )
 
-        # Default to not holding any connections open to prevent accumulating connections per DagsterInstance
+        timeout_option = pg_statement_timeout(600000)
         self._engine = create_engine(
-            self.postgres_url, isolation_level="AUTOCOMMIT", poolclass=db_pool.NullPool
+            self.postgres_url,
+            isolation_level="AUTOCOMMIT",
+            pool_size=1,
+            connect_args={"options": timeout_option},
+            pool_recycle=3600,
         )
 
         # Stamp and create tables if the main table does not exist (we can't check alembic
@@ -133,9 +140,15 @@ class PostgresScheduleStorage(SqlScheduleStorage, ConfigurableClass):
     def create_clean_storage(
         postgres_url: str, should_autocreate_tables: bool = True
     ) -> "PostgresScheduleStorage":
+        timeout_option = pg_statement_timeout(600000)
         engine = create_engine(
-            postgres_url, isolation_level="AUTOCOMMIT", poolclass=db_pool.NullPool
+            postgres_url,
+            isolation_level="AUTOCOMMIT",
+            pool_size=1,
+            connect_args={"options": timeout_option},
+            pool_recycle=3600,
         )
+
         try:
             ScheduleStorageSqlMetadata.drop_all(engine)
         finally:

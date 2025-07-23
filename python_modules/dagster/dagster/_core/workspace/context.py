@@ -1,3 +1,6 @@
+# mypy: ignore-errors
+
+
 import logging
 import sys
 import threading
@@ -584,33 +587,41 @@ class WorkspaceProcessContext(IWorkspaceProcessContext):
 
     def _load_location(self, origin: CodeLocationOrigin, reload: bool) -> CodeLocationEntry:
         location_name = origin.location_name
-        location = None
-        error = None
-        try:
-            if isinstance(origin, ManagedGrpcPythonEnvCodeLocationOrigin):
-                endpoint = (
-                    self._grpc_server_registry.reload_grpc_endpoint(origin)
-                    if reload
-                    else self._grpc_server_registry.get_grpc_endpoint(origin)
-                )
-                location = GrpcServerCodeLocation(
-                    origin=origin,
-                    server_id=endpoint.server_id,
-                    port=endpoint.port,
-                    socket=endpoint.socket,
-                    host=endpoint.host,
-                    heartbeat=True,
-                    watch_server=False,
-                    grpc_server_registry=self._grpc_server_registry,
-                )
-            else:
-                location = (
-                    origin.reload_location(self.instance) if reload else origin.create_location()
-                )
+        # STATSIG PATCH TO MAKE LOCATIONS MORE STABLE
+        for attempt in range(100):
+            location = None
+            error = None
+            try:
+                if isinstance(origin, ManagedGrpcPythonEnvCodeLocationOrigin):
+                    endpoint = (
+                        self._grpc_server_registry.reload_grpc_endpoint(origin)
+                        if reload
+                        else self._grpc_server_registry.get_grpc_endpoint(origin)
+                    )
+                    location = GrpcServerCodeLocation(
+                        origin=origin,
+                        server_id=endpoint.server_id,
+                        port=endpoint.port,
+                        socket=endpoint.socket,
+                        host=endpoint.host,
+                        heartbeat=True,
+                        watch_server=False,
+                        grpc_server_registry=self._grpc_server_registry,
+                    )
+                else:
+                    location = (
+                        origin.reload_location(self.instance)
+                        if reload
+                        else origin.create_location()
+                    )
+                break
 
-        except Exception:
-            error = serializable_error_info_from_exc_info(sys.exc_info())
-            warnings.warn(f"Error loading repository location {location_name}:{error.to_string()}")
+            except Exception:
+                error = serializable_error_info_from_exc_info(sys.exc_info())
+                warnings.warn(
+                    f"Error loading repository location {location_name}:{error.to_string()} this is the {attempt}th attempt"
+                )
+                time.sleep(5)
 
         return CodeLocationEntry(
             origin=origin,

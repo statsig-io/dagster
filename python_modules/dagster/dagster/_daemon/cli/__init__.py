@@ -1,6 +1,13 @@
+# mypy: ignore-errors
+
+
 import os
 import sys
+import time
 from typing import Optional
+import googlecloudprofiler
+import tracemalloc
+import threading
 
 import click
 
@@ -32,6 +39,19 @@ def _get_heartbeat_tolerance():
         "DAGSTER_DAEMON_HEARTBEAT_TOLERANCE",
     )
     return int(tolerance) if tolerance else DEFAULT_DAEMON_HEARTBEAT_TOLERANCE_SECONDS
+
+
+stop_dumper = threading.Event()
+
+
+def _dump_tracemalloc_stats_continuously():
+    t = 0
+    while not stop_dumper.is_set():
+        # We do it this way to avoid a long sleep preventing shutdowns
+        if t % 60 == 0:
+            print(tracemalloc.take_snapshot().statistics("lineno")[:50])
+        time.sleep(1)
+        t += 1
 
 
 @click.command(
@@ -66,12 +86,31 @@ def run_command(
     **kwargs: ClickArgValue,
 ) -> None:
     try:
+        try:
+            dagster_deployment = os.getenv("DAGSTER_DEPLOYMENT")
+            if dagster_deployment is None:
+                dagster_deployment = "UNSET"
+            googlecloudprofiler.start(
+                service="dagster-daemon",
+                service_version=dagster_deployment,
+                verbose=3,
+            )
+            tracemalloc.start()
+            # Start a thread to periodically print out tracemalloc stats
+            tracemalloc_dumper = threading.Thread(target=_dump_tracemalloc_stats_continuously)
+            tracemalloc_dumper.start()
+        except (ValueError, NotImplementedError) as exc:
+            print(exc)  # Handle errors here
         with capture_interrupts():
             with get_instance_for_cli(
                 instance_ref=deserialize_value(instance_ref, InstanceRef) if instance_ref else None
             ) as instance:
                 _daemon_run_command(instance, log_level, code_server_log_level, kwargs)
+            stop_dumper.set()
+            tracemalloc_dumper.join()
     except KeyboardInterrupt:
+        stop_dumper.set()
+        tracemalloc_dumper.join()
         return  # Exit cleanly on interrupt
 
 

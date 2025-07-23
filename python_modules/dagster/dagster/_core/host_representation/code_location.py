@@ -1,10 +1,14 @@
+# mypy: ignore-errors
+
 import datetime
 import sys
 import threading
+import time
 from abc import abstractmethod
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Tuple, Union, cast
 
+from dagster._core.errors import DagsterUserCodeUnreachableError
 import dagster._check as check
 from dagster._api.get_server_id import sync_get_server_id
 from dagster._api.list_repositories import sync_list_repositories_grpc
@@ -58,7 +62,11 @@ from dagster._grpc.impl import (
     get_partition_set_execution_param_data,
     get_partition_tags,
 )
-from dagster._grpc.types import GetCurrentImageResult, GetCurrentRunsResult
+from dagster._grpc.types import (
+    GetCurrentImageResult,
+    GetCurrentRunsResult,
+    ListRepositoriesResponse,
+)
 from dagster._serdes import deserialize_value
 from dagster._seven.compat.pendulum import PendulumDateTime
 from dagster._utils.merger import merge_dicts
@@ -592,7 +600,7 @@ class GrpcServerCodeLocation(CodeLocation):
                 use_ssl=self._use_ssl,
                 metadata=grpc_metadata,
             )
-            list_repositories_response = sync_list_repositories_grpc(self.client)
+            list_repositories_response = self.sync_list_repositories_grpc_with_retry()
 
             self.server_id = server_id if server_id else sync_get_server_id(self.client)
             self.repository_names = set(
@@ -690,6 +698,30 @@ class GrpcServerCodeLocation(CodeLocation):
             self.client.get_current_image(),
             GetCurrentImageResult,
         ).current_image
+
+    def sync_list_repositories_grpc_with_retry(
+        self, max_retries=2, delay=1
+    ) -> "ListRepositoriesResponse":
+        attempts = 0
+        error = None
+
+        while True:
+            attempts += 1
+            try:
+                list_repositories_response = sync_list_repositories_grpc(self.client)
+                return list_repositories_response
+            except DagsterUserCodeUnreachableError as e:
+                if "UNAVAILABLE" in str(e):
+                    if attempts > max_retries:
+                        raise DagsterUserCodeUnreachableError(
+                            f"Could not reach user code server after {max_retries}."
+                        ) from error
+
+                    error = e
+                    delay = delay * (2**attempts)
+                    time.sleep(delay)
+                else:
+                    raise
 
     def get_current_runs(self) -> Sequence[str]:
         return deserialize_value(self.client.get_current_runs(), GetCurrentRunsResult).current_runs

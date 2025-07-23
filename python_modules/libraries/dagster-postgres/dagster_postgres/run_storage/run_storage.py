@@ -1,3 +1,6 @@
+# mypy: ignore-errors
+
+
 import zlib
 from typing import ContextManager, Mapping, Optional
 
@@ -78,10 +81,13 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
         )
 
         # Default to not holding any connections open to prevent accumulating connections per DagsterInstance
+        timeout_option = pg_statement_timeout(600000)
         self._engine = create_engine(
             self.postgres_url,
             isolation_level="AUTOCOMMIT",
-            poolclass=db_pool.NullPool,
+            pool_size=1,
+            connect_args={"options": timeout_option},
+            pool_recycle=3600,
         )
 
         self._index_migration_cache = {}
@@ -144,9 +150,15 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
     def create_clean_storage(
         postgres_url: str, should_autocreate_tables: bool = True
     ) -> "PostgresRunStorage":
+        timeout_option = pg_statement_timeout(600000)
         engine = create_engine(
-            postgres_url, isolation_level="AUTOCOMMIT", poolclass=db_pool.NullPool
+            postgres_url,
+            isolation_level="AUTOCOMMIT",
+            pool_size=1,
+            connect_args={"options": timeout_option},
+            pool_recycle=3600,
         )
+
         try:
             RunStorageSqlMetadata.drop_all(engine)
         finally:

@@ -1,3 +1,6 @@
+# mypy: ignore-errors
+
+
 from typing import Any, ContextManager, Mapping, Optional, Sequence
 
 import dagster._check as check
@@ -87,10 +90,14 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         self._disposed = False
 
         # Default to not holding any connections open to prevent accumulating connections per DagsterInstance
+        timeout_option = pg_statement_timeout(600000)
         self._engine = create_engine(
-            self.postgres_url, isolation_level="AUTOCOMMIT", poolclass=db_pool.NullPool
+            self.postgres_url,
+            isolation_level="AUTOCOMMIT",
+            pool_size=1,
+            connect_args={"options": timeout_option},
+            pool_recycle=3600,
         )
-
         self._event_watcher = SqlPollingEventWatcher(self)
 
         self._secondary_index_cache = {}
@@ -155,8 +162,13 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     def create_clean_storage(
         conn_string: str, should_autocreate_tables: bool = True
     ) -> "PostgresEventLogStorage":
+        timeout_option = pg_statement_timeout(600000)
         engine = create_engine(
-            conn_string, isolation_level="AUTOCOMMIT", poolclass=db_pool.NullPool
+            conn_string,
+            isolation_level="AUTOCOMMIT",
+            pool_size=1,
+            connect_args={"options": timeout_option},
+            pool_recycle=3600,
         )
         try:
             SqlEventLogStorageMetadata.drop_all(engine)
