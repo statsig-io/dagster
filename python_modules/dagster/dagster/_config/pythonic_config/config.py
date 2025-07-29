@@ -10,9 +10,9 @@ from typing import (
     cast,
 )
 
-from pydantic import BaseModel, Extra
+from pydantic import BaseModel, ConfigDict
 from pydantic.fields import (
-    ModelField,
+    FieldInfo,
 )
 
 import dagster._check as check
@@ -60,15 +60,15 @@ class MakeConfigCacheable(BaseModel):
     """
 
     # Pydantic config for this class
-    # Cannot use kwargs for base class as this is not support for pydnatic<1.8
-    class Config:
+    model_config = ConfigDict(
         # Various pydantic model config (https://docs.pydantic.dev/usage/model_config/)
         # Necessary to allow for caching decorators
-        arbitrary_types_allowed = True
+        arbitrary_types_allowed=True,
         # Avoid pydantic reading a cached property class as part of the schema
-        keep_untouched = (cached_property,)
+        ignored_types=(cached_property,),
         # Ensure the class is serializable, for caching purposes
-        frozen = True
+        frozen=True
+    )
 
     def __setattr__(self, name: str, value: Any):
         from .resource import ConfigurableResourceFactory
@@ -162,7 +162,7 @@ class Config(MakeConfigCacheable, metaclass=BaseConfigMeta):
         """
         modified_data = {}
         for key, value in config_dict.items():
-            field = self.__fields__.get(key)
+            field = self.model_fields.get(key)
             if field and field.field_info.discriminator:
                 nested_dict = value
 
@@ -197,7 +197,7 @@ class Config(MakeConfigCacheable, metaclass=BaseConfigMeta):
         """
         public_fields = self._get_non_none_public_field_values()
         return {
-            k: _config_value_to_dict_representation(self.__fields__.get(k), v)
+            k: _config_value_to_dict_representation(self.model_fields.get(k), v)
             for k, v in public_fields.items()
         }
 
@@ -212,7 +212,7 @@ class Config(MakeConfigCacheable, metaclass=BaseConfigMeta):
         for key, value in self.__dict__.items():
             if self._is_field_internal(key):
                 continue
-            field = self.__fields__.get(key)
+            field = self.model_fields.get(key)
             if field and value is None and not _is_pydantic_field_required(field):
                 continue
 
@@ -252,7 +252,7 @@ def _discriminated_union_config_dict_to_selector_config_dict(
     return wrapped_dict
 
 
-def _config_value_to_dict_representation(field: Optional[ModelField], value: Any):
+def _config_value_to_dict_representation(field: Optional[FieldInfo], value: Any):
     """Converts a config value to a dictionary representation. If a field is provided, it will be used
     to determine the appropriate dictionary representation in the case of discriminated unions.
     """
@@ -317,9 +317,7 @@ class PermissiveConfig(Config):
     """
 
     # Pydantic config for this class
-    # Cannot use kwargs for base class as this is not support for pydantic<1.8
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra='allow')
 
 
 def infer_schema_from_config_class(
@@ -339,7 +337,7 @@ def infer_schema_from_config_class(
     )
 
     fields: Dict[str, Field] = {}
-    for pydantic_field in model_cls.__fields__.values():
+    for pydantic_field in model_cls.model_fields.values():
         if pydantic_field.name not in fields_to_omit:
             if isinstance(pydantic_field.default, Field):
                 raise DagsterInvalidDefinitionError(
@@ -361,7 +359,7 @@ def infer_schema_from_config_class(
                     and safe_is_subclass(model_cls, ConfigurableResourceFactory),
                 )
 
-    shape_cls = Permissive if model_cls.__config__.extra == Extra.allow else Shape
+    shape_cls = Permissive if model_cls.model_config.get('extra') == 'allow' else Shape
 
     docstring = model_cls.__doc__.strip() if model_cls.__doc__ else None
 

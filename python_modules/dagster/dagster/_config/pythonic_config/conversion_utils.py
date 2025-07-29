@@ -7,7 +7,9 @@ from typing import (
     TypeVar,
 )
 
-from pydantic import ConstrainedFloat, ConstrainedInt, ConstrainedStr
+# Pydantic v2: ConstrainedFloat, ConstrainedInt, ConstrainedStr are deprecated
+# Use Field with constraints instead
+from pydantic import Field
 from typing_extensions import TypeAlias
 
 from dagster import (
@@ -44,13 +46,14 @@ except ImportError:
         pass
 
 
-from pydantic.fields import (
-    SHAPE_DICT,
-    SHAPE_LIST,
-    SHAPE_MAPPING,
-    SHAPE_SINGLETON,
-    ModelField,
-)
+# Pydantic v2: ModelField is now FieldInfo, and shapes are handled differently
+from pydantic.fields import FieldInfo as ModelField
+
+# Pydantic v2: Field shapes are now represented as strings
+SHAPE_DICT = 'dict'
+SHAPE_LIST = 'list' 
+SHAPE_MAPPING = 'mapping'
+SHAPE_SINGLETON = 'singleton'
 
 import dagster._check as check
 from dagster import Field, Selector
@@ -189,10 +192,10 @@ def _convert_pydantic_field(pydantic_field: ModelField, model_cls: Optional[Type
     if pydantic_field.field_info.discriminator:
         return _convert_pydantic_descriminated_union_field(pydantic_field)
 
-    if safe_is_subclass(pydantic_field.type_, Config):
+    if safe_is_subclass(pydantic_field.annotation, Config):
         inferred_field = infer_schema_from_config_class(
-            pydantic_field.type_,
-            description=pydantic_field.field_info.description,
+            pydantic_field.annotation,
+            description=pydantic_field.description,
         )
         wrapped_config_type = _wrap_config_type(
             shape_type=pydantic_field.shape,

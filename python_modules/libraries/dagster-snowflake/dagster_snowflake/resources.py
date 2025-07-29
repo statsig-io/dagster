@@ -17,7 +17,7 @@ from dagster._annotations import public
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
 from dagster._core.storage.event_log.sql_event_log import SqlDbConnection
 from dagster._utils.cached_method import cached_method
-from pydantic import Field, root_validator, validator
+from pydantic import Field, field_validator, model_validator
 
 try:
     import snowflake.connector
@@ -253,7 +253,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         description="Optional parameter to specify the authentication mechanism to use.",
     )
 
-    @validator("paramstyle")
+    @field_validator("paramstyle")
     def validate_paramstyle(cls, v: Optional[str]) -> Optional[str]:
         valid_config = ["pyformat", "qmark", "numeric"]
         if v is not None and v not in valid_config:
@@ -263,7 +263,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             )
         return v
 
-    @validator("connector")
+    @field_validator("connector")
     def validate_connector(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and v != "sqlalchemy":
             raise ValueError(
@@ -271,7 +271,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             )
         return v
 
-    @root_validator
+    @model_validator(mode='before')
     def validate_authentication(cls, values):
         auths_set = 0
         auths_set += 1 if values.get("password") is not None else 0

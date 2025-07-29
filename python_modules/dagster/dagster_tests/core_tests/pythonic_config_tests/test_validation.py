@@ -1,7 +1,7 @@
 import pytest
 from dagster import job, op
 from dagster._config.pythonic_config import Config
-from pydantic import ValidationError, validator
+from pydantic import ValidationError, field_validator
 
 
 def test_validators_basic() -> None:
@@ -11,13 +11,13 @@ def test_validators_basic() -> None:
         name: str
         username: str
 
-        @validator("name")
+        @field_validator("name")
         def name_must_contain_space(cls, v):
             if " " not in v:
                 raise ValueError("must contain a space")
             return v.title()
 
-        @validator("username")
+        @field_validator("username")
         def username_alphanumeric(cls, v):
             assert v.isalnum(), "must be alphanumeric"
             return v
