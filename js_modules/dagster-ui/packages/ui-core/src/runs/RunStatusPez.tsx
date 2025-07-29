@@ -1,14 +1,16 @@
-import {Box, CaptionMono, Colors, FontFamily, Popover} from '@dagster-io/ui-components';
+import {Box, Colors, FontFamily, Mono, Popover} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
+
+import {RunStatus} from '../graphql/types';
+import {StepSummaryForRun} from '../instance/StepSummaryForRun';
 
 import {RunStatusIndicator} from './RunStatusDots';
 import {RUN_STATUS_COLORS} from './RunStatusTag';
 import {failedStatuses, inProgressStatuses} from './RunStatuses';
 import {RunStateSummary, RunTime, titleForRun} from './RunUtils';
 import {RunTimeFragment} from './types/RunUtils.types';
-import {RunStatus} from '../graphql/types';
-import {StepSummaryForRun} from '../instance/StepSummaryForRun';
 
 const MIN_OPACITY = 0.2;
 const MAX_OPACITY = 1.0;
@@ -31,48 +33,35 @@ interface ListProps {
   fade: boolean;
   jobName: string;
   runs: RunTimeFragment[];
-  forceCount?: number;
 }
 
 export const RunStatusPezList = (props: ListProps) => {
-  const {fade, jobName, runs, forceCount} = props;
+  const {fade, jobName, runs} = props;
   const count = runs.length;
   const countForStep = Math.max(MIN_OPACITY_STEPS, count);
   const step = (MAX_OPACITY - MIN_OPACITY) / countForStep;
-
-  let items: (RunTimeFragment | null)[] = [...runs];
-  if (forceCount) {
-    if (forceCount > items.length) {
-      items.unshift(...Array(forceCount - items.length).fill(null));
-    } else {
-      items = items.slice(0, forceCount);
-    }
-  }
-
   return (
     <Box flex={{direction: 'row', alignItems: 'center', gap: 2}}>
-      {items.map((run, ii) => {
-        const opacity = fade ? MAX_OPACITY - (count - ii - 1) * step : 1.0;
-        if (!run) {
-          return <Pez key={`empty-${ii}`} $color={Colors.backgroundLighter()} $opacity={opacity} />;
-        }
-
-        return (
-          <Popover
+      {runs.map((run, ii) => (
+        <Popover
+          key={run.id}
+          position="top"
+          interactionKind="hover"
+          content={
+            <div>
+              <RunStatusOverlay run={run} name={jobName} />
+            </div>
+          }
+          hoverOpenDelay={100}
+        >
+          <RunStatusPez
             key={run.id}
-            position="top"
-            interactionKind="hover"
-            content={
-              <div>
-                <RunStatusOverlay run={run} name={jobName} />
-              </div>
-            }
-            hoverOpenDelay={100}
-          >
-            <RunStatusPez key={run.id} runId={run.id} status={run.status} opacity={opacity} />
-          </Popover>
-        );
-      })}
+            runId={run.id}
+            status={run.status}
+            opacity={fade ? MAX_OPACITY - (count - ii - 1) * step : 1.0}
+          />
+        </Popover>
+      ))}
     </Box>
   );
 };
@@ -90,10 +79,10 @@ export const RunStatusOverlay = ({name, run}: OverlayProps) => {
         <Box flex={{alignItems: 'center', direction: 'row', gap: 8}}>
           <RunStatusIndicator status={run.status} />
           <Link to={`/runs/${run.id}`}>
-            <CaptionMono>{titleForRun(run)}</CaptionMono>
+            <Mono style={{fontSize: '14px'}}>{titleForRun(run)}</Mono>
           </Link>
         </Box>
-        <Box flex={{direction: 'column', gap: 4}}>
+        <Box flex={{direction: 'column', gap: 4}} padding={{top: 2}}>
           <RunTime run={run} />
           <RunStateSummary run={run} />
         </Box>
@@ -110,16 +99,16 @@ export const RunStatusOverlay = ({name, run}: OverlayProps) => {
 const OverlayContainer = styled.div`
   padding: 4px;
   font-size: 12px;
-  width: 240px;
+  width: 220px;
 `;
 
 const OverlayTitle = styled.div`
   padding: 8px;
-  box-shadow: inset 0 -1px ${Colors.keylineDefault()};
+  box-shadow: inset 0 -1px ${Colors.KeylineGray};
   font-family: ${FontFamily.default};
   font-size: 14px;
   font-weight: 500;
-  color: ${Colors.textDefault()};
+  color: ${Colors.Dark};
   max-width: 100%;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -128,6 +117,7 @@ const OverlayTitle = styled.div`
 
 const RunRow = styled.div`
   padding: 8px;
+  font-size: 12px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;

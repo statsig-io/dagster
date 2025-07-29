@@ -1,9 +1,9 @@
 import os
 
-from dagster_snowflake import SnowflakeResource
+from dagster_snowflake import snowflake_resource
 from dagster_snowflake_pandas import SnowflakePandasIOManager
 
-from dagster import Definitions
+from dagster import Definitions, graph
 
 from ..assets import comments, items, stories
 from .clone_and_drop_db import clone_prod, drop_prod_clone
@@ -22,9 +22,13 @@ resources = {
             **snowflake_config,
             database=f"PRODUCTION_CLONE_{os.getenv('DAGSTER_CLOUD_PULL_REQUEST_ID')}",
         ),
-        "snowflake": SnowflakeResource(
-            **snowflake_config,
-            database=f"PRODUCTION_CLONE_{os.getenv('DAGSTER_CLOUD_PULL_REQUEST_ID')}",
+        "snowflake": snowflake_resource.configured(
+            {
+                **snowflake_config,
+                "database": (
+                    f"PRODUCTION_CLONE_{os.getenv('DAGSTER_CLOUD_PULL_REQUEST_ID')}"
+                ),
+            }
         ),
     },
     "prod": {
@@ -32,7 +36,9 @@ resources = {
             **snowflake_config,
             database="PRODUCTION",
         ),
-        "snowflake": SnowflakeResource(**snowflake_config, database="PRODUCTION"),
+        "snowflake": snowflake_resource.configured(
+            {**snowflake_config, "database": "PRODUCTION"}
+        ),
     },
 }
 # end_resources

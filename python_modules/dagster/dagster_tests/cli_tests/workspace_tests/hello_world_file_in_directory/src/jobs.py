@@ -1,11 +1,11 @@
-import dagster as dg
+from dagster import job, op
 
 
-@dg.op
+@op
 def hello_world(_):
     pass
 
 
-@dg.job
+@job
 def hello_world_job():
     hello_world()

@@ -1,12 +1,12 @@
 import os
 
-from dagster import OpExecutionContext, job, make_values_resource, op
+from dagster import job, make_values_resource, op
 
 # start_file_example
 
 
 @op(required_resource_keys={"file_dirs"})
-def write_file(context: OpExecutionContext):
+def write_file(context):
     filename = f"{context.resources.file_dirs['write_file_dir']}/new_file.txt"
     open(filename, "x", encoding="utf8").close()
 
@@ -14,7 +14,7 @@ def write_file(context: OpExecutionContext):
 
 
 @op(required_resource_keys={"file_dirs"})
-def total_num_files(context: OpExecutionContext):
+def total_num_files(context):
     files_in_dir = os.listdir(context.resources.file_dirs["count_file_dir"])
     context.log.info(f"Total number of files: {len(files_in_dir)}")
 

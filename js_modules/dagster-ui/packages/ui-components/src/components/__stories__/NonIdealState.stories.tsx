@@ -1,4 +1,5 @@
 import {Meta} from '@storybook/react';
+import * as React from 'react';
 
 import {Group} from '../Group';
 import {NonIdealState} from '../NonIdealState';
@@ -39,7 +40,9 @@ export const Default = () => {
       <NonIdealState
         icon="error"
         title="Query Error"
-        description="This is an example error message, in reality they're probably longer than this."
+        description={
+          "This is an example error message, in reality they're probably longer than this."
+        }
       />
     </Group>
   );

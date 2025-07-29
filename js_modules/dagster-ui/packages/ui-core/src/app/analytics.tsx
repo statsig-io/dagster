@@ -1,11 +1,5 @@
-import {createContext, useCallback, useContext, useLayoutEffect} from 'react';
+import * as React from 'react';
 import {useLocation, useRouteMatch} from 'react-router-dom';
-import {atom, useRecoilValue} from 'recoil';
-
-export const currentPageAtom = atom<{path: string; specificPath: string}>({
-  key: 'currentPageAtom',
-  default: {path: '/', specificPath: '/'},
-});
 
 export interface GenericAnalytics {
   group?: (groupId: string, traits?: Record<string, any>) => void;
@@ -14,16 +8,19 @@ export interface GenericAnalytics {
   track: (eventName: string, properties?: Record<string, any>) => void;
 }
 
-export const AnalyticsContext = createContext<GenericAnalytics>(undefined!);
+export const AnalyticsContext = React.createContext<GenericAnalytics>(undefined!);
 
 const PAGEVIEW_DELAY = 300;
 
-export const usePageContext = () => {
-  return useRecoilValue(currentPageAtom);
+const usePageContext = () => {
+  const match = useRouteMatch();
+  const {pathname: specificPath} = useLocation();
+  const {path} = match;
+  return React.useMemo(() => ({path, specificPath}), [path, specificPath]);
 };
 
 const useAnalytics = () => {
-  const analytics = useContext(AnalyticsContext);
+  const analytics = React.useContext(AnalyticsContext);
   if (!analytics && typeof 'jest' === undefined && !process.env.STORYBOOK) {
     throw new Error('Analytics may only be used within `AnalyticsContext.Provider`.');
   }
@@ -55,11 +52,9 @@ export const dummyAnalytics = () => ({
 
 export const useTrackPageView = () => {
   const analytics = useAnalytics();
-  const match = useRouteMatch();
-  const {pathname: specificPath} = useLocation();
-  const {path} = match;
+  const {path, specificPath} = usePageContext();
 
-  useLayoutEffect(() => {
+  React.useEffect(() => {
     // Wait briefly to allow redirects.
     const timer = setTimeout(() => {
       analytics.page(path, specificPath);
@@ -73,14 +68,12 @@ export const useTrackPageView = () => {
 
 export const useTrackEvent = () => {
   const analytics = useAnalytics();
-  const match = useRouteMatch();
-  const {pathname: specificPath} = useLocation();
-  const {path} = match;
+  const pathValues = usePageContext();
 
-  return useCallback(
+  return React.useCallback(
     (eventName: string, properties?: Record<string, any>) => {
-      analytics.track(eventName, {...properties, path, specificPath});
+      analytics.track(eventName, {...properties, ...pathValues});
     },
-    [analytics, path, specificPath],
+    [analytics, pathValues],
   );
 };

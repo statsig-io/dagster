@@ -34,5 +34,3 @@ export type InstanceHealthQuery = {
     };
   };
 };
-
-export const InstanceHealthQueryVersion = '287f4e065bba5aba76b6c1e1a58f0f929c0b37e0065b75d5e5fd8a5bc69617b9';

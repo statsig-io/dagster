@@ -1,9 +1,11 @@
-import {gql} from '../apollo-client';
+import {gql} from '@apollo/client';
+
 import {INSTIGATION_STATE_FRAGMENT} from '../instigation/InstigationUtils';
 
 export const SENSOR_FRAGMENT = gql`
   fragment SensorFragment on Sensor {
     id
+    jobOriginId
     name
     description
     minIntervalSeconds
@@ -11,8 +13,6 @@ export const SENSOR_FRAGMENT = gql`
     nextTick {
       timestamp
     }
-    defaultStatus
-    canReset
     sensorState {
       id
       ...InstigationStateFragment

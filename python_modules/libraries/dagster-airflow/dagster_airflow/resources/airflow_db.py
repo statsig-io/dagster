@@ -1,6 +1,5 @@
 import datetime
-from collections.abc import Mapping
-from typing import Optional
+from typing import Mapping, Optional
 
 import pendulum
 from airflow.models.dag import DAG
@@ -12,7 +11,9 @@ from dagster import (
 )
 from dagster._core.instance import AIRFLOW_EXECUTION_DATE_STR
 
-from dagster_airflow.utils import is_airflow_2_loaded_in_environment
+from dagster_airflow.utils import (
+    is_airflow_2_loaded_in_environment,
+)
 
 if is_airflow_2_loaded_in_environment():
     from airflow.utils.state import DagRunState
@@ -50,7 +51,7 @@ class AirflowDatabase:
             raise DagsterInvariantViolationError(
                 f'Date "{execution_date_str}" exceeds the largest valid C integer on the system.'
             )
-        return execution_date  # pyright: ignore[reportReturnType]
+        return execution_date
 
     def _parse_execution_date_for_asset(
         self, dag: DAG, run_tags: Mapping[str, str]
@@ -59,7 +60,7 @@ class AirflowDatabase:
         if not execution_date_str:
             raise DagsterInvariantViolationError("dagster/partition is not set")
         execution_date = pendulum.parse(execution_date_str, tz=pendulum.timezone(dag.timezone.name))
-        return execution_date  # pyright: ignore[reportReturnType]
+        return execution_date
 
     def get_dagrun(self, dag: DAG) -> DagRun:
         run_tags = self.dagster_run.tags if self.dagster_run else {}
@@ -76,9 +77,9 @@ class AirflowDatabase:
         if not dagrun:
             if is_airflow_2_loaded_in_environment():
                 dagrun = dag.create_dagrun(
-                    state=DagRunState.RUNNING,  # pyright: ignore[reportPossiblyUnboundVariable]
+                    state=DagRunState.RUNNING,
                     execution_date=execution_date,
-                    run_type=DagRunType.MANUAL,  # pyright: ignore[reportPossiblyUnboundVariable]
+                    run_type=DagRunType.MANUAL,
                     conf=self.dag_run_config,
                 )
             else:

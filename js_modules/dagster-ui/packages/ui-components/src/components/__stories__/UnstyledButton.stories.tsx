@@ -1,7 +1,8 @@
 import {Meta} from '@storybook/react';
+import * as React from 'react';
 
 import {Box} from '../Box';
-import {Colors} from '../Color';
+import {Colors} from '../Colors';
 import {Icon} from '../Icon';
 import {Caption} from '../Text';
 import {UnstyledButton} from '../UnstyledButton';
@@ -27,10 +28,10 @@ export const Default = () => {
       </UnstyledButton>
       <UnstyledButton disabled>Disabled button</UnstyledButton>
       <UnstyledButton>
-        <span style={{color: Colors.accentBlue()}}>Button with blue text</span>
+        <span style={{color: Colors.Blue700}}>Button with blue text</span>
       </UnstyledButton>
       <UnstyledButton disabled>
-        <span style={{color: Colors.accentBlue()}}>Disabled button with blue text</span>
+        <span style={{color: Colors.Blue700}}>Disabled button with blue text</span>
       </UnstyledButton>
     </Box>
   );
@@ -41,5 +42,13 @@ export const UnstyledWithLargerClickArea = () => {
     <Box padding={24}>
       <UnstyledButton $expandedClickPx={24}>Lots more to click on</UnstyledButton>
     </Box>
+  );
+};
+
+export const UnstyledWithFocusOutline = () => {
+  return (
+    <UnstyledButton $showFocusOutline $expandedClickPx={4}>
+      Click me to see focus
+    </UnstyledButton>
   );
 };

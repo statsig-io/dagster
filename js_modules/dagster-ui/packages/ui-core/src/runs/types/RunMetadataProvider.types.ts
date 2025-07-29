@@ -2,95 +2,49 @@
 
 import * as Types from '../../graphql/types';
 
-export type RunStepStatsQueryVariables = Types.Exact<{
-  runId: Types.Scalars['ID']['input'];
-}>;
-
-export type RunStepStatsQuery = {
-  __typename: 'Query';
-  pipelineRunOrError:
-    | {__typename: 'PythonError'}
-    | {
-        __typename: 'Run';
-        id: string;
-        stepStats: Array<{
-          __typename: 'RunStepStats';
-          stepKey: string;
-          status: Types.StepEventStatus | null;
-          startTime: number | null;
-          endTime: number | null;
-          attempts: Array<{
-            __typename: 'RunMarker';
-            startTime: number | null;
-            endTime: number | null;
-          }>;
-          markers: Array<{
-            __typename: 'RunMarker';
-            startTime: number | null;
-            endTime: number | null;
-          }>;
-        }>;
-      }
-    | {__typename: 'RunNotFoundError'};
-};
-
-export type RunStepStatsFragment = {
-  __typename: 'Run';
-  id: string;
-  stepStats: Array<{
-    __typename: 'RunStepStats';
-    stepKey: string;
-    status: Types.StepEventStatus | null;
-    startTime: number | null;
-    endTime: number | null;
-    attempts: Array<{__typename: 'RunMarker'; startTime: number | null; endTime: number | null}>;
-    markers: Array<{__typename: 'RunMarker'; startTime: number | null; endTime: number | null}>;
-  }>;
-};
-
-export type RunMetadataProviderMessageFragment_AlertFailureEvent = {
+export type RunMetadataProviderMessageFragment_AlertFailureEvent_ = {
   __typename: 'AlertFailureEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_AlertStartEvent = {
+export type RunMetadataProviderMessageFragment_AlertStartEvent_ = {
   __typename: 'AlertStartEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_AlertSuccessEvent = {
+export type RunMetadataProviderMessageFragment_AlertSuccessEvent_ = {
   __typename: 'AlertSuccessEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_AssetCheckEvaluationEvent = {
+export type RunMetadataProviderMessageFragment_AssetCheckEvaluationEvent_ = {
   __typename: 'AssetCheckEvaluationEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_AssetCheckEvaluationPlannedEvent = {
+export type RunMetadataProviderMessageFragment_AssetCheckEvaluationPlannedEvent_ = {
   __typename: 'AssetCheckEvaluationPlannedEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_AssetMaterializationPlannedEvent = {
+export type RunMetadataProviderMessageFragment_AssetMaterializationPlannedEvent_ = {
   __typename: 'AssetMaterializationPlannedEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_EngineEvent = {
+export type RunMetadataProviderMessageFragment_EngineEvent_ = {
   __typename: 'EngineEvent';
   message: string;
   timestamp: string;
@@ -99,119 +53,105 @@ export type RunMetadataProviderMessageFragment_EngineEvent = {
   markerEnd: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ExecutionStepFailureEvent = {
+export type RunMetadataProviderMessageFragment_ExecutionStepFailureEvent_ = {
   __typename: 'ExecutionStepFailureEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ExecutionStepInputEvent = {
+export type RunMetadataProviderMessageFragment_ExecutionStepInputEvent_ = {
   __typename: 'ExecutionStepInputEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ExecutionStepOutputEvent = {
+export type RunMetadataProviderMessageFragment_ExecutionStepOutputEvent_ = {
   __typename: 'ExecutionStepOutputEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ExecutionStepRestartEvent = {
+export type RunMetadataProviderMessageFragment_ExecutionStepRestartEvent_ = {
   __typename: 'ExecutionStepRestartEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ExecutionStepSkippedEvent = {
+export type RunMetadataProviderMessageFragment_ExecutionStepSkippedEvent_ = {
   __typename: 'ExecutionStepSkippedEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ExecutionStepStartEvent = {
+export type RunMetadataProviderMessageFragment_ExecutionStepStartEvent_ = {
   __typename: 'ExecutionStepStartEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ExecutionStepSuccessEvent = {
+export type RunMetadataProviderMessageFragment_ExecutionStepSuccessEvent_ = {
   __typename: 'ExecutionStepSuccessEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ExecutionStepUpForRetryEvent = {
+export type RunMetadataProviderMessageFragment_ExecutionStepUpForRetryEvent_ = {
   __typename: 'ExecutionStepUpForRetryEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_FailedToMaterializeEvent = {
-  __typename: 'FailedToMaterializeEvent';
-  message: string;
-  timestamp: string;
-  stepKey: string | null;
-};
-
-export type RunMetadataProviderMessageFragment_HandledOutputEvent = {
+export type RunMetadataProviderMessageFragment_HandledOutputEvent_ = {
   __typename: 'HandledOutputEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_HealthChangedEvent = {
-  __typename: 'HealthChangedEvent';
-  message: string;
-  timestamp: string;
-  stepKey: string | null;
-};
-
-export type RunMetadataProviderMessageFragment_HookCompletedEvent = {
+export type RunMetadataProviderMessageFragment_HookCompletedEvent_ = {
   __typename: 'HookCompletedEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_HookErroredEvent = {
+export type RunMetadataProviderMessageFragment_HookErroredEvent_ = {
   __typename: 'HookErroredEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_HookSkippedEvent = {
+export type RunMetadataProviderMessageFragment_HookSkippedEvent_ = {
   __typename: 'HookSkippedEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_LoadedInputEvent = {
+export type RunMetadataProviderMessageFragment_LoadedInputEvent_ = {
   __typename: 'LoadedInputEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_LogMessageEvent = {
+export type RunMetadataProviderMessageFragment_LogMessageEvent_ = {
   __typename: 'LogMessageEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_LogsCapturedEvent = {
+export type RunMetadataProviderMessageFragment_LogsCapturedEvent_ = {
   __typename: 'LogsCapturedEvent';
   message: string;
   timestamp: string;
@@ -221,21 +161,16 @@ export type RunMetadataProviderMessageFragment_LogsCapturedEvent = {
   pid: number | null;
   externalStdoutUrl: string | null;
   externalStderrUrl: string | null;
-  shellCmd: {
-    __typename: 'LogRetrievalShellCommand';
-    stdout: string | null;
-    stderr: string | null;
-  } | null;
 };
 
-export type RunMetadataProviderMessageFragment_MaterializationEvent = {
+export type RunMetadataProviderMessageFragment_MaterializationEvent_ = {
   __typename: 'MaterializationEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ObjectStoreOperationEvent = {
+export type RunMetadataProviderMessageFragment_ObjectStoreOperationEvent_ = {
   __typename: 'ObjectStoreOperationEvent';
   message: string;
   timestamp: string;
@@ -257,20 +192,6 @@ export type RunMetadataProviderMessageFragment_ObjectStoreOperationEvent = {
           description: string | null;
         }
       | {
-          __typename: 'CodeReferencesMetadataEntry';
-          label: string;
-          description: string | null;
-          codeReferences: Array<
-            | {
-                __typename: 'LocalFileCodeReference';
-                filePath: string;
-                lineNumber: number | null;
-                label: string | null;
-              }
-            | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-          >;
-        }
-      | {
           __typename: 'FloatMetadataEntry';
           floatValue: number | null;
           label: string;
@@ -280,14 +201,6 @@ export type RunMetadataProviderMessageFragment_ObjectStoreOperationEvent = {
           __typename: 'IntMetadataEntry';
           intValue: number | null;
           intRepr: string;
-          label: string;
-          description: string | null;
-        }
-      | {
-          __typename: 'JobMetadataEntry';
-          jobName: string;
-          repositoryName: string | null;
-          locationName: string;
           label: string;
           description: string | null;
         }
@@ -317,27 +230,12 @@ export type RunMetadataProviderMessageFragment_ObjectStoreOperationEvent = {
           label: string;
           description: string | null;
         }
-      | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
       | {
           __typename: 'PythonArtifactMetadataEntry';
           module: string;
           name: string;
           label: string;
           description: string | null;
-        }
-      | {
-          __typename: 'TableColumnLineageMetadataEntry';
-          label: string;
-          description: string | null;
-          lineage: Array<{
-            __typename: 'TableColumnLineageEntry';
-            columnName: string;
-            columnDeps: Array<{
-              __typename: 'TableColumnDep';
-              columnName: string;
-              assetKey: {__typename: 'AssetKey'; path: Array<string>};
-            }>;
-          }>;
         }
       | {
           __typename: 'TableMetadataEntry';
@@ -353,7 +251,6 @@ export type RunMetadataProviderMessageFragment_ObjectStoreOperationEvent = {
                 name: string;
                 description: string | null;
                 type: string;
-                tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                 constraints: {
                   __typename: 'TableColumnConstraints';
                   nullable: boolean;
@@ -376,7 +273,6 @@ export type RunMetadataProviderMessageFragment_ObjectStoreOperationEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -388,25 +284,19 @@ export type RunMetadataProviderMessageFragment_ObjectStoreOperationEvent = {
           };
         }
       | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-      | {
-          __typename: 'TimestampMetadataEntry';
-          timestamp: number;
-          label: string;
-          description: string | null;
-        }
       | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
     >;
   };
 };
 
-export type RunMetadataProviderMessageFragment_ObservationEvent = {
+export type RunMetadataProviderMessageFragment_ObservationEvent_ = {
   __typename: 'ObservationEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ResourceInitFailureEvent = {
+export type RunMetadataProviderMessageFragment_ResourceInitFailureEvent_ = {
   __typename: 'ResourceInitFailureEvent';
   message: string;
   timestamp: string;
@@ -415,7 +305,7 @@ export type RunMetadataProviderMessageFragment_ResourceInitFailureEvent = {
   markerEnd: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ResourceInitStartedEvent = {
+export type RunMetadataProviderMessageFragment_ResourceInitStartedEvent_ = {
   __typename: 'ResourceInitStartedEvent';
   message: string;
   timestamp: string;
@@ -424,7 +314,7 @@ export type RunMetadataProviderMessageFragment_ResourceInitStartedEvent = {
   markerEnd: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_ResourceInitSuccessEvent = {
+export type RunMetadataProviderMessageFragment_ResourceInitSuccessEvent_ = {
   __typename: 'ResourceInitSuccessEvent';
   message: string;
   timestamp: string;
@@ -433,70 +323,70 @@ export type RunMetadataProviderMessageFragment_ResourceInitSuccessEvent = {
   markerEnd: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_RunCanceledEvent = {
+export type RunMetadataProviderMessageFragment_RunCanceledEvent_ = {
   __typename: 'RunCanceledEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_RunCancelingEvent = {
+export type RunMetadataProviderMessageFragment_RunCancelingEvent_ = {
   __typename: 'RunCancelingEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_RunDequeuedEvent = {
+export type RunMetadataProviderMessageFragment_RunDequeuedEvent_ = {
   __typename: 'RunDequeuedEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_RunEnqueuedEvent = {
+export type RunMetadataProviderMessageFragment_RunEnqueuedEvent_ = {
   __typename: 'RunEnqueuedEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_RunFailureEvent = {
+export type RunMetadataProviderMessageFragment_RunFailureEvent_ = {
   __typename: 'RunFailureEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_RunStartEvent = {
+export type RunMetadataProviderMessageFragment_RunStartEvent_ = {
   __typename: 'RunStartEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_RunStartingEvent = {
+export type RunMetadataProviderMessageFragment_RunStartingEvent_ = {
   __typename: 'RunStartingEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_RunSuccessEvent = {
+export type RunMetadataProviderMessageFragment_RunSuccessEvent_ = {
   __typename: 'RunSuccessEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_StepExpectationResultEvent = {
+export type RunMetadataProviderMessageFragment_StepExpectationResultEvent_ = {
   __typename: 'StepExpectationResultEvent';
   message: string;
   timestamp: string;
   stepKey: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_StepWorkerStartedEvent = {
+export type RunMetadataProviderMessageFragment_StepWorkerStartedEvent_ = {
   __typename: 'StepWorkerStartedEvent';
   message: string;
   timestamp: string;
@@ -505,7 +395,7 @@ export type RunMetadataProviderMessageFragment_StepWorkerStartedEvent = {
   markerEnd: string | null;
 };
 
-export type RunMetadataProviderMessageFragment_StepWorkerStartingEvent = {
+export type RunMetadataProviderMessageFragment_StepWorkerStartingEvent_ = {
   __typename: 'StepWorkerStartingEvent';
   message: string;
   timestamp: string;
@@ -515,46 +405,42 @@ export type RunMetadataProviderMessageFragment_StepWorkerStartingEvent = {
 };
 
 export type RunMetadataProviderMessageFragment =
-  | RunMetadataProviderMessageFragment_AlertFailureEvent
-  | RunMetadataProviderMessageFragment_AlertStartEvent
-  | RunMetadataProviderMessageFragment_AlertSuccessEvent
-  | RunMetadataProviderMessageFragment_AssetCheckEvaluationEvent
-  | RunMetadataProviderMessageFragment_AssetCheckEvaluationPlannedEvent
-  | RunMetadataProviderMessageFragment_AssetMaterializationPlannedEvent
-  | RunMetadataProviderMessageFragment_EngineEvent
-  | RunMetadataProviderMessageFragment_ExecutionStepFailureEvent
-  | RunMetadataProviderMessageFragment_ExecutionStepInputEvent
-  | RunMetadataProviderMessageFragment_ExecutionStepOutputEvent
-  | RunMetadataProviderMessageFragment_ExecutionStepRestartEvent
-  | RunMetadataProviderMessageFragment_ExecutionStepSkippedEvent
-  | RunMetadataProviderMessageFragment_ExecutionStepStartEvent
-  | RunMetadataProviderMessageFragment_ExecutionStepSuccessEvent
-  | RunMetadataProviderMessageFragment_ExecutionStepUpForRetryEvent
-  | RunMetadataProviderMessageFragment_FailedToMaterializeEvent
-  | RunMetadataProviderMessageFragment_HandledOutputEvent
-  | RunMetadataProviderMessageFragment_HealthChangedEvent
-  | RunMetadataProviderMessageFragment_HookCompletedEvent
-  | RunMetadataProviderMessageFragment_HookErroredEvent
-  | RunMetadataProviderMessageFragment_HookSkippedEvent
-  | RunMetadataProviderMessageFragment_LoadedInputEvent
-  | RunMetadataProviderMessageFragment_LogMessageEvent
-  | RunMetadataProviderMessageFragment_LogsCapturedEvent
-  | RunMetadataProviderMessageFragment_MaterializationEvent
-  | RunMetadataProviderMessageFragment_ObjectStoreOperationEvent
-  | RunMetadataProviderMessageFragment_ObservationEvent
-  | RunMetadataProviderMessageFragment_ResourceInitFailureEvent
-  | RunMetadataProviderMessageFragment_ResourceInitStartedEvent
-  | RunMetadataProviderMessageFragment_ResourceInitSuccessEvent
-  | RunMetadataProviderMessageFragment_RunCanceledEvent
-  | RunMetadataProviderMessageFragment_RunCancelingEvent
-  | RunMetadataProviderMessageFragment_RunDequeuedEvent
-  | RunMetadataProviderMessageFragment_RunEnqueuedEvent
-  | RunMetadataProviderMessageFragment_RunFailureEvent
-  | RunMetadataProviderMessageFragment_RunStartEvent
-  | RunMetadataProviderMessageFragment_RunStartingEvent
-  | RunMetadataProviderMessageFragment_RunSuccessEvent
-  | RunMetadataProviderMessageFragment_StepExpectationResultEvent
-  | RunMetadataProviderMessageFragment_StepWorkerStartedEvent
-  | RunMetadataProviderMessageFragment_StepWorkerStartingEvent;
-
-export const RunStepStatsQueryVersion = '77d73353a4aea095bfa241903122abf14eb38341c5869a9688b70c0d53f5a167';
+  | RunMetadataProviderMessageFragment_AlertFailureEvent_
+  | RunMetadataProviderMessageFragment_AlertStartEvent_
+  | RunMetadataProviderMessageFragment_AlertSuccessEvent_
+  | RunMetadataProviderMessageFragment_AssetCheckEvaluationEvent_
+  | RunMetadataProviderMessageFragment_AssetCheckEvaluationPlannedEvent_
+  | RunMetadataProviderMessageFragment_AssetMaterializationPlannedEvent_
+  | RunMetadataProviderMessageFragment_EngineEvent_
+  | RunMetadataProviderMessageFragment_ExecutionStepFailureEvent_
+  | RunMetadataProviderMessageFragment_ExecutionStepInputEvent_
+  | RunMetadataProviderMessageFragment_ExecutionStepOutputEvent_
+  | RunMetadataProviderMessageFragment_ExecutionStepRestartEvent_
+  | RunMetadataProviderMessageFragment_ExecutionStepSkippedEvent_
+  | RunMetadataProviderMessageFragment_ExecutionStepStartEvent_
+  | RunMetadataProviderMessageFragment_ExecutionStepSuccessEvent_
+  | RunMetadataProviderMessageFragment_ExecutionStepUpForRetryEvent_
+  | RunMetadataProviderMessageFragment_HandledOutputEvent_
+  | RunMetadataProviderMessageFragment_HookCompletedEvent_
+  | RunMetadataProviderMessageFragment_HookErroredEvent_
+  | RunMetadataProviderMessageFragment_HookSkippedEvent_
+  | RunMetadataProviderMessageFragment_LoadedInputEvent_
+  | RunMetadataProviderMessageFragment_LogMessageEvent_
+  | RunMetadataProviderMessageFragment_LogsCapturedEvent_
+  | RunMetadataProviderMessageFragment_MaterializationEvent_
+  | RunMetadataProviderMessageFragment_ObjectStoreOperationEvent_
+  | RunMetadataProviderMessageFragment_ObservationEvent_
+  | RunMetadataProviderMessageFragment_ResourceInitFailureEvent_
+  | RunMetadataProviderMessageFragment_ResourceInitStartedEvent_
+  | RunMetadataProviderMessageFragment_ResourceInitSuccessEvent_
+  | RunMetadataProviderMessageFragment_RunCanceledEvent_
+  | RunMetadataProviderMessageFragment_RunCancelingEvent_
+  | RunMetadataProviderMessageFragment_RunDequeuedEvent_
+  | RunMetadataProviderMessageFragment_RunEnqueuedEvent_
+  | RunMetadataProviderMessageFragment_RunFailureEvent_
+  | RunMetadataProviderMessageFragment_RunStartEvent_
+  | RunMetadataProviderMessageFragment_RunStartingEvent_
+  | RunMetadataProviderMessageFragment_RunSuccessEvent_
+  | RunMetadataProviderMessageFragment_StepExpectationResultEvent_
+  | RunMetadataProviderMessageFragment_StepWorkerStartedEvent_
+  | RunMetadataProviderMessageFragment_StepWorkerStartingEvent_;

@@ -1,4 +1,4 @@
-import {Colors, FontFamily, Group, Icon, Spinner} from '@dagster-io/ui-components';
+import {Colors, Group, Icon, Spinner, FontFamily} from '@dagster-io/ui-components';
 import Ansi from 'ansi-to-react';
 import * as React from 'react';
 import styled, {createGlobalStyle} from 'styled-components';
@@ -7,23 +7,18 @@ const MAX_STREAMING_LOG_BYTES = 5242880; // 5 MB
 const TRUNCATE_PREFIX = '\u001b[33m...logs truncated...\u001b[39m\n';
 const SCROLLER_LINK_TIMEOUT_MS = 3000;
 
-interface Props {
+export const RawLogContent: React.FC<{
   logData: string | null;
   isLoading: boolean;
   isVisible: boolean;
   downloadUrl?: string | null;
   location?: string;
-}
-
-export const RawLogContent = React.memo((props: Props) => {
-  const {logData, location, isLoading, isVisible, downloadUrl} = props;
+}> = React.memo(({logData, location, isLoading, isVisible, downloadUrl}) => {
   const contentContainer = React.useRef<ScrollContainer | null>(null);
   const timer = React.useRef<number>();
   const [showScrollToTop, setShowScrollToTop] = React.useState(false);
   const scrollToTop = () => {
-    if (contentContainer.current) {
-      contentContainer.current.scrollToTop();
-    }
+    contentContainer.current && contentContainer.current.scrollToTop();
   };
   const cancelHideWarning = () => {
     if (timer.current) {
@@ -59,7 +54,7 @@ export const RawLogContent = React.memo((props: Props) => {
   const warning = isTruncated ? (
     <FileWarning>
       <Group direction="row" spacing={8} alignItems="center">
-        <Icon name="warning" color={Colors.accentYellow()} />
+        <Icon name="warning" color={Colors.Yellow500} />
         <div>
           This log has exceeded the 5MB limit.{' '}
           {downloadUrl ? (
@@ -67,6 +62,7 @@ export const RawLogContent = React.memo((props: Props) => {
               Download the full log file
             </a>
           ) : null}
+          .
         </div>
       </Group>
     </FileWarning>
@@ -83,7 +79,7 @@ export const RawLogContent = React.memo((props: Props) => {
               onMouseOut={scheduleHideWarning}
             >
               <Group direction="row" spacing={8} alignItems="center">
-                <Icon name="arrow_upward" color={Colors.accentPrimary()} />
+                <Icon name="arrow_upward" color={Colors.White} />
                 Scroll to top
               </Group>
             </ScrollToTop>
@@ -94,7 +90,7 @@ export const RawLogContent = React.memo((props: Props) => {
           <RelativeContainer>
             <LogContent
               isSelected={true}
-              content={content}
+              content={logData}
               onScrollUp={onScrollUp}
               onScrollDown={hideWarning}
               ref={contentContainer}
@@ -145,22 +141,16 @@ class ScrollContainer extends React.Component<IScrollContainerProps> {
       return false;
     }
     const {scrollHeight, scrollTop, offsetHeight} = this.container.current;
-
-    // Note: The +1 here accounts for these numbers occasionally being off by 0.5px in FF
-    const shouldScroll = offsetHeight + scrollTop + 1 >= scrollHeight;
+    const shouldScroll = offsetHeight + scrollTop >= scrollHeight;
     return shouldScroll;
   }
 
   componentDidUpdate(_props: any, _state: any, shouldScroll: boolean) {
     if (shouldScroll) {
-      window.requestAnimationFrame(() => {
-        this.scrollToBottom();
-      });
+      this.scrollToBottom();
     }
     if (this.props.isSelected && !_props.isSelected) {
-      if (this.container.current) {
-        this.container.current.focus();
-      }
+      this.container.current && this.container.current.focus();
     }
   }
 
@@ -173,13 +163,9 @@ class ScrollContainer extends React.Component<IScrollContainerProps> {
     const {scrollHeight, scrollTop, offsetHeight} = this.container.current;
     const position = scrollTop / (scrollHeight - offsetHeight);
     if (this.container.current.scrollTop < this.lastScroll) {
-      if (onScrollUp) {
-        onScrollUp(position);
-      }
+      onScrollUp && onScrollUp(position);
     } else {
-      if (onScrollDown) {
-        onScrollDown(position);
-      }
+      onScrollDown && onScrollDown(position);
     }
     this.lastScroll = this.container.current.scrollTop;
   };
@@ -224,34 +210,11 @@ class ScrollContainer extends React.Component<IScrollContainerProps> {
       );
     }
 
-    const onSelectAll = (e: React.KeyboardEvent) => {
-      const range = document.createRange();
-      const sel = document.getSelection();
-      const contentEl = e.currentTarget.querySelector('[data-content]');
-      if (!sel || !contentEl) {
-        return;
-      }
-      range.selectNode(contentEl);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      e.preventDefault();
-    };
-
     return (
-      <div
-        className={className}
-        style={{outline: 'none'}}
-        ref={this.container}
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-            onSelectAll(e);
-          }
-        }}
-      >
+      <div className={className} style={{outline: 'none'}} ref={this.container} tabIndex={0}>
         <ContentContainer>
           <LineNumbers content={content} />
-          <Content data-content={true}>
+          <Content>
             <SolarizedColors />
             <Ansi linkify={false} useClasses>
               {content}
@@ -265,108 +228,87 @@ class ScrollContainer extends React.Component<IScrollContainerProps> {
 
 const LineNumbers = (props: IScrollContainerProps) => {
   const {content} = props;
-  const lastCount = React.useRef(0);
-  const container = React.createRef<HTMLDivElement>();
-
-  const matches = (content || '').match(/\n/g);
+  if (!content) {
+    return null;
+  }
+  const matches = content.match(/\n/g);
   const count = matches ? matches.length : 0;
-
-  // The common case here is 1+ new line numbers appearing on each render. Until we fully
-  // virtualize this UI, a good solution is to append a new div containing just the added
-  // line numbers. This avoids repaint + relayout of the existing line numbers, which takes
-  // 100ms per 100k lines of logs.
-  React.useLayoutEffect(() => {
-    const containerEl = container.current;
-    if (!containerEl) {
-      return;
-    }
-    if (count < lastCount.current) {
-      containerEl.textContent = '';
-      lastCount.current = 0;
-    }
-    const div = document.createElement('div');
-    const addedCount = count - lastCount.current;
-    div.textContent = Array.from(Array(addedCount), (_, i) =>
-      String(lastCount.current + i + 1),
-    ).join('\n');
-    containerEl.appendChild(div);
-    lastCount.current = count;
-  }, [container, count]);
-
-  return <LineNumberContainer ref={container} />;
+  return (
+    <LineNumberContainer>
+      {Array.from(Array(count), (_, i) => (
+        <div key={i}>{String(i + 1)}</div>
+      ))}
+    </LineNumberContainer>
+  );
 };
 
 const Content = styled.div`
   padding: 10px;
-  background-color: ${Colors.backgroundLight()};
+  background-color: ${Colors.Gray900};
 `;
-
 const LineNumberContainer = styled.div`
-  border-right: 1px solid ${Colors.keylineDefault()};
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  border-right: 1px solid #5c7080;
   padding: 10px 10px 10px 20px;
   margin-right: 5px;
-  background-color: ${Colors.backgroundLightHover()};
+  background-color: ${Colors.Gray900};
   opacity: 0.8;
-  color: ${Colors.textLighter()};
+  color: #858585;
   min-height: 100%;
-  user-select: none;
-
-  & > div {
-    text-align: right;
-  }
 `;
-
 const SolarizedColors = createGlobalStyle`
   .ansi-black {
-    color: ${Colors.accentOlive()};
+    color: #586e75;
   }
   .ansi-red {
-    color: ${Colors.accentRed()};
+    color: #dc322f;
   }
   .ansi-green {
-    color: ${Colors.accentGreen()};
+    color: #859900;
   }
   .ansi-yellow {
-    color: ${Colors.accentYellow()};
+    color: #b58900;
   }
   .ansi-blue {
-    color: ${Colors.accentBlue()};
+    color: #268bd2;
   }
   .ansi-magenta {
-    color: ${Colors.textBlue()};
+    color: #d33682;
   }
   .ansi-cyan {
-    color: ${Colors.accentCyan()};
+    color: #2aa198;
   }
   .ansi-white {
-    color: ${Colors.accentGray()};
+    color: #eee8d5;
   }
 `;
-
 const ContentContainer = styled.div`
   display: flex;
   flex-direction: row;
   min-height: 100%;
-  background-color: ${Colors.backgroundLight()};
+  background-color: ${Colors.Gray900};
 `;
-
 const FileContainer = styled.div`
   flex: 1;
   height: 100%;
   position: relative;
+  &:first-child {
+    border-right: 0.5px solid #5c7080;
+  }
   display: flex;
   flex-direction: column;
   ${({isVisible}: {isVisible: boolean}) => (isVisible ? null : 'display: none;')}
 `;
-
 const FileFooter = styled.div`
   display: flex;
   flex-direction: row;
   align-items: center;
   height: 30px;
-  background-color: ${Colors.backgroundLight()};
-  border-top: 0.5px solid ${Colors.keylineDefault()};
-  color: ${Colors.textLight()};
+  background-color: ${Colors.Gray900};
+  border-top: 0.5px solid #5c7080;
+  color: #aaaaaa;
   padding: 2px 5px;
   font-size: 0.85em;
   ${({isVisible}: {isVisible: boolean}) => (isVisible ? null : 'display: none;')}
@@ -377,17 +319,14 @@ const FileContent = styled.div`
   display: flex;
   flex-direction: column;
 `;
-
 const RelativeContainer = styled.div`
   flex: 1;
   position: relative;
 `;
-
 const LogContent = styled(ScrollContainer)`
-  color: ${Colors.textDefault()};
+  color: #eeeeee;
   font-family: ${FontFamily.monospace};
-  font-size: 14px;
-  font-variant-ligatures: none;
+  font-size: 16px;
   white-space: pre;
   overflow: auto;
   position: absolute;
@@ -396,7 +335,6 @@ const LogContent = styled(ScrollContainer)`
   left: 0;
   right: 0;
 `;
-
 const LoadingContainer = styled.div`
   display: flex;
   justifycontent: center;
@@ -406,7 +344,7 @@ const LoadingContainer = styled.div`
   bottom: 0;
   left: 0;
   right: 0;
-  background-color: ${Colors.backgroundDefault()};
+  backgroundcolor: ${Colors.Gray800};
   opacity: 0.3;
 `;
 
@@ -422,26 +360,20 @@ const ScrollToast = styled.div`
   align-items: flex-start;
   z-index: 1;
 `;
-
-const ScrollToTop = styled.button`
-  background-color: ${Colors.backgroundLighter()};
-  padding: 12px 20px 12px 14px;
+const ScrollToTop = styled.div`
+  background-color: black;
+  padding: 10px 20px;
   border-bottom-right-radius: 5px;
   border-bottom-left-radius: 5px;
-  color: ${Colors.textDefault()};
-  border: 1px solid ${Colors.borderDefault()};
-  border-width: 0 1px 1px 1px;
+  color: white;
+  border-bottom: 0.5px solid #5c7080;
+  border-left: 0.5px solid #5c7080;
+  border-right: 0.5px solid #5c7080;
   cursor: pointer;
-  transition: background-color 100ms linear;
-
-  :hover {
-    background-color: ${Colors.backgroundLighterHover()};
-    border-color: ${Colors.borderHover()};
-  }
 `;
 
 const FileWarning = styled.div`
-  background-color: ${Colors.backgroundYellow()};
+  background-color: #fffae3;
   padding: 10px 20px;
   margin: 20px 70px;
   border-radius: 5px;

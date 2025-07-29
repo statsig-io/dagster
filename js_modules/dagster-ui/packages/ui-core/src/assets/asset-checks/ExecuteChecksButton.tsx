@@ -1,15 +1,15 @@
+import {gql} from '@apollo/client';
 import {Button, Icon, Spinner, Tooltip} from '@dagster-io/ui-components';
-import {useContext, useState} from 'react';
-import {useLaunchWithTelemetry} from 'shared/launchpad/useLaunchWithTelemetry.oss';
+import React, {useState} from 'react';
+
+import {usePermissionsForLocation} from '../../app/Permissions';
+import {AssetCheckCanExecuteIndividually} from '../../graphql/types';
+import {useLaunchPadHooks} from '../../launchpad/LaunchpadHooksContext';
 
 import {
   ExecuteChecksButtonAssetNodeFragment,
   ExecuteChecksButtonCheckFragment,
 } from './types/ExecuteChecksButton.types';
-import {gql} from '../../apollo-client';
-import {CloudOSSContext} from '../../app/CloudOSSContext';
-import {usePermissionsForLocation} from '../../app/Permissions';
-import {AssetCheckCanExecuteIndividually, ExecutionParams} from '../../graphql/types';
 
 export const ExecuteChecksButton = ({
   assetNode,
@@ -22,10 +22,11 @@ export const ExecuteChecksButton = ({
   label?: string;
   icon?: boolean;
 }) => {
-  const {assetKey, jobNames: assetJobNames, repository} = assetNode;
+  const {assetKey, jobNames, repository} = assetNode;
   const [launching, setLaunching] = useState(false);
   const {permissions, disabledReasons} = usePermissionsForLocation(repository.location.name);
 
+  const {useLaunchWithTelemetry} = useLaunchPadHooks();
   const launchWithTelemetry = useLaunchWithTelemetry();
   const launchable = checks.filter(
     (c) => c.canExecuteIndividually === AssetCheckCanExecuteIndividually.CAN_EXECUTE,
@@ -40,18 +41,10 @@ export const ExecuteChecksButton = ({
   const disabledReason = !permissions.canLaunchPipelineExecution
     ? disabledReasons.canLaunchPipelineExecution
     : checks.length > 0 && launchable.length === 0
-      ? 'This check cannot execute without materializing the asset.'
-      : checks.length === 0
-        ? 'No checks are defined on this asset.'
-        : '';
-
-  const {
-    featureContext: {canSeeExecuteChecksAction},
-  } = useContext(CloudOSSContext);
-
-  if (!canSeeExecuteChecksAction) {
-    return null;
-  }
+    ? 'Invidiual launch is not supported. Upgrade your user code version of dagster.'
+    : checks.length === 0
+    ? 'No checks are defined on this asset.'
+    : '';
 
   if (disabledReason) {
     return (
@@ -63,17 +56,8 @@ export const ExecuteChecksButton = ({
     );
   }
 
-  const commonCheckJobNames = checks.reduce((commonJobNames, check) => {
-    return commonJobNames.filter((name: string) => check.jobNames.includes(name));
-  }, checks[0]?.jobNames || []);
-
-  // Ideally all the checks have a common job name, but sub 1.5.10 user code versions
-  // do not report job names for checks so fallback to the original behavior that was
-  // here of using the first job name of the asset.
-  const resolvedJobName =
-    commonCheckJobNames.length > 0 ? commonCheckJobNames[0] : assetJobNames[0];
-
-  if (!resolvedJobName) {
+  const jobName = jobNames[0];
+  if (!jobName) {
     return (
       <Tooltip content="No jobs were found to execute the selected checks">
         <Button icon={iconEl} disabled>
@@ -84,23 +68,24 @@ export const ExecuteChecksButton = ({
   }
 
   const onClick = async () => {
-    const executionParams: ExecutionParams = {
-      mode: 'default',
-      executionMetadata: {},
-      runConfigData: '{}',
-      selector: {
-        jobName: resolvedJobName,
-        repositoryLocationName: repository.location.name,
-        repositoryName: repository.name,
-        assetSelection: [],
-        assetCheckSelection: launchable.map((c) => ({
-          assetKey: {path: assetKey.path},
-          name: c.name,
-        })),
+    const params = {
+      executionParams: {
+        mode: 'default',
+        executionMetadata: {},
+        runConfigData: '{}',
+        selector: {
+          repositoryLocationName: repository.location.name,
+          repositoryName: repository.name,
+          jobName,
+          assetCheckSelection: launchable.map((c) => ({
+            assetKey: {path: assetKey.path},
+            name: c.name,
+          })),
+        },
       },
     };
     setLaunching(true);
-    await launchWithTelemetry({executionParams}, 'toast');
+    await launchWithTelemetry(params, 'toast');
     setLaunching(false);
   };
 
@@ -115,7 +100,6 @@ export const EXECUTE_CHECKS_BUTTON_CHECK_FRAGMENT = gql`
   fragment ExecuteChecksButtonCheckFragment on AssetCheck {
     name
     canExecuteIndividually
-    jobNames
   }
 `;
 

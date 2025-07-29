@@ -1,14 +1,20 @@
 # def_start_marker
-from typing import Union
+from typing import Dict, Union
 
-import dagster as dg
+from dagster import (
+    DagsterTypeLoaderContext,
+    dagster_type_loader,
+    job,
+    op,
+    usable_as_dagster_type,
+)
 
 
-@dg.dagster_type_loader(
+@dagster_type_loader(
     config_schema={"diameter": float, "juiciness": float, "cultivar": str}
 )
 def apple_loader(
-    _context: dg.DagsterTypeLoaderContext, config: dict[str, Union[float, str]]
+    _context: DagsterTypeLoaderContext, config: Dict[str, Union[float, str]]
 ):
     return Apple(
         diameter=config["diameter"],
@@ -17,7 +23,7 @@ def apple_loader(
     )
 
 
-@dg.usable_as_dagster_type(loader=apple_loader)
+@usable_as_dagster_type(loader=apple_loader)
 class Apple:
     def __init__(self, diameter, juiciness, cultivar):
         self.diameter = diameter
@@ -25,12 +31,12 @@ class Apple:
         self.cultivar = cultivar
 
 
-@dg.op
-def my_op(context: dg.OpExecutionContext, input_apple: Apple):
+@op
+def my_op(context, input_apple: Apple):
     context.log.info(f"input apple diameter: {input_apple.diameter}")
 
 
-@dg.job
+@job
 def my_job():
     my_op()
 

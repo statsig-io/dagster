@@ -1,16 +1,18 @@
+import {gql, useQuery} from '@apollo/client';
+import * as React from 'react';
 import styled from 'styled-components';
 
-import {OP_CARD_SOLID_DEFINITION_FRAGMENT, OpCard} from './OpCard';
-import {gql, useQuery} from '../apollo-client';
-import {UsedSolidDetailsQuery, UsedSolidDetailsQueryVariables} from './types/OpDetailsRoot.types';
 import {
-  SIDEBAR_OP_DEFINITION_FRAGMENT,
   SidebarOpDefinition,
+  SIDEBAR_OP_DEFINITION_FRAGMENT,
 } from '../pipelines/SidebarOpDefinition';
 import {SidebarOpInvocationInfo} from '../pipelines/SidebarOpHelpers';
 import {Loading} from '../ui/Loading';
 import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
 import {RepoAddress} from '../workspace/types';
+
+import {OpCard, OP_CARD_SOLID_DEFINITION_FRAGMENT} from './OpCard';
+import {UsedSolidDetailsQuery, UsedSolidDetailsQueryVariables} from './types/OpDetailsRoot.types';
 
 interface UsedSolidDetailsProps {
   name: string;
@@ -18,7 +20,7 @@ interface UsedSolidDetailsProps {
   repoAddress: RepoAddress;
 }
 
-export const UsedSolidDetails = (props: UsedSolidDetailsProps) => {
+export const UsedSolidDetails: React.FC<UsedSolidDetailsProps> = (props) => {
   const {name, onClickInvocation, repoAddress} = props;
   const repositorySelector = repoAddressToSelector(repoAddress);
 
@@ -89,6 +91,6 @@ const USED_SOLID_DETAILS_QUERY = gql`
 `;
 
 export const OpDetailScrollContainer = styled.div`
-  overflow-y: scroll;
+  overflow: scroll;
   flex: 1;
 `;

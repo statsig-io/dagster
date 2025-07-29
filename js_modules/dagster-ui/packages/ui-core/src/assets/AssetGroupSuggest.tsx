@@ -1,22 +1,21 @@
 import {Box, Checkbox, Icon, MenuItem, Suggest} from '@dagster-io/ui-components';
 import isEqual from 'lodash/isEqual';
-import memoize from 'lodash/memoize';
 import uniqBy from 'lodash/uniqBy';
-import {useMemo} from 'react';
+import * as React from 'react';
 
 import {AssetGroupSelector} from '../graphql/types';
 import {ClearButton} from '../ui/ClearButton';
 import {buildRepoPathForHuman} from '../workspace/buildRepoAddress';
 
 type Asset = {
-  definition?: {
-    groupName?: string | null;
-    repository?: {name: string; location: {name: string}} | null;
+  definition: {
+    groupName: string | null;
+    repository: {name: string; location: {name: string}};
   } | null;
 };
 
 export function useAssetGroupSelectorsForAssets(assets: Asset[] | undefined) {
-  return useMemo(
+  return React.useMemo(
     () =>
       uniqBy(
         (assets || []).map(buildAssetGroupSelector).filter((a) => !!a) as AssetGroupSelector[],
@@ -36,15 +35,11 @@ const FAKE_SELECTED_ITEM: AssetGroupSelector = {
   repositoryName: '-',
 };
 
-export const AssetGroupSuggest = ({
-  assetGroups,
-  value,
-  onChange,
-}: {
+export const AssetGroupSuggest: React.FC<{
   assetGroups: AssetGroupSelector[];
   value: AssetGroupSelector[];
   onChange: (g: AssetGroupSelector[]) => void;
-}) => {
+}> = ({assetGroups, value, onChange}) => {
   const repoKey = (g: AssetGroupSelector) => `${g.repositoryName}@${g.repositoryLocationName}`;
   const repoKey1 = assetGroups[0] ? repoKey(assetGroups[0]) : '';
   const repoContextNeeded = !assetGroups.every((g) => repoKey1 === repoKey(g));
@@ -116,16 +111,12 @@ export const AssetGroupSuggest = ({
   );
 };
 
-export const buildAssetGroupSelector = memoize(
-  (a: Asset) => {
-    return a.definition && a.definition.groupName
-      ? {
-          groupName: a.definition.groupName,
-          repositoryName: a.definition.repository?.name,
-          repositoryLocationName: a.definition.repository?.location.name,
-        }
-      : null;
-  },
-  (a: Asset) =>
-    `${a.definition?.groupName}@!${a.definition?.repository?.name}@!${a.definition?.repository?.location.name}`,
-);
+export function buildAssetGroupSelector(a: Asset) {
+  return a.definition && a.definition.groupName
+    ? {
+        groupName: a.definition.groupName,
+        repositoryName: a.definition.repository.name,
+        repositoryLocationName: a.definition.repository.location.name,
+      }
+    : null;
+}

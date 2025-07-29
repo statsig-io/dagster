@@ -1,13 +1,11 @@
-import {invocationsOfPlannedDynamicStep, replacePlannedIndex} from './DynamicStepSupport';
-import {gql} from '../apollo-client';
-import {ExecutionPlanToGraphFragment} from './types/toGraphQueryItems.types';
+import {gql} from '@apollo/client';
+
 import {GraphQueryItem} from '../app/GraphQueryImpl';
 import {StepKind} from '../graphql/types';
 import {IStepMetadata, IStepState} from '../runs/RunMetadataProvider';
 
-export type RunGraphQueryItem = GraphQueryItem & {
-  metadata?: IStepMetadata;
-};
+import {invocationsOfPlannedDynamicStep, replacePlannedIndex} from './DynamicStepSupport';
+import {ExecutionPlanToGraphFragment} from './types/toGraphQueryItems.types';
 
 /**
  * Converts a Run execution plan into a tree of `GraphQueryItem` items that
@@ -22,7 +20,7 @@ export type RunGraphQueryItem = GraphQueryItem & {
 export const toGraphQueryItems = (
   plan: ExecutionPlanToGraphFragment,
   runtimeStepMetadata: {[key: string]: IStepMetadata},
-): RunGraphQueryItem[] => {
+) => {
   // Step 1: Find unresolved steps in the initial plan and build a mapping
   // of their unresolved names to their resolved step keys, eg:
   // "multiply_input[*]" => ["multiply_input[1]", "multiply_input[2]"]
@@ -51,7 +49,7 @@ export const toGraphQueryItems = (
   }
 
   // Step 2: Create a graph node for each resolved step without any inputs or outputs.
-  const nodeTable: {[key: string]: RunGraphQueryItem} = {};
+  const nodeTable: {[key: string]: GraphQueryItem} = {};
   for (const step of plan.steps) {
     const stepRuntimeKeys = keyExpansionMap[step.key] || [step.key];
     for (const key of stepRuntimeKeys) {
@@ -59,7 +57,6 @@ export const toGraphQueryItems = (
         name: key,
         inputs: [],
         outputs: [],
-        metadata: runtimeStepMetadata[key],
       };
     }
   }

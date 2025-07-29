@@ -1,51 +1,3 @@
-# serializer version: 1
-# name: test_external_job_retrieval[0]
-  '''
-  {
-    "pipelineSnapshotOrError": {
-      "__typename": "PipelineSnapshot",
-      "dagsterTypes": [
-        {
-          "key": "Any"
-        },
-        {
-          "key": "Bool"
-        },
-        {
-          "key": "Float"
-        },
-        {
-          "key": "Int"
-        },
-        {
-          "key": "Nothing"
-        },
-        {
-          "key": "String"
-        }
-      ],
-      "description": null,
-      "externalJobSource": "airflow",
-      "modes": [
-        {
-          "name": "default"
-        }
-      ],
-      "name": "some_external_job",
-      "pipelineSnapshotId": "b4fc2e8ab8e963bd8755daf64aa870988d1e0422",
-      "runTags": [],
-      "solidHandles": [],
-      "solids": [],
-      "tags": [
-        {
-          "key": "dagster/external_job_source",
-          "value": "airflow"
-        }
-      ]
-    }
-  }
-  '''
-# ---
 # name: test_fetch_snapshot_or_error_by_active_pipeline_name_not_found[0]
   '''
   {
@@ -77,40 +29,37 @@
           "key": "Nothing"
         },
         {
+          "key": "PoorMansDataFrame"
+        },
+        {
           "key": "String"
         }
       ],
       "description": null,
-      "externalJobSource": null,
       "modes": [
         {
           "name": "default"
         }
       ],
-      "name": "tagged_job",
-      "pipelineSnapshotId": "c3320c44d5fa6c508dfda564e67bc67747b9891c",
-      "runTags": [
-        {
-          "key": "baz",
-          "value": "quux"
-        }
-      ],
+      "name": "csv_hello_world",
+      "pipelineSnapshotId": "9d2930f7c072c5a01688d84b725c49d4ae718c65",
       "solidHandles": [
         {
-          "handleID": "simple_op"
+          "handleID": "sum_op"
+        },
+        {
+          "handleID": "sum_sq_op"
         }
       ],
       "solids": [
         {
-          "name": "simple_op"
+          "name": "sum_op"
+        },
+        {
+          "name": "sum_sq_op"
         }
       ],
-      "tags": [
-        {
-          "key": "foo",
-          "value": "bar"
-        }
-      ]
+      "tags": []
     }
   }
   '''
@@ -158,7 +107,6 @@
       ],
       "name": "noop_job",
       "pipelineSnapshotId": "dbc0d71fefa48d56ff94e517235980f1bbf0d8e8",
-      "runTags": [],
       "solidHandles": [
         {
           "handleID": "noop_op"

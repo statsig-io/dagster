@@ -1,21 +1,22 @@
-import {Box, ButtonLink, Colors, FontFamily, Group, Icon} from '@dagster-io/ui-components';
-import {useEffect} from 'react';
+import {gql, useQuery} from '@apollo/client';
+import {Box, ButtonLink, Colors, Group, Icon, FontFamily} from '@dagster-io/ui-components';
+import React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
-import {gql, useQuery} from '../apollo-client';
-import {
-  RunGroupPanelQuery,
-  RunGroupPanelQueryVariables,
-  RunGroupPanelRunFragment,
-} from './types/RunGroupPanel.types';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
 import {FIFTEEN_SECONDS, useQueryRefreshAtInterval} from '../app/QueryRefresh';
 import {SidebarSection} from '../pipelines/SidebarComponents';
 import {RunStatusIndicator} from '../runs/RunStatusDots';
 import {DagsterTag} from '../runs/RunTag';
-import {RUN_TIME_FRAGMENT, RunStateSummary, RunTime} from '../runs/RunUtils';
+import {RunStateSummary, RunTime, RUN_TIME_FRAGMENT} from '../runs/RunUtils';
+
+import {
+  RunGroupPanelQuery,
+  RunGroupPanelQueryVariables,
+  RunGroupPanelRunFragment,
+} from './types/RunGroupPanel.types';
 
 type Run = RunGroupPanelRunFragment;
 
@@ -24,12 +25,9 @@ function subsetTitleForRun(run: {tags: {key: string; value: string}[]}) {
   return stepsTag ? stepsTag.value : '*';
 }
 
-export const RunGroupPanel = ({
+export const RunGroupPanel: React.FC<{runId: string; runStatusLastChangedAt: number}> = ({
   runId,
   runStatusLastChangedAt,
-}: {
-  runId: string;
-  runStatusLastChangedAt: number;
 }) => {
   const queryResult = useQuery<RunGroupPanelQuery, RunGroupPanelQueryVariables>(
     RUN_GROUP_PANEL_QUERY,
@@ -46,7 +44,7 @@ export const RunGroupPanel = ({
   // the log + gantt chart UI can show that the run is "completed" for up to 15s before
   // it's reflected in the sidebar. Observing this single timestamp from our parent
   // allows us to refetch data immediately when the run's exitedAt / startedAt, etc. is set.
-  useEffect(() => {
+  React.useEffect(() => {
     if (runStatusLastChangedAt) {
       refetch();
     }
@@ -61,11 +59,11 @@ export const RunGroupPanel = ({
   if (group.__typename === 'PythonError') {
     return (
       <Group direction="row" spacing={8} padding={8}>
-        <Icon name="warning" color={Colors.accentYellow()} />
+        <Icon name="warning" color={Colors.Yellow500} />
         <div style={{fontSize: '13px'}}>
           The run group for this run could not be loaded.{' '}
           <ButtonLink
-            color={Colors.linkDefault()}
+            color={Colors.Blue500}
             underline="always"
             onClick={() => {
               showCustomAlert({
@@ -96,7 +94,7 @@ export const RunGroupPanel = ({
   });
 
   return (
-    <SidebarSection title={runs[0] ? `Re-executions (${runs.length - 1})` : ''}>
+    <SidebarSection title={runs[0] ? `${runs[0].pipelineName} (${runs.length})` : ''}>
       <>
         {runs.map((g, idx) =>
           g ? (
@@ -110,7 +108,7 @@ export const RunGroupPanel = ({
                   flex: 1,
                   marginLeft: 5,
                   minWidth: 0,
-                  color: Colors.textLight(),
+                  color: Colors.Gray700,
                 }}
               >
                 <div style={{display: 'flex', justifyContent: 'space-between'}}>
@@ -123,7 +121,7 @@ export const RunGroupPanel = ({
                 <div
                   style={{
                     display: 'flex',
-                    color: Colors.textLight(),
+                    color: Colors.Gray700,
                     justifyContent: 'space-between',
                   }}
                 >
@@ -172,17 +170,16 @@ export const RUN_GROUP_PANEL_QUERY = gql`
 
 const RunGroupRun = styled(Link)<{selected: boolean}>`
   align-items: flex-start;
-  background: ${({selected}) => (selected ? Colors.backgroundLight() : Colors.backgroundDefault())};
+  background: ${({selected}) => (selected ? Colors.Gray100 : Colors.White)};
   padding: 4px 6px 4px 24px;
   font-family: ${FontFamily.monospace};
-  font-size: 12px;
+  font-size: 14px;
   line-height: 20px;
   display: flex;
   position: relative;
   &:hover {
     text-decoration: none;
-    background: ${({selected}) =>
-      selected ? Colors.backgroundLightHover() : Colors.backgroundDefaultHover()};
+    background: ${({selected}) => (selected ? Colors.Gray100 : Colors.Gray50)};
   }
 `;
 
@@ -190,13 +187,13 @@ const ThinLine = styled.div`
   position: absolute;
   top: 20px;
   width: 1px;
-  background: ${Colors.borderDefault()};
+  background: ${Colors.Gray200};
   left: 29px;
   z-index: 2;
 `;
 
 const RunTitle = styled.span`
-  color: ${Colors.textDefault()};
+  color: ${Colors.Dark};
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -210,8 +207,8 @@ const RootTag = (
       borderRadius: 2,
       fontSize: 12,
       lineHeight: '14px',
-      background: Colors.accentReversed(),
-      color: Colors.accentPrimary(),
+      background: Colors.Gray300,
+      color: Colors.White,
       padding: '0 4px',
       fontWeight: 400,
       userSelect: 'none',

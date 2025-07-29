@@ -1,8 +1,13 @@
-import {ToastConfig, showToast} from '@dagster-io/ui-components';
+import {DToasterShowProps, Toaster} from '@dagster-io/ui-components';
+import memoize from 'lodash/memoize';
 
-// todo dish: Remove this, just use `showToast` at callsites directly.
-export const showSharedToaster = async (config: ToastConfig) => {
-  return showToast(config);
+export const getSharedToaster = memoize(async () => {
+  return await Toaster.asyncCreate({position: 'top'}, document.body);
+});
+
+export const showSharedToaster = async (config: DToasterShowProps) => {
+  const toaster = await getSharedToaster();
+  toaster.show(config);
 };
 
 export async function copyValue(event: React.MouseEvent<any>, value: string) {

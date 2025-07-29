@@ -1,24 +1,35 @@
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Generic, NamedTuple, Optional, TypeVar, Union, cast
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import dagster._check as check
 from dagster._check import CheckError
 from dagster._core.definitions.metadata import RawMetadataValue
-from dagster._core.definitions.metadata.metadata_set import TableMetadataSet
-from dagster._core.definitions.partitions.definition import (
+from dagster._core.definitions.multi_dimensional_partitions import (
+    MultiPartitionKey,
     MultiPartitionsDefinition,
+)
+from dagster._core.definitions.time_window_partitions import (
+    TimeWindow,
     TimeWindowPartitionsDefinition,
 )
-from dagster._core.definitions.partitions.utils import MultiPartitionKey, TimeWindow
-from dagster._core.errors import DagsterInvalidMetadata, DagsterInvariantViolationError
+from dagster._core.errors import DagsterInvalidDefinitionError
 from dagster._core.execution.context.input import InputContext
 from dagster._core.execution.context.output import OutputContext
 from dagster._core.storage.io_manager import IOManager
-
-if TYPE_CHECKING:
-    from dagster._core.definitions.partitions.utils.multi import MultiPartitionKey
 
 T = TypeVar("T")
 
@@ -49,44 +60,28 @@ class DbTypeHandler(ABC, Generic[T]):
 
     @property
     @abstractmethod
-    def supported_types(self) -> Sequence[type[object]]:
+    def supported_types(self) -> Sequence[Type[object]]:
         pass
 
 
-class DbClient(Generic[T]):
+class DbClient:
     @staticmethod
     @abstractmethod
-    def delete_table_slice(
-        context: OutputContext, table_slice: TableSlice, connection: T
-    ) -> None: ...
+    def delete_table_slice(context: OutputContext, table_slice: TableSlice, connection) -> None: ...
 
     @staticmethod
     @abstractmethod
     def get_select_statement(table_slice: TableSlice) -> str: ...
 
     @staticmethod
-    def get_table_name(table_slice: TableSlice) -> str:
-        """Returns a string which is set as the dagster/table_name metadata value for an
-        emitted asset. This value should be the fully qualified name of the table, including the
-        schema and database, if applicable.
-        """
-        if not table_slice.database:
-            return f"{table_slice.schema}.{table_slice.table}"
-
-        return f"{table_slice.database}.{table_slice.schema}.{table_slice.table}"
-
-    @staticmethod
     @abstractmethod
     def ensure_schema_exists(
-        context: OutputContext, table_slice: TableSlice, connection: T
+        context: OutputContext, table_slice: TableSlice, connection
     ) -> None: ...
 
     @staticmethod
-    @abstractmethod
     @contextmanager
-    def connect(
-        context: Union[OutputContext, InputContext], table_slice: TableSlice
-    ) -> Iterator[T]: ...
+    def connect(context: Union[OutputContext, InputContext], table_slice: TableSlice): ...
 
 
 class DbIOManager(IOManager):
@@ -98,9 +93,9 @@ class DbIOManager(IOManager):
         database: str,
         schema: Optional[str] = None,
         io_manager_name: Optional[str] = None,
-        default_load_type: Optional[type] = None,
+        default_load_type: Optional[Type] = None,
     ):
-        self._handlers_by_type: dict[type[Any], DbTypeHandler] = {}
+        self._handlers_by_type: Dict[Optional[Type], DbTypeHandler] = {}
         self._io_manager_name = io_manager_name or self.__class__.__name__
         for type_handler in type_handlers:
             for handled_type in type_handler.supported_types:
@@ -125,42 +120,32 @@ class DbIOManager(IOManager):
             self._default_load_type = default_load_type
 
     def handle_output(self, context: OutputContext, obj: object) -> None:
-        # If the output type is set to Nothing, handle_output will not be
-        # called. We still need to raise an error when the return value
-        # is None, but the typing type is not Nothing
-        if obj is None:
-            raise DagsterInvariantViolationError(
-                "Unexpected 'None' output value. If a 'None' value is intentional, set the output"
-                " type to None by adding return type annotation '-> None'.",
-            )
-
-        obj_type = type(obj)
-        self._check_supported_type(obj_type)
-
         table_slice = self._get_table_slice(context, context)
 
-        with self._db_client.connect(context, table_slice) as conn:
-            self._db_client.ensure_schema_exists(context, table_slice, conn)
-            self._db_client.delete_table_slice(context, table_slice, conn)
+        if obj is not None:
+            obj_type = type(obj)
+            self._check_supported_type(obj_type)
 
-            handler = self._resolve_handler(obj_type)
-            handler_metadata = handler.handle_output(context, table_slice, obj, conn)
+            with self._db_client.connect(context, table_slice) as conn:
+                self._db_client.ensure_schema_exists(context, table_slice, conn)
+                self._db_client.delete_table_slice(context, table_slice, conn)
+
+                handler_metadata = (
+                    self._handlers_by_type[obj_type].handle_output(context, table_slice, obj, conn)
+                    or {}
+                )
+        else:
+            check.invariant(
+                context.dagster_type.is_nothing,
+                "Unexpected 'None' output value. If a 'None' value is intentional, set the"
+                " output type to None.",
+            )
+            # if obj is None, assume that I/O was handled in the op body
+            handler_metadata = {}
 
         context.add_output_metadata(
-            {
-                **(handler_metadata or {}),
-                "Query": self._db_client.get_select_statement(table_slice),
-            }
+            {**handler_metadata, "Query": self._db_client.get_select_statement(table_slice)}
         )
-
-        # Try to attach relation identifier metadata to the output asset, but
-        # don't fail if it errors because the user has already attached it.
-        try:
-            context.add_output_metadata(
-                dict(TableMetadataSet(table_name=self._db_client.get_table_name(table_slice)))
-            )
-        except DagsterInvalidMetadata:
-            pass
 
     def load_input(self, context: InputContext) -> object:
         obj_type = context.dagster_type.typing_type
@@ -171,39 +156,35 @@ class DbIOManager(IOManager):
 
         self._check_supported_type(load_type)
 
-        table_slice = self._get_table_slice(context, cast("OutputContext", context.upstream_output))
+        table_slice = self._get_table_slice(context, cast(OutputContext, context.upstream_output))
 
         with self._db_client.connect(context, table_slice) as conn:
-            return self._resolve_handler(load_type).load_input(context, table_slice, conn)  # type: ignore  # (pyright bug)
-
-    def _resolve_handler(self, obj_type: type) -> DbTypeHandler:
-        return next(
-            handler
-            for type_, handler in self._handlers_by_type.items()
-            if issubclass(obj_type, type_)
-        )
+            return self._handlers_by_type[load_type].load_input(context, table_slice, conn)
 
     def _get_table_slice(
         self, context: Union[OutputContext, InputContext], output_context: OutputContext
     ) -> TableSlice:
-        output_context_metadata = output_context.definition_metadata or {}
+        output_context_metadata = output_context.metadata or {}
 
         schema: str
         table: str
-        partition_dimensions: list[TablePartitionDimension] = []
+        partition_dimensions: List[TablePartitionDimension] = []
         if context.has_asset_key:
             asset_key_path = context.asset_key.path
             table = asset_key_path[-1]
-            # schema order of precedence: metadata, I/O manager 'schema' config, key_prefix
-            if output_context_metadata.get("schema"):
-                schema = cast("str", output_context_metadata["schema"])
-            elif self._schema:
-                schema = self._schema
+            if len(asset_key_path) > 1 and self._schema:
+                raise DagsterInvalidDefinitionError(
+                    f"Asset {asset_key_path} specifies a schema with "
+                    f"its key prefixes {asset_key_path[:-1]}, but schema  "
+                    f"{self._schema} was also provided via run config. "
+                    "Schema can only be specified one way."
+                )
             elif len(asset_key_path) > 1:
                 schema = asset_key_path[-2]
+            elif self._schema:
+                schema = self._schema
             else:
                 schema = "public"
-
             if context.has_asset_partitions:
                 partition_expr = output_context_metadata.get("partition_expr")
                 if partition_expr is None:
@@ -216,7 +197,7 @@ class DbIOManager(IOManager):
 
                 if isinstance(context.asset_partitions_def, MultiPartitionsDefinition):
                     multi_partition_key_mapping = cast(
-                        "MultiPartitionKey", context.asset_partition_key
+                        MultiPartitionKey, context.asset_partition_key
                     ).keys_by_dimension
                     for part in context.asset_partitions_def.partitions_defs:
                         partition_key = multi_partition_key_mapping[part.name]
@@ -227,9 +208,7 @@ class DbIOManager(IOManager):
                         else:
                             partitions = [partition_key]
 
-                        partition_expr_str = cast("Mapping[str, str]", partition_expr).get(
-                            part.name
-                        )
+                        partition_expr_str = cast(Mapping[str, str], partition_expr).get(part.name)
                         if partition_expr is None:
                             raise ValueError(
                                 f"Asset '{context.asset_key}' has partition {part.name}, but the"
@@ -240,14 +219,13 @@ class DbIOManager(IOManager):
                             )
                         partition_dimensions.append(
                             TablePartitionDimension(
-                                partition_expr=cast("str", partition_expr_str),
-                                partitions=partitions,
+                                partition_expr=cast(str, partition_expr_str), partitions=partitions
                             )
                         )
                 elif isinstance(context.asset_partitions_def, TimeWindowPartitionsDefinition):
                     partition_dimensions.append(
                         TablePartitionDimension(
-                            partition_expr=cast("str", partition_expr),
+                            partition_expr=cast(str, partition_expr),
                             partitions=(
                                 context.asset_partitions_time_window
                                 if context.asset_partition_keys
@@ -258,18 +236,21 @@ class DbIOManager(IOManager):
                 else:
                     partition_dimensions.append(
                         TablePartitionDimension(
-                            partition_expr=cast("str", partition_expr),
+                            partition_expr=cast(str, partition_expr),
                             partitions=context.asset_partition_keys,
                         )
                     )
         else:
-            if "table" in output_context_metadata:
-                table = check.str_param(output_context_metadata["table"], "table")
-            else:
-                table = output_context.name
-
-            if output_context_metadata.get("schema"):
-                schema = cast("str", output_context_metadata["schema"])
+            table = output_context.name
+            if output_context_metadata.get("schema") and self._schema:
+                raise DagsterInvalidDefinitionError(
+                    f"Schema {output_context_metadata.get('schema')} "
+                    "specified via output metadata, but conflicting schema "
+                    f"{self._schema} was provided via run_config. "
+                    "Schema can only be specified one way."
+                )
+            elif output_context_metadata.get("schema"):
+                schema = cast(str, output_context_metadata["schema"])
             elif self._schema:
                 schema = self._schema
             else:
@@ -280,11 +261,11 @@ class DbIOManager(IOManager):
             schema=schema,
             database=self._database,
             partition_dimensions=partition_dimensions,
-            columns=(context.definition_metadata or {}).get("columns"),
+            columns=(context.metadata or {}).get("columns"),
         )
 
     def _check_supported_type(self, obj_type):
-        if not issubclass(obj_type, tuple(self._handlers_by_type.keys())):
+        if obj_type not in self._handlers_by_type:
             msg = (
                 f"{self._io_manager_name} does not have a handler for type '{obj_type}'. Has"
                 " handlers for types"

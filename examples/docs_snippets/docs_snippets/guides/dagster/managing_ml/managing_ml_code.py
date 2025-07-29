@@ -2,45 +2,88 @@
 
 ## eager_materilization_start
 
-import dagster as dg
+from dagster import AutoMaterializePolicy, asset
 
 
-@dg.asset
-def my_data(): ...
+@asset
+def my_data():
+    ...
 
 
-@dg.asset(automation_condition=dg.AutomationCondition.eager())
-def my_ml_model(my_data): ...
+@asset(
+    auto_materialize_policy=AutoMaterializePolicy.eager(),
+)
+def my_ml_model(my_data):
+    ...
 
 
 ## eager_materilization_end
 
 ## lazy_materlization_start
 
-import dagster as dg
+from dagster import AutoMaterializePolicy, asset, FreshnessPolicy
 
 
-@dg.asset
-def my_other_data(): ...
+@asset
+def my_other_data():
+    ...
 
 
-@dg.asset(automation_condition=dg.AutomationCondition.on_cron("0 9 * * *"))
-def my_other_ml_model(my_other_data): ...
+@asset(
+    auto_materialize_policy=AutoMaterializePolicy.lazy(),
+    freshness_policy=FreshnessPolicy(maximum_lag_minutes=7 * 24 * 60),
+)
+def my_other_ml_model(my_other_data):
+    ...
 
 
 ## lazy_materlization_end
 
 
+## without_policy_start
+from dagster import AutoMaterializePolicy, FreshnessPolicy, asset
+
+
+@asset
+def some_data():
+    ...
+
+
+@asset(auto_materialize_policy=AutoMaterializePolicy.lazy())
+def some_ml_model(some_data):
+    ...
+
+
+@asset(
+    auto_materialize_policy=AutoMaterializePolicy.lazy(),
+    freshness_policy=FreshnessPolicy(maximum_lag_minutes=7 * 24 * 60),
+)
+def predictions(some_ml_model):
+    ...
+
+
+## without_policy_end
+
+## basic_schedule_start
+
+from dagster import AssetSelection, define_asset_job, ScheduleDefinition
+
+ml_asset_job = define_asset_job("ml_asset_job", AssetSelection.groups("ml_asset_group"))
+
+basic_schedule = ScheduleDefinition(job=ml_asset_job, cron_schedule="0 9 * * *")
+
+## basic_schedule_end
+
 ## conditional_monitoring_start
 
-import dagster as dg
 from sklearn import linear_model
+from dagster import asset, Output, AssetKey
 import numpy as np
 from sklearn.model_selection import train_test_split
 
 
-@dg.asset(output_required=False)
-def conditional_machine_learning_model(context: dg.AssetExecutionContext):
+@asset(output_required=False)
+def conditional_machine_learning_model(context):
     X, y = np.random.randint(5000, size=(5000, 2)), range(5000)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.33, random_state=42
@@ -51,34 +94,24 @@ def conditional_machine_learning_model(context: dg.AssetExecutionContext):
     # Get the model accuracy from metadata of the previous materilization of this machine learning model
     instance = context.instance
     materialization = instance.get_latest_materialization_event(
-        dg.AssetKey(["conditional_machine_learning_model"])
+        AssetKey(["conditional_machine_learning_model"])
     )
     if materialization is None:
-        yield dg.Output(
-            reg, metadata={"model_accuracy": float(reg.score(X_test, y_test))}
-        )
+        yield Output(reg, metadata={"model_accuracy": reg.score(X_test, y_test)})
 
     else:
-        previous_model_accuracy = None
-        if materialization.asset_materialization and isinstance(
-            materialization.asset_materialization.metadata["model_accuracy"].value,
-            float,
-        ):
-            previous_model_accuracy = float(
-                materialization.asset_materialization.metadata["model_accuracy"].value
-            )
+        previous_model_accuracy = materialization.asset_materialization.metadata[
+            "model_accuracy"
+        ]
         new_model_accuracy = reg.score(X_test, y_test)
-        if (
-            previous_model_accuracy is None
-            or new_model_accuracy > previous_model_accuracy
-        ):
-            yield dg.Output(reg, metadata={"model_accuracy": float(new_model_accuracy)})
+        if new_model_accuracy > previous_model_accuracy:
+            yield Output(reg, metadata={"model_accuracy": new_model_accuracy})
 
 
 ## conditional_monitoring_end
 
 
-@dg.asset
+@asset
 def ml_model():
     pass
 
@@ -86,10 +119,12 @@ def ml_model():
 slack_token = "782823"
 
 ## fail_slack_start
-import dagster as dg
+
+import os
+from dagster import define_asset_job
 from dagster_slack import make_slack_on_run_failure_sensor
 
-ml_job = dg.define_asset_job("ml_training_job", selection=[ml_model])
+ml_job = define_asset_job("ml_training_job", selection=[ml_model])
 
 slack_on_run_failure = make_slack_on_run_failure_sensor(
     channel="#ml_monitor_channel",
@@ -99,7 +134,7 @@ slack_on_run_failure = make_slack_on_run_failure_sensor(
 ## fail_slack_end
 
 ## ui_plot_start
-import dagster as dg
+from dagster import MetadataValue
 import seaborn
 import matplotlib.pyplot as plt
 import base64
@@ -113,19 +148,24 @@ def make_plot(eval_metric):
     buffer = BytesIO()
     fig.savefig(buffer)
     image_data = base64.b64encode(buffer.getvalue())
-    return dg.MetadataValue.md(f"![img](data:image/png;base64,{image_data.decode()})")
+    return MetadataValue.md(f"![img](data:image/png;base64,{image_data.decode()})")
 
 
 ## ui_plot_end
 
+from docs_snippets.guides.dagster.ml_pipelines.ml_pipeline import (
+    transformed_test_data,
+    transformed_train_data,
+)
 
 ## metadata_use_start
-import dagster as dg
+
+from dagster import asset
 import xgboost as xgb
 from sklearn.metrics import mean_absolute_error
 
 
-@dg.asset
+@asset
 def xgboost_comments_model(transformed_training_data, transformed_test_data):
     transformed_X_train, transformed_y_train = transformed_training_data
     transformed_X_test, transformed_y_test = transformed_test_data
@@ -150,7 +190,7 @@ def xgboost_comments_model(transformed_training_data, transformed_test_data):
         "mean_absolute_error"
     ][-1]
 
-    return dg.Output(xgb_r, metadata=metadata)
+    return Output(xgb_r, metadata=metadata)
 
 
 ## metadata_use_end

@@ -1,21 +1,19 @@
 import {
   FontFamily,
-  GlobalGeist,
-  GlobalGeistMono,
+  GlobalInter,
+  GlobalInconsolata,
   GlobalDialogStyle,
   GlobalPopoverStyle,
   GlobalSuggestStyle,
-  GlobalThemeStyle,
+  GlobalToasterStyle,
   GlobalTooltipStyle,
   Colors,
-  Toaster,
 } from '@dagster-io/ui-components';
 
 import * as React from 'react';
 import {MemoryRouter} from 'react-router-dom';
-import {withThemeByClassName} from '@storybook/addon-themes';
 
-import {createGlobalStyle} from 'styled-components';
+import {createGlobalStyle} from 'styled-components/macro';
 
 import '../src/app/blueprint.css';
 
@@ -25,9 +23,7 @@ const GlobalStyle = createGlobalStyle`
   }
 
   html, body {
-    color-scheme: ${Colors.browserColorScheme()};
-    background-color: ${Colors.backgroundDefault()};
-    color: ${Colors.textDefault()};
+    color: ${Colors.Gray800};
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -35,7 +31,7 @@ const GlobalStyle = createGlobalStyle`
   a,
   a:hover,
   a:active {
-    color: ${Colors.linkDefault()};
+    color: ${Colors.Link};
   }
 
   body {
@@ -44,8 +40,6 @@ const GlobalStyle = createGlobalStyle`
   }
 
   body, input, select, textarea {
-    background-color: ${Colors.backgroundDefault()};
-    color: ${Colors.textDefault()};
     font-family: ${FontFamily.default};
   }
 
@@ -55,8 +49,7 @@ const GlobalStyle = createGlobalStyle`
 
   code, pre {
     font-family: ${FontFamily.monospace};
-    font-size: 14px;
-    font-variant-ligatures: none;
+    font-size: 16px;
   }
 `;
 
@@ -65,29 +58,20 @@ export const decorators = [
   (Story) => (
     <MemoryRouter>
       <GlobalStyle />
-      <GlobalThemeStyle />
-      <GlobalGeist />
-      <GlobalGeistMono />
+      <GlobalInter />
+      <GlobalInconsolata />
+      <GlobalToasterStyle />
       <GlobalTooltipStyle />
       <GlobalPopoverStyle />
       <GlobalDialogStyle />
       <GlobalSuggestStyle />
-      <Toaster richColors />
       <Story />
     </MemoryRouter>
   ),
-  withThemeByClassName({
-    themes: {
-      light: 'themeLight',
-      dark: 'themeDark',
-      system: 'themeSystem',
-      lightNoRedGreen: 'themeLightNoRedGreen',
-      darkNoRedGreen: 'themeDarkNoRedGreen',
-      systemNoRedGreen: 'themeSystemNoRedGreen',
-    },
-    defaultTheme: 'system',
-    parentSelector: 'body',
-  }),
 ];
 
-export const parameters = {};
+export const parameters = {
+  parameters: {
+    actions: {argTypesRegex: '^on[A-Z].*'},
+  },
+};

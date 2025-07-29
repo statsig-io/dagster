@@ -2,29 +2,23 @@
 
 
 from docs_snippets.concepts.partitions_schedules_sensors.partitioned_job import (
-    partitioned_op_job,
+    do_stuff_partitioned,
 )
 from dagster import job, op
 
 
 # start_partition_config
-import dagster as dg
+from dagster import validate_run_config, daily_partitioned_config
 from datetime import datetime
 
 
-@dg.daily_partitioned_config(start_date=datetime(2020, 1, 1))
+@daily_partitioned_config(start_date=datetime(2020, 1, 1))
 def my_partitioned_config(start: datetime, _end: datetime):
     return {
         "ops": {
             "process_data_for_date": {"config": {"date": start.strftime("%Y-%m-%d")}}
         }
     }
-
-
-# end_partition_config
-
-# start_partition_test
-import dagster as dg
 
 
 def test_my_partitioned_config():
@@ -35,17 +29,17 @@ def test_my_partitioned_config():
     }
 
     # assert that the output of the decorated function is valid configuration for the
-    # partitioned_op_job job
-    assert dg.validate_run_config(partitioned_op_job, run_config)
+    # do_stuff_partitioned job
+    assert validate_run_config(do_stuff_partitioned, run_config)
 
 
-# end_partition_test
+# end_partition_config
 
 # start_partition_keys
-import dagster as dg
+from dagster import Config
 
 
-@dg.daily_partitioned_config(start_date=datetime(2020, 1, 1), minute_offset=15)
+@daily_partitioned_config(start_date=datetime(2020, 1, 1), minute_offset=15)
 def my_offset_partitioned_config(start: datetime, _end: datetime):
     return {
         "ops": {
@@ -59,13 +53,13 @@ def my_offset_partitioned_config(start: datetime, _end: datetime):
     }
 
 
-class ProcessDataConfig(dg.Config):
+class ProcessDataConfig(Config):
     start: str
     end: str
 
 
 @op
-def process_data(context: dg.OpExecutionContext, config: ProcessDataConfig):
+def process_data(context, config: ProcessDataConfig):
     s = config.start
     e = config.end
     context.log.info(f"processing data for {s} - {e}")
@@ -76,19 +70,15 @@ def do_more_stuff_partitioned():
     process_data()
 
 
-# end_partition_keys
-
-
-# start_partition_keys_test
 def test_my_offset_partitioned_config():
     # test that the partition keys are what you expect
     keys = my_offset_partitioned_config.get_partition_keys()
     assert keys[0] == "2020-01-01"
     assert keys[1] == "2020-01-02"
 
-    # test that the run_config for a partition is valid for partitioned_op_job
+    # test that the run_config for a partition is valid for do_stuff_partitioned
     run_config = my_offset_partitioned_config.get_run_config_for_partition_key(keys[0])
-    assert dg.validate_run_config(do_more_stuff_partitioned, run_config)
+    assert validate_run_config(do_more_stuff_partitioned, run_config)
 
     # test that the contents of run_config are what you expect
     assert run_config == {
@@ -100,4 +90,4 @@ def test_my_offset_partitioned_config():
     }
 
 
-# end_partition_keys_test
+# end_partition_keys

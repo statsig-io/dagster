@@ -1,43 +1,65 @@
+import {gql, useApolloClient, useQuery} from '@apollo/client';
 import {
-  Body,
   Box,
   Button,
-  ButtonLink,
-  Checkbox,
   Colors,
-  Dialog,
-  DialogFooter,
+  ConfigEditorHelpContext,
   Group,
   Icon,
+  SecondPanelToggle,
   SplitPanelContainer,
-  SplitPanelContainerHandle,
-  TextInput,
-} from '@dagster-io/ui-components';
-import {
-  ConfigEditorHandle,
-  ConfigEditorHelp,
-  ConfigEditorHelpContext,
-  NewConfigEditor,
   isHelpContextEqual,
-} from '@dagster-io/ui-components/editor';
+  ConfigEditorHelp,
+  TextInput,
+  NewConfigEditor,
+  ConfigEditorHandle,
+} from '@dagster-io/ui-components';
+import merge from 'deepmerge';
 import uniqBy from 'lodash/uniqBy';
 import * as React from 'react';
-import {LaunchRootExecutionButton} from 'shared/launchpad/LaunchRootExecutionButton.oss';
 import styled from 'styled-components';
 import * as yaml from 'yaml';
 
-import {ConfigEditorConfigPicker} from './ConfigEditorConfigPicker';
+import {showCustomAlert} from '../app/CustomAlertProvider';
+import {
+  IExecutionSession,
+  IExecutionSessionChanges,
+  PipelineRunTag,
+  SessionBase,
+} from '../app/ExecutionSessionStorage';
+import {usePermissionsForLocation} from '../app/Permissions';
+import {PythonErrorInfo} from '../app/PythonErrorInfo';
+import {ShortcutHandler} from '../app/ShortcutHandler';
+import {tokenForAssetKey} from '../asset-graph/Utils';
+import {
+  CONFIG_EDITOR_RUN_CONFIG_SCHEMA_FRAGMENT,
+  CONFIG_EDITOR_VALIDATION_FRAGMENT,
+  responseToYamlValidationResult,
+} from '../configeditor/ConfigEditorUtils';
+import {PipelineSelector, RepositorySelector} from '../graphql/types';
+import {DagsterTag} from '../runs/RunTag';
+import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
+import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
+import {RepoAddress} from '../workspace/types';
+
+import {
+  ConfigEditorConfigPicker,
+  CONFIG_PARTITION_SELECTION_QUERY,
+} from './ConfigEditorConfigPicker';
 import {ConfigEditorModePicker} from './ConfigEditorModePicker';
-import {fetchTagsAndConfigForAssetJob, fetchTagsAndConfigForJob} from './ConfigFetch';
-import {LaunchpadConfigExpansionButton} from './LaunchpadConfigExpansionButton';
+import {useLaunchPadHooks} from './LaunchpadHooksContext';
 import {LoadingOverlay} from './LoadingOverlay';
 import {OpSelector} from './OpSelector';
-import {RUN_PREVIEW_VALIDATION_FRAGMENT, RunPreview} from './RunPreview';
+import {RunPreview, RUN_PREVIEW_VALIDATION_FRAGMENT} from './RunPreview';
 import {SessionSettingsBar} from './SessionSettingsBar';
 import {TagContainer, TagEditor} from './TagEditor';
 import {scaffoldPipelineConfig} from './scaffoldType';
 import {LaunchpadType} from './types';
-import {ConfigEditorPipelinePresetFragment} from './types/ConfigEditorConfigPicker.types';
+import {
+  ConfigEditorPipelinePresetFragment,
+  ConfigPartitionSelectionQuery,
+  ConfigPartitionSelectionQueryVariables,
+} from './types/ConfigEditorConfigPicker.types';
 import {
   LaunchpadSessionPartitionSetsFragment,
   LaunchpadSessionPipelineFragment,
@@ -48,38 +70,6 @@ import {
   PreviewConfigQuery,
   PreviewConfigQueryVariables,
 } from './types/LaunchpadSession.types';
-import {mergeYaml, sanitizeConfigYamlString} from './yamlUtils';
-import {gql, useApolloClient, useQuery} from '../apollo-client';
-import {usePartitionSetDetailsForLaunchpad} from './usePartitionSetDetailsForLaunchpad';
-import {showCustomAlert} from '../app/CustomAlertProvider';
-import {
-  IExecutionSession,
-  IExecutionSessionChanges,
-  PipelineRunTag,
-  SessionBase,
-} from '../app/ExecutionSessionStorage';
-import {usePermissionsForLocation} from '../app/Permissions';
-import {ShortcutHandler} from '../app/ShortcutHandler';
-import {displayNameForAssetKey, tokenForAssetKey} from '../asset-graph/Utils';
-import {asAssetCheckHandleInput, asAssetKeyInput} from '../assets/asInput';
-import {
-  CONFIG_EDITOR_RUN_CONFIG_SCHEMA_FRAGMENT,
-  CONFIG_EDITOR_VALIDATION_FRAGMENT,
-  responseToYamlValidationResult,
-} from '../configeditor/ConfigEditorUtils';
-import {
-  AssetCheckCanExecuteIndividually,
-  ExecutionParams,
-  PipelineSelector,
-  RepositorySelector,
-} from '../graphql/types';
-import {useBlockTraceUntilTrue} from '../performance/TraceContext';
-import {DagsterTag} from '../runs/RunTag';
-import {useCopyAction} from '../runs/RunTags';
-import {VirtualizedItemListForDialog} from '../ui/VirtualizedItemListForDialog';
-import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
-import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
-import {RepoAddress} from '../workspace/types';
 
 const YAML_SYNTAX_INVALID = `The YAML you provided couldn't be parsed. Please fix the syntax errors and try again.`;
 const LOADING_CONFIG_FOR_PARTITION = `Generating configuration...`;
@@ -90,7 +80,7 @@ type Preset = ConfigEditorPipelinePresetFragment;
 
 interface LaunchpadSessionProps {
   session: IExecutionSession;
-  onSave: (changes: React.SetStateAction<IExecutionSessionChanges>) => void;
+  onSave: (changes: IExecutionSessionChanges) => void;
   launchpadType: LaunchpadType;
   pipeline: LaunchpadSessionPipelineFragment;
   partitionSets: LaunchpadSessionPartitionSetsFragment;
@@ -146,13 +136,10 @@ const reducer = (state: ILaunchpadSessionState, action: Action) => {
   }
 };
 
-const LaunchButtonContainer = ({
-  launchpadType,
-  children,
-}: {
+const LaunchButtonContainer: React.FC<{
   launchpadType: LaunchpadType;
   children: React.ReactNode;
-}) => {
+}> = ({launchpadType, children}) => {
   if (launchpadType === 'asset') {
     return (
       <Box flex={{direction: 'row'}} border="top" padding={{right: 12, vertical: 8}}>
@@ -175,11 +162,11 @@ const initialState: ILaunchpadSessionState = {
   tagEditorOpen: false,
 };
 
-const LaunchpadSession = (props: LaunchpadSessionProps) => {
+const LaunchpadSession: React.FC<LaunchpadSessionProps> = (props) => {
   const {
     launchpadType,
     session: currentSession,
-    onSave: onSaveSession,
+    onSave,
     partitionSets,
     pipeline,
     repoAddress,
@@ -191,12 +178,11 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
 
   const {
     permissions: {canLaunchPipelineExecution},
-    loading,
   } = usePermissionsForLocation(repoAddress.location);
-  useBlockTraceUntilTrue('Permissions', !loading);
 
   const mounted = React.useRef<boolean>(false);
   const editor = React.useRef<ConfigEditorHandle | null>(null);
+  const editorSplitPanelContainer = React.useRef<SplitPanelContainer | null>(null);
   const previewCounter = React.useRef(0);
 
   const {isJob} = pipeline;
@@ -207,16 +193,9 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
       ...repoAddressToSelector(repoAddress),
       pipelineName: pipeline.name,
       solidSelection: currentSession.solidSelection || undefined,
-      assetSelection: currentSession.assetSelection?.map(asAssetKeyInput) || [],
-      assetCheckSelection: currentSession.assetChecksAvailable?.map(asAssetCheckHandleInput) || [],
+      assetSelection: currentSession.assetSelection?.map(({assetKey: {path}}) => ({path})),
     };
-  }, [
-    currentSession.solidSelection,
-    currentSession.assetSelection,
-    currentSession.assetChecksAvailable,
-    pipeline.name,
-    repoAddress,
-  ]);
+  }, [currentSession.assetSelection, currentSession.solidSelection, pipeline.name, repoAddress]);
 
   const configResult = useQuery<
     PipelineExecutionConfigSchemaQuery,
@@ -233,6 +212,10 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
       mounted.current = false;
     };
   });
+
+  const onSaveSession = (changes: IExecutionSessionChanges) => {
+    onSave(changes);
+  };
 
   const onConfigChange = (config: any) => {
     onSaveSession({
@@ -265,7 +248,7 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
         deletePropertyPath(runConfigData, path);
       }
       onSaveSession({runConfigYaml: yaml.stringify(runConfigData)});
-    } catch {
+    } catch (err) {
       showCustomAlert({title: 'Invalid YAML', body: YAML_SYNTAX_INVALID});
       return;
     }
@@ -281,11 +264,16 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
       return false;
     }
     try {
+      const defaultsYaml = yaml.parse(sanitizeConfigYamlString(rootDefaultYaml));
+
+      const currentUserConfig = yaml.parse(sanitizeConfigYamlString(currentSession.runConfigYaml));
+      const updatedRunConfigData = merge(defaultsYaml, currentUserConfig);
+
       return (
-        mergeYaml(rootDefaultYaml, currentSession.runConfigYaml, {sortMapEntries: true}) !==
-        mergeYaml({}, currentSession.runConfigYaml, {sortMapEntries: true})
+        yaml.stringify(currentUserConfig, {sortMapEntries: true}) !==
+        yaml.stringify(updatedRunConfigData, {sortMapEntries: true})
       );
-    } catch {
+    } catch (err) {
       return false;
     }
   }, [currentSession.runConfigYaml, rootDefaultYaml]);
@@ -293,30 +281,26 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
   const onScaffoldMissingConfig = () => {
     const config = runConfigSchema ? scaffoldPipelineConfig(runConfigSchema) : {};
     try {
-      onSaveSession({runConfigYaml: mergeYaml(config, currentSession.runConfigYaml)});
-    } catch {
+      const runConfigData = yaml.parse(sanitizeConfigYamlString(currentSession.runConfigYaml));
+      const updatedRunConfigData = merge(config, runConfigData);
+      const runConfigYaml = yaml.stringify(updatedRunConfigData);
+      onSaveSession({runConfigYaml});
+    } catch (err) {
       showCustomAlert({title: 'Invalid YAML', body: YAML_SYNTAX_INVALID});
     }
   };
 
   const onExpandDefaults = () => {
     if (rootDefaultYaml) {
-      onSaveSession({runConfigYaml: mergeYaml(rootDefaultYaml, currentSession.runConfigYaml)});
+      const defaultsYaml = yaml.parse(sanitizeConfigYamlString(rootDefaultYaml));
+
+      const currentUserConfig = yaml.parse(sanitizeConfigYamlString(currentSession.runConfigYaml));
+      const updatedRunConfigData = merge(defaultsYaml, currentUserConfig);
+      const mergedYaml = yaml.stringify(updatedRunConfigData);
+
+      onSaveSession({runConfigYaml: mergedYaml});
     }
   };
-
-  const [showChecks, setShowChecks] = React.useState<
-    typeof currentSession.assetChecksAvailable | null
-  >(null);
-  const includedChecks =
-    currentSession.assetChecksAvailable?.filter(
-      (a) => a.canExecuteIndividually === AssetCheckCanExecuteIndividually.REQUIRES_MATERIALIZATION,
-    ) ?? [];
-
-  const executableChecks =
-    currentSession.assetChecksAvailable?.filter(
-      (a) => a.canExecuteIndividually === AssetCheckCanExecuteIndividually.CAN_EXECUTE,
-    ) ?? [];
 
   const buildExecutionVariables = () => {
     if (!currentSession) {
@@ -327,56 +311,54 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
 
     try {
       yaml.parse(configYamlOrEmpty);
-    } catch {
+    } catch (err) {
       showCustomAlert({title: 'Invalid YAML', body: YAML_SYNTAX_INVALID});
       return;
     }
 
-    const executionParams: ExecutionParams = {
-      runConfigData: configYamlOrEmpty,
-      selector: {
-        ...pipelineSelector,
-        assetSelection: currentSession.assetSelection
-          ? currentSession.assetSelection.map(asAssetKeyInput)
-          : [],
-        assetCheckSelection: currentSession.includeSeparatelyExecutableChecks
-          ? [...includedChecks, ...executableChecks].map(asAssetCheckHandleInput)
-          : [...includedChecks].map(asAssetCheckHandleInput),
-      },
-      mode: currentSession.mode || 'default',
-      executionMetadata: {
-        tags: uniqBy(
-          [
-            // Include a dagster/solid_selection tag for non-asset jobs
-            // (asset jobs indicate elsewhere in the UI which assets were selected)
-            ...(currentSession.solidSelectionQuery && !pipeline.isAssetJob
-              ? [
-                  {
-                    key: DagsterTag.SolidSelection,
-                    value: currentSession.solidSelectionQuery,
-                  },
-                ]
-              : []),
-            ...(currentSession?.base && (currentSession?.base as any)['presetName']
-              ? [
-                  {
-                    key: DagsterTag.PresetName,
-                    value: (currentSession?.base as any)['presetName'],
-                  },
-                ]
-              : []),
+    return {
+      executionParams: {
+        runConfigData: configYamlOrEmpty,
+        selector: {
+          ...pipelineSelector,
+          assetSelection: currentSession.assetSelection
+            ? currentSession.assetSelection.map((a) => ({path: a.assetKey.path}))
+            : undefined,
+        },
+        mode: currentSession.mode || 'default',
+        executionMetadata: {
+          tags: uniqBy(
+            [
+              // Include a dagster/solid_selection tag for non-asset jobs
+              // (asset jobs indicate elsewhere in the UI which assets were selected)
+              ...(currentSession.solidSelectionQuery && !pipeline.isAssetJob
+                ? [
+                    {
+                      key: DagsterTag.SolidSelection,
+                      value: currentSession.solidSelectionQuery,
+                    },
+                  ]
+                : []),
+              ...(currentSession?.base && (currentSession?.base as any)['presetName']
+                ? [
+                    {
+                      key: DagsterTag.PresetName,
+                      value: (currentSession?.base as any)['presetName'],
+                    },
+                  ]
+                : []),
 
-            ...tagsFromSession.map(onlyKeyAndValue),
+              ...tagsFromSession.map(onlyKeyAndValue),
 
-            // note, we apply these last - uniqBy uses the first value it sees for
-            // each key, so these can be overridden in the session
-            ...pipeline.tags.map(onlyKeyAndValue),
-          ],
-          (tag) => tag.key,
-        ),
+              // note, we apply these last - uniqBy uses the first value it sees for
+              // each key, so these can be overridden in the session
+              ...pipeline.tags.map(onlyKeyAndValue),
+            ],
+            (tag) => tag.key,
+          ),
+        },
       },
     };
-    return {executionParams};
   };
 
   const saveTags = (tags: PipelineRunTag[]) => {
@@ -449,7 +431,7 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
     const newBaseTags = preset.tags.map(onlyKeyAndValue);
 
     onSaveSession({
-      base: {type: 'preset', presetName: preset.name, tags: newBaseTags},
+      base: {presetName: preset.name, tags: newBaseTags},
       name: preset.name,
       runConfigYaml: preset.runConfigYaml || '',
       solidSelection: preset.solidSelection,
@@ -469,35 +451,55 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
     onConfigLoading();
     try {
       const {base} = currentSession;
+      const {data} = await client.query<
+        ConfigPartitionSelectionQuery,
+        ConfigPartitionSelectionQueryVariables
+      >({
+        query: CONFIG_PARTITION_SELECTION_QUERY,
+        variables: {repositorySelector, partitionSetName, partitionName},
+      });
 
-      const resp = props.session.assetSelection
-        ? await fetchTagsAndConfigForAssetJob(client, {
-            ...repositorySelector,
-            jobName: pipeline.name,
-            assetKeys: props.session.assetSelection.map(asAssetKeyInput),
-            partitionName,
-          })
-        : await fetchTagsAndConfigForJob(client, {
-            repositorySelector,
-            partitionSetName,
-            partitionName,
-          });
-
-      if (!resp) {
+      if (
+        !data ||
+        !data.partitionSetOrError ||
+        data.partitionSetOrError.__typename !== 'PartitionSet' ||
+        !data.partitionSetOrError.partition
+      ) {
         onConfigLoaded();
         return;
       }
 
-      const solidSelection = sessionSolidSelection || resp.solidSelection;
+      const {partition} = data.partitionSetOrError;
+
+      let newBaseTags: {key: string; value: string}[] = [];
+      if (partition.tagsOrError.__typename === 'PythonError') {
+        showCustomAlert({
+          body: <PythonErrorInfo error={partition.tagsOrError} />,
+        });
+      } else {
+        newBaseTags = partition.tagsOrError.results.map(onlyKeyAndValue);
+      }
+
+      let runConfigYaml;
+      if (partition.runConfigOrError.__typename === 'PythonError') {
+        runConfigYaml = '';
+        showCustomAlert({
+          body: <PythonErrorInfo error={partition.runConfigOrError} />,
+        });
+      } else {
+        runConfigYaml = partition.runConfigOrError.yaml;
+      }
+
+      const solidSelection = sessionSolidSelection || partition.solidSelection;
 
       onSaveSession({
-        name: partitionName,
-        base: Object.assign({}, base, {partitionName, tags: resp.tags}),
-        runConfigYaml: mergeYaml(currentSession.runConfigYaml, resp.yaml),
+        name: partition.name,
+        base: Object.assign({}, base, {partitionName: partition.name, tags: newBaseTags}),
+        runConfigYaml,
         solidSelection,
         solidSelectionQuery: solidSelection === null ? '*' : solidSelection.join(','),
-        mode: resp.mode,
-        tags: tagsApplyingNewBaseTags(resp.tags),
+        mode: partition.mode,
+        tags: tagsApplyingNewBaseTags(newBaseTags),
         needsRefresh: false,
       });
     } catch {}
@@ -519,16 +521,17 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
     }
 
     // Otherwise, handle partition-based configuration.
+    const {partitionName, partitionsSetName} = base;
     const repositorySelector = repoAddressToSelector(repoAddress);
 
     // It is expected that `partitionName` is set here, since we shouldn't be showing the
     // button at all otherwise.
-    if (base.partitionName) {
+    if (partitionName) {
       onConfigLoading();
       await onSelectPartition(
         repositorySelector,
-        'partitionsSetName' in base ? base.partitionsSetName : '',
-        base.partitionName,
+        partitionsSetName,
+        partitionName,
         currentSession.solidSelection,
       );
       onConfigLoaded();
@@ -545,18 +548,6 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
   const onConfigLoading = () => dispatch({type: 'toggle-config-loading', payload: true});
   const onConfigLoaded = () => dispatch({type: 'toggle-config-loading', payload: false});
 
-  const splitPanelRef = React.useRef<SplitPanelContainerHandle>(null);
-
-  const repositorySelector = React.useMemo(() => repoAddressToSelector(repoAddress), [repoAddress]);
-  const partitionSetDetails = usePartitionSetDetailsForLaunchpad({
-    pipelineName: pipeline.name,
-    partitionSetName:
-      currentSession.base && 'partitionsSetName' in currentSession.base
-        ? currentSession.base.partitionsSetName
-        : '',
-    assetSelection: currentSession.assetSelection,
-    repositorySelector,
-  });
   const {
     preview,
     previewLoading,
@@ -571,7 +562,7 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
     if (
       base &&
       needsRefresh &&
-      ('presetName' in base || ('partitionName' in base && base.partitionName))
+      ('presetName' in base || (base.partitionsSetName && base.partitionName))
     ) {
       return base;
     }
@@ -585,40 +576,20 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
 
   let launchButtonWarning: string | undefined;
   if (
-    (partitionSets.results.length || partitionSetDetails.doesAnyAssetHavePartitions) &&
-    isMissingPartition(currentSession.base)
+    partitionSets.results.length &&
+    currentSession.base &&
+    'partitionsSetName' in currentSession.base &&
+    !currentSession.base.partitionName
   ) {
     launchButtonWarning =
       'This job is partitioned. Are you sure you want to launch' +
       ' a run without a partition specified?';
   }
 
-  const copyAction = useCopyAction();
+  const {LaunchRootExecutionButton} = useLaunchPadHooks();
 
   return (
     <>
-      <Dialog
-        isOpen={!!showChecks}
-        title={`Asset Checks (${showChecks?.length})`}
-        onClose={() => setShowChecks(null)}
-      >
-        <div style={{height: '340px', overflow: 'hidden'}}>
-          <VirtualizedItemListForDialog
-            items={showChecks || []}
-            renderItem={(check) => {
-              return (
-                <div key={`${check.name}-${tokenForAssetKey(check.assetKey)}`}>
-                  {`${check.name} on ${displayNameForAssetKey(check.assetKey)}`}
-                </div>
-              );
-            }}
-          />
-        </div>
-        <DialogFooter topBorder>
-          <Button onClick={() => setShowChecks(null)}>Close</Button>
-        </DialogFooter>
-      </Dialog>
-
       <SplitPanelContainer
         axis="vertical"
         identifier="execution"
@@ -629,7 +600,6 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
             <LoadingOverlay isLoading={configLoading} message={LOADING_CONFIG_FOR_PARTITION} />
             <SessionSettingsBar>
               <ConfigEditorConfigPicker
-                partitionSetDetails={partitionSetDetails}
                 pipeline={pipeline}
                 partitionSets={partitionSets.results}
                 base={currentSession.base}
@@ -641,49 +611,16 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
               />
               <SessionSettingsSpacer />
               {launchpadType === 'asset' ? (
-                <Box flex={{gap: 16, alignItems: 'center'}}>
-                  <TextInput
-                    readOnly
-                    value={
-                      currentSession.assetSelection
-                        ? currentSession.assetSelection
-                            .map((a) => tokenForAssetKey(a.assetKey))
-                            .join(', ')
-                        : '*'
-                    }
-                  />
-                  {includedChecks.length > 0 ? (
-                    <Body color={Colors.textDefault()}>
-                      {`Including `}
-                      <ButtonLink onClick={() => setShowChecks(includedChecks)}>
-                        {`${includedChecks.length.toLocaleString()} ${
-                          includedChecks.length > 1 ? 'checks' : 'check'
-                        }`}
-                      </ButtonLink>
-                    </Body>
-                  ) : undefined}
-                  {executableChecks.length > 0 ? (
-                    <Checkbox
-                      label={
-                        <span>
-                          {`Include `}
-                          <ButtonLink onClick={() => setShowChecks(executableChecks)}>
-                            {`${executableChecks.length.toLocaleString()} separately executable ${
-                              executableChecks.length > 1 ? 'checks' : 'check'
-                            }`}
-                          </ButtonLink>
-                        </span>
-                      }
-                      checked={currentSession.includeSeparatelyExecutableChecks}
-                      onChange={() =>
-                        onSaveSession({
-                          includeSeparatelyExecutableChecks:
-                            !currentSession.includeSeparatelyExecutableChecks,
-                        })
-                      }
-                    />
-                  ) : undefined}
-                </Box>
+                <TextInput
+                  readOnly
+                  value={
+                    currentSession.assetSelection
+                      ? currentSession.assetSelection
+                          .map((a) => tokenForAssetKey(a.assetKey))
+                          .join(', ')
+                      : '*'
+                  }
+                />
               ) : (
                 <OpSelector
                   serverProvidedSubsetError={
@@ -732,33 +669,27 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
                 </Button>
               </ShortcutHandler>
               <SessionSettingsSpacer />
-              <LaunchpadConfigExpansionButton
-                axis="horizontal"
-                firstInitialPercent={75}
-                getSize={splitPanelRef.current?.getSize}
-                changeSize={splitPanelRef.current?.changeSize}
-              />
+              <SecondPanelToggle axis="horizontal" container={editorSplitPanelContainer} />
             </SessionSettingsBar>
             {pipeline.tags.length || tagsFromSession.length ? (
               <Box
                 padding={{vertical: 8, left: 12, right: 0}}
-                border={{side: 'bottom', color: Colors.borderDefault()}}
+                border={{side: 'bottom', color: Colors.Gray200}}
               >
                 <TagContainer
                   tagsFromDefinition={pipeline.tags}
                   tagsFromSession={tagsFromSession}
                   onRequestEdit={openTagEditor}
-                  actions={[copyAction]}
                 />
               </Box>
             ) : null}
             {refreshableSessionBase ? (
               <Box
                 padding={{vertical: 8, horizontal: 12}}
-                border={{side: 'bottom', color: Colors.borderDefault()}}
+                border={{side: 'bottom', color: Colors.Gray200}}
               >
                 <Group direction="row" spacing={8} alignItems="center">
-                  <Icon name="warning" color={Colors.accentYellow()} />
+                  <Icon name="warning" color={Colors.Yellow500} />
                   <div>
                     {repoAddressAsHumanString(repoAddress)} has been manually refreshed, and this
                     configuration may now be out of date.
@@ -775,7 +706,7 @@ const LaunchpadSession = (props: LaunchpadSessionProps) => {
               </Box>
             ) : null}
             <SplitPanelContainer
-              ref={splitPanelRef}
+              ref={editorSplitPanelContainer}
               axis="horizontal"
               identifier="execution-editor"
               firstMinSize={100}
@@ -867,6 +798,8 @@ const deletePropertyPath = (obj: any, path: string) => {
   }
 };
 
+const sanitizeConfigYamlString = (yamlString: string) => (yamlString || '').trim() || '{}';
+
 const PREVIEW_CONFIG_QUERY = gql`
   query PreviewConfigQuery(
     $pipeline: PipelineSelector!
@@ -909,10 +842,3 @@ const PIPELINE_EXECUTION_CONFIG_SCHEMA_QUERY = gql`
 
   ${CONFIG_EDITOR_RUN_CONFIG_SCHEMA_FRAGMENT}
 `;
-
-function isMissingPartition(base: SessionBase | null) {
-  if (base?.type === 'op-job-partition-set' || base?.type === 'asset-job-partition') {
-    return !base.partitionName;
-  }
-  return false;
-}

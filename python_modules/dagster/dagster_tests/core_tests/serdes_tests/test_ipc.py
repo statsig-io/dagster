@@ -4,14 +4,13 @@ import sys
 import time
 from contextlib import ExitStack
 
-import dagster as dg
 import pytest
-from dagster._utils import process_is_alive, safe_tempfile_path
-from dagster_shared.ipc import (
+from dagster._serdes.ipc import (
     interrupt_ipc_subprocess,
     interrupt_ipc_subprocess_pid,
     open_ipc_subprocess,
 )
+from dagster._utils import file_relative_path, process_is_alive, safe_tempfile_path
 
 
 def wait_for_file(path, timeout=5):
@@ -58,7 +57,7 @@ def test_interrupt_ipc_subprocess():
             sleepy_process = open_ipc_subprocess(
                 [
                     sys.executable,
-                    dg.file_relative_path(__file__, "subprocess_with_interrupt_support.py"),
+                    file_relative_path(__file__, "subprocess_with_interrupt_support.py"),
                     started_sentinel,
                     interrupt_sentinel,
                 ]
@@ -66,7 +65,7 @@ def test_interrupt_ipc_subprocess():
             wait_for_file(started_sentinel)
             interrupt_ipc_subprocess(sleepy_process)
             wait_for_file(interrupt_sentinel)
-            with open(interrupt_sentinel, encoding="utf8") as fd:
+            with open(interrupt_sentinel, "r", encoding="utf8") as fd:
                 assert fd.read().startswith("received_keyboard_interrupt")
 
 
@@ -76,7 +75,7 @@ def test_interrupt_ipc_subprocess_by_pid():
             sleepy_process = open_ipc_subprocess(
                 [
                     sys.executable,
-                    dg.file_relative_path(__file__, "subprocess_with_interrupt_support.py"),
+                    file_relative_path(__file__, "subprocess_with_interrupt_support.py"),
                     started_sentinel,
                     interrupt_sentinel,
                 ]
@@ -84,7 +83,7 @@ def test_interrupt_ipc_subprocess_by_pid():
             wait_for_file(started_sentinel)
             interrupt_ipc_subprocess_pid(sleepy_process.pid)
             wait_for_file(interrupt_sentinel)
-            with open(interrupt_sentinel, encoding="utf8") as fd:
+            with open(interrupt_sentinel, "r", encoding="utf8") as fd:
                 assert fd.read().startswith("received_keyboard_interrupt")
 
 
@@ -99,7 +98,7 @@ def test_interrupt_ipc_subprocess_grandchild():
         child_process = open_ipc_subprocess(
             [
                 sys.executable,
-                dg.file_relative_path(__file__, "parent_subprocess_with_interrupt_support.py"),
+                file_relative_path(__file__, "parent_subprocess_with_interrupt_support.py"),
                 child_opened_sentinel,
                 parent_interrupt_sentinel,
                 child_started_sentinel,
@@ -110,10 +109,10 @@ def test_interrupt_ipc_subprocess_grandchild():
         wait_for_file(child_started_sentinel)
         interrupt_ipc_subprocess(child_process)
         wait_for_file(child_interrupt_sentinel)
-        with open(child_interrupt_sentinel, encoding="utf8") as fd:
+        with open(child_interrupt_sentinel, "r", encoding="utf8") as fd:
             assert fd.read().startswith("received_keyboard_interrupt")
         wait_for_file(parent_interrupt_sentinel)
-        with open(parent_interrupt_sentinel, encoding="utf8") as fd:
+        with open(parent_interrupt_sentinel, "r", encoding="utf8") as fd:
             assert fd.read().startswith("parent_received_keyboard_interrupt")
 
 
@@ -128,7 +127,7 @@ def test_interrupt_compute_log_tail_child(
         child_process = open_ipc_subprocess(
             [
                 sys.executable,
-                dg.file_relative_path(__file__, "compute_log_subprocess.py"),
+                file_relative_path(__file__, "compute_log_subprocess.py"),
                 stdout_pids_file,
                 stderr_pids_file,
                 opened_sentinel,
@@ -139,10 +138,10 @@ def test_interrupt_compute_log_tail_child(
         wait_for_file(stdout_pids_file)
         wait_for_file(stderr_pids_file)
 
-        with open(opened_sentinel, encoding="utf8") as opened_sentinel_fd:
+        with open(opened_sentinel, "r", encoding="utf8") as opened_sentinel_fd:
             assert opened_sentinel_fd.read().startswith("opened_compute_log_subprocess")
 
-        with open(stdout_pids_file, encoding="utf8") as stdout_pids_fd:
+        with open(stdout_pids_file, "r", encoding="utf8") as stdout_pids_fd:
             stdout_pids_str = stdout_pids_fd.read()
             assert stdout_pids_str.startswith("stdout pids:")
             stdout_pids = list(
@@ -152,7 +151,7 @@ def test_interrupt_compute_log_tail_child(
                 )
             )
 
-        with open(stderr_pids_file, encoding="utf8") as stderr_pids_fd:
+        with open(stderr_pids_file, "r", encoding="utf8") as stderr_pids_fd:
             stderr_pids_str = stderr_pids_fd.read()
             assert stderr_pids_str.startswith("stderr pids:")
             stderr_pids = list(
@@ -174,7 +173,7 @@ def test_interrupt_compute_log_tail_child(
 
         wait_for_file(interrupt_sentinel)
 
-        with open(interrupt_sentinel, encoding="utf8") as fd:
+        with open(interrupt_sentinel, "r", encoding="utf8") as fd:
             assert fd.read().startswith("compute_log_subprocess_interrupt")
 
 
@@ -186,7 +185,7 @@ def test_segfault_compute_log_tail(
             child_process = open_ipc_subprocess(
                 [
                     sys.executable,
-                    dg.file_relative_path(__file__, "compute_log_subprocess_segfault.py"),
+                    file_relative_path(__file__, "compute_log_subprocess_segfault.py"),
                     stdout_pids_file,
                     stderr_pids_file,
                 ]
@@ -195,7 +194,7 @@ def test_segfault_compute_log_tail(
             child_process.wait()
 
             wait_for_file(stdout_pids_file)
-            with open(stdout_pids_file, encoding="utf8") as stdout_pids_fd:
+            with open(stdout_pids_file, "r", encoding="utf8") as stdout_pids_fd:
                 stdout_pids_str = stdout_pids_fd.read()
                 assert stdout_pids_str.startswith("stdout pids:")
                 stdout_pids = list(
@@ -206,7 +205,7 @@ def test_segfault_compute_log_tail(
                 )
 
             wait_for_file(stderr_pids_file)
-            with open(stderr_pids_file, encoding="utf8") as stderr_pids_fd:
+            with open(stderr_pids_file, "r", encoding="utf8") as stderr_pids_fd:
                 stderr_pids_str = stderr_pids_fd.read()
                 assert stderr_pids_str.startswith("stderr pids:")
                 stderr_pids = list(
@@ -227,14 +226,14 @@ def test_segfault_compute_log_tail(
 
 def test_input_signal_hang():
     please_dont_hang = open_ipc_subprocess(
-        [sys.executable, dg.file_relative_path(__file__, "import_readline.py")],
+        [sys.executable, file_relative_path(__file__, "import_readline.py")],
     )
     please_dont_hang.communicate(timeout=10)
 
 
 def test_pdb_works():
     please_dont_hang = open_ipc_subprocess(
-        [sys.executable, dg.file_relative_path(__file__, "run_pdb.py")],
+        [sys.executable, file_relative_path(__file__, "run_pdb.py")],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -261,7 +260,7 @@ def test_interrupt_compute_log_tail_grandchild(
         parent_process = open_ipc_subprocess(
             [
                 sys.executable,
-                dg.file_relative_path(__file__, "parent_compute_log_subprocess.py"),
+                file_relative_path(__file__, "parent_compute_log_subprocess.py"),
                 child_opened_sentinel,
                 parent_interrupt_sentinel,
                 child_started_sentinel,
@@ -275,7 +274,7 @@ def test_interrupt_compute_log_tail_grandchild(
         wait_for_file(child_started_sentinel)
 
         wait_for_file(stdout_pids_file)
-        with open(stdout_pids_file, encoding="utf8") as stdout_pids_fd:
+        with open(stdout_pids_file, "r", encoding="utf8") as stdout_pids_fd:
             stdout_pids_str = stdout_pids_fd.read()
             assert stdout_pids_str.startswith("stdout pids:")
             stdout_pids = list(
@@ -286,7 +285,7 @@ def test_interrupt_compute_log_tail_grandchild(
             )
 
         wait_for_file(stderr_pids_file)
-        with open(stderr_pids_file, encoding="utf8") as stderr_pids_fd:
+        with open(stderr_pids_file, "r", encoding="utf8") as stderr_pids_fd:
             stderr_pids_str = stderr_pids_fd.read()
             assert stderr_pids_str.startswith("stderr pids:")
             stderr_pids = list(
@@ -299,11 +298,11 @@ def test_interrupt_compute_log_tail_grandchild(
         interrupt_ipc_subprocess(parent_process)
 
         wait_for_file(child_interrupt_sentinel)
-        with open(child_interrupt_sentinel, encoding="utf8") as fd:
+        with open(child_interrupt_sentinel, "r", encoding="utf8") as fd:
             assert fd.read().startswith("compute_log_subprocess_interrupt")
 
         wait_for_file(parent_interrupt_sentinel)
-        with open(parent_interrupt_sentinel, encoding="utf8") as fd:
+        with open(parent_interrupt_sentinel, "r", encoding="utf8") as fd:
             assert fd.read().startswith("parent_received_keyboard_interrupt")
 
         for stdout_pid in stdout_pids:

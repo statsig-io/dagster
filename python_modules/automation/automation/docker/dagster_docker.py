@@ -1,19 +1,18 @@
 import contextlib
 import os
-from collections.abc import Iterator
-from typing import Any, Callable, NamedTuple, Optional
+from typing import Callable, Dict, Iterator, List, NamedTuple, Optional
 
 import dagster._check as check
 import yaml
 
-from automation.docker.ecr import ecr_image, get_aws_account_id, get_aws_region
-from automation.docker.utils import (
+from ..git import git_repo_root
+from .ecr import ecr_image, get_aws_account_id, get_aws_region
+from .utils import (
     execute_docker_build,
     execute_docker_push,
     execute_docker_tag,
     python_version_image_tag,
 )
-from automation.git import git_repo_root
 
 # Default repository prefix used for local images
 DEFAULT_LOCAL_PREFIX = "dagster"
@@ -61,12 +60,12 @@ class DagsterDockerImage(
         cls,
         image: str,
         images_path: Optional[str] = None,
-        build_cm: Callable[..., Any] = do_nothing,
+        build_cm: Callable = do_nothing,
     ):
-        return super().__new__(
+        return super(DagsterDockerImage, cls).__new__(
             cls,
             check.str_param(image, "image"),
-            check.opt_str_param(
+            check.opt_str_param(  # type: ignore
                 images_path,
                 "images_path",
                 default_images_path(),
@@ -79,16 +78,16 @@ class DagsterDockerImage(
         return os.path.join(self.images_path, self.image)
 
     @property
-    def python_versions(self) -> list[str]:
+    def python_versions(self) -> List[str]:
         """List of Python versions supported for this image."""
-        with open(os.path.join(self.path, "versions.yaml"), encoding="utf8") as f:
+        with open(os.path.join(self.path, "versions.yaml"), "r", encoding="utf8") as f:
             versions = yaml.safe_load(f.read())
         return list(versions.keys())
 
     def _get_last_updated_for_python_version(self, python_version: str) -> str:
         """Retrieve the last_updated timestamp for a particular python_version of this image."""
         check.str_param(python_version, "python_version")
-        with open(os.path.join(self.path, "last_updated.yaml"), encoding="utf8") as f:
+        with open(os.path.join(self.path, "last_updated.yaml"), "r", encoding="utf8") as f:
             last_updated = yaml.safe_load(f.read())
             return last_updated[python_version]
 
@@ -101,7 +100,7 @@ class DagsterDockerImage(
 
         last_updated_path = os.path.join(self.path, "last_updated.yaml")
         if os.path.exists(last_updated_path):
-            with open(last_updated_path, encoding="utf8") as f:
+            with open(last_updated_path, "r", encoding="utf8") as f:
                 last_updated = yaml.safe_load(f.read())
 
         last_updated[python_version] = timestamp
@@ -144,7 +143,7 @@ class DagsterDockerImage(
             aws_region=get_aws_region(),
         )
 
-    def _get_docker_args(self, dagster_version: str, python_version: str) -> dict[str, str]:
+    def _get_docker_args(self, dagster_version: str, python_version: str) -> Dict[str, str]:
         """Retrieve Docker arguments from this image's versions.yaml, and update with latest Dagster
         version.
 
@@ -152,7 +151,7 @@ class DagsterDockerImage(
         base image. If defined, set the BASE_IMAGE Docker arg from the full name of the parent
         image.
         """
-        with open(os.path.join(self.path, "versions.yaml"), encoding="utf8") as f:
+        with open(os.path.join(self.path, "versions.yaml"), "r", encoding="utf8") as f:
             versions = yaml.safe_load(f.read())
             image_info = versions.get(python_version, {})
 

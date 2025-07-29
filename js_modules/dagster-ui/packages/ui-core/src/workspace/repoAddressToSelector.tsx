@@ -1,7 +1,8 @@
 import memoize from 'lodash/memoize';
 
-import {RepoAddress} from './types';
 import {RepositorySelector} from '../graphql/types';
+
+import {RepoAddress} from './types';
 
 export const repoAddressToSelector = memoize((repoAddress: RepoAddress): RepositorySelector => {
   return {

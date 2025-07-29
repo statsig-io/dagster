@@ -1,21 +1,20 @@
-from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 import dagster._check as check
-from dagster._annotations import beta
-from dagster._vendored.dateutil.parser import isoparse
+from dateutil.parser import isoparse
+
+from ..types import DbtOutput
 
 
-@beta
-class DbtCloudOutput:
+class DbtCloudOutput(DbtOutput):
     """The results of executing a dbt Cloud job, along with additional metadata produced from the
     job run.
 
     Note that users should not construct instances of this class directly. This class is intended
     to be constructed from the JSON output of dbt Cloud commands.
 
-    Args:
+    Attributes:
         run_details (Dict[str, Any]): The raw dictionary data representing the run details returned
             by the dbt Cloud API. For more info, see: https://docs.getdbt.com/dbt-cloud/api-v2#operation/getRunById
         result (Dict[str, Any]): Dictionary containing dbt-reported result information
@@ -33,11 +32,7 @@ class DbtCloudOutput:
         result: Mapping[str, Any],
     ):
         self._run_details = check.mapping_param(run_details, "run_details", key_type=str)
-        self._result = check.mapping_param(result, "result", key_type=str)
-
-    @property
-    def result(self) -> Mapping[str, Any]:
-        return self._result
+        super().__init__(result)
 
     @property
     def run_details(self) -> Mapping[str, Any]:

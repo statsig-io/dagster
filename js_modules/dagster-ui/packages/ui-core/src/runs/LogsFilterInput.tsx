@@ -1,10 +1,10 @@
 import {
   Colors,
-  Icon,
   Popover,
-  SuggestionProvider,
   TextInput,
+  SuggestionProvider,
   useSuggestionsForString,
+  Icon,
 } from '@dagster-io/ui-components';
 import Fuse from 'fuse.js';
 import * as React from 'react';
@@ -56,7 +56,7 @@ const fuseOptions = {
   threshold: 0.3,
 };
 
-export const LogsFilterInput = (props: Props) => {
+export const LogsFilterInput: React.FC<Props> = (props) => {
   const {value, onChange, suggestionProviders} = props;
 
   const [state, dispatch] = React.useReducer(reducer, initialState);
@@ -67,10 +67,9 @@ export const LogsFilterInput = (props: Props) => {
     const perProvider = suggestionProviders.reduce(
       (accum, provider) => {
         const values = provider.values();
-        if (provider.token) {
-          accum[provider.token] = {fuse: new Fuse(values, fuseOptions), all: values};
-        }
-        return accum;
+        return provider.token
+          ? {...accum, [provider.token]: {fuse: new Fuse(values, fuseOptions), all: values}}
+          : accum;
       },
       {} as {[token: string]: {fuse: Fuse<string>; all: string[]}},
     );
@@ -198,11 +197,11 @@ export const LogsFilterInput = (props: Props) => {
   );
 };
 
-const ResultItem = (props: {
+const ResultItem: React.FC<{
   suggestion: string;
   isHighlight: boolean;
   onSelect: (suggestion: string) => void;
-}) => {
+}> = (props) => {
   const {suggestion, isHighlight, onSelect} = props;
   const element = React.useRef<HTMLLIElement>(null);
 
@@ -246,9 +245,8 @@ interface HighlightableTextProps {
 
 const Item = styled.li<HighlightableTextProps>`
   align-items: center;
-  background-color: ${({isHighlight}) =>
-    isHighlight ? Colors.backgroundBlue() : Colors.backgroundDefault()};
-  color: ${({isHighlight}) => (isHighlight ? Colors.accentPrimary() : 'default')};
+  background-color: ${({isHighlight}) => (isHighlight ? Colors.Blue500 : Colors.White)};
+  color: ${({isHighlight}) => (isHighlight ? Colors.White : 'default')};
   cursor: pointer;
   display: flex;
   flex-direction: row;
@@ -260,7 +258,6 @@ const Item = styled.li<HighlightableTextProps>`
   text-overflow: ellipsis;
 
   &:hover {
-    background-color: ${({isHighlight}) =>
-      isHighlight ? Colors.backgroundBlue() : Colors.backgroundGray()};
+    background-color: ${({isHighlight}) => (isHighlight ? Colors.Blue500 : Colors.Gray100)};
   }
 `;

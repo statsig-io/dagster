@@ -1,7 +1,5 @@
 import pdb
 import sys
-import types
-from typing import Optional
 
 
 # From https://stackoverflow.com/questions/4716533/how-to-attach-debugger-to-a-python-subproccess
@@ -26,11 +24,7 @@ class ForkedPdb(pdb.Pdb):
     execution at the breakpoint.
     """
 
-    def interaction(
-        self,
-        frame: Optional[types.FrameType],
-        traceback: Optional[types.TracebackType],
-    ):
+    def interaction(self, frame, traceback):
         _stdin = sys.stdin
         try:
             sys.stdin = open("/dev/stdin", encoding="utf8")

@@ -6,6 +6,7 @@ setup(
     install_requires=[
         "dagster",
         "dagstermill",
+        "papermill-origami>=0.0.8",
         "pandas",
         "matplotlib",
         "seaborn",

@@ -1,8 +1,6 @@
+from create_table import iris_dataset
 from dagster_duckdb.resource import DuckDBResource
 
-from .create_table import iris_dataset
-
-# ruff: isort: split
 # start_example
 from dagster import asset
 

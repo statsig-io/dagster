@@ -1,17 +1,13 @@
-import * as React from 'react';
+import React from 'react';
 
 export function getJSONForKey(key: string) {
   let stored = undefined;
   try {
-    if (typeof window === 'undefined') {
-      stored = self.localStorage.getItem(key);
-    } else {
-      stored = window.localStorage.getItem(key);
-    }
+    stored = window.localStorage.getItem(key);
     if (stored) {
       return JSON.parse(stored);
     }
-  } catch {
+  } catch (err) {
     if (typeof stored === 'string') {
       // With useStateWithStorage, some values like timezone are moving from `UTC` to `"UTC"`
       // in LocalStorage. To read the old values, pass through raw string values. We can
@@ -53,8 +49,10 @@ export function useStateWithStorage<T>(key: string, validate: (json: any) => T) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [validate, key, version]);
 
-  const setStateInner = React.useCallback(
-    (next: T | undefined) => {
+  const setState = React.useCallback(
+    (input: React.SetStateAction<T>) => {
+      const next =
+        input instanceof Function ? input(validateRef.current(getJSONForKey(key))) : input;
       if (next === undefined) {
         window.localStorage.removeItem(key);
       } else {
@@ -71,18 +69,6 @@ export function useStateWithStorage<T>(key: string, validate: (json: any) => T) 
     [key, listener],
   );
 
-  const setState = React.useCallback(
-    (input: React.SetStateAction<T>) => {
-      const next =
-        input instanceof Function ? input(validateRef.current(getJSONForKey(key))) : input;
-      setStateInner(next);
-    },
-    [key, setStateInner],
-  );
-
-  const clearState = React.useCallback(() => {
-    setStateInner(undefined);
-  }, [setStateInner]);
-
-  return [state, setState, clearState] as const;
+  const value = React.useMemo(() => [state, setState], [state, setState]);
+  return value as [T, React.Dispatch<React.SetStateAction<T | undefined>>];
 }

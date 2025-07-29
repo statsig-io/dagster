@@ -1,9 +1,8 @@
 import sys
 import time
-from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Optional, TextIO
+from typing import Any, Iterator, List, Mapping, Optional, TextIO
 
 from rich.console import Console
 from rich.table import Table
@@ -24,7 +23,7 @@ class ProfilingSession:
         name: Optional[str] = None,
         experiment_settings: Optional[Mapping[str, Any]] = None,
     ):
-        self.entries: list[ProfilingEntry] = []
+        self.entries: List[ProfilingEntry] = []
         self.output = Console()
         self.name = name or "anonymous"
         self.experiment_settings = experiment_settings

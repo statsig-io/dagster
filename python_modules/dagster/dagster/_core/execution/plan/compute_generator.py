@@ -1,7 +1,20 @@
 import inspect
-from collections.abc import AsyncIterator, Awaitable, Iterator, Mapping, Sequence
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterator,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
 
 from typing_extensions import get_args
 
@@ -14,24 +27,26 @@ from dagster._core.definitions import (
     Output,
     OutputDefinition,
 )
+from dagster._core.definitions.decorators.op_decorator import DecoratedOpFunction
 from dagster._core.definitions.input import InputDefinition
 from dagster._core.definitions.op_definition import OpDefinition
-from dagster._core.definitions.result import AssetResult, ObserveResult
+from dagster._core.definitions.result import MaterializeResult
 from dagster._core.errors import DagsterInvariantViolationError
-from dagster._core.execution.context.compute import ExecutionContextTypes
-from dagster._core.execution.context.op_execution_context import OpExecutionContext
 from dagster._core.types.dagster_type import DagsterTypeKind, is_generic_output_annotation
 from dagster._utils import is_named_tuple_instance
 from dagster._utils.warnings import disable_dagster_warnings
 
-if TYPE_CHECKING:
-    from dagster._core.definitions.decorators.op_decorator import DecoratedOpFunction
+from ..context.compute import OpExecutionContext
+
+
+class NoAnnotationSentinel:
+    pass
 
 
 def create_op_compute_wrapper(
     op_def: OpDefinition,
-) -> Callable[[ExecutionContextTypes, Mapping[str, InputDefinition]], Any]:
-    compute_fn = cast("DecoratedOpFunction", op_def.compute_fn)
+) -> Callable[[OpExecutionContext, Mapping[str, InputDefinition]], Any]:
+    compute_fn = cast(DecoratedOpFunction, op_def.compute_fn)
     fn = compute_fn.decorated_fn
     input_defs = op_def.input_defs
     output_defs = op_def.output_defs
@@ -47,7 +62,7 @@ def create_op_compute_wrapper(
 
     @wraps(fn)
     def compute(
-        context: ExecutionContextTypes,
+        context: OpExecutionContext,
         input_defs: Mapping[str, InputDefinition],
     ) -> Union[Iterator[Output], AsyncIterator[Output]]:
         kwargs = {}
@@ -84,9 +99,7 @@ def create_op_compute_wrapper(
 
 
 async def _coerce_async_op_to_async_gen(
-    awaitable: Awaitable[Any],
-    context: ExecutionContextTypes,
-    output_defs: Sequence[OutputDefinition],
+    awaitable: Awaitable[Any], context: OpExecutionContext, output_defs: Sequence[OutputDefinition]
 ) -> AsyncIterator[Any]:
     result = await awaitable
     for event in validate_and_coerce_op_result_to_iterator(result, context, output_defs):
@@ -94,55 +107,42 @@ async def _coerce_async_op_to_async_gen(
 
 
 def invoke_compute_fn(
-    fn: Callable[..., Any],
-    context: ExecutionContextTypes,
+    fn: Callable,
+    context: OpExecutionContext,
     kwargs: Mapping[str, Any],
     context_arg_provided: bool,
-    config_arg_cls: Optional[type[Config]],
-    resource_args: Optional[dict[str, str]] = None,
+    config_arg_cls: Optional[Type[Config]],
+    resource_args: Optional[Dict[str, str]] = None,
 ) -> Any:
     args_to_pass = {**kwargs}
     if config_arg_cls:
         # config_arg_cls is either a Config class or a primitive type
         if issubclass(config_arg_cls, Config):
-            args_to_pass["config"] = construct_config_from_context(
-                config_arg_cls, context.op_execution_context
-            )
+            args_to_pass["config"] = config_arg_cls(**context.op_config)
         else:
-            args_to_pass["config"] = context.op_execution_context.op_config
+            args_to_pass["config"] = context.op_config
     if resource_args:
         for resource_name, arg_name in resource_args.items():
-            args_to_pass[arg_name] = context.resources.original_resource_dict[resource_name]
+            args_to_pass[arg_name] = context.resources._original_resource_dict[  # noqa: SLF001
+                resource_name
+            ]
 
     return fn(context, **args_to_pass) if context_arg_provided else fn(**args_to_pass)
 
 
-def construct_config_from_context(
-    config_arg_cls: type[Config], op_execution_context: OpExecutionContext
-) -> Config:
-    return config_arg_cls(
-        **config_arg_cls._get_non_default_public_field_values_cls(op_execution_context.op_config)  # noqa: SLF001
-    )
-
-
 def _coerce_op_compute_fn_to_iterator(
-    fn,
-    output_defs,
-    context: ExecutionContextTypes,
-    context_arg_provided,
-    kwargs,
-    config_arg_class,
-    resource_arg_mapping,
+    fn, output_defs, context, context_arg_provided, kwargs, config_arg_class, resource_arg_mapping
 ):
     result = invoke_compute_fn(
         fn, context, kwargs, context_arg_provided, config_arg_class, resource_arg_mapping
     )
-    yield from validate_and_coerce_op_result_to_iterator(result, context, output_defs)
+    for event in validate_and_coerce_op_result_to_iterator(result, context, output_defs):
+        yield event
 
 
 def _zip_and_iterate_op_result(
-    result: Any, context: ExecutionContextTypes, output_defs: Sequence[OutputDefinition]
-) -> Iterator[tuple[int, Any, OutputDefinition]]:
+    result: Any, context: OpExecutionContext, output_defs: Sequence[OutputDefinition]
+) -> Iterator[Tuple[int, Any, OutputDefinition]]:
     # Filtering the expected output defs here is an unfortunate temporary solution to deal with the
     # change in expected outputs that occurs as a result of putting `AssetCheckResults` onto
     # `MaterializeResults`. Prior to this, `AssetCheckResults` were yielded/returned directly, and
@@ -168,36 +168,22 @@ def _zip_and_iterate_op_result(
 # Filter out output_defs corresponding to asset check results that already exist on a
 # MaterializeResult.
 def _filter_expected_output_defs(
-    result: Any, context: ExecutionContextTypes, output_defs: Sequence[OutputDefinition]
+    result: Any, context: OpExecutionContext, output_defs: Sequence[OutputDefinition]
 ) -> Sequence[OutputDefinition]:
     result_tuple = (
         (result,) if not isinstance(result, tuple) or is_named_tuple_instance(result) else result
     )
-    asset_results = [x for x in result_tuple if isinstance(x, AssetResult)]
-
-    if not asset_results:
-        return output_defs
-
-    check_names_by_asset_key = {}
-    for check_key in context.op_execution_context.selected_asset_check_keys:
-        if check_key.asset_key not in check_names_by_asset_key:
-            check_names_by_asset_key[check_key.asset_key] = []
-        check_names_by_asset_key[check_key.asset_key].append(check_key.name)
-
-    remove_outputs = []
-    for asset_result in asset_results:
-        for check_result in asset_result.check_results:
-            remove_outputs.append(
-                context.op_execution_context.assets_def.get_output_name_for_asset_check_key(
-                    check_result.resolve_target_check_key(check_names_by_asset_key)
-                )
-            )
-
+    materialize_results = [x for x in result_tuple if isinstance(x, MaterializeResult)]
+    remove_outputs = [
+        r.get_spec_python_identifier(x.asset_key or context.asset_key)
+        for x in materialize_results
+        for r in x.check_results or []
+    ]
     return [out for out in output_defs if out.name not in remove_outputs]
 
 
 def _validate_multi_return(
-    context: ExecutionContextTypes,
+    context: OpExecutionContext,
     result: Any,
     output_defs: Sequence[OutputDefinition],
 ) -> Any:
@@ -218,9 +204,9 @@ def _validate_multi_return(
             "multiple outputs, either yield each output, or return a tuple "
             "containing a value for each output. Check out the "
             "documentation on outputs for more: "
-            "https://legacy-docs.dagster.io/concepts/ops-jobs-graphs/ops#outputs."
+            "https://docs.dagster.io/concepts/ops-jobs-graphs/ops#outputs."
         )
-    output_tuple = cast("tuple", result)
+    output_tuple = cast(tuple, result)
     if not len(output_tuple) == len(output_defs):
         raise DagsterInvariantViolationError(
             "Length mismatch between returned tuple of outputs and number of "
@@ -235,14 +221,11 @@ def _get_annotation_for_output_position(
     position: int, op_def: OpDefinition, output_defs: Sequence[OutputDefinition]
 ) -> Any:
     if op_def.is_from_decorator():
-        if len(output_defs) > 1:
-            annotation_subitems = get_args(op_def.get_output_annotation())
-            if len(annotation_subitems) == len(output_defs):
-                return annotation_subitems[position]
+        if len(output_defs) > 1 and op_def.get_output_annotation() != inspect.Parameter.empty:
+            return get_args(op_def.get_output_annotation())[position]
         else:
             return op_def.get_output_annotation()
-
-    return inspect.Parameter.empty
+    return NoAnnotationSentinel()
 
 
 def _check_output_object_name(
@@ -259,26 +242,24 @@ def _check_output_object_name(
 
 
 def validate_and_coerce_op_result_to_iterator(
-    result: Any,
-    context: ExecutionContextTypes,
-    output_defs: Sequence[OutputDefinition],
+    result: Any, context: OpExecutionContext, output_defs: Sequence[OutputDefinition]
 ) -> Iterator[Any]:
     if inspect.isgenerator(result):
         # this happens when a user explicitly returns a generator in the op
-        yield from result
+        for event in result:
+            yield event
     elif isinstance(result, (AssetMaterialization, ExpectationResult)):
         raise DagsterInvariantViolationError(
             f"Error in {context.describe_op()}: If you are "
             "returning an AssetMaterialization "
             "or an ExpectationResult from "
             f"{context.op_def.node_type_str} you must yield them "
-            "directly, or log them using the context.log_event method to avoid "
+            "directly, or log them using the OpExecutionContext.log_event method to avoid "
             "ambiguity with an implied result from returning a "
             "value. Check out the docs on logging events here: "
-            "https://legacy-docs.dagster.io/concepts/ops-jobs-graphs/op-events#op-events-and-exceptions"
+            "https://docs.dagster.io/concepts/ops-jobs-graphs/op-events#op-events-and-exceptions"
         )
-    # These don't correspond to output defs so pass them through
-    elif isinstance(result, (AssetCheckResult, ObserveResult)):
+    elif isinstance(result, AssetCheckResult):
         yield result
     elif result is not None and not output_defs:
         raise DagsterInvariantViolationError(
@@ -286,20 +267,6 @@ def validate_and_coerce_op_result_to_iterator(
             f" {type(result)}. {context.op_def.node_type_str.capitalize()} is explicitly defined to"
             " return no results."
         )
-    # `requires_typed_event_stream` is a mode where we require users to return/yield exactly the
-    # results that will be registered in the instance, without additional fancy inference (like
-    # wrapping `None` in an `Output`). We therefore skip any return-specific validation for this
-    # mode and treat returned values as if they were yielded.
-    elif output_defs and context.op_execution_context.requires_typed_event_stream:
-        # If nothing was returned, treat it as an empty tuple instead of a `(None,)`.
-        # This is important for delivering the correct error message when an output is missing.
-        if result is None:
-            result_tuple = tuple()
-        elif not isinstance(result, tuple) or is_named_tuple_instance(result):
-            result_tuple = (result,)
-        else:
-            result_tuple = result
-        yield from result_tuple
     elif output_defs:
         for position, output_def, element in _zip_and_iterate_op_result(
             result, context, output_defs
@@ -321,7 +288,7 @@ def validate_and_coerce_op_result_to_iterator(
                             "list of DynamicOutput objects, but received an "
                             f"item with type {type(item)}."
                         )
-                    dynamic_output = cast("DynamicOutput", item)
+                    dynamic_output = cast(DynamicOutput, item)
                     _check_output_object_name(dynamic_output, output_def, position)
 
                     with disable_dagster_warnings():
@@ -331,7 +298,7 @@ def validate_and_coerce_op_result_to_iterator(
                             mapping_key=dynamic_output.mapping_key,
                             metadata=dynamic_output.metadata,
                         )
-            elif isinstance(element, AssetResult):
+            elif isinstance(element, MaterializeResult):
                 yield element  # coerced in to Output in outer iterator
             elif isinstance(element, Output):
                 if annotation != inspect.Parameter.empty and not is_generic_output_annotation(
@@ -345,16 +312,12 @@ def validate_and_coerce_op_result_to_iterator(
                 _check_output_object_name(element, output_def, position)
 
                 with disable_dagster_warnings():
-                    output = Output(
+                    yield Output(
                         output_name=output_def.name,
                         value=element.value,
                         metadata=element.metadata,
                         data_version=element.data_version,
-                        tags=element.tags,
                     )
-
-                yield output
-
             else:
                 # If annotation indicates a generic output annotation, and an
                 # output object was not received, throw an error.
@@ -372,6 +335,6 @@ def validate_and_coerce_op_result_to_iterator(
                         "This value will be passed to downstream "
                         f"{context.op_def.node_type_str}s. For conditional "
                         "execution, results must be yielded: "
-                        "https://legacy-docs.dagster.io/concepts/ops-jobs-graphs/graphs#with-conditional-branching"
+                        "https://docs.dagster.io/concepts/ops-jobs-graphs/graphs#with-conditional-branching"
                     )
                 yield Output(output_name=output_def.name, value=element)

@@ -2,11 +2,11 @@ import * as React from 'react';
 import styled from 'styled-components';
 
 import {Box} from './Box';
-import {Colors} from './Color';
+import {Colors} from './Colors';
 import {IconName} from './Icon';
 
 interface Props {
-  title?: React.ReactNode;
+  title: React.ReactNode;
   tags?: React.ReactNode;
   icon?: IconName;
   description?: React.ReactNode;
@@ -19,23 +19,17 @@ export const PageHeader = (props: Props) => {
   const {title, tags, right, tabs} = props;
   return (
     <PageHeaderContainer
-      background={Colors.backgroundDefault()}
-      padding={{horizontal: 24}}
+      background={Colors.Gray50}
+      padding={{top: 16, left: 24, right: 12}}
       border="bottom"
     >
-      {title && (
-        <Box
-          padding={{vertical: 8}}
-          style={{minHeight: 52, alignContent: 'center'}}
-          flex={{direction: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8}}
-        >
-          <Box flex={{direction: 'row', alignItems: 'center', gap: 12, wrap: 'wrap'}}>
-            {title}
-            {tags}
-          </Box>
-          {right}
+      <Box flex={{direction: 'row', justifyContent: 'space-between'}} padding={{bottom: 16}}>
+        <Box flex={{direction: 'row', alignItems: 'flex-start', gap: 12, wrap: 'wrap'}}>
+          {title}
+          {tags}
         </Box>
-      )}
+        {right}
+      </Box>
       {tabs}
     </PageHeaderContainer>
   );
@@ -47,8 +41,7 @@ const PageHeaderContainer = styled(Box)`
   /**
    * Blueprint breadcrumbs annoyingly have a built-in height.
    */
-  .bp5-breadcrumbs {
+  .bp4-breadcrumbs {
     height: auto;
-    min-height: 30px;
   }
 `;

@@ -1,11 +1,11 @@
 import pytest
 
-from dagster_tests.storage_tests.test_run_storage import (
+from .test_run_storage import (
     create_in_memory_storage,
     create_legacy_run_storage,
     create_sqlite_run_storage,
 )
-from dagster_tests.storage_tests.utils.daemon_cursor_storage import TestDaemonCursorStorage
+from .utils.daemon_cursor_storage import TestDaemonCursorStorage
 
 
 class TestDaemonCursorStorages(TestDaemonCursorStorage):

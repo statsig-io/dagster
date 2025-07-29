@@ -17,13 +17,15 @@ from dagster import (
     build_input_context,
     build_output_context,
     graph,
+    materialize,
     op,
     resource,
+    with_resources,
 )
-from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
+from dagster._core.definitions.assets import AssetsDefinition
 from dagster._core.definitions.definitions_class import Definitions
 from dagster._core.definitions.job_base import InMemoryJob
-from dagster._core.definitions.partitions.definition import StaticPartitionsDefinition
+from dagster._core.definitions.partition import StaticPartitionsDefinition
 from dagster._core.definitions.source_asset import SourceAsset
 from dagster._core.definitions.unresolved_asset_job_definition import define_asset_job
 from dagster._core.events import DagsterEventType
@@ -32,10 +34,14 @@ from dagster._core.system_config.objects import ResolvedRunConfig
 from dagster._core.types.dagster_type import resolve_dagster_type
 from dagster._core.utils import make_new_run_id
 from dagster_azure.adls2 import create_adls2_client
-from dagster_azure.adls2.io_manager import PickledObjectADLS2IOManager, adls2_pickle_io_manager
+from dagster_azure.adls2.fake_adls2_resource import FakeADLS2Resource, fake_adls2_resource
+from dagster_azure.adls2.io_manager import (
+    ADLS2PickleIOManager,
+    PickledObjectADLS2IOManager,
+    adls2_pickle_io_manager,
+)
 from dagster_azure.adls2.resources import adls2_resource
 from dagster_azure.blob import create_blob_client
-from dagster_azure.fakes import fake_adls2_resource
 from upath import UPath
 
 
@@ -261,7 +267,7 @@ def test_asset_io_manager(storage_account, file_system, credential):
 
     @asset(
         name=f"upstream_{_id}",
-        ins={"asset3": AssetIn(asset_key=AssetKey([f"asset3_{_id}"]))},  # pyright: ignore[reportCallIssue]
+        ins={"asset3": AssetIn(asset_key=AssetKey([f"asset3_{_id}"]))},
     )
     def upstream(asset3):
         return asset3 + 1
@@ -287,7 +293,7 @@ def test_asset_io_manager(storage_account, file_system, credential):
 
     @asset(
         name=f"downstream_{_id}",
-        ins={"upstream": AssetIn(asset_key=AssetKey([f"upstream_{_id}"]))},  # pyright: ignore[reportCallIssue]
+        ins={"upstream": AssetIn(asset_key=AssetKey([f"upstream_{_id}"]))},
     )
     def downstream(upstream, source):
         assert upstream == 7
@@ -297,7 +303,7 @@ def test_asset_io_manager(storage_account, file_system, credential):
         assets=[upstream, downstream, AssetsDefinition.from_graph(graph_asset)],
         resources={"io_manager": adls2_pickle_io_manager, "adls2": adls2_resource},
         jobs=[define_asset_job("my_asset_job")],
-    ).resolve_job_def("my_asset_job")
+    ).get_job_def("my_asset_job")
 
     run_config = {
         "resources": {
@@ -327,3 +333,55 @@ def test_with_fake_adls2_resource():
 
     result = job.execute_in_process(run_config=run_config)
     assert result.success
+
+
+def test_nothing():
+    @asset
+    def asset1() -> None: ...
+
+    @asset(deps=[asset1])
+    def asset2() -> None: ...
+
+    result = materialize(
+        with_resources(
+            [asset1, asset2],
+            resource_defs={
+                "io_manager": adls2_pickle_io_manager.configured(
+                    {"adls2_file_system": "fake_file_system"}
+                ),
+                "adls2": fake_adls2_resource.configured({"account_name": "my_account"}),
+            },
+        )
+    )
+
+    handled_output_events = list(filter(lambda evt: evt.is_handled_output, result.all_node_events))
+    assert len(handled_output_events) == 2
+
+    for event in handled_output_events:
+        assert len(event.event_specific_data.metadata) == 0
+
+
+def test_nothing_pythonic() -> None:
+    @asset
+    def asset1() -> None: ...
+
+    @asset(deps=[asset1])
+    def asset2() -> None: ...
+
+    result = materialize(
+        with_resources(
+            [asset1, asset2],
+            resource_defs={
+                "io_manager": ADLS2PickleIOManager(
+                    adls2=FakeADLS2Resource(account_name="my_account"),
+                    adls2_file_system="fake_file_system",
+                )
+            },
+        )
+    )
+
+    handled_output_events = list(filter(lambda evt: evt.is_handled_output, result.all_node_events))
+    assert len(handled_output_events) == 2
+
+    for event in handled_output_events:
+        assert len(event.event_specific_data.metadata) == 0  # type: ignore[attr-defined]

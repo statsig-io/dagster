@@ -7,10 +7,10 @@ from dagster_graphql.client.query import (
 from dagster_graphql.test.utils import (
     execute_dagster_graphql,
     execute_dagster_graphql_and_finish_runs,
-    infer_job_selector,
+    infer_pipeline_selector,
 )
 
-from dagster_graphql_tests.graphql.utils import (
+from .utils import (
     get_all_logs_for_finished_run_via_subscription,
     step_did_fail,
     step_did_not_run,
@@ -19,7 +19,7 @@ from dagster_graphql_tests.graphql.utils import (
 
 
 def test_dynamic_resume_reexecution(graphql_context: WorkspaceRequestContext):
-    selector = infer_job_selector(graphql_context, "dynamic_job")
+    selector = infer_pipeline_selector(graphql_context, "dynamic_job")
     result = execute_dagster_graphql_and_finish_runs(
         graphql_context,
         LAUNCH_PIPELINE_EXECUTION_MUTATION,
@@ -70,9 +70,9 @@ def test_dynamic_resume_reexecution(graphql_context: WorkspaceRequestContext):
     )
     assert not retry_one.errors
     assert retry_one.data
-    assert retry_one.data["launchPipelineReexecution"]["__typename"] == "LaunchRunSuccess", (
-        retry_one.data["launchPipelineReexecution"].get("message")
-    )
+    assert (
+        retry_one.data["launchPipelineReexecution"]["__typename"] == "LaunchRunSuccess"
+    ), retry_one.data["launchPipelineReexecution"].get("message")
 
     run_id = retry_one.data["launchPipelineReexecution"]["run"]["runId"]
 
@@ -92,7 +92,7 @@ def test_dynamic_resume_reexecution(graphql_context: WorkspaceRequestContext):
 
 
 def test_dynamic_full_reexecution(graphql_context: WorkspaceRequestContext):
-    selector = infer_job_selector(graphql_context, "dynamic_job")
+    selector = infer_pipeline_selector(graphql_context, "dynamic_job")
     result = execute_dagster_graphql_and_finish_runs(
         graphql_context,
         LAUNCH_PIPELINE_EXECUTION_MUTATION,
@@ -143,9 +143,9 @@ def test_dynamic_full_reexecution(graphql_context: WorkspaceRequestContext):
     )
     assert not retry_one.errors
     assert retry_one.data
-    assert retry_one.data["launchPipelineReexecution"]["__typename"] == "LaunchRunSuccess", (
-        retry_one.data["launchPipelineReexecution"].get("message")
-    )
+    assert (
+        retry_one.data["launchPipelineReexecution"]["__typename"] == "LaunchRunSuccess"
+    ), retry_one.data["launchPipelineReexecution"].get("message")
 
     run_id = retry_one.data["launchPipelineReexecution"]["run"]["runId"]
 
@@ -165,7 +165,7 @@ def test_dynamic_full_reexecution(graphql_context: WorkspaceRequestContext):
 
 
 def test_dynamic_subset(graphql_context: WorkspaceRequestContext):
-    selector = infer_job_selector(graphql_context, "dynamic_job")
+    selector = infer_pipeline_selector(graphql_context, "dynamic_job")
     result = execute_dagster_graphql_and_finish_runs(
         graphql_context,
         LAUNCH_PIPELINE_EXECUTION_MUTATION,
@@ -222,9 +222,9 @@ def test_dynamic_subset(graphql_context: WorkspaceRequestContext):
     )
     assert not retry_one.errors
     assert retry_one.data
-    assert retry_one.data["launchPipelineReexecution"]["__typename"] == "LaunchRunSuccess", (
-        retry_one.data["launchPipelineReexecution"].get("message")
-    )
+    assert (
+        retry_one.data["launchPipelineReexecution"]["__typename"] == "LaunchRunSuccess"
+    ), retry_one.data["launchPipelineReexecution"].get("message")
 
     run_id = retry_one.data["launchPipelineReexecution"]["run"]["runId"]
 
@@ -271,7 +271,7 @@ query PresetsQuery($selector: PipelineSelector!) {
 
 
 def test_dynamic_dep_fields(graphql_context):
-    selector = infer_job_selector(graphql_context, "dynamic_job")
+    selector = infer_pipeline_selector(graphql_context, "dynamic_job")
     result = execute_dagster_graphql(graphql_context, DEP_QUERY, variables={"selector": selector})
     assert not result.errors
     ops = {op["name"]: op for op in result.data["pipelineOrError"]["solids"]}

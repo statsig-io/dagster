@@ -14,11 +14,14 @@ from dagster import (
     build_input_context,
     build_output_context,
 )
-from dagster_wandb import WandbArtifactsIOManagerError, wandb_artifacts_io_manager, wandb_resource
-from dagster_wandb.io_manager import UNIT_TEST_RUN_ID
+from dagster_wandb import (
+    WandbArtifactsIOManagerError,
+    wandb_artifacts_io_manager,
+    wandb_resource,
+)
 from wandb import Artifact
 
-DAGSTER_RUN_ID = UNIT_TEST_RUN_ID
+DAGSTER_RUN_ID = "unit-testing"
 DAGSTER_RUN_ID_SHORT = DAGSTER_RUN_ID[0:8]
 DAGSTER_HOME = "/path/to/dagster_home"
 WANDB_PROJECT = "project"
@@ -197,7 +200,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output(
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -263,7 +266,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output(
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -303,7 +306,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -370,7 +373,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -410,7 +413,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -477,7 +480,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -517,7 +520,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -584,7 +587,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -629,7 +632,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -695,7 +698,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -737,7 +740,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -802,7 +805,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_and_
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -846,7 +849,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_partitioned_op_with_simple
     PARTITION_KEY = "partition_key"
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -913,7 +916,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_partitioned_op_with_simple
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -990,7 +993,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_raises_when_no_name_is_
         assert pickle_artifact_content_mock.call_count == 0
         assert artifact_mock.return_value.wait.call_count == 0
         assert log_artifact_mock.call_count == 0
-        assert context.add_output_metadata.call_count == 0  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 0
         assert add_output_metadata_spy.return_value.call_count == 0
 
 
@@ -1015,7 +1018,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_raises_when_unsupported
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -1059,7 +1062,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_raises_when_unsupported
         assert pickle_artifact_content_mock.call_count == 0
         assert artifact_mock.return_value.wait.call_count == 0
         assert log_artifact_mock.call_count == 0
-        assert context.add_output_metadata.call_count == 0  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 0
         assert add_output_metadata_spy.return_value.call_count == 0
 
 
@@ -1085,7 +1088,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_asset_with_simple_output(
 
     context = build_output_context(
         asset_key=ASSET_NAME,
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "type": ARTIFACT_TYPE,
             }
@@ -1150,7 +1153,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_asset_with_simple_output(
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -1191,7 +1194,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_asset_raise_when_double_na
 
     context = build_output_context(
         asset_key=ASSET_NAME,
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -1235,7 +1238,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_asset_raise_when_double_na
         assert pickle_artifact_content_mock.call_count == 0
         assert artifact_mock.return_value.wait.call_count == 0
         assert log_artifact_mock.call_count == 0
-        assert context.add_output_metadata.call_count == 0  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 0
         assert add_output_metadata_spy.return_value.call_count == 0
 
 
@@ -1260,7 +1263,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_all_
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -1331,7 +1334,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_simple_output_all_
             aliases=[EXTRA_ALIAS, f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -1435,7 +1438,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_object_outpu
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -1475,7 +1478,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_object_outpu
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "type": ARTIFACT_TYPE,
@@ -1543,7 +1546,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_object_outpu
             aliases=[EXTRA_ALIAS, f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -1639,7 +1642,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
             aliases=[f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -1679,7 +1682,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
             }
@@ -1741,7 +1744,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
 
         assert log_artifact_mock.call_count == 0
 
-        assert context.add_output_metadata.call_count == 0  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 0
         assert add_output_metadata_spy.return_value.call_count == 0
 
 
@@ -1766,7 +1769,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "type": ARTIFACT_TYPE,
             }
@@ -1828,7 +1831,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
 
         assert log_artifact_mock.call_count == 0
 
-        assert context.add_output_metadata.call_count == 0  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 0
         assert add_output_metadata_spy.return_value.call_count == 0
 
 
@@ -1853,7 +1856,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
     )
 
     context = build_output_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "description": ARTIFACT_DESCRIPTION,
             }
@@ -1909,7 +1912,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
 
         assert log_artifact_mock.call_count == 0
 
-        assert context.add_output_metadata.call_count == 0  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 0
         assert add_output_metadata_spy.return_value.call_count == 0
 
 
@@ -1935,7 +1938,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
 
     context = build_output_context(
         asset_key=AssetKey([ARTIFACT_NAME]),
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "aliases": [EXTRA_ALIAS],
                 "add_dirs": DIRS,
@@ -2006,7 +2009,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
             aliases=[EXTRA_ALIAS, f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -2047,7 +2050,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
 
     context = build_output_context(
         asset_key=AssetKey(["asset_key_name"]),
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "aliases": [EXTRA_ALIAS],
                 "add_dirs": DIRS,
@@ -2121,7 +2124,7 @@ def test_wandb_artifacts_io_manager_handle_output_for_op_with_wandb_artifact_out
             aliases=[EXTRA_ALIAS, f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -2163,7 +2166,7 @@ def test_wandb_artifacts_io_manager_handle_partition_key_output_for_op_suffixes_
     context = build_output_context(
         asset_key=AssetKey(["asset_key_name"]),
         partition_key="partition_key",
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "aliases": [EXTRA_ALIAS],
                 "add_dirs": DIRS,
@@ -2237,7 +2240,7 @@ def test_wandb_artifacts_io_manager_handle_partition_key_output_for_op_suffixes_
             aliases=[EXTRA_ALIAS, f"dagster-run-{DAGSTER_RUN_ID_SHORT}", "latest"],
         )
 
-        assert context.add_output_metadata.call_count == 1  # pyright: ignore[reportFunctionMemberAccess]
+        assert context.add_output_metadata.call_count == 1
         add_output_metadata_spy.assert_called_with(
             {
                 "dagster_run_id": DagsterRunMetadataValue(run_id=DAGSTER_RUN_ID),
@@ -2316,7 +2319,7 @@ def test_wandb_artifacts_io_manager_load_input(
     )
 
     context = build_input_context(
-        definition_metadata={"wandb_artifact_configuration": {"name": ARTIFACT_NAME}},
+        metadata={"wandb_artifact_configuration": {"name": ARTIFACT_NAME}},
     )
 
     assert manager.load_input(context) == run_mock.use_artifact.return_value
@@ -2329,7 +2332,7 @@ def test_wandb_artifacts_io_manager_load_input(
     assert run_mock.use_artifact.return_value.get_path.call_count == 0
 
     run_mock.use_artifact.return_value.download.assert_called_with(
-        root=EndsWith(LOCAL_ARTIFACT_PATH)
+        recursive=True, root=EndsWith(LOCAL_ARTIFACT_PATH)
     )
 
     run_mock.use_artifact.return_value.verify.assert_called_with(root=EndsWith(LOCAL_ARTIFACT_PATH))
@@ -2369,9 +2372,7 @@ def test_wandb_artifacts_io_manager_load_input_get(
 
     object_named = "name"
     context = build_input_context(
-        definition_metadata={
-            "wandb_artifact_configuration": {"name": ARTIFACT_NAME, "get": object_named}
-        }
+        metadata={"wandb_artifact_configuration": {"name": ARTIFACT_NAME, "get": object_named}}
     )
 
     assert manager.load_input(context) == run_mock.use_artifact.return_value.get.return_value
@@ -2420,9 +2421,7 @@ def test_wandb_artifacts_io_manager_load_input_get_path(
 
     path = "path/to/files"
     context = build_input_context(
-        definition_metadata={
-            "wandb_artifact_configuration": {"name": ARTIFACT_NAME, "get_path": path}
-        }
+        metadata={"wandb_artifact_configuration": {"name": ARTIFACT_NAME, "get_path": path}}
     )
 
     assert (
@@ -2462,7 +2461,7 @@ def test_wandb_artifacts_io_manager_load_input_raise_when_version_and_alias_are_
     )
 
     context = build_input_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "version": ARTIFACT_VERSION,
@@ -2497,7 +2496,7 @@ def test_wandb_artifacts_io_manager_load_input_raise_when_get_and_get_path_are_p
     )
 
     context = build_input_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {
                 "name": ARTIFACT_NAME,
                 "get": "file",
@@ -2543,7 +2542,7 @@ def test_wandb_artifacts_io_manager_load_input_with_specific_version(
     )
 
     context = build_input_context(
-        definition_metadata={
+        metadata={
             "wandb_artifact_configuration": {"name": ARTIFACT_NAME, "version": ARTIFACT_VERSION}
         }
     )
@@ -2558,7 +2557,7 @@ def test_wandb_artifacts_io_manager_load_input_with_specific_version(
     assert run_mock.use_artifact.return_value.get_path.call_count == 0
 
     run_mock.use_artifact.return_value.download.assert_called_with(
-        root=EndsWith(LOCAL_ARTIFACT_PATH)
+        recursive=True, root=EndsWith(LOCAL_ARTIFACT_PATH)
     )
 
     run_mock.use_artifact.return_value.verify.assert_called_with(root=EndsWith(LOCAL_ARTIFACT_PATH))
@@ -2597,9 +2596,7 @@ def test_wandb_artifacts_io_manager_load_input_with_specific_alias(
     )
 
     context = build_input_context(
-        definition_metadata={
-            "wandb_artifact_configuration": {"name": ARTIFACT_NAME, "alias": EXTRA_ALIAS}
-        }
+        metadata={"wandb_artifact_configuration": {"name": ARTIFACT_NAME, "alias": EXTRA_ALIAS}}
     )
 
     assert manager.load_input(context) == run_mock.use_artifact.return_value
@@ -2612,7 +2609,7 @@ def test_wandb_artifacts_io_manager_load_input_with_specific_alias(
     assert run_mock.use_artifact.return_value.get_path.call_count == 0
 
     run_mock.use_artifact.return_value.download.assert_called_with(
-        root=EndsWith(LOCAL_ARTIFACT_PATH)
+        recursive=True, root=EndsWith(LOCAL_ARTIFACT_PATH)
     )
 
     run_mock.use_artifact.return_value.verify.assert_called_with(root=EndsWith(LOCAL_ARTIFACT_PATH))
@@ -2652,9 +2649,7 @@ def test_wandb_artifacts_io_manager_load_partitioned_input(
 
     PARTITION_KEY = "partition_key"
     context = build_input_context(
-        definition_metadata={
-            "wandb_artifact_configuration": {"name": ARTIFACT_NAME, "alias": EXTRA_ALIAS}
-        },
+        metadata={"wandb_artifact_configuration": {"name": ARTIFACT_NAME, "alias": EXTRA_ALIAS}},
         partition_key=PARTITION_KEY,
     )
 
@@ -2669,6 +2664,7 @@ def test_wandb_artifacts_io_manager_load_partitioned_input(
 
     LOCAL_PARTITIONED_ARTIFACT_PATH = f"/storage/wandb_artifacts_manager/artifacts/{ARTIFACT_NAME}.{PARTITION_KEY}.{ARTIFACT_VERSION}"
     run_mock.use_artifact.return_value.download.assert_called_with(
+        recursive=True,
         root=EndsWith(LOCAL_PARTITIONED_ARTIFACT_PATH),
     )
 

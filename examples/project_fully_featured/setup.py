@@ -6,6 +6,7 @@ setup(
     author="Dagster Labs",
     author_email="hello@dagsterlabs.com",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Operating System :: OS Independent",
@@ -24,9 +25,10 @@ setup(
         "dbt-duckdb",
         "dbt-snowflake",
         "duckdb!=0.3.3, <= 6.0.0",  # missing wheels
+        "mock",
         "pandas",
         "pyarrow>=4.0.0",
-        "pyspark<4",
+        "pyspark",
         "requests",
         "gcsfs",
         "fsspec",
@@ -34,7 +36,7 @@ setup(
         "scipy",
         "scikit-learn",
         "sqlalchemy!=1.4.42",  # workaround for https://github.com/snowflakedb/snowflake-sqlalchemy/issues/350
-        "snowflake-sqlalchemy<1.5.2",
+        "snowflake-sqlalchemy",
     ],
     extras_require={"dev": ["dagster-webserver", "pytest"], "tests": ["mypy", "pylint", "pytest"]},
 )

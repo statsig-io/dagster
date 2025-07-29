@@ -1,8 +1,9 @@
 import os
-from typing import Optional
+from typing import Dict, Optional
 from unittest import mock
 
 import pytest
+from dagster._check import CheckError
 from dagster_databricks.databricks_pyspark_step_launcher import (
     DAGSTER_SYSTEM_ENV_VARS,
     DatabricksPySparkStepLauncher,
@@ -14,9 +15,8 @@ def mock_step_launcher_factory():
     def _mocked(
         add_dagster_env_variables: bool = True,
         env_variables: Optional[dict] = None,
-        databricks_token: Optional[str] = None,
-        oauth_creds: Optional[dict[str, str]] = None,
-        azure_creds: Optional[dict[str, str]] = None,
+        databricks_token: Optional[str] = "abc123",
+        oauth_creds: Optional[Dict[str, str]] = None,
     ):
         return DatabricksPySparkStepLauncher(
             run_config={"some": "config"},
@@ -31,7 +31,6 @@ def mock_step_launcher_factory():
             add_dagster_env_variables=add_dagster_env_variables,
             local_dagster_job_package_path="some/local/path",
             oauth_credentials=oauth_creds,
-            azure_credentials=azure_creds,
         )
 
     return _mocked
@@ -43,9 +42,7 @@ class TestCreateRemoteConfig:
     ):
         test_env_variables = {"add": "this"}
         test_launcher = mock_step_launcher_factory(
-            add_dagster_env_variables=True,
-            env_variables=test_env_variables,
-            databricks_token="abc123",
+            add_dagster_env_variables=True, env_variables=test_env_variables
         )
         system_vars = {}
         for var in DAGSTER_SYSTEM_ENV_VARS:
@@ -61,7 +58,7 @@ class TestCreateRemoteConfig:
     ):
         vars_to_add = {"add": "this"}
         test_launcher = mock_step_launcher_factory(
-            add_dagster_env_variables=False, env_variables=vars_to_add, databricks_token="abc123"
+            add_dagster_env_variables=False, env_variables=vars_to_add
         )
         for var in DAGSTER_SYSTEM_ENV_VARS:
             monkeypatch.setenv(var, f"{var}_value")
@@ -72,7 +69,7 @@ class TestCreateRemoteConfig:
     def test_given_no_dagster_system_vars_none_added(self, mock_step_launcher_factory):
         vars_to_add = {"add": "this"}
         test_launcher = mock_step_launcher_factory(
-            add_dagster_env_variables=True, env_variables=vars_to_add, databricks_token="abc123"
+            add_dagster_env_variables=True, env_variables=vars_to_add
         )
         for var in DAGSTER_SYSTEM_ENV_VARS:
             assert not os.getenv(var)
@@ -80,25 +77,26 @@ class TestCreateRemoteConfig:
         env_vars = test_launcher.create_remote_config()
         assert env_vars.env_variables == vars_to_add
 
-    @mock.patch("dagster_databricks.databricks.Config")
-    def test_given_bad_config_raises_ValueError(
-        self, mock_workspace_client_config, mock_step_launcher_factory
+    @mock.patch("dagster_databricks.databricks.WorkspaceClient")
+    def test_given_oauth_creds_when_accessing_legacy_clients_raises_ValueError(
+        self, mock_workspace_client, mock_step_launcher_factory
     ):
-        with pytest.raises(
-            ValueError,
-            match=(
-                "If using databricks service principal oauth credentials, both oauth_client_id and"
-                " oauth_client_secret must be provided"
-            ),
-        ):
+        test_launcher = mock_step_launcher_factory(
+            databricks_token=None,
+            oauth_creds={"client_id": "abc123", "client_secret": "super-secret"},
+        )
+        assert test_launcher.databricks_runner.oauth_client_id == "abc123"
+        assert test_launcher.databricks_runner.oauth_client_secret == "super-secret"
+
+        with pytest.raises(ValueError):
+            assert test_launcher.databricks_runner.client.client
+
+    @mock.patch("dagster_databricks.databricks.WorkspaceClient")
+    def test_given_oauth_creds_and_token_raises_ValueError(
+        self, mock_workspace_client, mock_step_launcher_factory
+    ):
+        with pytest.raises(CheckError):
             mock_step_launcher_factory(
-                oauth_creds={"client_id": "abc123"},
+                databricks_token="abc123",
+                oauth_creds={"client_id": "abc123", "client_secret": "super-secret"},
             )
-        with pytest.raises(
-            ValueError,
-            match=(
-                "If using azure service principal auth, azure_client_id, azure_client_secret, and"
-                " azure_tenant_id must be provided"
-            ),
-        ):
-            mock_step_launcher_factory(azure_creds={"azure_client_id": "abc123"})

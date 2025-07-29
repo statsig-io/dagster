@@ -1,7 +1,7 @@
 import nbformat
 from papermill.log import logger
 
-from dagstermill.compat import ExecutionError, is_papermill_2
+from .compat import ExecutionError, is_papermill_2
 
 if is_papermill_2():
     from papermill.clientwrap import PapermillNotebookClient
@@ -86,7 +86,9 @@ else:
         # the kernel down. Note that atexit doesn't seem to work at all in ipython, and hooking into
         # the ipython post_execute event doesn't work in papermill.
         def papermill_process(self, nb_man, resources):
-            _, resources = super().papermill_process(nb_man, resources)
+            _, resources = super(DagstermillExecutePreprocessor, self).papermill_process(
+                nb_man, resources
+            )
 
             new_cell = nbformat.v4.new_code_cell(
                 source="import dagstermill as __dm_dagstermill\n__dm_dagstermill._teardown()\n"

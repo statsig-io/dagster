@@ -171,19 +171,19 @@ export type CompositeConfigTypeForSchemaFragment = {
   }>;
 };
 
-export type ConfigEditorValidationFragment_InvalidSubsetError = {__typename: 'InvalidSubsetError'};
+export type ConfigEditorValidationFragment_InvalidSubsetError_ = {__typename: 'InvalidSubsetError'};
 
-export type ConfigEditorValidationFragment_PipelineConfigValidationValid = {
+export type ConfigEditorValidationFragment_PipelineConfigValidationValid_ = {
   __typename: 'PipelineConfigValidationValid';
 };
 
-export type ConfigEditorValidationFragment_PipelineNotFoundError = {
+export type ConfigEditorValidationFragment_PipelineNotFoundError_ = {
   __typename: 'PipelineNotFoundError';
 };
 
-export type ConfigEditorValidationFragment_PythonError = {__typename: 'PythonError'};
+export type ConfigEditorValidationFragment_PythonError_ = {__typename: 'PythonError'};
 
-export type ConfigEditorValidationFragment_RunConfigValidationInvalid = {
+export type ConfigEditorValidationFragment_RunConfigValidationInvalid_ = {
   __typename: 'RunConfigValidationInvalid';
   errors: Array<
     | {
@@ -274,8 +274,8 @@ export type ConfigEditorValidationFragment_RunConfigValidationInvalid = {
 };
 
 export type ConfigEditorValidationFragment =
-  | ConfigEditorValidationFragment_InvalidSubsetError
-  | ConfigEditorValidationFragment_PipelineConfigValidationValid
-  | ConfigEditorValidationFragment_PipelineNotFoundError
-  | ConfigEditorValidationFragment_PythonError
-  | ConfigEditorValidationFragment_RunConfigValidationInvalid;
+  | ConfigEditorValidationFragment_InvalidSubsetError_
+  | ConfigEditorValidationFragment_PipelineConfigValidationValid_
+  | ConfigEditorValidationFragment_PipelineNotFoundError_
+  | ConfigEditorValidationFragment_PythonError_
+  | ConfigEditorValidationFragment_RunConfigValidationInvalid_;

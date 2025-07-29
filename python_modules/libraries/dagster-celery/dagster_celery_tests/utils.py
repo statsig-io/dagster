@@ -3,9 +3,8 @@ import signal
 import subprocess
 import tempfile
 import threading
-from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Any, Iterator, Mapping, Optional, Sequence
 
 from dagster._core.definitions.reconstruct import ReconstructableJob
 from dagster._core.events import DagsterEvent

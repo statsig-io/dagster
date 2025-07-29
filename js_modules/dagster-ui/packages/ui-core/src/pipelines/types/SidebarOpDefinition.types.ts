@@ -2,12 +2,11 @@
 
 import * as Types from '../../graphql/types';
 
-export type SidebarOpDefinitionFragment_CompositeSolidDefinition = {
+export type SidebarOpDefinitionFragment_CompositeSolidDefinition_ = {
   __typename: 'CompositeSolidDefinition';
   id: string;
   name: string;
   description: string | null;
-  pools: Array<string>;
   inputMappings: Array<{
     __typename: 'InputMapping';
     definition: {__typename: 'InputDefinition'; name: string};
@@ -83,11 +82,10 @@ export type SidebarOpDefinitionFragment_CompositeSolidDefinition = {
   }>;
 };
 
-export type SidebarOpDefinitionFragment_SolidDefinition = {
+export type SidebarOpDefinitionFragment_SolidDefinition_ = {
   __typename: 'SolidDefinition';
   name: string;
   description: string | null;
-  pools: Array<string>;
   requiredResources: Array<{__typename: 'ResourceRequirement'; resourceKey: string}>;
   configField: {
     __typename: 'ConfigTypeField';
@@ -697,5 +695,5 @@ export type SidebarOpDefinitionFragment_SolidDefinition = {
 };
 
 export type SidebarOpDefinitionFragment =
-  | SidebarOpDefinitionFragment_CompositeSolidDefinition
-  | SidebarOpDefinitionFragment_SolidDefinition;
+  | SidebarOpDefinitionFragment_CompositeSolidDefinition_
+  | SidebarOpDefinitionFragment_SolidDefinition_;

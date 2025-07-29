@@ -4,10 +4,11 @@ import {
   Spinner,
   SplitPanelContainer,
 } from '@dagster-io/ui-components';
+import * as React from 'react';
 
 import {SessionSettingsBar} from './SessionSettingsBar';
 
-export const LaunchpadSessionError = (props: NonIdealStateProps) => (
+export const LaunchpadSessionError: React.FC<NonIdealStateProps> = (props) => (
   <SplitPanelContainer
     axis="vertical"
     identifier="execution"

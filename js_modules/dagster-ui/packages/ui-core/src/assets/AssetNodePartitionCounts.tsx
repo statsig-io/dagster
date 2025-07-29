@@ -1,4 +1,5 @@
-import {Box, Colors, Icon, IconName, Tooltip} from '@dagster-io/ui-components';
+import {Colors, Icon, Box, Tooltip, IconName} from '@dagster-io/ui-components';
+import React from 'react';
 import styled from 'styled-components';
 
 import {LiveDataForNode} from '../asset-graph/Utils';
@@ -29,39 +30,39 @@ export const StyleForAssetPartitionStatus: Record<
   }
 > = {
   [AssetPartitionStatus.FAILED]: {
-    background: Colors.backgroundRed(),
-    foreground: Colors.textRed(),
-    border: Colors.accentRed(),
+    background: Colors.Red50,
+    foreground: Colors.Red700,
+    border: Colors.Red500,
     icon: 'partition_failure',
     adjective: 'failed',
   },
   [AssetPartitionStatus.MATERIALIZED]: {
-    background: Colors.backgroundGreen(),
-    foreground: Colors.textGreen(),
-    border: Colors.accentGreen(),
+    background: Colors.Green50,
+    foreground: Colors.Green700,
+    border: Colors.Green500,
     icon: 'partition_success',
     adjective: 'materialized',
   },
   [AssetPartitionStatus.MATERIALIZING]: {
-    background: Colors.backgroundBlue(),
-    foreground: Colors.textBlue(),
-    border: Colors.accentBlue(),
+    background: Colors.Blue50,
+    foreground: Colors.Blue700,
+    border: Colors.Blue500,
     icon: 'partition_success',
     adjective: 'materializing',
   },
   [AssetPartitionStatus.MISSING]: {
-    background: Colors.backgroundGray(),
-    foreground: Colors.textLight(),
-    border: Colors.accentGray(),
+    background: Colors.Gray100,
+    foreground: Colors.Gray900,
+    border: Colors.Gray500,
     icon: 'partition_missing',
     adjective: 'missing',
   },
 };
 
-export const PartitionCountTags = (props: {
+export const PartitionCountTags: React.FC<{
   definition: AssetNodeFragment;
   liveData: LiveDataForNode | undefined;
-}) => {
+}> = (props) => {
   const data = props.liveData?.partitionStats;
   return (
     <Box style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2}}>
@@ -84,18 +85,14 @@ export const PartitionCountTags = (props: {
   );
 };
 
-const PartitionCountTag = ({
-  status,
-  value,
-  total,
-}: {
+const PartitionCountTag: React.FC<{
   status: AssetPartitionStatus;
   value: number | undefined;
   total: number | undefined;
-}) => {
+}> = ({status, value, total}) => {
   const style = StyleForAssetPartitionStatus[status];
-  const foreground = value ? style.foreground : Colors.textLight();
-  const background = value ? style.background : Colors.backgroundGray();
+  const foreground = value ? style.foreground : Colors.Gray500;
+  const background = value ? style.background : Colors.Gray50;
 
   return (
     <Tooltip
@@ -112,11 +109,9 @@ const PartitionCountTag = ({
   );
 };
 
-export const PartitionCountLabels = ({
-  partitionStats,
-}: {
+export const PartitionCountLabels: React.FC<{
   partitionStats: LiveDataForNode['partitionStats'] | null | undefined;
-}) => {
+}> = ({partitionStats}) => {
   return (
     <Box style={{display: 'flex', gap: 8}}>
       <PartitionCountLabel
@@ -143,15 +138,11 @@ export const PartitionCountLabels = ({
   );
 };
 
-const PartitionCountLabel = ({
-  status,
-  value,
-  total,
-}: {
+const PartitionCountLabel: React.FC<{
   status: AssetPartitionStatus;
   value: number | undefined;
   total: number | undefined;
-}) => {
+}> = ({status, value, total}) => {
   const style = StyleForAssetPartitionStatus[status];
 
   return (
@@ -163,11 +154,9 @@ const PartitionCountLabel = ({
     >
       <Box
         flex={{gap: 4, alignItems: 'center'}}
-        style={{
-          color: value === undefined || value === 0 ? Colors.textLighter() : Colors.textDefault(),
-        }}
+        style={{color: value === undefined || value === 0 ? Colors.Gray300 : Colors.Dark}}
       >
-        <Icon name={style.icon} color={value ? style.border : Colors.textLighter()} size={12} />
+        <Icon name={style.icon} color={value ? style.border : Colors.Gray300} size={12} />
         {value === undefined ? '—' : value === total ? 'All' : value.toLocaleString()}
       </Box>
     </Tooltip>

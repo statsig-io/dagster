@@ -1,5 +1,4 @@
-from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from typing_extensions import Self
 
@@ -37,7 +36,7 @@ class SyncInMemoryRunLauncher(RunLauncher, ConfigurableClass):
     def from_config_value(
         cls, inst_data: ConfigurableClassData, config_value: Mapping[str, Any]
     ) -> Self:
-        return cls(inst_data=inst_data)
+        return SyncInMemoryRunLauncher(inst_data=inst_data)
 
     def launch_run(self, context: LaunchRunContext) -> None:
         recon_job = recon_job_from_origin(context.job_code_origin)  # type: ignore

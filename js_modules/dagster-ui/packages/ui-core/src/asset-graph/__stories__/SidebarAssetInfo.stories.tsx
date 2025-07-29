@@ -1,33 +1,25 @@
 import {MockedProvider, MockedResponse} from '@apollo/client/testing';
 import {Box} from '@dagster-io/ui-components';
-import * as React from 'react';
+import React from 'react';
 
 import {createAppCache} from '../../app/AppCache';
 import {buildPartitionHealthMock} from '../../assets/__fixtures__/PartitionHealthQuery.fixtures';
-import {RecentAssetEventsQuery} from '../../assets/types/useRecentAssetEvents.types';
-import {RECENT_ASSET_EVENTS_QUERY} from '../../assets/useRecentAssetEvents';
+import {AssetEventsQuery} from '../../assets/types/useRecentAssetEvents.types';
+import {ASSET_EVENTS_QUERY} from '../../assets/useRecentAssetEvents';
 import {
   AssetNode,
+  AutoMaterializeDecisionType,
+  AutoMaterializePolicyType,
   RunStatus,
-  buildAssetLatestInfo,
   buildAssetNode,
-  buildAssetResultEventHistoryConnection,
-  buildCompositeConfigType,
+  buildAutoMaterializePolicy,
+  buildAutoMaterializeRule,
   buildFreshnessPolicy,
-  buildMaterializationEvent,
-  buildObservationEvent,
-  buildRegularDagsterType,
-  buildRepository,
-  buildRepositoryLocation,
-  buildRepositoryOrigin,
-  buildRun,
-  buildRunNotFoundError,
-  buildSolidDefinition,
 } from '../../graphql/types';
-import {buildQueryMock} from '../../testing/mocking';
-import {WorkspaceProvider} from '../../workspace/WorkspaceContext/WorkspaceContext';
+import {WorkspaceProvider} from '../../workspace/WorkspaceContext';
 import {SIDEBAR_ASSET_QUERY, SidebarAssetInfo} from '../SidebarAssetInfo';
 import {GraphNode} from '../Utils';
+import {LiveDataForNodeMaterializedWithChecks} from '../__fixtures__/AssetNode.fixtures';
 import {SidebarAssetQuery} from '../types/SidebarAssetInfo.types';
 
 // eslint-disable-next-line import/no-default-export
@@ -36,12 +28,12 @@ export default {
   component: SidebarAssetInfo,
 };
 
-const MockRepo = buildRepository({
+const MockRepo = {
   __typename: 'Repository',
   id: 'test.py.repo',
   name: 'test.py',
-  location: buildRepositoryLocation({id: 'repo', name: 'repo'}),
-});
+  location: {__typename: 'RepositoryLocation', id: 'repo', name: 'repo'},
+} as const;
 
 const MockAssetKey = {__typename: 'AssetKey' as const, path: ['asset1']};
 
@@ -53,36 +45,44 @@ const buildGraphNodeMock = (definitionOverrides: Partial<AssetNode>): GraphNode 
     assetKey: MockAssetKey,
     jobNames: ['__ASSET_JOB_1'],
     opNames: ['asset1'],
-    groupName: 'default',
+    groupName: null,
     graphName: null,
     isPartitioned: false,
     isObservable: false,
-    isMaterializable: true,
+    isSource: false,
     ...definitionOverrides,
   }),
 });
 
 const buildSidebarQueryMock = (
   overrides: Partial<SidebarAssetQuery['assetNodeOrError']> = {},
-): MockedResponse<SidebarAssetQuery> =>
-  buildQueryMock({
+): MockedResponse<SidebarAssetQuery> => ({
+  request: {
     query: SIDEBAR_ASSET_QUERY,
     variables: {
       assetKey: {
         path: ['asset1'],
       },
     },
+  },
+  result: {
     data: {
-      assetNodeOrError: buildAssetNode({
+      __typename: 'Query',
+      assetNodeOrError: {
+        __typename: 'AssetNode',
         id: 'test.py.repo.["asset1"]',
         description: null,
+        configField: null,
+        metadataEntries: [],
         jobNames: ['test_job'],
+        autoMaterializePolicy: null,
+        freshnessPolicy: null,
+        partitionDefinition: null,
         assetKey: {
           path: ['asset1'],
           __typename: 'AssetKey',
         },
-        // @ts-expect-error not sure why the types dont match up, investigate later
-        op: buildSolidDefinition({
+        op: {
           name: 'asset1',
           description: null,
           metadata: [
@@ -97,9 +97,9 @@ const buildSidebarQueryMock = (
               __typename: 'MetadataItemDefinition',
             },
           ],
-        }),
+          __typename: 'SolidDefinition',
+        },
         opVersion: null,
-        // @ts-expect-error not sure why the types dont match up, investigate later
         repository: MockRepo,
         requiredResources: [
           {
@@ -119,8 +119,7 @@ const buildSidebarQueryMock = (
             resourceKey: 'just_another_resource',
           },
         ],
-        // @ts-expect-error not sure why the types dont match up, investigate later
-        type: buildRegularDagsterType({
+        type: {
           key: 'Any',
           name: 'Any',
           displayName: 'Any',
@@ -130,29 +129,28 @@ const buildSidebarQueryMock = (
           isBuiltin: true,
           isNothing: false,
           metadataEntries: [],
-          inputSchemaType: buildCompositeConfigType({
+          inputSchemaType: {
+            __typename: 'CompositeConfigType',
             key: 'Selector.f2fe6dfdc60a1947a8f8e7cd377a012b47065bc4',
             description: null,
             isSelector: true,
             typeParamKeys: [],
             fields: [],
             recursiveConfigTypes: [],
-          }),
+          },
           outputSchemaType: null,
+          __typename: 'RegularDagsterType',
           innerTypes: [],
-        }),
+        },
         ...overrides,
-      }),
+      },
     },
-  });
+  },
+});
 
-const buildEventsMock = ({
-  reported,
-}: {
-  reported: boolean;
-}): MockedResponse<RecentAssetEventsQuery> => ({
+const EventsMock: MockedResponse<AssetEventsQuery> = {
   request: {
-    query: RECENT_ASSET_EVENTS_QUERY,
+    query: ASSET_EVENTS_QUERY,
     variables: {
       assetKey: {path: ['asset1']},
       before: undefined,
@@ -162,80 +160,84 @@ const buildEventsMock = ({
   result: {
     data: {
       __typename: 'Query',
-      assetsLatestInfo: [buildAssetLatestInfo()],
       assetOrError: {
         __typename: 'Asset',
         key: MockAssetKey,
         id: '["asset1"]',
-        assetEventHistory: buildAssetResultEventHistoryConnection({
-          results: [
-            buildMaterializationEvent({
-              description: '1234',
-              metadataEntries: [],
-              partition: null,
-              timestamp: '1234567865400',
-              assetLineage: [],
-              label: null,
-              stepKey: 'op',
-              tags: [],
-              runId: reported ? '' : '12345',
-              runOrError: reported
-                ? buildRunNotFoundError()
-                : buildRun({
-                    pipelineName: '__ASSET_JOB_1',
-                    mode: 'default',
-                    pipelineSnapshotId: null,
-                    id: '12345',
-                    status: RunStatus.SUCCESS,
-                    repositoryOrigin: buildRepositoryOrigin({
-                      id: 'test.py',
-                      repositoryLocationName: 'repo',
-                      repositoryName: 'test.py',
-                    }),
-                  }),
-            }),
-            buildObservationEvent({
-              description: '1234',
-              runId: '12345',
-              metadataEntries: [],
-              partition: null,
-              timestamp: '1234567865400',
-              label: null,
-              stepKey: 'op',
-              tags: [],
-              runOrError: buildRun({
-                pipelineName: '__ASSET_JOB_1',
-                mode: 'default',
-                pipelineSnapshotId: null,
-                id: '12345',
-                status: RunStatus.SUCCESS,
-                repositoryOrigin: buildRepositoryOrigin({
-                  id: 'test.py',
-                  repositoryLocationName: 'repo',
-                  repositoryName: 'test.py',
-                  repositoryLocationMetadata: [],
-                }),
-              }),
-            }),
-          ],
-        }),
+        definition: {
+          __typename: 'AssetNode',
+          id: 'test.py.repo.["asset1"]',
+          partitionKeys: [],
+        },
+        assetMaterializations: [
+          {
+            __typename: 'MaterializationEvent',
+            description: '1234',
+            runId: '12345',
+            metadataEntries: [],
+            partition: null,
+            timestamp: '12345678654',
+            assetLineage: [],
+            label: null,
+            stepKey: 'op',
+            tags: [],
+            runOrError: {
+              __typename: 'Run',
+              pipelineName: '__ASSET_JOB_1',
+              mode: 'default',
+              pipelineSnapshotId: null,
+              id: '12345',
+              status: RunStatus.SUCCESS,
+              repositoryOrigin: {
+                __typename: 'RepositoryOrigin',
+                id: 'test.py',
+                repositoryLocationName: 'repo',
+                repositoryName: 'test.py',
+              },
+            },
+          },
+        ],
+        assetObservations: [
+          {
+            __typename: 'ObservationEvent',
+            description: '1234',
+            runId: '12345',
+            metadataEntries: [],
+            partition: null,
+            timestamp: '12345678654',
+            label: null,
+            stepKey: 'op',
+            tags: [],
+            runOrError: {
+              __typename: 'Run',
+              pipelineName: '__ASSET_JOB_1',
+              mode: 'default',
+              pipelineSnapshotId: null,
+              id: '12345',
+              status: RunStatus.SUCCESS,
+              repositoryOrigin: {
+                __typename: 'RepositoryOrigin',
+                id: 'test.py',
+                repositoryLocationName: 'repo',
+                repositoryName: 'test.py',
+              },
+            },
+          },
+        ],
       },
     },
   },
-});
+};
 
-const TestContainer = ({
-  children,
-  mocks,
-}: {
+const TestContainer: React.FC<{
   mocks?: MockedResponse<Record<string, any>>[];
   children: React.ReactNode;
-}) => (
+}> = ({children, mocks}) => (
   <MockedProvider
     cache={createAppCache()}
     mocks={
       mocks || [
-        buildEventsMock({reported: false}),
+        EventsMock,
         buildPartitionHealthMock(MockAssetKey.path[0]!),
         buildSidebarQueryMock(),
       ]
@@ -247,24 +249,10 @@ const TestContainer = ({
   </MockedProvider>
 );
 
-export const AssetWithMaterialization = () => {
+export const AssetWithMaterializations = () => {
   return (
     <TestContainer>
-      <SidebarAssetInfo graphNode={buildGraphNodeMock({})} />
-    </TestContainer>
-  );
-};
-
-export const AssetWithReportedMaterialization = () => {
-  return (
-    <TestContainer
-      mocks={[
-        buildEventsMock({reported: true}),
-        buildPartitionHealthMock(MockAssetKey.path[0]!),
-        buildSidebarQueryMock(),
-      ]}
-    >
-      <SidebarAssetInfo graphNode={buildGraphNodeMock({})} />
+      <SidebarAssetInfo graphNode={buildGraphNodeMock({})} liveData={undefined} />
     </TestContainer>
   );
 };
@@ -273,9 +261,22 @@ export const AssetWithPolicies = () => {
   return (
     <TestContainer
       mocks={[
-        buildEventsMock({reported: false}),
+        EventsMock,
         buildPartitionHealthMock(MockAssetKey.path[0]!),
         buildSidebarQueryMock({
+          autoMaterializePolicy: buildAutoMaterializePolicy({
+            policyType: AutoMaterializePolicyType.EAGER,
+            rules: [
+              buildAutoMaterializeRule({
+                decisionType: AutoMaterializeDecisionType.MATERIALIZE,
+                description: 'Rule 1',
+              }),
+              buildAutoMaterializeRule({
+                decisionType: AutoMaterializeDecisionType.SKIP,
+                description: 'Skip Rule 1',
+              }),
+            ],
+          }),
           freshnessPolicy: buildFreshnessPolicy({
             maximumLagMinutes: 60,
             cronSchedule: '* 1 1 1 1',
@@ -283,7 +284,7 @@ export const AssetWithPolicies = () => {
         }),
       ]}
     >
-      <SidebarAssetInfo graphNode={buildGraphNodeMock({})} />
+      <SidebarAssetInfo graphNode={buildGraphNodeMock({})} liveData={undefined} />
     </TestContainer>
   );
 };
@@ -291,7 +292,10 @@ export const AssetWithPolicies = () => {
 export const AssetWithGraphName = () => {
   return (
     <TestContainer>
-      <SidebarAssetInfo graphNode={buildGraphNodeMock({graphName: 'op_graph'})} />
+      <SidebarAssetInfo
+        graphNode={buildGraphNodeMock({graphName: 'op_graph'})}
+        liveData={undefined}
+      />
     </TestContainer>
   );
 };
@@ -299,7 +303,10 @@ export const AssetWithGraphName = () => {
 export const AssetWithAssetChecks = () => {
   return (
     <TestContainer>
-      <SidebarAssetInfo graphNode={buildGraphNodeMock({})} />
+      <SidebarAssetInfo
+        graphNode={buildGraphNodeMock({})}
+        liveData={LiveDataForNodeMaterializedWithChecks}
+      />
     </TestContainer>
   );
 };
@@ -307,7 +314,10 @@ export const AssetWithAssetChecks = () => {
 export const AssetWithDifferentOpName = () => {
   return (
     <TestContainer>
-      <SidebarAssetInfo graphNode={buildGraphNodeMock({opNames: ['not_asset_name']})} />
+      <SidebarAssetInfo
+        graphNode={buildGraphNodeMock({opNames: ['not_asset_name']})}
+        liveData={undefined}
+      />
     </TestContainer>
   );
 };
@@ -316,7 +326,8 @@ export const ObservableSourceAsset = () => {
   return (
     <TestContainer>
       <SidebarAssetInfo
-        graphNode={buildGraphNodeMock({isObservable: true, isMaterializable: false})}
+        graphNode={buildGraphNodeMock({isObservable: true, isSource: true})}
+        liveData={undefined}
       />
     </TestContainer>
   );

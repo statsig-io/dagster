@@ -1,30 +1,23 @@
-import asyncio
-from collections.abc import Mapping
-from io import TextIOWrapper
-from typing import Optional
+from typing import Mapping, Optional
 from urllib.parse import urljoin, urlparse
 
 import click
 import dagster._check as check
-import dagster_shared.seven as seven
+import dagster._seven as seven
 import requests
-from dagster._cli.utils import (
-    assert_no_remaining_opts,
-    get_instance_for_cli,
-    get_temporary_instance_for_cli,
-)
+from dagster._cli.utils import get_instance_for_cli, get_temporary_instance_for_cli
+from dagster._cli.workspace import workspace_target_argument
 from dagster._cli.workspace.cli_target import (
     WORKSPACE_TARGET_WARNING,
-    workspace_opts_to_load_target,
+    get_workspace_process_context_from_kwargs,
 )
 from dagster._core.workspace.context import WorkspaceProcessContext
 from dagster._utils import DEFAULT_WORKSPACE_YAML_FILENAME
 from dagster._utils.log import get_stack_trace_array
-from dagster_shared.cli import WorkspaceOpts, workspace_options
 
-from dagster_graphql.client.query import LAUNCH_PIPELINE_EXECUTION_MUTATION
-from dagster_graphql.schema import create_schema
-from dagster_graphql.version import __version__
+from .client.query import LAUNCH_PIPELINE_EXECUTION_MUTATION
+from .schema import create_schema
+from .version import __version__
 
 
 def create_dagster_graphql_cli():
@@ -46,12 +39,10 @@ def execute_query(
 
     context = workspace_process_context.create_request_context()
 
-    result = asyncio.run(
-        create_schema().execute_async(
-            query,
-            context_value=context,
-            variable_values=variables,
-        )
+    result = create_schema().execute(
+        query,
+        context_value=context,
+        variable_values=variables,
     )
 
     result_dict = result.formatted
@@ -66,11 +57,10 @@ def execute_query(
     if "errors" in result_dict:
         result_dict_errors = check.list_elem(result_dict, "errors", of_type=Exception)
         result_errors = check.is_list(result.errors, of_type=Exception)
-        check.invariant(len(result_dict_errors) == len(result_errors))
+        check.invariant(len(result_dict_errors) == len(result_errors))  #
         for python_error, error_dict in zip(result_errors, result_dict_errors):
-            # Typing errors caught by making is_list typed -- schrockn 2024-06-09
-            if hasattr(python_error, "original_error") and python_error.original_error:  # type: ignore
-                error_dict["stack_trace"] = get_stack_trace_array(python_error.original_error)  # type: ignore
+            if hasattr(python_error, "original_error") and python_error.original_error:
+                error_dict["stack_trace"] = get_stack_trace_array(python_error.original_error)
 
     return result_dict
 
@@ -132,6 +122,7 @@ PREDEFINED_QUERIES = {
 }
 
 
+@workspace_target_argument
 @click.command(
     name="ui",
     help=(
@@ -184,23 +175,9 @@ PREDEFINED_QUERIES = {
 @click.option(
     "--ephemeral-instance",
     is_flag=True,
-    default=False,
     help="Use an ephemeral DagsterInstance instead of resolving via DAGSTER_HOME",
 )
-@workspace_options
-def ui(
-    text: Optional[str],
-    file: Optional[TextIOWrapper],
-    predefined: Optional[str],
-    variables: Optional[str],
-    remote: Optional[str],
-    output: Optional[str],
-    ephemeral_instance: bool,
-    **other_opts,
-):
-    workspace_opts = WorkspaceOpts.extract_from_cli_options(other_opts)
-    assert_no_remaining_opts(other_opts)
-
+def ui(text, file, predefined, variables, remote, output, ephemeral_instance, **kwargs):
     query = None
     if text is not None and file is None and predefined is None:
         query = text.strip("'\" \n\t")
@@ -221,11 +198,8 @@ def ui(
         with (
             get_temporary_instance_for_cli() if ephemeral_instance else get_instance_for_cli()
         ) as instance:
-            with WorkspaceProcessContext(
-                instance=instance,
-                version=__version__,
-                read_only=False,
-                workspace_load_target=workspace_opts_to_load_target(workspace_opts),
+            with get_workspace_process_context_from_kwargs(
+                instance, version=__version__, read_only=False, kwargs=kwargs
             ) as workspace_process_context:
                 execute_query_from_cli(
                     workspace_process_context,

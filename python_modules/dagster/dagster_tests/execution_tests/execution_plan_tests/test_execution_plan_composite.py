@@ -1,32 +1,34 @@
-import dagster as dg
+from dagster import Field, Int, String, job, op
+from dagster._core.definitions.config import ConfigMapping
+from dagster._core.definitions.decorators.graph_decorator import graph
 from dagster._core.definitions.job_base import InMemoryJob
 from dagster._core.execution.api import create_execution_plan, execute_plan
 from dagster._core.instance import DagsterInstance
 
 
-@dg.op(config_schema={"foo": dg.Field(dg.String)})
+@op(config_schema={"foo": Field(String)})
 def node_a(context):
     return context.op_config["foo"]
 
 
-@dg.op(config_schema={"bar": dg.Int})
+@op(config_schema={"bar": Int})
 def node_b(context, input_):
     return input_ * context.op_config["bar"]
 
 
-@dg.graph
+@graph
 def graph_with_nested_config_graph():
     return node_b(node_a())
 
 
-@dg.job
+@job
 def composite_job():
     graph_with_nested_config_graph()
 
 
-@dg.graph(
-    config=dg.ConfigMapping(
-        config_schema={"foo": dg.Field(dg.String), "bar": dg.Int},
+@graph(
+    config=ConfigMapping(
+        config_schema={"foo": Field(String), "bar": Int},
         config_fn=lambda cfg: {
             "node_a": {"config": {"foo": cfg["foo"]}},
             "node_b": {"config": {"bar": cfg["bar"]}},
@@ -37,7 +39,7 @@ def graph_with_nested_config_graph_and_config_mapping():
     return node_b(node_a())
 
 
-@dg.job
+@job
 def composite_job_with_config_mapping():
     graph_with_nested_config_graph_and_config_mapping()
 

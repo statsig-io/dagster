@@ -4,7 +4,7 @@ from datetime import datetime
 import click
 import dagster_graphql
 
-from automation.graphql.python_client.utils import (
+from .utils import (
     LegacyQueryHistoryInfo,
     are_queries_compatible,
     deserialize_from_query_filename,
@@ -56,7 +56,7 @@ def check():
         query_is_present = False
         for filename in os.listdir(query_dir):
             file_path = os.path.join(query_dir, filename)
-            with open(file_path, encoding="utf8") as f:
+            with open(file_path, "r", encoding="utf8") as f:
                 old_query = f.read()
                 if are_queries_compatible(old_query, current_queries_dict[query_name]):
                     query_is_present = True
@@ -86,7 +86,8 @@ def snapshot():
         if current_query_name not in legacy_query_info.legacy_queries:
             click.echo(
                 f"Couldn't find query history subdirectory for query {current_query_name}, so"
-                " making a new one" + f"\n\t at {query_dir}"
+                " making a new one"
+                + f"\n\t at {query_dir}"
             )
             os.mkdir(query_dir)
 
@@ -104,7 +105,9 @@ def snapshot():
             most_recent_query_filename = serialize_to_query_filename(
                 last_dagster_version, last_date.strftime(DATE_FORMAT_STRING)
             )
-            with open(os.path.join(query_dir, most_recent_query_filename), encoding="utf8") as f:
+            with open(
+                os.path.join(query_dir, most_recent_query_filename), "r", encoding="utf8"
+            ) as f:
                 most_recent_query = f.read()
 
         # Create a new snapshot if it's the first one or the query is not compatible

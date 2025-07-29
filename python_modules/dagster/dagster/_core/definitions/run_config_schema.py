@@ -1,10 +1,10 @@
-from collections.abc import Iterable, Mapping
-from typing import NamedTuple, Optional
+from typing import Iterable, Mapping, NamedTuple, Optional
 
 import dagster._check as check
 from dagster._config import ConfigType
-from dagster._core.definitions.config import ConfigMapping
-from dagster._core.definitions.job_definition import JobDefinition
+
+from .config import ConfigMapping
+from .job_definition import JobDefinition
 
 
 class RunConfigSchema(NamedTuple):

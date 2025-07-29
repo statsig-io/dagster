@@ -1,15 +1,12 @@
-from collections.abc import Iterator
-from typing import AbstractSet, Any, Callable, NamedTuple, Optional  # noqa: UP035
+from typing import AbstractSet, Any, Callable, Iterator, NamedTuple, Optional, cast
 
 import dagster._check as check
 from dagster._annotations import PublicAttr
-from dagster._core.decorator_utils import get_function_params
-from dagster._core.definitions.resource_requirement import (
-    HookResourceRequirement,
-    ResourceRequirement,
-)
-from dagster._core.definitions.utils import check_valid_name
-from dagster._core.errors import DagsterInvalidInvocationError
+
+from ..decorator_utils import get_function_params
+from ..errors import DagsterInvalidInvocationError
+from .resource_requirement import HookResourceRequirement, RequiresResources, ResourceRequirement
+from .utils import check_valid_name
 
 
 class HookDefinition(
@@ -22,6 +19,7 @@ class HookDefinition(
             ("decorated_fn", PublicAttr[Optional[Callable]]),
         ],
     ),
+    RequiresResources,
 ):
     """Define a hook which can be triggered during a op execution (e.g. a callback on the step
     execution failure event during a op execution).
@@ -41,7 +39,7 @@ class HookDefinition(
         required_resource_keys: Optional[AbstractSet[str]] = None,
         decorated_fn: Optional[Callable[..., Any]] = None,
     ):
-        return super().__new__(
+        return super(HookDefinition, cls).__new__(
             cls,
             name=check_valid_name(name),
             hook_fn=check.callable_param(hook_fn, "hook_fn"),
@@ -72,16 +70,13 @@ class HookDefinition(
                     foo(bar())
 
         """
-        from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
-        from dagster._core.definitions.graph_definition import GraphDefinition
-        from dagster._core.definitions.hook_invocation import hook_invocation_result
-        from dagster._core.definitions.job_definition import JobDefinition
-        from dagster._core.execution.context.hook import HookContext
+        from ..execution.context.hook import HookContext
+        from .graph_definition import GraphDefinition
+        from .hook_invocation import hook_invocation_result
+        from .job_definition import JobDefinition
 
-        if len(args) > 0 and isinstance(
-            args[0], (JobDefinition, GraphDefinition, AssetsDefinition)
-        ):
-            # when it decorates a job or asset, we apply this hook to all the op invocations within
+        if len(args) > 0 and isinstance(args[0], (JobDefinition, GraphDefinition)):
+            # when it decorates a job, we apply this hook to all the op invocations within
             # the job.
             return args[0].with_hooks({self})
         else:
@@ -145,9 +140,10 @@ class HookDefinition(
                 return hook_invocation_result(self, context)
 
     def get_resource_requirements(
-        self,
-        attached_to: Optional[str],
+        self, outer_context: Optional[object] = None
     ) -> Iterator[ResourceRequirement]:
+        # outer_context in this case is a string of (job, job name) or (node, node name)
+        attached_to = cast(Optional[str], outer_context)
         for resource_key in sorted(list(self.required_resource_keys)):
             yield HookResourceRequirement(
                 key=resource_key, attached_to=attached_to, hook_name=self.name

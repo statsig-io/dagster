@@ -1,27 +1,20 @@
 """Structured representations of system events."""
-
 import logging
 import os
 import sys
-import uuid
-from collections.abc import Mapping, Sequence
 from enum import Enum
-from typing import (  # noqa: F401, UP035
+from typing import (
     TYPE_CHECKING,
     AbstractSet,
     Any,
     Dict,
+    Mapping,
     NamedTuple,
     Optional,
+    Sequence,
     Tuple,
     Union,
     cast,
-)
-
-from dagster_shared.serdes.serdes import (
-    EnumSerializer,
-    UnpackContext,
-    is_whitelisted_for_serdes_object,
 )
 
 import dagster._check as check
@@ -34,47 +27,36 @@ from dagster._core.definitions import (
     HookDefinition,
     NodeHandle,
 )
-from dagster._core.definitions.asset_checks.asset_check_evaluation import (
+from dagster._core.definitions.asset_check_evaluation import (
     AssetCheckEvaluation,
     AssetCheckEvaluationPlanned,
 )
-from dagster._core.definitions.asset_health.asset_health import AssetHealthStatus
-from dagster._core.definitions.events import (
-    AssetLineageInfo,
-    AssetMaterializationFailure,
-    AssetMaterializationFailureReason,
-    AssetMaterializationFailureType,
-    ObjectStoreOperationType,
-)
+from dagster._core.definitions.events import AssetLineageInfo, ObjectStoreOperationType
 from dagster._core.definitions.metadata import (
     MetadataFieldSerializer,
     MetadataValue,
     RawMetadataValue,
     normalize_metadata,
 )
-from dagster._core.definitions.partitions.subset import PartitionsSubset
-from dagster._core.errors import DagsterInvariantViolationError, HookExecutionError
+from dagster._core.errors import HookExecutionError
 from dagster._core.execution.context.system import IPlanContext, IStepContext, StepExecutionContext
 from dagster._core.execution.plan.handle import ResolvedFromDynamicStepHandle, StepHandle
 from dagster._core.execution.plan.inputs import StepInputData
 from dagster._core.execution.plan.objects import StepFailureData, StepRetryData, StepSuccessData
 from dagster._core.execution.plan.outputs import StepOutputData
 from dagster._core.log_manager import DagsterLogManager
-from dagster._core.storage.compute_log_manager import CapturedLogContext, LogRetrievalShellCommand
-from dagster._core.storage.dagster_run import DagsterRun, DagsterRunStatus
-from dagster._core.storage.tags import PARTITION_NAME_TAG
-from dagster._record import record
-from dagster._serdes import NamedTupleSerializer, whitelist_for_serdes
-from dagster._utils.error import (
-    SerializableErrorInfo,
-    serializable_error_info_from_exc_info,
-    truncate_event_error_info,
+from dagster._core.storage.captured_log_manager import CapturedLogContext
+from dagster._core.storage.dagster_run import DagsterRunStatus
+from dagster._serdes import (
+    NamedTupleSerializer,
+    whitelist_for_serdes,
 )
+from dagster._serdes.serdes import UnpackContext
+from dagster._utils.error import SerializableErrorInfo, serializable_error_info_from_exc_info
 from dagster._utils.timing import format_duration
 
 if TYPE_CHECKING:
     from dagster._core.definitions.events import ObjectStoreOperation
-    from dagster._core.definitions.freshness import FreshnessStateChange, FreshnessStateEvaluation
     from dagster._core.execution.plan.plan import ExecutionPlan
     from dagster._core.execution.plan.step import StepKind
 
@@ -99,12 +81,6 @@ EventSpecificData = Union[
     "AssetMaterializationPlannedData",
     "AssetCheckEvaluation",
     "AssetCheckEvaluationPlanned",
-    "AssetFailedToMaterializeData",
-    "RunEnqueuedData",
-    "FreshnessStateEvaluation",
-    "FreshnessStateChange",
-    "AssetHealthChangedData",
-    "AssetWipedData",
 ]
 
 
@@ -134,13 +110,10 @@ class DagsterEventType(str, Enum):
 
     ASSET_MATERIALIZATION = "ASSET_MATERIALIZATION"
     ASSET_MATERIALIZATION_PLANNED = "ASSET_MATERIALIZATION_PLANNED"
-    ASSET_FAILED_TO_MATERIALIZE = "ASSET_FAILED_TO_MATERIALIZE"
     ASSET_OBSERVATION = "ASSET_OBSERVATION"
     STEP_EXPECTATION_RESULT = "STEP_EXPECTATION_RESULT"
     ASSET_CHECK_EVALUATION_PLANNED = "ASSET_CHECK_EVALUATION_PLANNED"
     ASSET_CHECK_EVALUATION = "ASSET_CHECK_EVALUATION"
-    ASSET_HEALTH_CHANGED = "ASSET_HEALTH_CHANGED"
-    ASSET_WIPED = "ASSET_WIPED"
 
     # We want to display RUN_* events in the Dagster UI and in our LogManager output, but in order to
     # support backcompat for our storage layer, we need to keep the persisted value to be strings
@@ -183,19 +156,16 @@ class DagsterEventType(str, Enum):
 
     LOGS_CAPTURED = "LOGS_CAPTURED"
 
-    FRESHNESS_STATE_EVALUATION = "FRESHNESS_STATE_EVALUATION"
-    FRESHNESS_STATE_CHANGE = "FRESHNESS_STATE_CHANGE"
 
-
-EVENT_TYPE_TO_DISPLAY_STRING = {
-    DagsterEventType.PIPELINE_ENQUEUED: "RUN_ENQUEUED",
-    DagsterEventType.PIPELINE_DEQUEUED: "RUN_DEQUEUED",
-    DagsterEventType.PIPELINE_STARTING: "RUN_STARTING",
-    DagsterEventType.PIPELINE_START: "RUN_START",
-    DagsterEventType.PIPELINE_SUCCESS: "RUN_SUCCESS",
-    DagsterEventType.PIPELINE_FAILURE: "RUN_FAILURE",
-    DagsterEventType.PIPELINE_CANCELING: "RUN_CANCELING",
-    DagsterEventType.PIPELINE_CANCELED: "RUN_CANCELED",
+EVENT_TYPE_VALUE_TO_DISPLAY_STRING = {
+    "PIPELINE_ENQUEUED": "RUN_ENQUEUED",
+    "PIPELINE_DEQUEUED": "RUN_DEQUEUED",
+    "PIPELINE_STARTING": "RUN_STARTING",
+    "PIPELINE_START": "RUN_START",
+    "PIPELINE_SUCCESS": "RUN_SUCCESS",
+    "PIPELINE_FAILURE": "RUN_FAILURE",
+    "PIPELINE_CANCELING": "RUN_CANCELING",
+    "PIPELINE_CANCELED": "RUN_CANCELED",
 }
 
 STEP_EVENTS = {
@@ -267,46 +237,16 @@ EVENT_TYPE_TO_PIPELINE_RUN_STATUS = {
 
 PIPELINE_RUN_STATUS_TO_EVENT_TYPE = {v: k for k, v in EVENT_TYPE_TO_PIPELINE_RUN_STATUS.items()}
 
-# These are the only events currently supported in `EventLogStorage.store_event_batch`
-BATCH_WRITABLE_EVENTS = {
-    DagsterEventType.ASSET_MATERIALIZATION,
-    DagsterEventType.ASSET_OBSERVATION,
-    DagsterEventType.ASSET_FAILED_TO_MATERIALIZE,
-}
-
 ASSET_EVENTS = {
     DagsterEventType.ASSET_MATERIALIZATION,
     DagsterEventType.ASSET_OBSERVATION,
     DagsterEventType.ASSET_MATERIALIZATION_PLANNED,
-    DagsterEventType.ASSET_FAILED_TO_MATERIALIZE,
-    DagsterEventType.FRESHNESS_STATE_CHANGE,
 }
 
 ASSET_CHECK_EVENTS = {
     DagsterEventType.ASSET_CHECK_EVALUATION,
     DagsterEventType.ASSET_CHECK_EVALUATION_PLANNED,
 }
-
-
-class RunFailureReasonSerializer(EnumSerializer):
-    def unpack(self, value: str):
-        try:
-            RunFailureReason(value)
-        except ValueError:
-            return RunFailureReason.UNKNOWN
-
-        return super().unpack(value)
-
-
-@whitelist_for_serdes(serializer=RunFailureReasonSerializer)
-class RunFailureReason(Enum):
-    UNEXPECTED_TERMINATION = "UNEXPECTED_TERMINATION"
-    RUN_EXCEPTION = "RUN_EXCEPTION"
-    STEP_FAILURE = "STEP_FAILURE"
-    JOB_INITIALIZATION_FAILURE = "JOB_INITIALIZATION_FAILURE"
-    START_TIMEOUT = "START_TIMEOUT"
-    RUN_WORKER_RESTART = "RUN_WORKER_RESTART"
-    UNKNOWN = "UNKNOWN"
 
 
 def _assert_type(
@@ -358,21 +298,11 @@ def _validate_event_specific_data(
         check.inst_param(event_specific_data, "event_specific_data", AssetCheckEvaluationPlanned)
     elif event_type == DagsterEventType.ASSET_CHECK_EVALUATION:
         check.inst_param(event_specific_data, "event_specific_data", AssetCheckEvaluation)
-    elif event_type == DagsterEventType.RUN_ENQUEUED:
-        check.opt_inst_param(event_specific_data, "event_specific_data", RunEnqueuedData)
 
     return event_specific_data
 
 
-def generate_event_batch_id():
-    return str(uuid.uuid4())
-
-
-def log_step_event(
-    step_context: IStepContext,
-    event: "DagsterEvent",
-    batch_metadata: Optional["DagsterEventBatchMetadata"],
-) -> None:
+def log_step_event(step_context: IStepContext, event: "DagsterEvent") -> None:
     event_type = DagsterEventType(event.event_type_value)
     log_level = logging.ERROR if event_type in FAILURE_EVENTS else logging.DEBUG
 
@@ -380,7 +310,6 @@ def log_step_event(
         level=log_level,
         msg=event.message or f"{event_type} for step {step_context.step.key}",
         dagster_event=event,
-        batch_metadata=batch_metadata,
     )
 
 
@@ -396,14 +325,14 @@ def log_job_event(job_context: IPlanContext, event: "DagsterEvent") -> None:
 
 
 def log_resource_event(log_manager: DagsterLogManager, event: "DagsterEvent") -> None:
-    event_specific_data = cast("EngineEventData", event.event_specific_data)
+    event_specific_data = cast(EngineEventData, event.event_specific_data)
 
     log_level = logging.ERROR if event_specific_data.error else logging.DEBUG
     log_manager.log_dagster_event(level=log_level, msg=event.message or "", dagster_event=event)
 
 
 class DagsterEventSerializer(NamedTupleSerializer["DagsterEvent"]):
-    def before_unpack(self, context, unpacked_dict: Any) -> dict[str, Any]:
+    def before_unpack(self, context, unpacked_dict: Any) -> Dict[str, Any]:
         event_type_value, event_specific_data = _handle_back_compat(
             unpacked_dict["event_type_value"], unpacked_dict.get("event_specific_data")
         )
@@ -416,7 +345,7 @@ class DagsterEventSerializer(NamedTupleSerializer["DagsterEvent"]):
         self,
         exc: Exception,
         context: UnpackContext,
-        storage_dict: dict[str, Any],
+        storage_dict: Dict[str, Any],
     ) -> "DagsterEvent":
         event_type_value, _ = _handle_back_compat(
             storage_dict["event_type_value"], storage_dict.get("event_specific_data")
@@ -437,11 +366,6 @@ class DagsterEventSerializer(NamedTupleSerializer["DagsterEvent"]):
                 error=serializable_error_info_from_exc_info(sys.exc_info())
             ),
         )
-
-
-class DagsterEventBatchMetadata(NamedTuple):
-    id: str
-    is_end: bool
 
 
 @whitelist_for_serdes(
@@ -472,7 +396,7 @@ class DagsterEvent(
 
     Users should not instantiate this class.
 
-    Args:
+    Attributes:
         event_type_value (str): Value for a DagsterEventType.
         job_name (str)
         node_handle (NodeHandle)
@@ -490,7 +414,6 @@ class DagsterEvent(
         step_context: IStepContext,
         event_specific_data: Optional["EventSpecificData"] = None,
         message: Optional[str] = None,
-        batch_metadata: Optional["DagsterEventBatchMetadata"] = None,
     ) -> "DagsterEvent":
         event = DagsterEvent(
             event_type_value=check.inst_param(event_type, "event_type", DagsterEventType).value,
@@ -504,7 +427,7 @@ class DagsterEvent(
             pid=os.getpid(),
         )
 
-        log_step_event(step_context, event, batch_metadata)
+        log_step_event(step_context, event)
 
         return event
 
@@ -578,7 +501,7 @@ class DagsterEvent(
         if step_handle is not None and step_key is None:
             step_key = step_handle.to_key()
 
-        return super().__new__(
+        return super(DagsterEvent, cls).__new__(
             cls,
             check.str_param(event_type_value, "event_type_value"),
             check.str_param(job_name, "job_name"),
@@ -597,7 +520,7 @@ class DagsterEvent(
     @property
     def node_name(self) -> str:
         check.invariant(self.node_handle is not None)
-        node_handle = cast("NodeHandle", self.node_handle)
+        node_handle = cast(NodeHandle, self.node_handle)
         return node_handle.name
 
     @public
@@ -740,11 +663,6 @@ class DagsterEvent(
         """bool: If this event is of type ASSET_MATERIALIZATION_PLANNED."""
         return self.event_type == DagsterEventType.ASSET_MATERIALIZATION_PLANNED
 
-    @property
-    def is_asset_failed_to_materialize(self) -> bool:
-        """bool: If this event is of type ASSET_FAILED_TO_MATERIALIZE."""
-        return self.event_type == DagsterEventType.ASSET_FAILED_TO_MATERIALIZE
-
     @public
     @property
     def asset_key(self) -> Optional[AssetKey]:
@@ -758,14 +676,6 @@ class DagsterEvent(
             return self.asset_observation_data.asset_observation.asset_key
         elif self.event_type == DagsterEventType.ASSET_MATERIALIZATION_PLANNED:
             return self.asset_materialization_planned_data.asset_key
-        elif self.event_type == DagsterEventType.ASSET_FAILED_TO_MATERIALIZE:
-            return self.asset_failed_to_materialize_data.asset_key
-        elif self.event_type == DagsterEventType.FRESHNESS_STATE_CHANGE:
-            return self.asset_freshness_state_change_data.key
-        elif self.event_type == DagsterEventType.ASSET_HEALTH_CHANGED:
-            return self.asset_health_changed_data.asset_key
-        elif self.event_type == DagsterEventType.ASSET_WIPED:
-            return self.asset_wiped_data.asset_key
         else:
             return None
 
@@ -782,58 +692,45 @@ class DagsterEvent(
             return self.asset_observation_data.asset_observation.partition
         elif self.event_type == DagsterEventType.ASSET_MATERIALIZATION_PLANNED:
             return self.asset_materialization_planned_data.partition
-        elif self.event_type == DagsterEventType.ASSET_FAILED_TO_MATERIALIZE:
-            return self.asset_failed_to_materialize_data.partition
         else:
             return None
 
     @property
-    def partitions_subset(self) -> Optional[PartitionsSubset]:
-        if self.event_type == DagsterEventType.ASSET_MATERIALIZATION_PLANNED:
-            return self.asset_materialization_planned_data.partitions_subset
-        return None
-
-    @property
     def step_input_data(self) -> "StepInputData":
         _assert_type("step_input_data", DagsterEventType.STEP_INPUT, self.event_type)
-        return cast("StepInputData", self.event_specific_data)
-
-    @property
-    def run_enqueued_data(self) -> Optional["RunEnqueuedData"]:
-        _assert_type("run_enqueued_data", DagsterEventType.RUN_ENQUEUED, self.event_type)
-        return cast("Optional[RunEnqueuedData]", self.event_specific_data)
+        return cast(StepInputData, self.event_specific_data)
 
     @property
     def step_output_data(self) -> StepOutputData:
         _assert_type("step_output_data", DagsterEventType.STEP_OUTPUT, self.event_type)
-        return cast("StepOutputData", self.event_specific_data)
+        return cast(StepOutputData, self.event_specific_data)
 
     @property
     def step_success_data(self) -> "StepSuccessData":
         _assert_type("step_success_data", DagsterEventType.STEP_SUCCESS, self.event_type)
-        return cast("StepSuccessData", self.event_specific_data)
+        return cast(StepSuccessData, self.event_specific_data)
 
     @property
     def step_failure_data(self) -> "StepFailureData":
         _assert_type("step_failure_data", DagsterEventType.STEP_FAILURE, self.event_type)
-        return cast("StepFailureData", self.event_specific_data)
+        return cast(StepFailureData, self.event_specific_data)
 
     @property
     def step_retry_data(self) -> "StepRetryData":
         _assert_type("step_retry_data", DagsterEventType.STEP_UP_FOR_RETRY, self.event_type)
-        return cast("StepRetryData", self.event_specific_data)
+        return cast(StepRetryData, self.event_specific_data)
 
     @property
     def step_materialization_data(self) -> "StepMaterializationData":
         _assert_type(
             "step_materialization_data", DagsterEventType.ASSET_MATERIALIZATION, self.event_type
         )
-        return cast("StepMaterializationData", self.event_specific_data)
+        return cast(StepMaterializationData, self.event_specific_data)
 
     @property
     def asset_observation_data(self) -> "AssetObservationData":
         _assert_type("asset_observation_data", DagsterEventType.ASSET_OBSERVATION, self.event_type)
-        return cast("AssetObservationData", self.event_specific_data)
+        return cast(AssetObservationData, self.event_specific_data)
 
     @property
     def asset_materialization_planned_data(self) -> "AssetMaterializationPlannedData":
@@ -842,60 +739,7 @@ class DagsterEvent(
             DagsterEventType.ASSET_MATERIALIZATION_PLANNED,
             self.event_type,
         )
-        return cast("AssetMaterializationPlannedData", self.event_specific_data)
-
-    @property
-    def asset_check_planned_data(self) -> "AssetCheckEvaluationPlanned":
-        _assert_type(
-            "asset_check_planned",
-            DagsterEventType.ASSET_CHECK_EVALUATION_PLANNED,
-            self.event_type,
-        )
-        return cast("AssetCheckEvaluationPlanned", self.event_specific_data)
-
-    @property
-    def asset_failed_to_materialize_data(
-        self,
-    ) -> "AssetFailedToMaterializeData":
-        _assert_type(
-            "asset_failed_to_materialize_data",
-            DagsterEventType.ASSET_FAILED_TO_MATERIALIZE,
-            self.event_type,
-        )
-        return cast("AssetFailedToMaterializeData", self.event_specific_data)
-
-    @property
-    def asset_freshness_state_change_data(
-        self,
-    ) -> "FreshnessStateChange":
-        _assert_type(
-            "asset_freshness_state_change_data",
-            DagsterEventType.FRESHNESS_STATE_CHANGE,
-            self.event_type,
-        )
-        return cast("FreshnessStateChange", self.event_specific_data)
-
-    @property
-    def asset_health_changed_data(
-        self,
-    ) -> "AssetHealthChangedData":
-        _assert_type(
-            "asset_health_changed_data",
-            DagsterEventType.ASSET_HEALTH_CHANGED,
-            self.event_type,
-        )
-        return cast("AssetHealthChangedData", self.event_specific_data)
-
-    @property
-    def asset_wiped_data(
-        self,
-    ) -> "AssetWipedData":
-        _assert_type(
-            "asset_wiped_data",
-            DagsterEventType.ASSET_WIPED,
-            self.event_type,
-        )
-        return cast("AssetWipedData", self.event_specific_data)
+        return cast(AssetMaterializationPlannedData, self.event_specific_data)
 
     @property
     def step_expectation_result_data(self) -> "StepExpectationResultData":
@@ -904,31 +748,19 @@ class DagsterEvent(
             DagsterEventType.STEP_EXPECTATION_RESULT,
             self.event_type,
         )
-        return cast("StepExpectationResultData", self.event_specific_data)
+        return cast(StepExpectationResultData, self.event_specific_data)
 
     @property
     def materialization(self) -> AssetMaterialization:
         _assert_type(
             "step_materialization_data", DagsterEventType.ASSET_MATERIALIZATION, self.event_type
         )
-        return cast("StepMaterializationData", self.event_specific_data).materialization
-
-    @property
-    def asset_check_evaluation_data(self) -> AssetCheckEvaluation:
-        _assert_type(
-            "asset_check_evaluation", DagsterEventType.ASSET_CHECK_EVALUATION, self.event_type
-        )
-        return cast("AssetCheckEvaluation", self.event_specific_data)
+        return cast(StepMaterializationData, self.event_specific_data).materialization
 
     @property
     def job_failure_data(self) -> "JobFailureData":
         _assert_type("job_failure_data", DagsterEventType.RUN_FAILURE, self.event_type)
-        return cast("JobFailureData", self.event_specific_data)
-
-    @property
-    def job_canceled_data(self) -> "JobCanceledData":
-        _assert_type("job_canceled_data", DagsterEventType.RUN_CANCELED, self.event_type)
-        return cast("JobCanceledData", self.event_specific_data)
+        return cast(JobFailureData, self.event_specific_data)
 
     @property
     def engine_event_data(self) -> "EngineEventData":
@@ -944,7 +776,7 @@ class DagsterEvent(
             ],
             self.event_type,
         )
-        return cast("EngineEventData", self.event_specific_data)
+        return cast(EngineEventData, self.event_specific_data)
 
     @property
     def hook_completed_data(self) -> Optional["EventSpecificData"]:
@@ -954,7 +786,7 @@ class DagsterEvent(
     @property
     def hook_errored_data(self) -> "HookErroredData":
         _assert_type("hook_errored_data", DagsterEventType.HOOK_ERRORED, self.event_type)
-        return cast("HookErroredData", self.event_specific_data)
+        return cast(HookErroredData, self.event_specific_data)
 
     @property
     def hook_skipped_data(self) -> Optional["EventSpecificData"]:
@@ -964,7 +796,7 @@ class DagsterEvent(
     @property
     def logs_captured_data(self) -> "ComputeLogsCaptureData":
         _assert_type("logs_captured_data", DagsterEventType.LOGS_CAPTURED, self.event_type)
-        return cast("ComputeLogsCaptureData", self.event_specific_data)
+        return cast(ComputeLogsCaptureData, self.event_specific_data)
 
     @staticmethod
     def step_output_event(
@@ -1072,7 +904,9 @@ class DagsterEvent(
         return DagsterEvent.from_step(
             event_type=DagsterEventType.STEP_RESTARTED,
             step_context=step_context,
-            message=f'Started re-execution (attempt # {previous_attempts + 1}) of step "{step_context.step.key}".',
+            message='Started re-execution (attempt # {n}) of step "{step_key}".'.format(
+                step_key=step_context.step.key, n=previous_attempts + 1
+            ),
         )
 
     @staticmethod
@@ -1083,7 +917,10 @@ class DagsterEvent(
             event_type=DagsterEventType.STEP_SUCCESS,
             step_context=step_context,
             event_specific_data=success,
-            message=f'Finished execution of step "{step_context.step.key}" in {format_duration(success.duration_ms)}.',
+            message='Finished execution of step "{step_key}" in {duration}.'.format(
+                step_key=step_context.step.key,
+                duration=format_duration(success.duration_ms),
+            ),
         )
 
     @staticmethod
@@ -1098,7 +935,6 @@ class DagsterEvent(
     def asset_materialization(
         step_context: IStepContext,
         materialization: AssetMaterialization,
-        batch_metadata: Optional[DagsterEventBatchMetadata] = None,
     ) -> "DagsterEvent":
         return DagsterEvent.from_step(
             event_type=DagsterEventType.ASSET_MATERIALIZATION,
@@ -1111,20 +947,16 @@ class DagsterEvent(
                     label_clause=f" {materialization.label}" if materialization.label else ""
                 )
             ),
-            batch_metadata=batch_metadata,
         )
 
     @staticmethod
     def asset_observation(
-        step_context: IStepContext,
-        observation: AssetObservation,
-        batch_metadata: Optional[DagsterEventBatchMetadata] = None,
+        step_context: IStepContext, observation: AssetObservation
     ) -> "DagsterEvent":
         return DagsterEvent.from_step(
             event_type=DagsterEventType.ASSET_OBSERVATION,
             step_context=step_context,
             event_specific_data=AssetObservationData(observation),
-            batch_metadata=batch_metadata,
         )
 
     @staticmethod
@@ -1135,13 +967,6 @@ class DagsterEvent(
             event_type=DagsterEventType.ASSET_CHECK_EVALUATION,
             step_context=step_context,
             event_specific_data=asset_check_evaluation,
-            message=f"Asset check '{asset_check_evaluation.check_name}' on '{asset_check_evaluation.asset_key.to_user_string()}' "
-            + ("passed." if asset_check_evaluation.passed else "did not pass.")
-            + (
-                ""
-                if asset_check_evaluation.description is None
-                else f" Description: '{asset_check_evaluation.description}'"
-            ),
         )
 
     @staticmethod
@@ -1165,44 +990,6 @@ class DagsterEvent(
         )
 
     @staticmethod
-    def step_concurrency_blocked(
-        step_context: IStepContext, concurrency_key: str, initial=True
-    ) -> "DagsterEvent":
-        message = (
-            f"Step blocked by limit for pool {concurrency_key}"
-            if initial
-            else f"Step still blocked by limit for pool {concurrency_key}"
-        )
-        return DagsterEvent.from_step(
-            event_type=DagsterEventType.ENGINE_EVENT,
-            step_context=step_context,
-            message=message,
-            event_specific_data=EngineEventData(
-                metadata={"pool": MetadataValue.pool(concurrency_key)}
-            ),
-        )
-
-    @staticmethod
-    def job_enqueue(run: DagsterRun) -> "DagsterEvent":
-        remote_job_origin = run.remote_job_origin
-        if remote_job_origin:
-            loc_name = remote_job_origin.location_name
-            repo_name = remote_job_origin.repository_origin.repository_name
-            event_data = RunEnqueuedData(
-                code_location_name=loc_name,
-                repository_name=repo_name,
-                partition_key=run.tags.get(PARTITION_NAME_TAG),
-            )
-        else:
-            event_data = None
-
-        return DagsterEvent(
-            event_type_value=DagsterEventType.RUN_ENQUEUED.value,
-            job_name=run.job_name,
-            event_specific_data=event_data,
-        )
-
-    @staticmethod
     def job_start(job_context: IPlanContext) -> "DagsterEvent":
         return DagsterEvent.from_job(
             DagsterEventType.RUN_START,
@@ -1222,9 +1009,7 @@ class DagsterEvent(
     def job_failure(
         job_context_or_name: Union[IPlanContext, str],
         context_msg: str,
-        failure_reason: RunFailureReason,
         error_info: Optional[SerializableErrorInfo] = None,
-        first_step_failure_event: Optional["DagsterEvent"] = None,
     ) -> "DagsterEvent":
         check.str_param(context_msg, "context_msg")
         if isinstance(job_context_or_name, IPlanContext):
@@ -1234,11 +1019,7 @@ class DagsterEvent(
                 message=(
                     f'Execution of run for "{job_context_or_name.job_name}" failed. {context_msg}'
                 ),
-                event_specific_data=JobFailureData(
-                    error_info,
-                    failure_reason=failure_reason,
-                    first_step_failure_event=first_step_failure_event,
-                ),
+                event_specific_data=JobFailureData(error_info),
             )
         else:
             # when the failure happens trying to bring up context, the job_context hasn't been
@@ -1247,7 +1028,7 @@ class DagsterEvent(
             event = DagsterEvent(
                 event_type_value=DagsterEventType.RUN_FAILURE.value,
                 job_name=job_context_or_name,
-                event_specific_data=JobFailureData(error_info, failure_reason=failure_reason),
+                event_specific_data=JobFailureData(error_info),
                 message=f'Execution of run for "{job_context_or_name}" failed. {context_msg}',
                 pid=os.getpid(),
             )
@@ -1255,14 +1036,12 @@ class DagsterEvent(
 
     @staticmethod
     def job_canceled(
-        job_context: IPlanContext,
-        error_info: Optional[SerializableErrorInfo] = None,
-        message: Optional[str] = None,
+        job_context: IPlanContext, error_info: Optional[SerializableErrorInfo] = None
     ) -> "DagsterEvent":
         return DagsterEvent.from_job(
             DagsterEventType.RUN_CANCELED,
             job_context,
-            message=message or f'Execution of run for "{job_context.job_name}" canceled.',
+            message=f'Execution of run for "{job_context.job_name}" canceled.',
             event_specific_data=JobCanceledData(
                 check.opt_inst_param(error_info, "error_info", SerializableErrorInfo)
             ),
@@ -1272,7 +1051,7 @@ class DagsterEvent(
     def step_worker_starting(
         step_context: IStepContext,
         message: str,
-        metadata: Mapping[str, RawMetadataValue],
+        metadata: Mapping[str, MetadataValue],
     ) -> "DagsterEvent":
         return DagsterEvent.from_step(
             DagsterEventType.STEP_WORKER_STARTING,
@@ -1288,7 +1067,7 @@ class DagsterEvent(
         log_manager: DagsterLogManager,
         job_name: str,
         message: str,
-        metadata: Mapping[str, RawMetadataValue],
+        metadata: Mapping[str, MetadataValue],
         step_key: Optional[str],
     ) -> "DagsterEvent":
         event = DagsterEvent(
@@ -1453,7 +1232,13 @@ class DagsterEvent(
             ObjectStoreOperationType(object_store_operation_result.op)
             == ObjectStoreOperationType.CP_OBJECT
         ):
-            message = f"Copied intermediate object for input {value_name} from {object_store_operation_result.key} to {object_store_operation_result.dest_key}"
+            message = (
+                "Copied intermediate object for input {value_name} from {key} to {dest_key}"
+            ).format(
+                value_name=value_name,
+                key=object_store_operation_result.key,
+                dest_key=object_store_operation_result.dest_key,
+            )
         else:
             message = ""
 
@@ -1623,44 +1408,8 @@ class DagsterEvent(
                 file_key=file_key,
                 external_stdout_url=log_context.external_stdout_url,
                 external_stderr_url=log_context.external_stderr_url,
-                shell_cmd=log_context.shell_cmd,
                 external_url=log_context.external_url,
             ),
-        )
-
-    @staticmethod
-    def build_asset_materialization_planned_event(
-        job_name: str,
-        step_key: str,
-        asset_materialization_planned_data: "AssetMaterializationPlannedData",
-    ) -> "DagsterEvent":
-        """Constructs an asset materialization planned event, to be logged by the caller."""
-        event = DagsterEvent(
-            event_type_value=DagsterEventType.ASSET_MATERIALIZATION_PLANNED.value,
-            job_name=job_name,
-            message=(
-                f"{job_name} intends to materialize asset {asset_materialization_planned_data.asset_key.to_string()}"
-            ),
-            event_specific_data=asset_materialization_planned_data,
-            step_key=step_key,
-        )
-        return event
-
-    @staticmethod
-    def build_asset_failed_to_materialize_event(
-        job_name: str,
-        step_key: Optional[str],
-        asset_materialization_failure: "AssetMaterializationFailure",
-        error: Optional[SerializableErrorInfo] = None,
-    ) -> "DagsterEvent":
-        return DagsterEvent(
-            event_type_value=DagsterEventType.ASSET_FAILED_TO_MATERIALIZE.value,
-            job_name=job_name,
-            message=f"Asset {asset_materialization_failure.asset_key.to_string()} failed to materialize",
-            event_specific_data=AssetFailedToMaterializeData(
-                asset_materialization_failure, error=error
-            ),
-            step_key=step_key,
         )
 
 
@@ -1685,56 +1434,12 @@ class AssetObservationData(
     NamedTuple("_AssetObservation", [("asset_observation", AssetObservation)])
 ):
     def __new__(cls, asset_observation: AssetObservation):
-        return super().__new__(
+        return super(AssetObservationData, cls).__new__(
             cls,
             asset_observation=check.inst_param(
                 asset_observation, "asset_observation", AssetObservation
             ),
         )
-
-
-@whitelist_for_serdes
-class AssetFailedToMaterializeData(
-    NamedTuple(
-        "AssetFailedToMaterializeData",
-        [
-            ("asset_materialization_failure", AssetMaterializationFailure),
-            ("error", Optional[SerializableErrorInfo]),
-        ],
-    )
-):
-    def __new__(
-        cls,
-        asset_materialization_failure: AssetMaterializationFailure,
-        error: Optional[SerializableErrorInfo] = None,
-    ):
-        return super().__new__(
-            cls,
-            asset_materialization_failure=check.inst_param(
-                asset_materialization_failure,
-                "asset_materialization_failure",
-                AssetMaterializationFailure,
-            ),
-            error=truncate_event_error_info(
-                check.opt_inst_param(error, "error", SerializableErrorInfo)
-            ),
-        )
-
-    @property
-    def asset_key(self) -> AssetKey:
-        return self.asset_materialization_failure.asset_key
-
-    @property
-    def partition(self) -> Optional[str]:
-        return self.asset_materialization_failure.partition
-
-    @property
-    def failure_type(self) -> AssetMaterializationFailureType:
-        return self.asset_materialization_failure.failure_type
-
-    @property
-    def reason(self) -> AssetMaterializationFailureReason:
-        return self.asset_materialization_failure.reason
 
 
 @whitelist_for_serdes
@@ -1752,7 +1457,7 @@ class StepMaterializationData(
         materialization: AssetMaterialization,
         asset_lineage: Optional[Sequence[AssetLineageInfo]] = None,
     ):
-        return super().__new__(
+        return super(StepMaterializationData, cls).__new__(
             cls,
             materialization=check.inst_param(
                 materialization, "materialization", AssetMaterialization
@@ -1767,52 +1472,15 @@ class StepMaterializationData(
 class AssetMaterializationPlannedData(
     NamedTuple(
         "_AssetMaterializationPlannedData",
-        [
-            ("asset_key", AssetKey),
-            ("partition", Optional[str]),
-            ("partitions_subset", Optional["PartitionsSubset"]),
-        ],
+        [("asset_key", AssetKey), ("partition", Optional[str])],
     )
 ):
-    def __new__(
-        cls,
-        asset_key: AssetKey,
-        partition: Optional[str] = None,
-        partitions_subset: Optional["PartitionsSubset"] = None,
-    ):
-        if partitions_subset and partition:
-            raise DagsterInvariantViolationError(
-                "Cannot provide both partition and partitions_subset"
-            )
-
-        if partitions_subset:
-            check.opt_inst_param(partitions_subset, "partitions_subset", PartitionsSubset)
-            check.invariant(
-                is_whitelisted_for_serdes_object(partitions_subset),
-                "partitions_subset must be serializable",
-            )
-
-        return super().__new__(
+    def __new__(cls, asset_key: AssetKey, partition: Optional[str] = None):
+        return super(AssetMaterializationPlannedData, cls).__new__(
             cls,
             asset_key=check.inst_param(asset_key, "asset_key", AssetKey),
             partition=check.opt_str_param(partition, "partition"),
-            partitions_subset=partitions_subset,
         )
-
-
-@whitelist_for_serdes
-@record
-class AssetHealthChangedData:
-    asset_key: AssetKey
-    previous_health_state: AssetHealthStatus
-    new_health_state: AssetHealthStatus
-
-
-@whitelist_for_serdes
-@record
-class AssetWipedData:
-    asset_key: AssetKey
-    partition_keys: Optional[Sequence[str]]
 
 
 @whitelist_for_serdes
@@ -1825,7 +1493,7 @@ class StepExpectationResultData(
     )
 ):
     def __new__(cls, expectation_result: ExpectationResult):
-        return super().__new__(
+        return super(StepExpectationResultData, cls).__new__(
             cls,
             expectation_result=check.inst_param(
                 expectation_result, "expectation_result", ExpectationResult
@@ -1859,9 +1527,9 @@ class ObjectStoreOperationResultData(
         version: Optional[str] = None,
         mapping_key: Optional[str] = None,
     ):
-        return super().__new__(
+        return super(ObjectStoreOperationResultData, cls).__new__(
             cls,
-            op=cast("ObjectStoreOperationType", check.str_param(op, "op")),
+            op=cast(ObjectStoreOperationType, check.str_param(op, "op")),
             value_name=check.opt_str_param(value_name, "value_name"),
             metadata=normalize_metadata(
                 check.opt_mapping_param(metadata, "metadata", key_type=str)
@@ -1869,27 +1537,6 @@ class ObjectStoreOperationResultData(
             address=check.opt_str_param(address, "address"),
             version=check.opt_str_param(version, "version"),
             mapping_key=check.opt_str_param(mapping_key, "mapping_key"),
-        )
-
-
-@whitelist_for_serdes
-class RunEnqueuedData(
-    NamedTuple(
-        "_RunEnqueuedData",
-        [("code_location_name", str), ("repository_name", str), ("partition_key", Optional[str])],
-    )
-):
-    def __new__(
-        cls,
-        code_location_name: str,
-        repository_name: str,
-        partition_key: Optional[str] = None,
-    ):
-        return super().__new__(
-            cls,
-            code_location_name=check.str_param(code_location_name, "code_location_name"),
-            repository_name=check.str_param(repository_name, "repository_name"),
-            partition_key=check.opt_str_param(partition_key, "partition_key"),
         )
 
 
@@ -1919,14 +1566,12 @@ class EngineEventData(
         marker_start: Optional[str] = None,
         marker_end: Optional[str] = None,
     ):
-        return super().__new__(
+        return super(EngineEventData, cls).__new__(
             cls,
             metadata=normalize_metadata(
                 check.opt_mapping_param(metadata, "metadata", key_type=str)
             ),
-            error=truncate_event_error_info(
-                check.opt_inst_param(error, "error", SerializableErrorInfo)
-            ),
+            error=check.opt_inst_param(error, "error", SerializableErrorInfo),
             marker_start=check.opt_str_param(marker_start, "marker_start"),
             marker_end=check.opt_str_param(marker_end, "marker_end"),
         )
@@ -1978,26 +1623,12 @@ class JobFailureData(
         "_JobFailureData",
         [
             ("error", Optional[SerializableErrorInfo]),
-            ("failure_reason", Optional[RunFailureReason]),
-            ("first_step_failure_event", Optional["DagsterEvent"]),
         ],
     )
 ):
-    def __new__(
-        cls,
-        error: Optional[SerializableErrorInfo],
-        failure_reason: Optional[RunFailureReason] = None,
-        first_step_failure_event: Optional["DagsterEvent"] = None,
-    ):
-        return super().__new__(
-            cls,
-            error=truncate_event_error_info(
-                check.opt_inst_param(error, "error", SerializableErrorInfo)
-            ),
-            failure_reason=check.opt_inst_param(failure_reason, "failure_reason", RunFailureReason),
-            first_step_failure_event=check.opt_inst_param(
-                first_step_failure_event, "first_step_failure_event", DagsterEvent
-            ),
+    def __new__(cls, error: Optional[SerializableErrorInfo]):
+        return super(JobFailureData, cls).__new__(
+            cls, error=check.opt_inst_param(error, "error", SerializableErrorInfo)
         )
 
 
@@ -2011,11 +1642,8 @@ class JobCanceledData(
     )
 ):
     def __new__(cls, error: Optional[SerializableErrorInfo]):
-        return super().__new__(
-            cls,
-            error=truncate_event_error_info(
-                check.opt_inst_param(error, "error", SerializableErrorInfo)
-            ),
+        return super(JobCanceledData, cls).__new__(
+            cls, error=check.opt_inst_param(error, "error", SerializableErrorInfo)
         )
 
 
@@ -2029,11 +1657,8 @@ class HookErroredData(
     )
 ):
     def __new__(cls, error: SerializableErrorInfo):
-        return super().__new__(
-            cls,
-            error=check.not_none(
-                truncate_event_error_info(check.inst_param(error, "error", SerializableErrorInfo))
-            ),
+        return super(HookErroredData, cls).__new__(
+            cls, error=check.inst_param(error, "error", SerializableErrorInfo)
         )
 
 
@@ -2057,7 +1682,7 @@ class HandledOutputData(
         manager_key: str,
         metadata: Optional[Mapping[str, MetadataValue]] = None,
     ):
-        return super().__new__(
+        return super(HandledOutputData, cls).__new__(
             cls,
             output_name=check.str_param(output_name, "output_name"),
             manager_key=check.str_param(manager_key, "manager_key"),
@@ -2091,7 +1716,7 @@ class LoadedInputData(
         upstream_step_key: Optional[str] = None,
         metadata: Optional[Mapping[str, MetadataValue]] = None,
     ):
-        return super().__new__(
+        return super(LoadedInputData, cls).__new__(
             cls,
             input_name=check.str_param(input_name, "input_name"),
             manager_key=check.str_param(manager_key, "manager_key"),
@@ -2113,7 +1738,6 @@ class ComputeLogsCaptureData(
             ("external_url", Optional[str]),
             ("external_stdout_url", Optional[str]),
             ("external_stderr_url", Optional[str]),
-            ("shell_cmd", Optional[LogRetrievalShellCommand]),
         ],
     )
 ):
@@ -2124,16 +1748,14 @@ class ComputeLogsCaptureData(
         external_url: Optional[str] = None,
         external_stdout_url: Optional[str] = None,
         external_stderr_url: Optional[str] = None,
-        shell_cmd: Optional[LogRetrievalShellCommand] = None,
     ):
-        return super().__new__(
+        return super(ComputeLogsCaptureData, cls).__new__(
             cls,
             file_key=check.str_param(file_key, "file_key"),
             step_keys=check.opt_list_param(step_keys, "step_keys", of_type=str),
             external_url=check.opt_str_param(external_url, "external_url"),
             external_stdout_url=check.opt_str_param(external_stdout_url, "external_stdout_url"),
             external_stderr_url=check.opt_str_param(external_stderr_url, "external_stderr_url"),
-            shell_cmd=check.opt_inst_param(shell_cmd, "shell_cmd", LogRetrievalShellCommand),
         )
 
 
@@ -2172,8 +1794,8 @@ class ComputeLogsCaptureData(
 
 def _handle_back_compat(
     event_type_value: str,
-    event_specific_data: Optional[dict[str, Any]],
-) -> tuple[str, Optional[dict[str, Any]]]:
+    event_specific_data: Optional[Dict[str, Any]],
+) -> Tuple[str, Optional[Dict[str, Any]]]:
     # transform old specific process events in to engine events
     if event_type_value in [
         "PIPELINE_PROCESS_START",
@@ -2184,9 +1806,9 @@ def _handle_back_compat(
 
     # changes asset store ops in to get/set asset
     elif event_type_value == "ASSET_STORE_OPERATION":
-        assert event_specific_data is not None, (
-            "ASSET_STORE_OPERATION event must have specific data"
-        )
+        assert (
+            event_specific_data is not None
+        ), "ASSET_STORE_OPERATION event must have specific data"
         if event_specific_data["op"] in (
             "GET_ASSET",
             '{"__enum__": "AssetStoreOperationType.GET_ASSET"}',
@@ -2219,9 +1841,9 @@ def _handle_back_compat(
 
     # transform PIPELINE_INIT_FAILURE to PIPELINE_FAILURE
     if event_type_value == "PIPELINE_INIT_FAILURE":
-        assert event_specific_data is not None, (
-            "PIPELINE_INIT_FAILURE event must have specific data"
-        )
+        assert (
+            event_specific_data is not None
+        ), "PIPELINE_INIT_FAILURE event must have specific data"
         return "PIPELINE_FAILURE", {
             "__class__": "PipelineFailureData",
             "error": event_specific_data.get("error"),

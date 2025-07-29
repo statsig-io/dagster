@@ -1,20 +1,12 @@
 import random
-import time
+from typing import List
 
-from dagster import (
-    AssetKey,
-    AssetMaterialization,
-    AssetsDefinition,
-    OpExecutionContext,
-    asset,
-    job,
-    op,
-)
+from dagster import AssetKey, AssetsDefinition, asset
 
 N_ASSETS = 1000
 
 
-def generate_big_honkin_assets() -> list[AssetsDefinition]:
+def generate_big_honkin_assets() -> List[AssetsDefinition]:
     random.seed(5438790)
     assets = []
 
@@ -23,17 +15,8 @@ def generate_big_honkin_assets() -> list[AssetsDefinition]:
             AssetKey(f"asset_{j}") for j in random.sample(range(i), min(i, random.randint(0, 3)))
         ]
 
-        @asset(
-            name=f"asset_{i}",
-            deps=non_argument_deps,
-            tags={
-                "test": "hi",
-                "a-super-super-duper-super-longkey": "A-SUPER-DUPER-DUPER-DUPER-DUPER-LONG-VALUE",
-            },
-        )
+        @asset(name=f"asset_{i}", deps=non_argument_deps)
         def some_asset():
-            # Sleep for 10 seconds to make the asset materialization take a long time
-            time.sleep(10)
             pass
 
         assets.append(some_asset)
@@ -42,19 +25,3 @@ def generate_big_honkin_assets() -> list[AssetsDefinition]:
 
 
 assets = generate_big_honkin_assets()
-
-
-letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-
-@op
-def create_non_sda_asset(context: OpExecutionContext):
-    for i in range(100000):
-        context.log_event(
-            AssetMaterialization(asset_key=f"{letters[i % len(letters)]}_external_asset_{i}")
-        )
-
-
-@job
-def big_honkin_assets_job():
-    create_non_sda_asset()

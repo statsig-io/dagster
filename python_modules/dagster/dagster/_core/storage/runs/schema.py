@@ -1,7 +1,7 @@
 import sqlalchemy as db
 from sqlalchemy.dialects import sqlite
 
-from dagster._core.storage.sql import MySQLCompatabilityTypes, get_sql_current_timestamp
+from ..sql import MySQLCompatabilityTypes, get_current_timestamp
 
 RunStorageSqlMetadata = db.MetaData()
 
@@ -28,8 +28,8 @@ RunsTable = db.Table(
     db.Column("run_body", db.Text),
     db.Column("partition", db.Text),
     db.Column("partition_set", db.Text),
-    db.Column("create_timestamp", db.DateTime, server_default=get_sql_current_timestamp()),
-    db.Column("update_timestamp", db.DateTime, server_default=get_sql_current_timestamp()),
+    db.Column("create_timestamp", db.DateTime, server_default=get_current_timestamp()),
+    db.Column("update_timestamp", db.DateTime, server_default=get_current_timestamp()),
     # Added start/end_time in #6038 (12/2021), MySQL fix added in #6451 (2/2022)
     # We are using floats here to store unix timestamps in the database. They are optional perf
     # optimizations, mirroring the timestamps in the event_log for the corresponding events marking
@@ -44,7 +44,6 @@ RunsTable = db.Table(
     # columns in favor of DateTime / Timestamp columns.
     db.Column("start_time", db.Float),
     db.Column("end_time", db.Float),
-    db.Column("backfill_id", db.String(255)),
 )
 
 # Secondary Index migration table, used to track data migrations, both for event_logs and runs.
@@ -59,7 +58,7 @@ SecondaryIndexMigrationTable = db.Table(
         autoincrement=True,
     ),
     db.Column("name", MySQLCompatabilityTypes.UniqueText, unique=True),
-    db.Column("create_timestamp", db.DateTime, server_default=get_sql_current_timestamp()),
+    db.Column("create_timestamp", db.DateTime, server_default=get_current_timestamp()),
     db.Column("migration_completed", db.DateTime),
 )
 
@@ -121,21 +120,6 @@ BulkActionsTable = db.Table(
     db.Column("body", db.Text),
     db.Column("action_type", db.String(32)),
     db.Column("selector_id", db.Text),
-    db.Column("job_name", db.Text, nullable=True),
-)
-
-BackfillTagsTable = db.Table(
-    "backfill_tags",
-    RunStorageSqlMetadata,
-    db.Column(
-        "id",
-        db.BigInteger().with_variant(sqlite.INTEGER(), "sqlite"),
-        primary_key=True,
-        autoincrement=True,
-    ),
-    db.Column("backfill_id", db.String(255)),
-    db.Column("key", db.Text),
-    db.Column("value", db.Text),
 )
 
 InstanceInfo = db.Table(
@@ -164,9 +148,6 @@ KeyValueStoreTable = db.Table(
 )
 
 db.Index("idx_run_tags", RunTagsTable.c.key, RunTagsTable.c.value, mysql_length=64)
-db.Index(
-    "idx_run_tags_run_idx", RunTagsTable.c.run_id, RunTagsTable.c.id, mysql_length={"run_id": 255}
-)
 db.Index("idx_run_partitions", RunsTable.c.partition_set, RunsTable.c.partition, mysql_length=64)
 db.Index(
     "idx_runs_by_job",
@@ -193,17 +174,3 @@ db.Index(
     },
 )
 db.Index("idx_kvs_keys_unique", KeyValueStoreTable.c.key, unique=True, mysql_length=64)
-
-db.Index(
-    "idx_runs_by_backfill_id",
-    RunsTable.c.backfill_id,
-    RunsTable.c.id,
-    mysql_length={
-        "backfill_id": 255,
-    },
-)
-db.Index(
-    "idx_backfill_tags_backfill_id",
-    BackfillTagsTable.c.backfill_id,
-    BackfillTagsTable.c.id,
-)

@@ -2,15 +2,12 @@ import {MockedResponse} from '@apollo/client/testing';
 
 import {RunStatus, StaleStatus} from '../../graphql/types';
 import {ASSET_MATERIALIZATION_UPSTREAM_QUERY} from '../AssetMaterializationUpstreamData';
-import {ASSET_PARTITION_DETAIL_QUERY, ASSET_PARTITION_STALE_QUERY} from '../AssetPartitionDetail';
+import {ASSET_PARTITION_DETAIL_QUERY} from '../AssetPartitionDetail';
 import {AssetMaterializationUpstreamQuery} from '../types/AssetMaterializationUpstreamData.types';
+import {AssetPartitionDetailQuery} from '../types/AssetPartitionDetail.types';
 import {
-  AssetPartitionDetailQuery,
-  AssetPartitionStaleQuery,
-} from '../types/AssetPartitionDetail.types';
-import {
+  AssetMaterializationFragment,
   AssetObservationFragment,
-  AssetSuccessfulMaterializationFragment,
 } from '../types/useRecentAssetEvents.types';
 
 export const Partition = '2022-02-02';
@@ -18,7 +15,7 @@ export const MaterializationTimestamp = 1673996425523;
 
 const ONE_MIN = 60 * 1000;
 
-export const MaterializationEventOlder: AssetSuccessfulMaterializationFragment = {
+export const MaterializationEventOlder: AssetMaterializationFragment = {
   partition: Partition,
   tags: [
     {
@@ -76,7 +73,7 @@ export const MaterializationEventOlder: AssetSuccessfulMaterializationFragment =
   __typename: 'MaterializationEvent',
 };
 
-export const MaterializationEventMinimal: AssetSuccessfulMaterializationFragment = {
+export const MaterializationEventMinimal: AssetMaterializationFragment = {
   partition: null,
   tags: [],
   runOrError: {
@@ -103,7 +100,7 @@ export const MaterializationEventMinimal: AssetSuccessfulMaterializationFragment
   __typename: 'MaterializationEvent',
 };
 
-export const MaterializationEventFull: AssetSuccessfulMaterializationFragment = {
+export const MaterializationEventFull: AssetMaterializationFragment = {
   partition: Partition,
   tags: [
     {
@@ -280,6 +277,10 @@ export const MaterializationUpstreamDataEmptyMock: MockedResponse<AssetMateriali
 
 export const buildAssetPartitionDetailMock = (
   currentRunStatus?: RunStatus,
+  staleCauses: Extract<
+    AssetPartitionDetailQuery['assetNodeOrError'],
+    {__typename: 'AssetNode'}
+  >['staleCauses'] = [],
 ): MockedResponse<AssetPartitionDetailQuery> => ({
   request: {
     operationName: 'AssetPartitionDetailQuery',
@@ -302,6 +303,8 @@ export const buildAssetPartitionDetailMock = (
             timestamp: `${Number(BasicObservationEvent.timestamp) + 2 * 60 * 1000}`,
           },
         ],
+        staleCauses,
+        staleStatus: staleCauses.length ? StaleStatus.STALE : StaleStatus.FRESH,
         latestRunForPartition: currentRunStatus
           ? {
               __typename: 'Run',
@@ -310,30 +313,6 @@ export const buildAssetPartitionDetailMock = (
               endTime: null,
             }
           : null,
-      },
-    },
-  },
-});
-
-export const buildAssetPartitionStaleMock = (
-  staleCauses: Extract<
-    AssetPartitionStaleQuery['assetNodeOrError'],
-    {__typename: 'AssetNode'}
-  >['staleCauses'] = [],
-): MockedResponse<AssetPartitionStaleQuery> => ({
-  request: {
-    operationName: 'AssetPartitionStaleQuery',
-    variables: {assetKey: {path: ['asset_1']}, partitionKey: Partition},
-    query: ASSET_PARTITION_STALE_QUERY,
-  },
-  result: {
-    data: {
-      __typename: 'Query',
-      assetNodeOrError: {
-        __typename: 'AssetNode',
-        id: 'test.py.repo.["asset_1"]',
-        staleCauses,
-        staleStatus: staleCauses.length ? StaleStatus.STALE : StaleStatus.FRESH,
       },
     },
   },

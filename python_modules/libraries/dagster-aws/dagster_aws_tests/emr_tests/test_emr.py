@@ -7,10 +7,9 @@ from unittest import mock
 
 import pytest
 from dagster._utils.test import create_test_pipeline_execution_context
-from moto import mock_emr
-
 from dagster_aws.emr import EmrClusterState, EmrError, EmrJobRunner
 from dagster_aws.utils.mrjob.utils import _boto3_now
+from moto import mock_emr
 
 REGION = "us-west-1"
 
@@ -32,7 +31,7 @@ def test_emr_add_tags_and_describe_cluster(emr_cluster_config):
 
     emr.add_tags(context.log, {"foobar": "v1", "baz": "123"}, cluster_id)
 
-    tags = emr.describe_cluster(cluster_id)["Cluster"]["Tags"]  # pyright: ignore[reportOptionalSubscript]
+    tags = emr.describe_cluster(cluster_id)["Cluster"]["Tags"]
 
     assert {"Key": "baz", "Value": "123"} in tags
     assert {"Key": "foobar", "Value": "v1"} in tags
@@ -43,7 +42,7 @@ def test_emr_describe_cluster(emr_cluster_config):
     context = create_test_pipeline_execution_context()
     cluster = EmrJobRunner(region=REGION)
     cluster_id = cluster.run_job_flow(context.log, emr_cluster_config)
-    cluster_info = cluster.describe_cluster(cluster_id)["Cluster"]  # pyright: ignore[reportOptionalSubscript]
+    cluster_info = cluster.describe_cluster(cluster_id)["Cluster"]
     assert cluster_info["Name"] == "test-emr"
     assert EmrClusterState(cluster_info["Status"]["State"]) == EmrClusterState.Waiting
 
@@ -116,7 +115,8 @@ def test_emr_retrieve_logs(emr_cluster_config, mock_s3_bucket):
         for name in ["stdout.gz", "stderr.gz"]:
             mock_s3_bucket.Object(prefix + "/" + name).put(Body=out.getvalue())
 
-    thread = threading.Thread(target=create_log, args=(), daemon=True)
+    thread = threading.Thread(target=create_log, args=())
+    thread.daemon = True
     thread.start()
 
     stdout_log, stderr_log = emr.retrieve_logs_for_step_id(
@@ -135,7 +135,8 @@ def test_wait_for_log(mock_s3_bucket):
 
         mock_s3_bucket.Object("some_log_file").put(Body=out.getvalue())
 
-    thread = threading.Thread(target=create_log, args=(), daemon=True)
+    thread = threading.Thread(target=create_log, args=())
+    thread.daemon = True
     thread.start()
 
     context = create_test_pipeline_execution_context()

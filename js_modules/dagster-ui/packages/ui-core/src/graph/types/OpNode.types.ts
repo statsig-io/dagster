@@ -41,7 +41,7 @@ export type OpNodeInvocationFragment = {
   }>;
 };
 
-export type OpNodeDefinitionFragment_CompositeSolidDefinition = {
+export type OpNodeDefinitionFragment_CompositeSolidDefinition_ = {
   __typename: 'CompositeSolidDefinition';
   id: string;
   name: string;
@@ -89,7 +89,7 @@ export type OpNodeDefinitionFragment_CompositeSolidDefinition = {
   }>;
 };
 
-export type OpNodeDefinitionFragment_SolidDefinition = {
+export type OpNodeDefinitionFragment_SolidDefinition_ = {
   __typename: 'SolidDefinition';
   name: string;
   description: string | null;
@@ -130,8 +130,8 @@ export type OpNodeDefinitionFragment_SolidDefinition = {
 };
 
 export type OpNodeDefinitionFragment =
-  | OpNodeDefinitionFragment_CompositeSolidDefinition
-  | OpNodeDefinitionFragment_SolidDefinition;
+  | OpNodeDefinitionFragment_CompositeSolidDefinition_
+  | OpNodeDefinitionFragment_SolidDefinition_;
 
 export type OpNodeInputDefinitionFragment = {
   __typename: 'InputDefinition';

@@ -3,7 +3,9 @@ from pandas import DataFrame, Series
 from scipy.sparse import coo_matrix
 from sklearn.decomposition import TruncatedSVD
 
-from project_fully_featured.assets.recommender.user_story_matrix import IndexedCooMatrix
+from project_fully_featured.assets.recommender.user_story_matrix import (
+    IndexedCooMatrix,
+)
 from project_fully_featured.assets.recommender.user_top_recommended_stories import (
     user_top_recommended_stories,
 )

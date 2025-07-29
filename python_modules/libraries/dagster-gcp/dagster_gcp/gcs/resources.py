@@ -5,20 +5,20 @@ from dagster._core.definitions.resource_definition import dagster_maintained_res
 from google.cloud import storage
 from pydantic import Field
 
-from dagster_gcp.gcs.file_manager import GCSFileManager
+from .file_manager import GCSFileManager
 
 
 class GCSResource(ConfigurableResource, IAttachDifferentObjectToOpContext):
     """Resource for interacting with Google Cloud Storage.
 
     Example:
-        .. code-block:: python
+        .. code-block::
 
             @asset
             def my_asset(gcs: GCSResource):
-                client = gcs.get_client()
-                # client is a google.cloud.storage.Client
-                ...
+                with gcs.get_client() as client:
+                    # client is a google.cloud.storage.Client
+                    ...
     """
 
     project: Optional[str] = Field(default=None, description="Project name")

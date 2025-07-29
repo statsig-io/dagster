@@ -1,28 +1,28 @@
-import {Body2, Box, Caption} from '@dagster-io/ui-components';
+import {gql} from '@apollo/client';
+import {Body2, Box, Caption, Colors} from '@dagster-io/ui-components';
 import {useVirtualizer} from '@tanstack/react-virtual';
-import {useRef} from 'react';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
-import {ASSET_CHECK_EXECUTION_FRAGMENT, MetadataCell} from './AssetCheckDetailDialog';
-import {AssetCheckStatusTag} from './AssetCheckStatusTag';
-import {EXECUTE_CHECKS_BUTTON_CHECK_FRAGMENT, ExecuteChecksButton} from './ExecuteChecksButton';
-import {ExecuteChecksButtonAssetNodeFragment} from './types/ExecuteChecksButton.types';
-import {AssetCheckTableFragment} from './types/VirtualizedAssetCheckTable.types';
-import {gql} from '../../apollo-client';
-import {linkToRunEvent} from '../../runs/RunUtils';
 import {TimestampDisplay} from '../../schedules/TimestampDisplay';
 import {testId} from '../../testing/testId';
-import {Container, HeaderCell, HeaderRow, Inner, Row, RowCell} from '../../ui/VirtualizedTable';
+import {HeaderCell, Row, RowCell, Container, Inner} from '../../ui/VirtualizedTable';
 import {assetDetailsPathForAssetCheck} from '../assetDetailsPathForKey';
+
+import {ASSET_CHECK_EXECUTION_FRAGMENT, MetadataCell} from './AssetCheckDetailModal';
+import {AssetCheckStatusTag} from './AssetCheckStatusTag';
+import {ExecuteChecksButton} from './ExecuteChecksButton';
+import {ExecuteChecksButtonAssetNodeFragment} from './types/ExecuteChecksButton.types';
+import {AssetCheckTableFragment} from './types/VirtualizedAssetCheckTable.types';
 
 type Props = {
   assetNode: ExecuteChecksButtonAssetNodeFragment;
   rows: AssetCheckTableFragment[];
 };
 
-export const VirtualizedAssetCheckTable = ({assetNode, rows}: Props) => {
-  const parentRef = useRef<HTMLDivElement | null>(null);
+export const VirtualizedAssetCheckTable: React.FC<Props> = ({assetNode, rows}: Props) => {
+  const parentRef = React.useRef<HTMLDivElement | null>(null);
   const count = rows.length;
 
   const rowVirtualizer = useVirtualizer({
@@ -86,17 +86,12 @@ export const VirtualizedAssetCheckRow = ({assetNode, height, start, row}: AssetC
         </RowCell>
         <RowCell style={{flexDirection: 'row', alignItems: 'center'}}>
           <div>
-            <AssetCheckStatusTag execution={execution} />
+            <AssetCheckStatusTag check={row} execution={row.executionForLatestMaterialization} />
           </div>
         </RowCell>
         <RowCell style={{flexDirection: 'row', alignItems: 'center'}}>
           {timestamp ? (
-            <Link
-              to={linkToRunEvent(
-                {id: execution.runId},
-                {stepKey: execution.stepKey, timestamp: execution.timestamp},
-              )}
-            >
+            <Link to={`/runs/${execution.runId}`}>
               <TimestampDisplay timestamp={timestamp} />
             </Link>
           ) : (
@@ -104,10 +99,7 @@ export const VirtualizedAssetCheckRow = ({assetNode, height, start, row}: AssetC
           )}
         </RowCell>
         <RowCell>
-          <MetadataCell
-            metadataEntries={execution?.evaluation?.metadataEntries}
-            type="inline-or-dialog"
-          />
+          <MetadataCell metadataEntries={execution?.evaluation?.metadataEntries} />
         </RowCell>
         <RowCell>
           <Box flex={{justifyContent: 'flex-end'}}>
@@ -133,13 +125,22 @@ const CaptionEllipsed = styled(Caption)`
 
 export const VirtualizedAssetCheckHeader = () => {
   return (
-    <HeaderRow templateColumns={TEMPLATE_COLUMNS} sticky>
+    <Box
+      border="top-and-bottom"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: TEMPLATE_COLUMNS,
+        height: '32px',
+        fontSize: '12px',
+        color: Colors.Gray600,
+      }}
+    >
       <HeaderCell>Check name</HeaderCell>
       <HeaderCell>Status</HeaderCell>
       <HeaderCell>Evaluation timestamp</HeaderCell>
       <HeaderCell>Evaluation metadata</HeaderCell>
       <HeaderCell>Actions</HeaderCell>
-    </HeaderRow>
+    </Box>
   );
 };
 
@@ -154,16 +155,9 @@ export const ASSET_CHECK_TABLE_FRAGMENT = gql`
     name
     description
     canExecuteIndividually
-    blocking
-    automationCondition {
-      label
-      expandedLabel
-    }
-    ...ExecuteChecksButtonCheckFragment
     executionForLatestMaterialization {
       ...AssetCheckExecutionFragment
     }
   }
   ${ASSET_CHECK_EXECUTION_FRAGMENT}
-  ${EXECUTE_CHECKS_BUTTON_CHECK_FRAGMENT}
 `;

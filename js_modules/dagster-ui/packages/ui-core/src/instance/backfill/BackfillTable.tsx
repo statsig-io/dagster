@@ -1,15 +1,13 @@
+import {gql} from '@apollo/client';
 import {Table} from '@dagster-io/ui-components';
-import {useState} from 'react';
+import * as React from 'react';
 
-import {
-  BACKFILL_ACTIONS_BACKFILL_FRAGMENT,
-  PARTITION_SET_FOR_BACKFILL_TABLE_FRAGMENT,
-} from './BackfillFragments';
+import {PYTHON_ERROR_FRAGMENT} from '../../app/PythonErrorFragment';
+
+import {BACKFILL_ACTIONS_BACKFILL_FRAGMENT} from './BackfillActionsMenu';
 import {BackfillPartitionsRequestedDialog} from './BackfillPartitionsRequestedDialog';
 import {BackfillRow} from './BackfillRow';
 import {BackfillTableFragment} from './types/BackfillTable.types';
-import {gql} from '../../apollo-client';
-import {PYTHON_ERROR_FRAGMENT} from '../../app/PythonErrorFragment';
 
 export const BackfillTable = ({
   showBackfillTarget = true,
@@ -22,7 +20,8 @@ export const BackfillTable = ({
   refetch: () => void;
   showBackfillTarget?: boolean;
 }) => {
-  const [partitionsRequestedBackfill, setPartitionsRequestedBackfill] = useState<string>();
+  const [partitionsRequestedBackfill, setPartitionsRequestedBackfill] =
+    React.useState<BackfillTableFragment>();
 
   return (
     <>
@@ -33,8 +32,8 @@ export const BackfillTable = ({
             <th>Created</th>
             {showBackfillTarget ? <th>Backfill target</th> : null}
             <th>Requested</th>
-            <th>Launched by</th>
             <th>Backfill status</th>
+            <th>Run status</th>
             <th style={{width: 80}} />
           </tr>
         </thead>
@@ -53,7 +52,7 @@ export const BackfillTable = ({
       </Table>
 
       <BackfillPartitionsRequestedDialog
-        backfillId={partitionsRequestedBackfill}
+        backfill={partitionsRequestedBackfill}
         onClose={() => setPartitionsRequestedBackfill(undefined)}
       />
     </>
@@ -66,19 +65,16 @@ export const BACKFILL_TABLE_FRAGMENT = gql`
     status
     isAssetBackfill
     isValidSerialization
+    partitionNames
     numPartitions
     timestamp
     partitionSetName
     partitionSet {
       id
-      ...PartitionSetForBackfillTableFragment
+      ...PartitionSetForBackfillTable
     }
     assetSelection {
       path
-    }
-    tags {
-      key
-      value
     }
     error {
       ...PythonErrorFragment
@@ -86,7 +82,18 @@ export const BACKFILL_TABLE_FRAGMENT = gql`
     ...BackfillActionsBackfillFragment
   }
 
+  fragment PartitionSetForBackfillTable on PartitionSet {
+    id
+    name
+    mode
+    pipelineName
+    repositoryOrigin {
+      id
+      repositoryName
+      repositoryLocationName
+    }
+  }
+
   ${PYTHON_ERROR_FRAGMENT}
   ${BACKFILL_ACTIONS_BACKFILL_FRAGMENT}
-  ${PARTITION_SET_FOR_BACKFILL_TABLE_FRAGMENT}
 `;

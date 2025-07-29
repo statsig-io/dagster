@@ -1,22 +1,22 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, TypeVar, Union, cast
+from typing import Any, Callable, NamedTuple, Optional, Type, TypeVar, Union, cast
 
 from typing_extensions import Self
 
-import dagster._check as check
+from dagster import (
+    Field,
+    _check as check,
+)
 from dagster._config import EvaluateValueResult
 from dagster._config.config_schema import UserConfigSchema
-from dagster._config.field import Field
 from dagster._core.decorator_utils import get_function_params
-from dagster._core.definitions.definition_config_schema import (
+
+from .definition_config_schema import (
     CoercableToConfigSchema,
     ConfiguredDefinitionConfigSchema,
     IDefinitionConfigSchema,
     convert_user_facing_definition_config_schema,
 )
-
-if TYPE_CHECKING:
-    from dagster._core.definitions.resource_definition import ResourceDefinition
 
 
 class ConfigurableDefinition(ABC):
@@ -170,22 +170,17 @@ def _check_configurable_param(configurable: ConfigurableDefinition) -> None:
         " call `configured` on either an OpDefinition and GraphDefinition. To fix"
         " this error, make sure to call `configured` on the definition object *before* using"
         " the `tag` or `alias` methods. For usage examples, see"
-        " https://legacy-docs.dagster.io/concepts/configuration/configured",
+        " https://docs.dagster.io/concepts/configuration/configured",
     )
-    from dagster._config.pythonic_config import ConfigurableResourceFactory, safe_is_subclass
-
-    if safe_is_subclass(configurable, ConfigurableResourceFactory):
-        return
-    else:
-        check.inst_param(
-            configurable,
-            "configurable",
-            ConfigurableDefinition,
-            "Only the following types can be used with the `configured` method: ResourceDefinition,"
-            " ExecutorDefinition, GraphDefinition, NodeDefinition, and LoggerDefinition."
-            " For usage examples of `configured`, see"
-            " https://legacy-docs.dagster.io/concepts/configuration/configured",
-        )
+    check.inst_param(
+        configurable,
+        "configurable",
+        ConfigurableDefinition,
+        "Only the following types can be used with the `configured` method: ResourceDefinition,"
+        " ExecutorDefinition, GraphDefinition, NodeDefinition, and LoggerDefinition."
+        " For usage examples of `configured`, see"
+        " https://docs.dagster.io/concepts/configuration/configured",
+    )
 
 
 T_Configurable = TypeVar(
@@ -233,7 +228,7 @@ def _wrap_user_fn_if_pythonic_config(
     )
 
     config_schema_from_class = infer_schema_from_config_annotation(param.annotation, param.default)
-    config_cls = cast("type[Config]", param.annotation)
+    config_cls = cast(Type[Config], param.annotation)
 
     param_name = param.name
 
@@ -315,21 +310,6 @@ def configured(
 
     """
     _check_configurable_param(configurable)
-
-    from dagster._config.pythonic_config import ConfigurableResourceFactory, safe_is_subclass
-
-    # we specially handle ConfigurableResources, treating it as @configured of the
-    # underlying resource definition (which is indeed a ConfigurableDefinition)
-    if safe_is_subclass(configurable, ConfigurableResourceFactory):
-        configurable_inner = cast(
-            "ResourceDefinition",
-            (
-                cast("type[ConfigurableResourceFactory]", configurable)
-                .configure_at_launch()
-                .get_resource_definition()
-            ),
-        )
-        return configured(configurable_inner, config_schema=config_schema, **kwargs)  # type: ignore
 
     if isinstance(configurable, NamedConfigurableDefinition):
 

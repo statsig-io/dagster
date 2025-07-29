@@ -1,19 +1,20 @@
 # ruff: noqa: T201
-import argparse
-from collections.abc import Sequence
-from random import randint
-from typing import Union
 
-from dagster import asset
-from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView, TemporalContext
-from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
-from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
+import argparse
+from random import randint
+from typing import Sequence, Union
+
+from dagster import (
+    StaticPartitionsDefinition,
+    asset,
+)
+from dagster._core.definitions.asset_graph import AssetGraph
+from dagster._core.definitions.assets import AssetsDefinition
 from dagster._core.definitions.data_version import (
     SKIP_PARTITION_DATA_VERSION_DEPENDENCY_THRESHOLD,
     CachingStaleStatusResolver,
     StaleStatus,
 )
-from dagster._core.definitions.partitions.definition import StaticPartitionsDefinition
 from dagster._core.definitions.source_asset import SourceAsset
 from dagster._core.instance import DagsterInstance
 from dagster._core.instance_for_test import instance_for_test
@@ -21,8 +22,9 @@ from dagster._core.storage.tags import (
     ASSET_PARTITION_RANGE_END_TAG,
     ASSET_PARTITION_RANGE_START_TAG,
 )
-from dagster._time import get_current_datetime
-from dagster._utils.test.data_versions import materialize_asset
+from dagster._utils.test.data_versions import (
+    materialize_asset,
+)
 
 from dagster_test.utils.benchmark import ProfilingSession
 
@@ -65,7 +67,7 @@ parser.add_argument(
 
 parser.add_argument(
     "--override-partition-limit",
-    action=argparse.BooleanOptionalAction,
+    action=argparse.BooleanOptionalAction,  # type: ignore  # (3.9+ only)
     default=True,
     help=(
         "Override the `SKIP_PARTITION_DATA_VERSION_DEPENDENCY_THRESHOLD` with the value of"
@@ -82,16 +84,9 @@ def get_stale_status_resolver(
     instance: DagsterInstance,
     assets: Sequence[Union[AssetsDefinition, SourceAsset]],
 ) -> CachingStaleStatusResolver:
-    asset_graph = AssetGraph.from_assets(assets)
-    asset_graph_view = AssetGraphView(
-        temporal_context=TemporalContext(effective_dt=get_current_datetime(), last_event_id=None),
-        instance=instance,
-        asset_graph=asset_graph,
-    )
     return CachingStaleStatusResolver(
         instance=instance,
         asset_graph=AssetGraph.from_assets(assets),
-        loading_context=asset_graph_view,
     )
 
 

@@ -1,9 +1,7 @@
-from abc import ABC
-from collections.abc import Sequence
 from inspect import Parameter
-from typing import Annotated, Any, Optional, TypeVar
+from typing import Any, Optional, Sequence, Type, TypeVar
 
-from dagster_shared.seven import is_subclass
+from typing_extensions import Annotated
 
 from dagster._core.decorator_utils import get_function_params, get_type_hints
 from dagster._core.definitions.resource_definition import ResourceDefinition
@@ -21,33 +19,23 @@ def get_resource_args(fn) -> Sequence[Parameter]:
 RESOURCE_PARAM_METADATA = "resource_param"
 
 
-class TreatAsResourceParam(ABC):
-    """Marker class for types that can be used as a parameter on an annotated
-    function like `@asset`. Any type marked with this class does not require
-    a ResourceParam when used on an asset.
-
-    Example:
-        class YourClass(TreatAsResourceParam):
-            ...
-
-        @asset
-        def an_asset(your_class: YourClass):
-            ...
-    """
-
-
-def _is_resource_annotation(annotation: Optional[type[Any]]) -> bool:
+def _is_resource_annotation(annotation: Optional[Type[Any]]) -> bool:
     from dagster._config.pythonic_config import ConfigurableResourceFactory
 
-    if isinstance(annotation, type) and (
-        is_subclass(annotation, ResourceDefinition)
-        or is_subclass(annotation, ConfigurableResourceFactory)
-        or is_subclass(annotation, TreatAsResourceParam)
-    ):
-        return True
+    extends_resource_definition = False
+    try:
+        extends_resource_definition = isinstance(annotation, type) and issubclass(
+            annotation, (ResourceDefinition, ConfigurableResourceFactory)
+        )
+    except TypeError:
+        # Using builtin Python types in python 3.9+ will raise a TypeError when using issubclass
+        # even though the isinstance check will succeed (as will inspect.isclass), for example
+        # list[dict[str, str]] will raise a TypeError
+        pass
 
-    return hasattr(annotation, "__metadata__") and getattr(annotation, "__metadata__") == (
-        RESOURCE_PARAM_METADATA,
+    return (extends_resource_definition) or (
+        hasattr(annotation, "__metadata__")
+        and getattr(annotation, "__metadata__") == (RESOURCE_PARAM_METADATA,)
     )
 
 

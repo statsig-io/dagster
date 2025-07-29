@@ -1,9 +1,6 @@
-import {Redirect, Switch} from 'react-router-dom';
-import {JobFallthroughRoot} from 'shared/pipelines/JobFallthroughRoot.oss';
+import * as React from 'react';
+import {Redirect, Route, RouteComponentProps, Switch} from 'react-router-dom';
 
-import {PipelineOrJobDisambiguationRoot} from './PipelineOrJobDisambiguationRoot';
-import {PipelineRunsFeedRoot} from './PipelineRunsFeedRoot';
-import {Route} from '../app/Route';
 import {JobOrAssetLaunchpad} from '../launchpad/LaunchpadRoot';
 import {LaunchpadSetupFromRunRoot} from '../launchpad/LaunchpadSetupFromRunRoot';
 import {LaunchpadSetupRoot} from '../launchpad/LaunchpadSetupRoot';
@@ -11,12 +8,17 @@ import {PipelineNav} from '../nav/PipelineNav';
 import {PipelinePartitionsRoot} from '../partitions/PipelinePartitionsRoot';
 import {RepoAddress} from '../workspace/types';
 
+import {JobFeatureContext} from './JobFeatureContext';
+import {PipelineOrJobDisambiguationRoot} from './PipelineOrJobDisambiguationRoot';
+import {PipelineRunsRoot} from './PipelineRunsRoot';
+
 interface Props {
   repoAddress: RepoAddress;
 }
 
-export const PipelineRoot = (props: Props) => {
+export const PipelineRoot: React.FC<Props> = (props) => {
   const {repoAddress} = props;
+  const {FallthroughRoute} = React.useContext(JobFeatureContext);
 
   return (
     <div
@@ -62,7 +64,9 @@ export const PipelineRoot = (props: Props) => {
             '/locations/:repoPath/pipelines/:pipelinePath/runs/:runId',
             '/locations/:repoPath/jobs/:pipelinePath/runs/:runId',
           ]}
-          render={(props) => <Redirect to={`/runs/${props.match.params.runId}`} />}
+          render={(props: RouteComponentProps<{runId: string}>) => (
+            <Redirect to={`/runs/${props.match.params.runId}`} />
+          )}
         />
         <Route
           path={[
@@ -70,7 +74,7 @@ export const PipelineRoot = (props: Props) => {
             '/locations/:repoPath/jobs/:pipelinePath/runs',
           ]}
         >
-          <PipelineRunsFeedRoot repoAddress={repoAddress} />
+          <PipelineRunsRoot repoAddress={repoAddress} />
         </Route>
         <Route
           path={[
@@ -90,7 +94,7 @@ export const PipelineRoot = (props: Props) => {
           )}
         />
         <Route path={['/locations/:repoPath/pipelines/(/?.*)', '/locations/:repoPath/jobs/(/?.*)']}>
-          <JobFallthroughRoot repoAddress={repoAddress} />
+          <FallthroughRoute repoAddress={repoAddress} />
         </Route>
       </Switch>
     </div>

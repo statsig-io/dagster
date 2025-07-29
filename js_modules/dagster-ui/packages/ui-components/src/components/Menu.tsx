@@ -1,51 +1,51 @@
 /* eslint-disable no-restricted-imports */
 import {
+  Intent,
   Menu as BlueprintMenu,
   MenuDivider as BlueprintMenuDivider,
   MenuItem as BlueprintMenuItem,
-  Intent,
 } from '@blueprintjs/core';
 import * as React from 'react';
 import styled from 'styled-components';
 
-import {Colors} from './Color';
-import {Icon, IconName, IconWrapper} from './Icon';
+import {Colors} from './Colors';
+import {IconName, Icon, IconWrapper} from './Icon';
 
 interface Props extends React.ComponentProps<typeof BlueprintMenu> {}
 
-export const Menu = (props: Props) => {
+export const Menu: React.FC<Props> = (props) => {
   return <StyledMenu {...props} />;
 };
 
 const intentToTextColor = (intent: React.ComponentProps<typeof BlueprintMenuItem>['intent']) => {
   switch (intent) {
     case 'primary':
-      return Colors.accentBlue();
+      return Colors.Blue500;
     case 'danger':
-      return Colors.accentRed();
+      return Colors.Red500;
     case 'success':
-      return Colors.accentGreen();
+      return Colors.Green500;
     case 'warning':
-      return Colors.accentYellow();
+      return Colors.Yellow500;
     case 'none':
     default:
-      return Colors.textDefault();
+      return Colors.Gray900;
   }
 };
 
 const intentToIconColor = (intent: React.ComponentProps<typeof BlueprintMenuItem>['intent']) => {
   switch (intent) {
     case 'primary':
-      return Colors.accentBlue();
+      return Colors.Blue500;
     case 'danger':
-      return Colors.accentRed();
+      return Colors.Red500;
     case 'success':
-      return Colors.accentGreen();
+      return Colors.Green500;
     case 'warning':
-      return Colors.accentYellow();
+      return Colors.Yellow500;
     case 'none':
     default:
-      return Colors.textDefault();
+      return Colors.Gray900;
   }
 };
 
@@ -65,9 +65,9 @@ export interface CommonMenuItemProps {
 
 interface ItemProps
   extends CommonMenuItemProps,
-    Omit<React.ComponentProps<typeof BlueprintMenuItem>, 'ref' | 'href' | 'icon'> {}
+    Omit<React.ComponentProps<typeof BlueprintMenuItem>, 'href' | 'icon'> {}
 
-export const MenuItem = (props: ItemProps) => {
+export const MenuItem: React.FC<ItemProps> = (props) => {
   const {icon, intent, ...rest} = props;
   return (
     <StyledMenuItem
@@ -81,14 +81,14 @@ export const MenuItem = (props: ItemProps) => {
 
 interface MenuExternalLinkProps
   extends CommonMenuItemProps,
-    Omit<React.ComponentProps<typeof BlueprintMenuItem>, 'ref' | 'href' | 'icon'> {
+    Omit<React.ComponentProps<typeof BlueprintMenuItem>, 'href' | 'icon'> {
   href: string;
 }
 
 /**
  * If you want to use a menu item as a link, use `MenuLink` and provide a `to` prop.
  */
-export const MenuExternalLink = (props: MenuExternalLinkProps) => {
+export const MenuExternalLink: React.FC<MenuExternalLinkProps> = (props) => {
   const {icon, intent = 'none', ...rest} = props;
   return (
     <StyledMenuItem
@@ -102,24 +102,11 @@ export const MenuExternalLink = (props: MenuExternalLinkProps) => {
 };
 
 export const MenuDivider = styled(BlueprintMenuDivider)`
-  border-top: 1px solid ${Colors.keylineDefault()};
+  border-top: 1px solid ${Colors.Gray100};
   margin: 2px 0;
-
-  :focus {
-    outline: none;
-  }
-
-  && h6 {
-    color: ${Colors.textLight()};
-    padding: 8px 6px 2px;
-    font-size: 12px;
-    font-weight: 300;
-    user-select: none;
-  }
 `;
 
 const StyledMenu = styled(BlueprintMenu)`
-  background-color: ${Colors.popoverBackground()};
   border-radius: 4px;
   padding: 8px 4px;
 `;
@@ -147,22 +134,22 @@ const StyledMenuItem = styled(BlueprintMenuItem)<StyledMenuItemProps>`
     margin-top: 2px;
   }
 
-  &.bp5-active,
-  &.bp5-active:hover {
-    background-color: ${Colors.backgroundBlue()};
-    color: ${Colors.textDefault()};
+  &.bp4-active,
+  &.bp4-active:hover {
+    background-color: ${Colors.Blue500};
+    color: ${Colors.White};
 
     ${IconWrapper} {
-      background-color: ${Colors.textDefault()};
+      background-color: ${Colors.White};
     }
   }
 
-  &.bp5-disabled ${IconWrapper} {
+  &.bp4-disabled ${IconWrapper} {
     opacity: 0.5;
   }
 
-  &.bp5-active ${IconWrapper} {
-    color: ${Colors.textDefault()};
+  &.bp4-active ${IconWrapper} {
+    color: ${Colors.White};
   }
 
   ${IconWrapper}:first-child {
@@ -170,11 +157,13 @@ const StyledMenuItem = styled(BlueprintMenuItem)<StyledMenuItemProps>`
   }
 
   &:hover {
-    background: ${Colors.popoverBackgroundHover()};
+    background: ${Colors.Gray100};
     color: ${({$textColor}) => $textColor};
   }
 
-  &:focus-visible {
-    z-index: 1;
+  &:focus {
+    color: ${({$textColor}) => $textColor};
+    box-shadow: rgba(58, 151, 212, 0.6) 0 0 0 2px;
+    outline: none;
   }
 `;

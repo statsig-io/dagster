@@ -1,7 +1,18 @@
+import {gql} from '@apollo/client';
 import {Box, Colors, ConfigTypeSchema, FontFamily, Icon} from '@dagster-io/ui-components';
-import {useState} from 'react';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
+
+import {COMMON_COLLATOR, breakOnUnderscores} from '../app/Util';
+import {displayNameForAssetKey, isHiddenAssetGroupJob} from '../asset-graph/Utils';
+import {assetDetailsPathForKey} from '../assets/assetDetailsPathForKey';
+import {OpTypeSignature, OP_TYPE_SIGNATURE_FRAGMENT} from '../ops/OpTypeSignature';
+import {pluginForMetadata} from '../plugins';
+import {CONFIG_TYPE_SCHEMA_FRAGMENT} from '../typeexplorer/ConfigTypeSchema';
+import {DAGSTER_TYPE_WITH_TOOLTIP_FRAGMENT, TypeWithTooltip} from '../typeexplorer/TypeWithTooltip';
+import {RepoAddress} from '../workspace/types';
+import {workspacePathFromAddress} from '../workspace/workspacePath';
 
 import {Description} from './Description';
 import {
@@ -13,25 +24,15 @@ import {
 } from './SidebarComponents';
 import {
   Invocation,
-  OpEdges,
-  OpMappingTable,
   ResourceContainer,
   ResourceHeader,
   ShowAllButton,
   SidebarOpInvocationInfo,
+  OpEdges,
+  OpMappingTable,
   TypeWrapper,
 } from './SidebarOpHelpers';
-import {gql} from '../apollo-client';
 import {SidebarOpDefinitionFragment} from './types/SidebarOpDefinition.types';
-import {COMMON_COLLATOR, breakOnUnderscores} from '../app/Util';
-import {displayNameForAssetKey, isHiddenAssetGroupJob} from '../asset-graph/Utils';
-import {assetDetailsPathForKey} from '../assets/assetDetailsPathForKey';
-import {OP_TYPE_SIGNATURE_FRAGMENT, OpTypeSignature} from '../ops/OpTypeSignature';
-import {pluginForMetadata} from '../plugins';
-import {CONFIG_TYPE_SCHEMA_FRAGMENT} from '../typeexplorer/ConfigTypeSchema';
-import {DAGSTER_TYPE_WITH_TOOLTIP_FRAGMENT, TypeWithTooltip} from '../typeexplorer/TypeWithTooltip';
-import {RepoAddress} from '../workspace/types';
-import {workspacePathFromAddress} from '../workspace/workspacePath';
 
 interface SidebarOpDefinitionProps {
   definition: SidebarOpDefinitionFragment;
@@ -43,7 +44,7 @@ interface SidebarOpDefinitionProps {
 
 const DEFAULT_INVOCATIONS_SHOWN = 20;
 
-export const SidebarOpDefinition = (props: SidebarOpDefinitionProps) => {
+export const SidebarOpDefinition: React.FC<SidebarOpDefinitionProps> = (props) => {
   const {definition, getInvocations, showingSubgraph, onClickInvocation, repoAddress} = props;
 
   const Plugin = pluginForMetadata(definition.metadata);
@@ -115,7 +116,7 @@ export const SidebarOpDefinition = (props: SidebarOpDefinitionProps) => {
               .sort((a, b) => COMMON_COLLATOR.compare(a.resourceKey, b.resourceKey))
               .map((requirement) => (
                 <ResourceContainer key={requirement.resourceKey}>
-                  <Icon name="resource" color={Colors.accentGray()} />
+                  <Icon name="resource" color={Colors.Gray700} />
                   {repoAddress ? (
                     <Link
                       to={workspacePathFromAddress(
@@ -214,7 +215,6 @@ export const SIDEBAR_OP_DEFINITION_FRAGMENT = gql`
         ...DagsterTypeWithTooltipFragment
       }
     }
-    pools
     ... on SolidDefinition {
       requiredResources {
         resourceKey
@@ -265,14 +265,11 @@ export const SIDEBAR_OP_DEFINITION_FRAGMENT = gql`
   ${OP_TYPE_SIGNATURE_FRAGMENT}
 `;
 
-const InvocationList = ({
-  invocations,
-  onClickInvocation,
-}: {
+const InvocationList: React.FC<{
   invocations: SidebarOpInvocationInfo[];
   onClickInvocation: (arg: SidebarOpInvocationInfo) => void;
-}) => {
-  const [showAll, setShowAll] = useState<boolean>(false);
+}> = ({invocations, onClickInvocation}) => {
+  const [showAll, setShowAll] = React.useState<boolean>(false);
   const visible = invocations.filter((i) => !isHiddenAssetGroupJob(i.pipelineName || ''));
   const clipped = showAll ? visible : visible.slice(0, DEFAULT_INVOCATIONS_SHOWN);
 
@@ -298,7 +295,7 @@ const AssetNodeListItem = styled(Link)`
   user-select: none;
   padding: 12px 24px;
   cursor: pointer;
-  border-bottom: 1px solid ${Colors.keylineDefault()};
+  border-bottom: 1px solid ${Colors.KeylineGray};
   display: flex;
   gap: 6px;
 
@@ -307,7 +304,7 @@ const AssetNodeListItem = styled(Link)`
   }
 
   &:hover {
-    background: ${Colors.backgroundLight()};
+    background: ${Colors.Gray50};
   }
 
   font-family: ${FontFamily.monospace};

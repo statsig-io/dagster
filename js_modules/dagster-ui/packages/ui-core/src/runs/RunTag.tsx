@@ -5,13 +5,11 @@ import {Link} from 'react-router-dom';
 import {TagAction, TagActionsPopover} from '../ui/TagActions';
 
 export enum DagsterTag {
-  AutomationCondition = 'dagster/from_automation_condition',
   Automaterialize = 'dagster/auto_materialize',
   AutoObserve = 'dagster/auto_observe',
   Namespace = 'dagster/',
   Backfill = 'dagster/backfill',
   CreatedBy = 'dagster/created_by',
-  ComputeKind = 'dagster/compute_kind',
   SolidSelection = 'dagster/solid_selection',
   OpSelection = 'dagster/op_selection',
   StepSelection = 'dagster/step_selection',
@@ -23,8 +21,6 @@ export enum DagsterTag {
   RootRunId = 'dagster/root_run_id',
   ScheduleName = 'dagster/schedule_name',
   SensorName = 'dagster/sensor_name',
-  StorageKind = 'dagster/storage_kind',
-  TickId = 'dagster/tick',
   AssetPartitionRangeStart = 'dagster/asset_partition_range_start',
   AssetPartitionRangeEnd = 'dagster/asset_partition_range_end',
   AssetEventDataVersion = 'dagster/data_version',
@@ -32,13 +28,10 @@ export enum DagsterTag {
   AssetEventCodeVersion = 'dagster/code_version',
   AssetEvaluationID = 'dagster/asset_evaluation_id',
   SnapshotID = 'dagster/snapshot_id', // This only exists on the client, not the server.
-  ReportingUser = 'dagster/reporting_user',
-  FromUI = 'dagster/from_ui',
   User = 'user',
 
   // Hidden tags (using ".dagster" HIDDEN_TAG_PREFIX)
   RepositoryLabelTag = '.dagster/repository',
-  PoolTagPrefix = '.dagster/pool',
 }
 
 export type TagType = {
@@ -100,7 +93,7 @@ export const RunTag = ({tag, actions}: IRunTagProps) => {
   }, [key, value]);
 
   const ValueWrapper = ({children}: {children: React.ReactNode}) =>
-    tag.link ? <Link to={tag.link}>{children}</Link> : <span>{children}</span>;
+    tag.link ? <Link to={tag.link}>{children}</Link> : <>{children}</>;
 
   const tooltipValue = displayedKey ? `${displayedKey}: ${displayValue}` : displayValue;
 

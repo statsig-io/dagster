@@ -1,12 +1,14 @@
+import {gql} from '@apollo/client';
 import {Colors} from '@dagster-io/ui-components';
 import * as React from 'react';
 import styled from 'styled-components';
 
+import {OpNameOrPath} from '../ops/OpNameOrPath';
+
 import {OpEdges} from './OpEdges';
-import {OP_NODE_DEFINITION_FRAGMENT, OP_NODE_INVOCATION_FRAGMENT, OpNode} from './OpNode';
-import {ParentOpNode} from './ParentOpNode';
-import {DEFAULT_MAX_ZOOM, DETAIL_ZOOM} from './SVGConsts';
-import {SVGViewport, SVGViewportRef} from './SVGViewport';
+import {OpNode, OP_NODE_DEFINITION_FRAGMENT, OP_NODE_INVOCATION_FRAGMENT} from './OpNode';
+import {ParentOpNode, SVGLabeledParentRect} from './ParentOpNode';
+import {DEFAULT_MAX_ZOOM, DETAIL_ZOOM, SVGViewport, SVGViewportInteractor} from './SVGViewport';
 import {OpGraphLayout} from './asyncGraphLayout';
 import {
   Edge,
@@ -16,9 +18,7 @@ import {
   isNodeOffscreen,
   isOpHighlighted,
 } from './common';
-import {gql} from '../apollo-client';
 import {OpGraphOpFragment} from './types/OpGraph.types';
-import {OpNameOrPath} from '../ops/OpNameOrPath';
 
 const NoOp = () => {};
 
@@ -32,12 +32,12 @@ interface OpGraphProps {
   selectedHandleID?: string;
   selectedOp?: OpGraphOpFragment;
   highlightedOps: Array<OpGraphOpFragment>;
+  interactor?: SVGViewportInteractor;
   onClickOp?: (arg: OpNameOrPath) => void;
   onDoubleClickOp?: (arg: OpNameOrPath) => void;
   onEnterSubgraph?: (arg: OpNameOrPath) => void;
   onLeaveSubgraph?: () => void;
   onClickBackground?: () => void;
-  isExternal?: boolean;
 }
 
 interface OpGraphContentsProps extends OpGraphProps {
@@ -46,7 +46,7 @@ interface OpGraphContentsProps extends OpGraphProps {
   viewportRect: {top: number; left: number; right: number; bottom: number};
 }
 
-const OpGraphContents = React.memo((props: OpGraphContentsProps) => {
+const OpGraphContents: React.FC<OpGraphContentsProps> = React.memo((props) => {
   const [highlighted, setHighlighted] = React.useState<Edge[]>(() => []);
 
   const {
@@ -66,6 +66,15 @@ const OpGraphContents = React.memo((props: OpGraphContentsProps) => {
 
   return (
     <>
+      {parentOp && layout.parent && layout.parent.invocationBoundingBox.width > 0 && (
+        <SVGLabeledParentRect
+          {...layout.parent.invocationBoundingBox}
+          key={`composite-rect-${parentHandleID}`}
+          label=""
+          fill={Colors.Yellow50}
+          minified={minified}
+        />
+      )}
       {parentOp && (
         <ParentOpNode
           onClickOp={onClickOp}
@@ -81,14 +90,14 @@ const OpGraphContents = React.memo((props: OpGraphContentsProps) => {
       <OpEdges
         ops={ops}
         layout={layout}
-        color={Colors.lineageEdge()}
+        color={Colors.KeylineGray}
         edges={layout.edges}
         onHighlight={setHighlighted}
       />
       <OpEdges
         ops={ops}
         layout={layout}
-        color={Colors.accentBlue()}
+        color={Colors.Blue500}
         onHighlight={setHighlighted}
         edges={layout.edges.filter(({from, to}) =>
           isHighlighted(highlighted, {a: from.opName, b: to.opName}),
@@ -98,8 +107,8 @@ const OpGraphContents = React.memo((props: OpGraphContentsProps) => {
         <rect
           key={idx}
           {...box}
-          stroke={Colors.backgroundBlue()}
-          fill={Colors.backgroundBlueHover()}
+          stroke="rgb(230, 219, 238)"
+          fill="rgba(230, 219, 238, 0.2)"
           strokeWidth={2}
         />
       ))}
@@ -123,7 +132,6 @@ const OpGraphContents = React.memo((props: OpGraphContentsProps) => {
                 isOpHighlighted(highlighted, op.name) ? highlighted : EmptyHighlightedArray
               }
               dim={highlightedOps.length > 0 && highlightedOps.indexOf(op) === -1}
-              isExternal={props.isExternal}
             />
           ))}
       </foreignObject>
@@ -138,7 +146,7 @@ OpGraphContents.displayName = 'OpGraphContents';
 const EmptyHighlightedArray: never[] = [];
 
 export class OpGraph extends React.Component<OpGraphProps> {
-  viewportEl: React.RefObject<SVGViewportRef> = React.createRef();
+  viewportEl: React.RefObject<SVGViewport> = React.createRef();
 
   argToOpLayout = (arg: OpNameOrPath) => {
     const lastName = 'name' in arg ? arg.name : arg.path[arg.path.length - 1]!;
@@ -177,7 +185,7 @@ export class OpGraph extends React.Component<OpGraphProps> {
     }
   }
 
-  onArrowKeyDown = (_e: React.KeyboardEvent<any>, dir: 'left' | 'right' | 'up' | 'down') => {
+  onArrowKeyDown = (_e: React.KeyboardEvent<any>, dir: string) => {
     const nextOp = closestNodeInDirection(this.props.layout, this.props.selectedOp?.name, dir);
     if (nextOp && this.props.onClickOp) {
       this.props.onClickOp({name: nextOp});
@@ -185,7 +193,7 @@ export class OpGraph extends React.Component<OpGraphProps> {
   };
 
   render() {
-    const {layout, jobName, onClickBackground, onDoubleClickOp} = this.props;
+    const {layout, interactor, jobName, onClickBackground, onDoubleClickOp} = this.props;
 
     return (
       <SVGViewport
@@ -193,6 +201,7 @@ export class OpGraph extends React.Component<OpGraphProps> {
         key={jobName}
         maxZoom={DEFAULT_MAX_ZOOM}
         defaultZoom="zoom-to-fit"
+        interactor={interactor || SVGViewport.Interactors.PanAndZoom}
         graphWidth={layout.width}
         graphHeight={layout.height}
         onClick={onClickBackground}

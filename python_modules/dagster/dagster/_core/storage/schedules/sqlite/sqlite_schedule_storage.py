@@ -1,6 +1,5 @@
-from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Optional
+from typing import Iterator, Optional
 
 import sqlalchemy as db
 from packaging.version import parse
@@ -12,24 +11,20 @@ from dagster import (
     _check as check,
 )
 from dagster._config.config_schema import UserConfigSchema
-from dagster._core.storage.schedules.schema import ScheduleStorageSqlMetadata
-from dagster._core.storage.schedules.sql_schedule_storage import SqlScheduleStorage
 from dagster._core.storage.sql import (
     AlembicVersion,
     check_alembic_revision,
     create_engine,
     get_alembic_config,
     run_alembic_upgrade,
-    safe_commit,
     stamp_alembic_rev,
 )
-from dagster._core.storage.sqlite import (
-    LAST_KNOWN_STAMPED_SQLITE_ALEMBIC_REVISION,
-    create_db_conn_string,
-    get_sqlite_version,
-)
+from dagster._core.storage.sqlite import create_db_conn_string, get_sqlite_version
 from dagster._serdes import ConfigurableClass, ConfigurableClassData
 from dagster._utils import mkdir_p
+
+from ..schema import ScheduleStorageSqlMetadata
+from ..sql_schedule_storage import SqlScheduleStorage
 
 MINIMUM_SQLITE_BATCH_VERSION = "3.25.0"
 
@@ -72,20 +67,10 @@ class SqliteScheduleStorage(SqlScheduleStorage, ConfigurableClass):
         with engine.connect() as connection:
             db_revision, head_revision = check_alembic_revision(alembic_config, connection)
             if not (db_revision and head_revision):
-                table_names = db.inspect(engine).get_table_names()
-                if "job_ticks" in table_names:
-                    # The ticks table exists but the alembic version table does not. This means that the SQLite db was
-                    # initialized with SQLAlchemy 2.0 before https://github.com/dagster-io/dagster/pull/25740 was merged.
-                    # We should pin the alembic revision to the last known stamped revision before we unpinned SQLAlchemy 2.0
-                    # This should be safe because we have guarded all known migrations since then.
-                    rev_to_stamp = LAST_KNOWN_STAMPED_SQLITE_ALEMBIC_REVISION
-                else:
-                    should_migrate_data = True
-                    rev_to_stamp = "head"
                 ScheduleStorageSqlMetadata.create_all(engine)
                 connection.execute(db.text("PRAGMA journal_mode=WAL;"))
-                stamp_alembic_rev(alembic_config, connection, rev=rev_to_stamp)
-                safe_commit(connection)
+                stamp_alembic_rev(alembic_config, connection)
+                should_migrate_data = True
 
         schedule_storage = cls(conn_string, inst_data)
         if should_migrate_data:

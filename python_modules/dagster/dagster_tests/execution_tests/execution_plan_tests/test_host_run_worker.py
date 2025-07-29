@@ -1,15 +1,18 @@
 import os
 
-import dagster as dg
+from dagster import executor, fs_io_manager, op, reconstructable, resource
+from dagster._core.definitions.decorators.job_decorator import job
+from dagster._core.definitions.executor_definition import multiprocess_executor
 from dagster._core.definitions.reconstruct import ReconstructableJob
 from dagster._core.execution.api import create_execution_plan
 from dagster._core.execution.host_mode import execute_run_host_mode
 from dagster._core.execution.retries import RetryMode
 from dagster._core.executor.multiprocess import MultiprocessExecutor
 from dagster._core.storage.dagster_run import DagsterRunStatus
+from dagster._core.test_utils import instance_for_test
 
 
-@dg.resource
+@resource
 def add_one_resource(_):
     def add_one(num):
         return num + 1
@@ -17,7 +20,7 @@ def add_one_resource(_):
     return add_one
 
 
-@dg.resource
+@resource
 def add_two_resource(_):
     def add_two(num):
         return num + 2
@@ -25,13 +28,13 @@ def add_two_resource(_):
     return add_two
 
 
-@dg.op(required_resource_keys={"adder"})
+@op(required_resource_keys={"adder"})
 def op_that_uses_adder_resource(context, number):
     return context.resources.adder(number)
 
 
-@dg.job(
-    resource_defs={"adder": add_one_resource, "io_manager": dg.fs_io_manager},
+@job(
+    resource_defs={"adder": add_one_resource, "io_manager": fs_io_manager},
 )
 def job_with_resources():
     op_that_uses_adder_resource()
@@ -50,7 +53,7 @@ class ExplodingTestPipeline(ReconstructableJob):
         op_selection=None,
         asset_selection=None,
     ):
-        return super().__new__(
+        return super(ExplodingTestPipeline, cls).__new__(
             cls,
             repository,
             pipeline_name,
@@ -58,16 +61,16 @@ class ExplodingTestPipeline(ReconstructableJob):
             asset_selection,
         )
 
-    def get_definition(self):  # pyright: ignore[reportIncompatibleVariableOverride]
+    def get_definition(self):
         if os.getpid() == _explode_pid["pid"]:
             raise Exception("Got the definition in the run worker process")
-        return super().get_definition()
+        return super(ExplodingTestPipeline, self).get_definition()
 
 
 def test_host_run_worker():
-    _explode_pid["pid"] = os.getpid()  # pyright: ignore[reportArgumentType]
+    _explode_pid["pid"] = os.getpid()
 
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         run_config = {
             "ops": {"op_that_uses_adder_resource": {"inputs": {"number": {"value": 4}}}},
         }
@@ -82,17 +85,17 @@ def test_host_run_worker():
             run_config=run_config,
         )
 
-        recon_job = dg.reconstructable(job_with_resources)
+        recon_job = reconstructable(job_with_resources)
 
         execute_run_host_mode(
             ExplodingTestPipeline(recon_job.repository, recon_job.job_name),
             dagster_run,
             instance,
-            executor_defs=[dg.multiprocess_executor],
+            executor_defs=[multiprocess_executor],
             raise_on_error=True,
         )
 
-        assert instance.get_run_by_id(dagster_run.run_id).status == DagsterRunStatus.SUCCESS  # pyright: ignore[reportOptionalMemberAccess]
+        assert instance.get_run_by_id(dagster_run.run_id).status == DagsterRunStatus.SUCCESS
 
         logs = instance.all_logs(dagster_run.run_id)
         assert any(
@@ -101,7 +104,7 @@ def test_host_run_worker():
         )
 
 
-@dg.executor(
+@executor(
     name="custom_test_executor",
     config_schema={},
 )
@@ -113,9 +116,9 @@ def test_executor(_init_context):
 
 
 def test_custom_executor_fn():
-    _explode_pid["pid"] = os.getpid()  # pyright: ignore[reportArgumentType]
+    _explode_pid["pid"] = os.getpid()
 
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         run_config = {
             "ops": {"op_that_uses_adder_resource": {"inputs": {"number": {"value": 4}}}},
         }
@@ -130,7 +133,7 @@ def test_custom_executor_fn():
             run_config=run_config,
         )
 
-        recon_job = dg.reconstructable(job_with_resources)
+        recon_job = reconstructable(job_with_resources)
 
         execute_run_host_mode(
             ExplodingTestPipeline(recon_job.repository, recon_job.job_name),
@@ -140,7 +143,7 @@ def test_custom_executor_fn():
             raise_on_error=True,
         )
 
-        assert instance.get_run_by_id(dagster_run.run_id).status == DagsterRunStatus.SUCCESS  # pyright: ignore[reportOptionalMemberAccess]
+        assert instance.get_run_by_id(dagster_run.run_id).status == DagsterRunStatus.SUCCESS
 
         logs = instance.all_logs(dagster_run.run_id)
         assert any(

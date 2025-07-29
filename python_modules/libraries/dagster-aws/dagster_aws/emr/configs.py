@@ -1,6 +1,6 @@
 from dagster import Bool, Field, Float, Int, Permissive, Shape, String
 
-from dagster_aws.emr.types import (
+from .types import (
     EbsVolumeType,
     EmrActionOnFailure,
     EmrAdjustmentType,

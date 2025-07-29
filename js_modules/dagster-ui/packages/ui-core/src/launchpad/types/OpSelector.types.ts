@@ -4,7 +4,7 @@ import * as Types from '../../graphql/types';
 
 export type OpSelectorQueryVariables = Types.Exact<{
   selector: Types.PipelineSelector;
-  requestScopeHandleID?: Types.InputMaybe<Types.Scalars['String']['input']>;
+  requestScopeHandleID?: Types.InputMaybe<Types.Scalars['String']>;
 }>;
 
 export type OpSelectorQuery = {
@@ -169,5 +169,3 @@ export type OpSelectorQuery = {
         }>;
       };
 };
-
-export const OpSelectorQueryVersion = 'f1b601d74e6ffb2854418109f56c90bc7feb37cbabd9a4b60dd7075aa45fcadf';

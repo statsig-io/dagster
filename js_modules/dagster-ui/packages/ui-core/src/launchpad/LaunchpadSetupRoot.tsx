@@ -1,5 +1,5 @@
 import qs from 'qs';
-import {useEffect} from 'react';
+import * as React from 'react';
 import {Redirect, useParams} from 'react-router-dom';
 
 import {
@@ -8,26 +8,18 @@ import {
   useExecutionSessionStorage,
 } from '../app/ExecutionSessionStorage';
 import {usePermissionsForLocation} from '../app/Permissions';
-import {useBlockTraceUntilTrue} from '../performance/TraceContext';
 import {explorerPathFromString} from '../pipelines/PipelinePathUtils';
 import {useJobTitle} from '../pipelines/useJobTitle';
-import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext/util';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
-export const LaunchpadSetupRoot = (props: {repoAddress: RepoAddress}) => {
+export const LaunchpadSetupRoot: React.FC<{repoAddress: RepoAddress}> = (props) => {
   const {repoAddress} = props;
   const {
     permissions: {canLaunchPipelineExecution},
-    loading,
   } = usePermissionsForLocation(repoAddress.location);
-
-  useBlockTraceUntilTrue('Permissions', !loading);
-
   const {repoPath, pipelinePath} = useParams<{repoPath: string; pipelinePath: string}>();
-  if (loading) {
-    return null;
-  }
 
   if (!canLaunchPipelineExecution) {
     return <Redirect to={`/locations/${repoPath}/pipeline_or_job/${pipelinePath}`} />;
@@ -40,7 +32,7 @@ interface Props {
   repoAddress: RepoAddress;
 }
 
-const LaunchpadSetupAllowedRoot = (props: Props) => {
+const LaunchpadSetupAllowedRoot: React.FC<Props> = (props) => {
   const {pipelinePath, repoAddress} = props;
 
   const explorerPath = explorerPathFromString(pipelinePath);
@@ -51,10 +43,10 @@ const LaunchpadSetupAllowedRoot = (props: Props) => {
 
   useJobTitle(explorerPath, isJob);
 
-  const [_, onSave] = useExecutionSessionStorage(repoAddress, pipelineName);
+  const [data, onSave] = useExecutionSessionStorage(repoAddress, pipelineName);
   const queryString = qs.parse(window.location.search, {ignoreQueryPrefix: true});
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (
       queryString.config ||
       queryString.mode ||
@@ -86,7 +78,7 @@ const LaunchpadSetupAllowedRoot = (props: Props) => {
         newSession.assetSelection = queryString.assetSelection as any;
       }
 
-      onSave((data) => applyCreateSession(data, newSession));
+      onSave(applyCreateSession(data, newSession));
     }
   });
 

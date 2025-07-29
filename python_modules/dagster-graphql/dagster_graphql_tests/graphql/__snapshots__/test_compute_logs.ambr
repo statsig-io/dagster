@@ -1,4 +1,3 @@
-# serializer version: 1
 # name: TestComputeLogs.test_compute_logs_subscription_graphql[0]
   list([
     dict({

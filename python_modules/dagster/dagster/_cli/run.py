@@ -1,18 +1,10 @@
-from typing import Optional
-
 import click
-from dagster_shared.cli import workspace_options
 from tqdm import tqdm
 
 from dagster import __version__ as dagster_version
-from dagster._cli.utils import assert_no_remaining_opts, get_instance_for_cli
-from dagster._cli.workspace.cli_target import (
-    RepositoryOpts,
-    WorkspaceOpts,
-    get_job_from_cli_opts,
-    job_name_option,
-    repository_options,
-)
+from dagster._cli.workspace.cli_target import get_external_job_from_kwargs, job_target_argument
+
+from .utils import get_instance_for_cli
 
 
 @click.group(name="run")
@@ -22,7 +14,7 @@ def run_cli():
 
 @run_cli.command(name="list", help="List the runs in the current Dagster instance.")
 @click.option("--limit", help="Only list a specified number of runs", default=None, type=int)
-def run_list_command(limit: int) -> None:
+def run_list_command(limit):
     with get_instance_for_cli() as instance:
         for run in instance.get_runs(limit=limit):
             click.echo(f"Run: {run.run_id}")
@@ -35,7 +27,7 @@ def run_list_command(limit: int) -> None:
 )
 @click.option("--force", "-f", is_flag=True, default=False, help="Skip prompt to delete run.")
 @click.argument("run_id")
-def run_delete_command(run_id: str, force: bool) -> None:
+def run_delete_command(run_id, force):
     with get_instance_for_cli() as instance:
         if not instance.has_run(run_id):
             raise click.ClickException(f"No run found with id {run_id}.")
@@ -65,7 +57,7 @@ def run_delete_command(run_id: str, force: bool) -> None:
     default=False,
     help="Skip prompt to delete run history and event logs.",
 )
-def run_wipe_command(force: bool) -> None:
+def run_wipe_command(force):
     if force:
         should_delete_run = True
     else:
@@ -92,17 +84,11 @@ def run_wipe_command(force: bool) -> None:
     "from_label",
     help="The repository from which to migrate (format: <repository_name>@<location_name>)",
 )
-@workspace_options
-@repository_options
-@job_name_option(name="job_name")
-def run_migrate_command(from_label: str, job_name: Optional[str], **other_opts: object) -> None:
+@job_target_argument
+def run_migrate_command(from_label, **kwargs):
     from dagster._core.storage.dagster_run import RunsFilter
     from dagster._core.storage.runs.sql_run_storage import SqlRunStorage
     from dagster._core.storage.tags import REPOSITORY_LABEL_TAG
-
-    workspace_opts = WorkspaceOpts.extract_from_cli_options(other_opts)
-    repository_opts = RepositoryOpts.extract_from_cli_options(other_opts)
-    assert_no_remaining_opts(other_opts)
 
     if not from_label:
         raise click.UsageError("Must specify a --from repository label")
@@ -113,16 +99,12 @@ def run_migrate_command(from_label: str, job_name: Optional[str], **other_opts: 
         )
 
     with get_instance_for_cli() as instance:
-        with get_job_from_cli_opts(
-            instance,
-            version=dagster_version,
-            workspace_opts=workspace_opts,
-            repository_opts=repository_opts,
-            job_name=job_name,
-        ) as remote_job:
-            new_job_origin = remote_job.get_remote_origin()
-            job_name = remote_job.name
-            to_label = new_job_origin.repository_origin.get_label()
+        with get_external_job_from_kwargs(
+            instance, version=dagster_version, kwargs=kwargs
+        ) as external_job:
+            new_job_origin = external_job.get_external_origin()
+            job_name = external_job.name
+            to_label = new_job_origin.external_repository_origin.get_label()
 
         if not to_label:
             raise click.UsageError("Must specify valid job targets to migrate history to.")
@@ -157,6 +139,6 @@ def run_migrate_command(from_label: str, job_name: Optional[str], **other_opts: 
             raise click.ClickException("Exiting without migrating.")
 
 
-def is_valid_repo_label(label: str) -> bool:
+def is_valid_repo_label(label):
     parts = label.split("@")
     return len(parts) == 2 and len(parts[0]) > 0 and len(parts[1]) > 0

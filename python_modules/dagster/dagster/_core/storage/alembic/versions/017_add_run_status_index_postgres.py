@@ -5,7 +5,6 @@ Revises: 6d366a41b4be
 Create Date: 2021-02-23 16:00:45.689578
 
 """
-
 from alembic import op
 from sqlalchemy import inspect
 

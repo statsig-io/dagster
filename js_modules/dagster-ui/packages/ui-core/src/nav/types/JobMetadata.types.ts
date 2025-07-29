@@ -33,18 +33,14 @@ export type JobMetadataQuery = {
         sensors: Array<{
           __typename: 'Sensor';
           id: string;
+          jobOriginId: string;
           name: string;
-          sensorType: Types.SensorType;
           targets: Array<{__typename: 'Target'; pipelineName: string; mode: string}> | null;
           sensorState: {
             __typename: 'InstigationState';
             id: string;
             selectorId: string;
             status: Types.InstigationStatus;
-            typeSpecificData:
-              | {__typename: 'ScheduleData'}
-              | {__typename: 'SensorData'; lastCursor: string | null}
-              | null;
           };
         }>;
       }
@@ -53,7 +49,10 @@ export type JobMetadataQuery = {
   assetNodes: Array<{
     __typename: 'AssetNode';
     id: string;
-    automationCondition: {__typename: 'AutomationCondition'} | null;
+    autoMaterializePolicy: {
+      __typename: 'AutoMaterializePolicy';
+      policyType: Types.AutoMaterializePolicyType;
+    } | null;
     assetKey: {__typename: 'AssetKey'; path: Array<string>};
   }>;
   pipelineRunsOrError:
@@ -65,7 +64,6 @@ export type JobMetadataQuery = {
           __typename: 'Run';
           id: string;
           status: Types.RunStatus;
-          creationTime: number;
           startTime: number | null;
           endTime: number | null;
           updateTime: number | null;
@@ -81,7 +79,10 @@ export type JobMetadataQuery = {
 export type JobMetadataAssetNodeFragment = {
   __typename: 'AssetNode';
   id: string;
-  automationCondition: {__typename: 'AutomationCondition'} | null;
+  autoMaterializePolicy: {
+    __typename: 'AutoMaterializePolicy';
+    policyType: Types.AutoMaterializePolicyType;
+  } | null;
   assetKey: {__typename: 'AssetKey'; path: Array<string>};
 };
 
@@ -107,18 +108,14 @@ export type JobMetadataFragment = {
   sensors: Array<{
     __typename: 'Sensor';
     id: string;
+    jobOriginId: string;
     name: string;
-    sensorType: Types.SensorType;
     targets: Array<{__typename: 'Target'; pipelineName: string; mode: string}> | null;
     sensorState: {
       __typename: 'InstigationState';
       id: string;
       selectorId: string;
       status: Types.InstigationStatus;
-      typeSpecificData:
-        | {__typename: 'ScheduleData'}
-        | {__typename: 'SensorData'; lastCursor: string | null}
-        | null;
     };
   }>;
 };
@@ -127,7 +124,6 @@ export type RunMetadataFragment = {
   __typename: 'Run';
   id: string;
   status: Types.RunStatus;
-  creationTime: number;
   startTime: number | null;
   endTime: number | null;
   updateTime: number | null;
@@ -137,5 +133,3 @@ export type RunMetadataFragment = {
     key: {__typename: 'AssetKey'; path: Array<string>};
   }>;
 };
-
-export const JobMetadataQueryVersion = '489183f897f5a30e8c9883a6b96fcaa6141734c79613e5979baa3e5a15050efd';

@@ -1,10 +1,6 @@
 from datetime import datetime
 
-from dagster import MetadataValue, asset
-from dagster._core.definitions.partitions.definition import (
-    DailyPartitionsDefinition,
-    HourlyPartitionsDefinition,
-)
+from dagster import DailyPartitionsDefinition, HourlyPartitionsDefinition, MetadataValue, asset
 
 daily_partitions_def = DailyPartitionsDefinition(start_date="2020-01-01")
 

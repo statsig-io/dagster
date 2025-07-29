@@ -1,25 +1,23 @@
 import sys
-from collections.abc import Mapping
-from typing import Optional, Union
+from typing import Mapping, Optional, Union
 
 import dagster._check as check
 import graphene
 import yaml
 from dagster._core.storage.dagster_run import RunsFilter
 from dagster._utils.error import serializable_error_info_from_exc_info
-from dagster_shared.yaml_utils import load_run_config_yaml
+from dagster._utils.yaml_utils import load_run_config_yaml
 from graphene.types.generic import GenericScalar
 
-from dagster_graphql.implementation.fetch_runs import get_run_ids, get_runs, get_runs_count
-from dagster_graphql.implementation.utils import UserFacingGraphQLError
-from dagster_graphql.schema.backfill import pipeline_execution_error_types
-from dagster_graphql.schema.errors import (
+from ..implementation.fetch_runs import get_run_ids, get_runs, get_runs_count
+from ..implementation.utils import UserFacingGraphQLError
+from .errors import (
     GrapheneInvalidPipelineRunsFilterError,
     GraphenePythonError,
     GrapheneRunGroupNotFoundError,
 )
-from dagster_graphql.schema.tags import GraphenePipelineTagAndValues
-from dagster_graphql.schema.util import ResolveInfo, non_null_list
+from .tags import GraphenePipelineTagAndValues
+from .util import ResolveInfo, non_null_list
 
 
 class GrapheneStepEventStatus(graphene.Enum):
@@ -55,7 +53,7 @@ class GrapheneRunGroup(graphene.ObjectType):
         name = "RunGroup"
 
     def __init__(self, root_run_id, runs):
-        from dagster_graphql.schema.pipelines.pipeline import GrapheneRun
+        from .pipelines.pipeline import GrapheneRun
 
         check.str_param(root_run_id, "root_run_id")
         check.list_param(runs, "runs", GrapheneRun)
@@ -75,28 +73,17 @@ launch_pipeline_run_result_types = (GrapheneLaunchRunSuccess,)
 
 class GrapheneLaunchRunResult(graphene.Union):
     class Meta:
+        from .backfill import pipeline_execution_error_types
+
         types = launch_pipeline_run_result_types + pipeline_execution_error_types
 
         name = "LaunchRunResult"
 
 
-class GrapheneLaunchMultipleRunsResult(graphene.ObjectType):
-    """Contains results from multiple pipeline launches."""
-
-    launchMultipleRunsResult = non_null_list(GrapheneLaunchRunResult)
-
-    class Meta:
-        name = "LaunchMultipleRunsResult"
-
-
-class GrapheneLaunchMultipleRunsResultOrError(graphene.Union):
-    class Meta:
-        types = (GrapheneLaunchMultipleRunsResult, GraphenePythonError)
-        name = "LaunchMultipleRunsResultOrError"
-
-
 class GrapheneLaunchRunReexecutionResult(graphene.Union):
     class Meta:
+        from .backfill import pipeline_execution_error_types
+
         types = launch_pipeline_run_result_types + pipeline_execution_error_types
 
         name = "LaunchRunReexecutionResult"
@@ -226,7 +213,6 @@ def parse_run_config_input(
 
 types = [
     GrapheneLaunchRunResult,
-    GrapheneLaunchMultipleRunsResult,
     GrapheneLaunchRunReexecutionResult,
     GrapheneLaunchPipelineRunSuccess,
     GrapheneLaunchRunSuccess,

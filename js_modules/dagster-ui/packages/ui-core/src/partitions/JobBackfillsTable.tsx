@@ -1,16 +1,17 @@
+import {gql, useQuery} from '@apollo/client';
 import {
   Box,
   CursorPaginationControls,
   CursorPaginationProps,
   NonIdealState,
 } from '@dagster-io/ui-components';
-import {useEffect, useState} from 'react';
+import React from 'react';
 
-import {gql, useQuery} from '../apollo-client';
-import {JobBackfillsQuery, JobBackfillsQueryVariables} from './types/JobBackfillsTable.types';
 import {RepositorySelector} from '../graphql/types';
-import {BACKFILL_TABLE_FRAGMENT, BackfillTable} from '../instance/backfill/BackfillTable';
+import {BackfillTable, BACKFILL_TABLE_FRAGMENT} from '../instance/backfill/BackfillTable';
 import {Loading} from '../ui/Loading';
+
+import {JobBackfillsQuery, JobBackfillsQueryVariables} from './types/JobBackfillsTable.types';
 
 const BACKFILL_PAGE_SIZE = 10;
 
@@ -25,8 +26,8 @@ export const JobBackfillsTable = ({
   repositorySelector: RepositorySelector;
   refetchCounter: number;
 }) => {
-  const [cursorStack, setCursorStack] = useState<string[]>(() => []);
-  const [cursor, setCursor] = useState<string | undefined>();
+  const [cursorStack, setCursorStack] = React.useState<string[]>(() => []);
+  const [cursor, setCursor] = React.useState<string | undefined>();
   const queryResult = useQuery<JobBackfillsQuery, JobBackfillsQueryVariables>(JOB_BACKFILLS_QUERY, {
     variables: {
       partitionSetName,
@@ -37,10 +38,8 @@ export const JobBackfillsTable = ({
   });
 
   const refetch = queryResult.refetch;
-  useEffect(() => {
-    if (refetchCounter) {
-      refetch();
-    }
+  React.useEffect(() => {
+    refetchCounter && refetch();
   }, [refetch, refetchCounter]);
 
   return (

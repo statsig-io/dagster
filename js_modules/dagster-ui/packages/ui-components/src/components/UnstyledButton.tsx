@@ -1,17 +1,14 @@
 import styled, {css} from 'styled-components';
 
-import {Colors} from './Color';
-
 interface Props {
   $expandedClickPx?: number;
-  $outlineOnHover?: boolean;
+  $showFocusOutline?: boolean;
 }
 
 export const UnstyledButton = styled.button<Props>`
   border: 0;
   background-color: transparent;
   border-radius: 4px;
-  color: ${Colors.textDefault()};
   cursor: pointer;
   padding: 0;
   text-align: start;
@@ -29,18 +26,16 @@ export const UnstyledButton = styled.button<Props>`
         `
       : null}
 
+  :focus,
+  :active {
+    outline: none;
+    ${({$showFocusOutline}) =>
+      $showFocusOutline ? `box-shadow: rgba(58, 151, 212, 0.6) 0 0 0 3px;` : null}
+  }
+
   &:disabled {
     color: inherit;
     cursor: default;
     opacity: 0.6;
   }
-
-  ${({$outlineOnHover}) =>
-    $outlineOnHover
-      ? css`
-          &:hover {
-            box-shadow: 0 0 0 1px var(--color-keyline-default);
-          }
-        `
-      : null}
 `;

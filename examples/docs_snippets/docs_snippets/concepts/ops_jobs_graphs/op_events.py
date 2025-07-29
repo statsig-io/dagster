@@ -1,6 +1,15 @@
 # ruff: isort: skip_file
 
-import dagster as dg
+from dagster import (
+    AssetMaterialization,
+    ExpectationResult,
+    Failure,
+    MetadataValue,
+    Out,
+    Output,
+    RetryRequested,
+    op,
+)
 
 
 def do_some_transform(_):
@@ -32,19 +41,17 @@ def flaky_operation():
 
 
 # start_op_output_3
-import dagster as dg
+from dagster import MetadataValue, Output, op
 
 
-@dg.op
-def my_metadata_output(context: dg.OpExecutionContext) -> dg.Output:
+@op
+def my_metadata_output(context) -> Output:
     df = get_some_data()
-    return dg.Output(
+    return Output(
         df,
         metadata={
             "text_metadata": "Text-based metadata for this event",
-            "dashboard_url": dg.MetadataValue.url(
-                "http://mycoolsite.com/url_for_my_data"
-            ),
+            "dashboard_url": MetadataValue.url("http://mycoolsite.com/url_for_my_data"),
             "raw_count": len(df),
             "size (bytes)": calculate_bytes(df),
         },
@@ -54,46 +61,47 @@ def my_metadata_output(context: dg.OpExecutionContext) -> dg.Output:
 # end_op_output_3
 
 # start_op_output_4
-import dagster as dg
+from dagster import Output, op
+from typing import Tuple
 
 
-# Using dg.Output as type annotation without inner type
-@dg.op
-def my_output_op() -> dg.Output:
-    return dg.Output("some_value", metadata={"some_metadata": "a_value"})
+# Using Output as type annotation without inner type
+@op
+def my_output_op() -> Output:
+    return Output("some_value", metadata={"some_metadata": "a_value"})
 
 
 # A single output with a parameterized type annotation
-@dg.op
-def my_output_generic_op() -> dg.Output[int]:
-    return dg.Output(5, metadata={"some_metadata": "a_value"})
+@op
+def my_output_generic_op() -> Output[int]:
+    return Output(5, metadata={"some_metadata": "a_value"})
 
 
 # Multiple outputs using parameterized type annotation
-@dg.op(out={"int_out": dg.Out(), "str_out": dg.Out()})
-def my_multiple_generic_output_op() -> tuple[dg.Output[int], dg.Output[str]]:
+@op(out={"int_out": Out(), "str_out": Out()})
+def my_multiple_generic_output_op() -> Tuple[Output[int], Output[str]]:
     return (
-        dg.Output(5, metadata={"some_metadata": "a_value"}),
-        dg.Output("foo", metadata={"some_metadata": "another_value"}),
+        Output(5, metadata={"some_metadata": "a_value"}),
+        Output("foo", metadata={"some_metadata": "another_value"}),
     )
 
 
 # end_op_output_4
 
 # start_metadata_expectation_op
-import dagster as dg
+from dagster import ExpectationResult, MetadataValue, op
 
 
-@dg.op
-def my_metadata_expectation_op(context: dg.OpExecutionContext, df):
+@op
+def my_metadata_expectation_op(context, df):
     df = do_some_transform(df)
     context.log_event(
-        dg.ExpectationResult(
+        ExpectationResult(
             success=len(df) > 0,
             description="ensure dataframe has rows",
             metadata={
                 "text_metadata": "Text-based metadata for this event",
-                "dashboard_url": dg.MetadataValue.url(
+                "dashboard_url": MetadataValue.url(
                     "http://mycoolsite.com/url_for_my_data"
                 ),
                 "raw_count": len(df),
@@ -107,19 +115,19 @@ def my_metadata_expectation_op(context: dg.OpExecutionContext, df):
 # end_metadata_expectation_op
 
 # start_failure_op
-import dagster as dg
+from dagster import Failure, op, MetadataValue
 
 
-@dg.op
+@op
 def my_failure_op():
     path = "/path/to/files"
     my_files = get_files(path)
     if len(my_files) == 0:
-        raise dg.Failure(
+        raise Failure(
             description="No files to process",
             metadata={
-                "filepath": dg.MetadataValue.path(path),
-                "dashboard_url": dg.MetadataValue.url("http://mycoolsite.com/failures"),
+                "filepath": MetadataValue.path(path),
+                "dashboard_url": MetadataValue.url("http://mycoolsite.com/failures"),
             },
         )
     return some_calculation(my_files)
@@ -128,30 +136,30 @@ def my_failure_op():
 # end_failure_op
 
 # start_retry_op
-import dagster as dg
+from dagster import RetryRequested, op
 
 
-@dg.op
+@op
 def my_retry_op():
     try:
         result = flaky_operation()
     except Exception as e:
-        raise dg.RetryRequested(max_retries=3) from e
+        raise RetryRequested(max_retries=3) from e
     return result
 
 
 # end_retry_op
 
 # start_asset_op
-import dagster as dg
+from dagster import AssetMaterialization, op
 
 
-@dg.op
-def my_asset_op(context: dg.OpExecutionContext):
+@op
+def my_asset_op(context):
     df = get_some_data()
     store_to_s3(df)
     context.log_event(
-        dg.AssetMaterialization(
+        AssetMaterialization(
             asset_key="s3.my_asset",
             description="A df I stored in s3",
         )
@@ -164,35 +172,33 @@ def my_asset_op(context: dg.OpExecutionContext):
 # end_asset_op
 
 # start_asset_op_yield
-import dagster as dg
+from dagster import AssetMaterialization, Output, op
 
 
-@dg.op
+@op
 def my_asset_op_yields():
     df = get_some_data()
     store_to_s3(df)
-    yield dg.AssetMaterialization(
+    yield AssetMaterialization(
         asset_key="s3.my_asset",
         description="A df I stored in s3",
     )
 
     result = do_some_transform(df)
-    yield dg.Output(result)
+    yield Output(result)
 
 
 # end_asset_op_yield
 
 # start_expectation_op
-import dagster as dg
+from dagster import ExpectationResult, op
 
 
-@dg.op
-def my_expectation_op(context: dg.OpExecutionContext, df):
+@op
+def my_expectation_op(context, df):
     do_some_transform(df)
     context.log_event(
-        dg.ExpectationResult(
-            success=len(df) > 0, description="ensure dataframe has rows"
-        )
+        ExpectationResult(success=len(df) > 0, description="ensure dataframe has rows")
     )
     return df
 
@@ -200,13 +206,13 @@ def my_expectation_op(context: dg.OpExecutionContext, df):
 # end_expectation_op
 
 # start_yield_outputs
-import dagster as dg
+from dagster import Output, op
 
 
-@dg.op(out={"out1": dg.Out(str), "out2": dg.Out(int)})
+@op(out={"out1": Out(str), "out2": Out(int)})
 def my_op_yields():
-    yield dg.Output(5, output_name="out2")
-    yield dg.Output("foo", output_name="out1")
+    yield Output(5, output_name="out2")
+    yield Output("foo", output_name="out1")
 
 
 # end_yield_outputs

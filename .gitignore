@@ -3,8 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Claude context file
-CLAUDE.local.md
 # C extensions
 *.so
 
@@ -17,6 +15,8 @@ dist/
 downloads/
 eggs/
 .eggs/
+lib/
+lib64/
 parts/
 sdist/
 var/
@@ -45,7 +45,6 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
-mlruns/
 
 # Translations
 *.mo
@@ -80,11 +79,10 @@ celerybeat-schedule
 *.sage.py
 
 # dotenv
-.env*
-!.env.example
+.env
+.envrc
 
 # virtualenv
-.direnv/
 .venv
 venv/
 ENV/
@@ -108,13 +106,13 @@ Pipfile.lock
 .mypy_cache/
 
 tags
-!python_modules/dagster/dagster/_core/definitions/tags
 
 .pytest_cache
 .DS_Store
 
 docs/_build
 python_modules/dagster/docs/_build
+.vscode/
 
 dagit_run_logs
 
@@ -145,7 +143,7 @@ data
 dask-worker-space
 
 # PyCharm IDE Config files
-.idea/
+.idea
 
 # Codemod bookmarks
 .codemod.bookmark
@@ -170,16 +168,10 @@ pythonenv*/
 *.duckdb
 
 # PyRight config
-pyrightconfig*
+pyrightconfig.json
 
 # Scripts working directory
 scripts/.build
 
 # dbt .user files
 .user.yml
-
-# exponent config
-exponent.txt
-
-# google cloud storage emulater
-.cloudstorage/

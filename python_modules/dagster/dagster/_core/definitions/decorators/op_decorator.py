@@ -1,13 +1,15 @@
-from collections.abc import Mapping, Sequence
 from functools import lru_cache, update_wrapper
 from inspect import Parameter
-from typing import (  # noqa: UP035
+from typing import (
     TYPE_CHECKING,
     AbstractSet,
     Any,
     Callable,
+    List,
+    Mapping,
     NamedTuple,
     Optional,
+    Sequence,
     Union,
     cast,
     overload,
@@ -24,17 +26,20 @@ from dagster._core.decorator_utils import (
     positional_arg_name_list,
 )
 from dagster._core.definitions.inference import infer_input_props
-from dagster._core.definitions.input import In, InputDefinition
-from dagster._core.definitions.output import Out
-from dagster._core.definitions.policy import RetryPolicy
-from dagster._core.definitions.resource_annotation import get_resource_args
-from dagster._core.definitions.utils import DEFAULT_OUTPUT
+from dagster._core.definitions.resource_annotation import (
+    get_resource_args,
+)
 from dagster._core.errors import DagsterInvalidDefinitionError
 from dagster._core.types.dagster_type import DagsterTypeKind
-from dagster._utils.warnings import config_argument_warning, normalize_renamed_param
+from dagster._utils.warnings import normalize_renamed_param
+
+from ..input import In, InputDefinition
+from ..output import Out
+from ..policy import RetryPolicy
+from ..utils import DEFAULT_OUTPUT
 
 if TYPE_CHECKING:
-    from dagster._core.definitions.op_definition import OpDefinition
+    from ..op_definition import OpDefinition
 
 
 class _Op:
@@ -50,7 +55,6 @@ class _Op:
         retry_policy: Optional[RetryPolicy] = None,
         ins: Optional[Mapping[str, In]] = None,
         out: Optional[Union[Out, Mapping[str, Out]]] = None,
-        pool: Optional[str] = None,
     ):
         self.name = check.opt_str_param(name, "name")
         self.decorator_takes_context = check.bool_param(
@@ -64,7 +68,6 @@ class _Op:
         self.tags = tags
         self.code_version = code_version
         self.retry_policy = retry_policy
-        self.pool = pool
 
         # config will be checked within OpDefinition
         self.config_schema = config_schema
@@ -74,7 +77,8 @@ class _Op:
 
     def __call__(self, fn: Callable[..., Any]) -> "OpDefinition":
         from dagster._config.pythonic_config import validate_resource_annotated_function
-        from dagster._core.definitions.op_definition import OpDefinition
+
+        from ..op_definition import OpDefinition
 
         validate_resource_annotated_function(fn)
 
@@ -86,8 +90,6 @@ class _Op:
             if self.decorator_takes_context
             else NoContextDecoratedOpFunction(decorated_fn=fn)
         )
-
-        compute_fn.validate_malformed_config()
 
         if compute_fn.has_config_arg():
             check.param_invariant(
@@ -132,7 +134,6 @@ class _Op:
             code_version=self.code_version,
             retry_policy=self.retry_policy,
             version=None,  # code_version has replaced version
-            pool=self.pool,
         )
         update_wrapper(op_def, compute_fn.decorated_fn)
         return op_def
@@ -155,7 +156,6 @@ def op(
     version: Optional[str] = ...,
     retry_policy: Optional[RetryPolicy] = ...,
     code_version: Optional[str] = ...,
-    pool: Optional[str] = None,
 ) -> _Op: ...
 
 
@@ -175,7 +175,6 @@ def op(
     version: Optional[str] = None,
     retry_policy: Optional[RetryPolicy] = None,
     code_version: Optional[str] = None,
-    pool: Optional[str] = None,
 ) -> Union["OpDefinition", _Op]:
     """Create an op with the specified parameters from the decorated function.
 
@@ -215,7 +214,7 @@ def op(
         tags (Optional[Dict[str, Any]]): Arbitrary metadata for the op. Frameworks may
             expect and require certain metadata to be attached to a op. Values that are not strings
             will be json encoded and must meet the criteria that `json.loads(json.dumps(value)) == value`.
-        code_version (Optional[str]): Version of the logic encapsulated by the op. If set,
+        code_version (Optional[str]): (Experimental) Version of the logic encapsulated by the op. If set,
             this is used as a default version for all outputs.
         retry_policy (Optional[RetryPolicy]): The retry policy for this op.
 
@@ -269,7 +268,6 @@ def op(
         retry_policy=retry_policy,
         ins=ins,
         out=out,
-        pool=pool,
     )
 
 
@@ -286,11 +284,6 @@ class DecoratedOpFunction(NamedTuple):
     def has_context_arg(self) -> bool:
         return is_context_provided(get_function_params(self.decorated_fn))
 
-    def get_context_arg(self) -> Parameter:
-        if self.has_context_arg():
-            return get_function_params(self.decorated_fn)[0]
-        check.failed("Requested context arg on function that does not have one")
-
     @lru_cache(maxsize=1)
     def _get_function_params(self) -> Sequence[Parameter]:
         return get_function_params(self.decorated_fn)
@@ -301,15 +294,6 @@ class DecoratedOpFunction(NamedTuple):
                 return True
 
         return False
-
-    def validate_malformed_config(self) -> None:
-        from dagster._config.pythonic_config.config import Config
-        from dagster._config.pythonic_config.type_check_utils import safe_is_subclass
-
-        positional_inputs = self.positional_inputs()
-        for param in get_function_params(self.decorated_fn):
-            if safe_is_subclass(param.annotation, Config) and param.name in positional_inputs:
-                config_argument_warning(param.name, self.name)
 
     def get_config_arg(self) -> Parameter:
         for param in get_function_params(self.decorated_fn):
@@ -338,7 +322,7 @@ class DecoratedOpFunction(NamedTuple):
         return len(params) > 0 and param_is_var_keyword(params[-1])
 
     def get_output_annotation(self) -> Any:
-        from dagster._core.definitions.inference import infer_output_props
+        from ..inference import infer_output_props
 
         return infer_output_props(self.decorated_fn).annotation
 
@@ -415,7 +399,7 @@ def resolve_checked_op_fn_inputs(
     inputs_to_infer = set()
     has_kwargs = False
 
-    for param in cast("list[Parameter]", input_args):
+    for param in cast(List[Parameter], input_args):
         if param.kind == Parameter.VAR_KEYWORD:
             has_kwargs = True
         elif param.kind == Parameter.VAR_POSITIONAL:
@@ -443,16 +427,11 @@ def resolve_checked_op_fn_inputs(
     undeclared_inputs = explicit_names - used_inputs
     if not has_kwargs and undeclared_inputs:
         undeclared_inputs_printed = ", '".join(undeclared_inputs)
-        nothing_exemption = (
-            ", except for Ins that have the Nothing dagster_type"
-            if decorator_name not in {"@graph", "@graph_asset"}
-            else ""
-        )
         raise DagsterInvalidDefinitionError(
             f"{decorator_name} '{fn_name}' decorated function does not have argument(s)"
-            f" '{undeclared_inputs_printed}'. {decorator_name}-decorated functions should have an"
-            f" argument for each of their Ins{nothing_exemption}. Alternatively, they can"
-            " accept **kwargs."
+            f" '{undeclared_inputs_printed}'. {decorator_name}-decorated functions should have a"
+            " keyword argument for each of their Ins, except for Ins that have the Nothing"
+            " dagster_type. Alternatively, they can accept **kwargs."
         )
 
     inferred_props = {

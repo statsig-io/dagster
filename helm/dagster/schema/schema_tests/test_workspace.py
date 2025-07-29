@@ -1,4 +1,5 @@
 import subprocess
+from typing import List
 
 import pytest
 import yaml
@@ -8,7 +9,7 @@ from schema.charts.dagster.values import DagsterHelmValues
 from schema.charts.dagster_user_deployments.subschema.user_deployments import UserDeployments
 from schema.utils.helm_template import HelmTemplate
 
-from schema_tests.utils import create_simple_user_deployment
+from .utils import create_simple_user_deployment
 
 
 @pytest.fixture(name="template")
@@ -158,7 +159,7 @@ def test_workspace_server_location_name_renders_from_helm_webserver(template: He
 
 
 def test_workspace_renders_empty(template: HelmTemplate):
-    servers: list[Server] = []
+    servers: List[Server] = []
     helm_values = DagsterHelmValues.construct(
         dagsterWebserver=Webserver.construct(workspace=Workspace(enabled=True, servers=servers)),
         dagsterUserDeployments=UserDeployments.construct(

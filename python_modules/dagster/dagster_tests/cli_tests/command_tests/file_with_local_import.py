@@ -1,17 +1,7 @@
-import dagster as dg
-import dummy_local_file  # noqa: F401 # type: ignore
+# type: ignore
+import dummy_local_file  # noqa: F401
 
-
-@dg.op
-def do_something_op():
-    return 1
-
-
-@dg.op
-def do_input_op(x):
-    return x
-
-
-@dg.job
-def qux_job():
-    do_input_op(do_something_op())
+from dagster_tests.cli_tests.command_tests.test_cli_commands import (
+    foo_job,  # noqa: F401
+    qux_job,  # noqa: F401
+)

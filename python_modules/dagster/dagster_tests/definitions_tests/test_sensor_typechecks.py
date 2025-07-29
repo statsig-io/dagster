@@ -1,17 +1,17 @@
-import dagster as dg
+from dagster import job, op, sensor
 
 
-@dg.op
+@op
 def foo_op(_):
     return
 
 
-@dg.job
+@job
 def foo_job():
     foo_op()
 
 
-@dg.sensor(job=foo_job)
+@sensor(job=foo_job)
 def foo_sensor(_context):
     return
 

@@ -1,31 +1,29 @@
 # start_marker
 import random
 
-import dagster as dg
+from dagster import Out, Output, graph, op
 
 
-@dg.op(
-    out={"branch_1": dg.Out(is_required=False), "branch_2": dg.Out(is_required=False)}
-)
+@op(out={"branch_1": Out(is_required=False), "branch_2": Out(is_required=False)})
 def branching_op():
     num = random.randint(0, 1)
     if num == 0:
-        yield dg.Output(1, "branch_1")
+        yield Output(1, "branch_1")
     else:
-        yield dg.Output(2, "branch_2")
+        yield Output(2, "branch_2")
 
 
-@dg.op
+@op
 def branch_1_op(_input):
     pass
 
 
-@dg.op
+@op
 def branch_2_op(_input):
     pass
 
 
-@dg.graph
+@graph
 def branching():
     branch_1, branch_2 = branching_op()
     branch_1_op(branch_1)

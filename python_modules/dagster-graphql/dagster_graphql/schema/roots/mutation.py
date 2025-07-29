@@ -1,58 +1,49 @@
-from collections.abc import Sequence
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 import dagster._check as check
 import graphene
-from dagster._core.definitions.events import AssetKey, AssetPartitionWipeRange
-from dagster._core.definitions.partitions.partition_key_range import PartitionKeyRange
+from dagster._core.definitions.events import AssetKey
 from dagster._core.errors import DagsterInvariantViolationError
 from dagster._core.nux import get_has_seen_nux, set_nux_seen
 from dagster._core.workspace.permissions import Permissions
 from dagster._daemon.asset_daemon import set_auto_materialize_paused
 
-from dagster_graphql.implementation.execution import (
-    delete_pipeline_run,
-    report_runless_asset_events,
-    terminate_pipeline_execution,
-    terminate_pipeline_execution_for_runs,
-    wipe_assets,
-)
 from dagster_graphql.implementation.execution.backfill import (
     cancel_partition_backfill,
     create_and_launch_partition_backfill,
     resume_partition_backfill,
-    retry_partition_backfill,
 )
-from dagster_graphql.implementation.execution.dynamic_partitions import (
-    add_dynamic_partition,
-    delete_dynamic_partitions,
-)
+from dagster_graphql.implementation.execution.dynamic_partitions import add_dynamic_partition
 from dagster_graphql.implementation.execution.launch_execution import (
     launch_pipeline_execution,
     launch_pipeline_reexecution,
     launch_reexecution_from_parent_run,
 )
-from dagster_graphql.implementation.external import fetch_workspace, get_full_remote_job_or_raise
-from dagster_graphql.implementation.telemetry import log_ui_telemetry_event
-from dagster_graphql.implementation.utils import (
+
+from ...implementation.execution import (
+    delete_pipeline_run,
+    terminate_pipeline_execution,
+    wipe_assets,
+)
+from ...implementation.external import fetch_workspace, get_full_external_job_or_raise
+from ...implementation.telemetry import log_ui_telemetry_event
+from ...implementation.utils import (
     ExecutionMetadata,
     ExecutionParams,
     UserFacingGraphQLError,
-    assert_permission_for_asset_graph,
     assert_permission_for_location,
     capture_error,
     check_permission,
     pipeline_selector_from_graphql,
     require_permission_check,
 )
-from dagster_graphql.schema.backfill import (
-    GrapheneAssetPartitionRange,
+from ..asset_key import GrapheneAssetKey
+from ..backfill import (
     GrapheneCancelBackfillResult,
     GrapheneLaunchBackfillResult,
     GrapheneResumeBackfillResult,
 )
-from dagster_graphql.schema.entity_key import GrapheneAssetKey
-from dagster_graphql.schema.errors import (
+from ..errors import (
     GrapheneAssetNotFoundError,
     GrapheneConflictingExecutionParamsError,
     GrapheneError,
@@ -62,44 +53,32 @@ from dagster_graphql.schema.errors import (
     GrapheneRepositoryLocationNotFound,
     GrapheneRunNotFoundError,
     GrapheneUnauthorizedError,
-    GrapheneUnsupportedOperationError,
 )
-from dagster_graphql.schema.external import GrapheneWorkspace, GrapheneWorkspaceLocationEntry
-from dagster_graphql.schema.inputs import (
+from ..external import GrapheneWorkspace, GrapheneWorkspaceLocationEntry
+from ..inputs import (
+    GrapheneAssetKeyInput,
     GrapheneExecutionParams,
     GrapheneLaunchBackfillParams,
-    GraphenePartitionsByAssetSelector,
     GrapheneReexecutionParams,
-    GrapheneReportRunlessAssetEventsParams,
     GrapheneRepositorySelector,
 )
-from dagster_graphql.schema.partition_sets import (
-    GrapheneAddDynamicPartitionResult,
-    GrapheneDeleteDynamicPartitionsResult,
-)
-from dagster_graphql.schema.pipelines.pipeline import GrapheneRun
-from dagster_graphql.schema.runs import (
-    GrapheneLaunchMultipleRunsResult,
-    GrapheneLaunchMultipleRunsResultOrError,
+from ..partition_sets import GrapheneAddDynamicPartitionResult
+from ..pipelines.pipeline import GrapheneRun
+from ..runs import (
     GrapheneLaunchRunReexecutionResult,
     GrapheneLaunchRunResult,
     GrapheneLaunchRunSuccess,
     parse_run_config_input,
 )
-from dagster_graphql.schema.schedule_dry_run import GrapheneScheduleDryRunMutation
-from dagster_graphql.schema.schedules import (
-    GrapheneResetScheduleMutation,
-    GrapheneStartScheduleMutation,
-    GrapheneStopRunningScheduleMutation,
-)
-from dagster_graphql.schema.sensor_dry_run import GrapheneSensorDryRunMutation
-from dagster_graphql.schema.sensors import (
-    GrapheneResetSensorMutation,
+from ..schedule_dry_run import GrapheneScheduleDryRunMutation
+from ..schedules import GrapheneStartScheduleMutation, GrapheneStopRunningScheduleMutation
+from ..sensor_dry_run import GrapheneSensorDryRunMutation
+from ..sensors import (
     GrapheneSetSensorCursorMutation,
     GrapheneStartSensorMutation,
     GrapheneStopSensorMutation,
 )
-from dagster_graphql.schema.util import ResolveInfo, non_null_list
+from ..util import ResolveInfo, non_null_list
 
 
 def create_execution_params(graphene_info, graphql_execution_params):
@@ -123,7 +102,7 @@ def create_execution_params(graphene_info, graphql_execution_params):
                 )
             )
 
-        external_pipeline = get_full_remote_job_or_raise(
+        external_pipeline = get_full_external_job_or_raise(
             graphene_info,
             selector,
         )
@@ -151,9 +130,8 @@ def create_execution_params(graphene_info, graphql_execution_params):
 def execution_params_from_graphql(graphql_execution_params):
     return ExecutionParams(
         selector=pipeline_selector_from_graphql(graphql_execution_params.get("selector")),
-        run_config=parse_run_config_input(  # pyright: ignore[reportArgumentType]
-            graphql_execution_params.get("runConfigData") or {},
-            raise_on_error=True,
+        run_config=parse_run_config_input(
+            graphql_execution_params.get("runConfigData") or {}, raise_on_error=True
         ),
         mode=graphql_execution_params.get("mode"),
         execution_metadata=create_execution_metadata(
@@ -271,23 +249,6 @@ class GrapheneTerminateRunResult(graphene.Union):
         name = "TerminateRunResult"
 
 
-class GrapheneTerminateRunsResult(graphene.ObjectType):
-    """Indicates the runs that successfully terminated and those that failed to terminate."""
-
-    terminateRunResults = non_null_list(GrapheneTerminateRunResult)
-
-    class Meta:
-        name = "TerminateRunsResult"
-
-
-class GrapheneTerminateRunsResultOrError(graphene.Union):
-    """The output from runs termination."""
-
-    class Meta:
-        types = (GrapheneTerminateRunsResult, GraphenePythonError)
-        name = "TerminateRunsResultOrError"
-
-
 def create_execution_params_and_launch_pipeline_exec(graphene_info, execution_params_dict):
     execution_params = create_execution_params(graphene_info, execution_params_dict)
     assert_permission_for_location(
@@ -318,38 +279,6 @@ class GrapheneLaunchRunMutation(graphene.Mutation):
         self, graphene_info: ResolveInfo, executionParams: GrapheneExecutionParams
     ) -> Union[GrapheneLaunchRunSuccess, GrapheneError, GraphenePythonError]:
         return create_execution_params_and_launch_pipeline_exec(graphene_info, executionParams)
-
-
-class GrapheneLaunchMultipleRunsMutation(graphene.Mutation):
-    """Launches multiple job runs."""
-
-    Output = graphene.NonNull(GrapheneLaunchMultipleRunsResultOrError)
-
-    class Arguments:
-        executionParamsList = non_null_list(GrapheneExecutionParams)
-
-    class Meta:
-        name = "LaunchMultipleRunsMutation"
-
-    @capture_error
-    def mutate(
-        self, graphene_info: ResolveInfo, executionParamsList: list[GrapheneExecutionParams]
-    ) -> Union[
-        GrapheneLaunchMultipleRunsResult,
-        GrapheneError,
-        GraphenePythonError,
-    ]:
-        launch_multiple_runs_result = []
-
-        for execution_params in executionParamsList:
-            result = GrapheneLaunchRunMutation.mutate(
-                None, graphene_info, executionParams=execution_params
-            )
-            launch_multiple_runs_result.append(result)
-
-        return GrapheneLaunchMultipleRunsResult(
-            launchMultipleRunsResult=launch_multiple_runs_result
-        )
 
 
 class GrapheneLaunchBackfillMutation(graphene.Mutation):
@@ -387,7 +316,7 @@ class GrapheneCancelBackfillMutation(graphene.Mutation):
 
 
 class GrapheneResumeBackfillMutation(graphene.Mutation):
-    """Resumes a set of partition backfill runs. Resuming a backfill will not retry any failed runs."""
+    """Retries a set of partition backfill runs."""
 
     Output = graphene.NonNull(GrapheneResumeBackfillResult)
 
@@ -401,31 +330,6 @@ class GrapheneResumeBackfillMutation(graphene.Mutation):
     @require_permission_check(Permissions.LAUNCH_PARTITION_BACKFILL)
     def mutate(self, graphene_info: ResolveInfo, backfillId: str):
         return resume_partition_backfill(graphene_info, backfillId)
-
-
-class GrapheneReexecuteBackfillMutation(graphene.Mutation):
-    """Retries a set of partition backfill runs. Retrying a backfill will create a new backfill to retry any failed partitions."""
-
-    Output = graphene.NonNull(GrapheneLaunchBackfillResult)
-
-    class Arguments:
-        reexecutionParams = graphene.Argument(GrapheneReexecutionParams)
-
-    class Meta:
-        name = "RetryBackfillMutation"
-
-    @capture_error
-    @require_permission_check(Permissions.LAUNCH_PARTITION_BACKFILL)
-    def mutate(
-        self,
-        graphene_info: ResolveInfo,
-        reexecutionParams: GrapheneReexecutionParams,
-    ):
-        return retry_partition_backfill(
-            graphene_info,
-            backfill_id=reexecutionParams["parentRunId"],
-            strategy=reexecutionParams["strategy"],
-        )
 
 
 class GrapheneAddDynamicPartitionMutation(graphene.Mutation):
@@ -452,33 +356,6 @@ class GrapheneAddDynamicPartitionMutation(graphene.Mutation):
     ):
         return add_dynamic_partition(
             graphene_info, repositorySelector, partitionsDefName, partitionKey
-        )
-
-
-class GrapheneDeleteDynamicPartitionsMutation(graphene.Mutation):
-    """Deletes partitions from a dynamic partition set."""
-
-    Output = graphene.NonNull(GrapheneDeleteDynamicPartitionsResult)
-
-    class Arguments:
-        repositorySelector = graphene.NonNull(GrapheneRepositorySelector)
-        partitionsDefName = graphene.NonNull(graphene.String)
-        partitionKeys = non_null_list(graphene.String)
-
-    class Meta:
-        name = "DeleteDynamicPartitionsMutation"
-
-    @capture_error
-    @require_permission_check(Permissions.EDIT_DYNAMIC_PARTITIONS)
-    def mutate(
-        self,
-        graphene_info: ResolveInfo,
-        repositorySelector: GrapheneRepositorySelector,
-        partitionsDefName: str,
-        partitionKeys: Sequence[str],
-    ):
-        return delete_dynamic_partitions(
-            graphene_info, repositorySelector, partitionsDefName, partitionKeys
         )
 
 
@@ -523,20 +400,10 @@ class GrapheneLaunchRunReexecutionMutation(graphene.Mutation):
                 execution_params_dict=executionParams,
             )
         elif reexecutionParams:
-            extra_tags = None
-            if reexecutionParams.get("extraTags"):
-                extra_tags = {t["key"]: t["value"] for t in reexecutionParams["extraTags"]}
-
-            use_parent_run_tags = None
-            if reexecutionParams.get("useParentRunTags") is not None:
-                use_parent_run_tags = reexecutionParams["useParentRunTags"]
-
             return launch_reexecution_from_parent_run(
                 graphene_info,
-                parent_run_id=reexecutionParams["parentRunId"],
-                strategy=reexecutionParams["strategy"],
-                extra_tags=extra_tags,
-                use_parent_run_tags=use_parent_run_tags,
+                reexecutionParams["parentRunId"],
+                reexecutionParams["strategy"],
             )
         else:
             check.failed("Unreachable")
@@ -580,33 +447,6 @@ class GrapheneTerminateRunMutation(graphene.Mutation):
         return terminate_pipeline_execution(
             graphene_info,
             runId,
-            terminatePolicy or GrapheneTerminateRunPolicy.SAFE_TERMINATE,
-        )
-
-
-class GrapheneTerminateRunsMutation(graphene.Mutation):
-    """Terminates a set of runs given their run IDs."""
-
-    Output = graphene.NonNull(GrapheneTerminateRunsResultOrError)
-
-    class Arguments:
-        runIds = non_null_list(graphene.String)
-        terminatePolicy = graphene.Argument(GrapheneTerminateRunPolicy)
-
-    class Meta:
-        name = "TerminateRunsMutation"
-
-    @capture_error
-    @require_permission_check(Permissions.TERMINATE_PIPELINE_EXECUTION)
-    def mutate(
-        self,
-        graphene_info: ResolveInfo,
-        runIds: Sequence[str],
-        terminatePolicy: Optional[GrapheneTerminateRunPolicy] = None,
-    ):
-        return terminate_pipeline_execution_for_runs(
-            graphene_info,
-            runIds,
             terminatePolicy or GrapheneTerminateRunPolicy.SAFE_TERMINATE,
         )
 
@@ -751,7 +591,7 @@ class GrapheneReloadWorkspaceMutation(graphene.Mutation):
 class GrapheneAssetWipeSuccess(graphene.ObjectType):
     """Output indicating that asset history was deleted."""
 
-    assetPartitionRanges = non_null_list(GrapheneAssetPartitionRange)
+    assetKeys = non_null_list(GrapheneAssetKey)
 
     class Meta:
         name = "AssetWipeSuccess"
@@ -765,7 +605,6 @@ class GrapheneAssetWipeMutationResult(graphene.Union):
             GrapheneAssetNotFoundError,
             GrapheneUnauthorizedError,
             GraphenePythonError,
-            GrapheneUnsupportedOperationError,
             GrapheneAssetWipeSuccess,
         )
         name = "AssetWipeMutationResult"
@@ -777,97 +616,16 @@ class GrapheneAssetWipeMutation(graphene.Mutation):
     Output = graphene.NonNull(GrapheneAssetWipeMutationResult)
 
     class Arguments:
-        assetPartitionRanges = graphene.Argument(non_null_list(GraphenePartitionsByAssetSelector))
+        assetKeys = graphene.Argument(non_null_list(GrapheneAssetKeyInput))
 
     class Meta:
         name = "AssetWipeMutation"
 
     @capture_error
-    @require_permission_check(Permissions.WIPE_ASSETS)
-    def mutate(
-        self,
-        graphene_info: ResolveInfo,
-        assetPartitionRanges: Sequence[GraphenePartitionsByAssetSelector],
-    ) -> GrapheneAssetWipeMutationResult:
-        normalized_ranges = [
-            AssetPartitionWipeRange(
-                AssetKey.from_graphql_input(ap.assetKey),
-                PartitionKeyRange(start=ap.partitions.range.start, end=ap.partitions.range.end)
-                if ap.partitions
-                else None,
-            )
-            for ap in assetPartitionRanges
-        ]
-
-        asset_keys = {normalized_range.asset_key for normalized_range in normalized_ranges}
-
-        assert_permission_for_asset_graph(
-            graphene_info,
-            graphene_info.context.asset_graph,
-            list(asset_keys),
-            Permissions.WIPE_ASSETS,
-        )
-
-        return wipe_assets(graphene_info, normalized_ranges)
-
-
-class GrapheneReportRunlessAssetEventsSuccess(graphene.ObjectType):
-    """Output indicating that runless asset events were reported."""
-
-    assetKey = graphene.NonNull(GrapheneAssetKey)
-
-    class Meta:
-        name = "ReportRunlessAssetEventsSuccess"
-
-
-class GrapheneReportRunlessAssetEventsResult(graphene.Union):
-    """The output from reporting runless events."""
-
-    class Meta:
-        types = (
-            GrapheneUnauthorizedError,
-            GraphenePythonError,
-            GrapheneReportRunlessAssetEventsSuccess,
-        )
-        name = "ReportRunlessAssetEventsResult"
-
-
-class GrapheneReportRunlessAssetEventsMutation(graphene.Mutation):
-    """Reports runless events for an asset or a subset of its partitions."""
-
-    Output = graphene.NonNull(GrapheneReportRunlessAssetEventsResult)
-
-    class Arguments:
-        eventParams = graphene.Argument(graphene.NonNull(GrapheneReportRunlessAssetEventsParams))
-
-    class Meta:
-        name = "ReportRunlessAssetEventsMutation"
-
-    @capture_error
-    @require_permission_check(Permissions.REPORT_RUNLESS_ASSET_EVENTS)
-    def mutate(
-        self, graphene_info: ResolveInfo, eventParams: GrapheneReportRunlessAssetEventsParams
-    ):
-        event_type = eventParams["eventType"].to_dagster_event_type()
-        asset_key = AssetKey.from_graphql_input(eventParams["assetKey"])
-        partition_keys = eventParams.get("partitionKeys", None)
-        description = eventParams.get("description", None)
-
-        reporting_user_tags = {**graphene_info.context.get_reporting_user_tags()}
-
-        asset_graph = graphene_info.context.asset_graph
-
-        assert_permission_for_asset_graph(
-            graphene_info, asset_graph, [asset_key], Permissions.REPORT_RUNLESS_ASSET_EVENTS
-        )
-
-        return report_runless_asset_events(
-            graphene_info,
-            event_type=event_type,
-            asset_key=asset_key,
-            partition_keys=partition_keys,
-            description=description,
-            tags=reporting_user_tags,
+    @check_permission(Permissions.WIPE_ASSETS)
+    def mutate(self, graphene_info: ResolveInfo, assetKeys: Sequence[GrapheneAssetKeyInput]):
+        return wipe_assets(
+            graphene_info, [AssetKey.from_graphql_input(asset_key) for asset_key in assetKeys]
         )
 
 
@@ -972,47 +730,6 @@ class GrapheneSetConcurrencyLimitMutation(graphene.Mutation):
         return True
 
 
-class GrapheneDeleteConcurrencyLimitMutation(graphene.Mutation):
-    """Sets the concurrency limit for a given concurrency key."""
-
-    Output = graphene.NonNull(graphene.Boolean)
-
-    class Meta:
-        name = "DeleteConcurrencyLimitMutation"
-
-    class Arguments:
-        concurrencyKey = graphene.Argument(graphene.NonNull(graphene.String))
-
-    @capture_error
-    @check_permission(Permissions.EDIT_CONCURRENCY_LIMIT)
-    def mutate(self, graphene_info, concurrencyKey: str):
-        graphene_info.context.instance.event_log_storage.delete_concurrency_limit(concurrencyKey)
-        return True
-
-
-class GrapheneFreeConcurrencySlotsMutation(graphene.Mutation):
-    """Frees concurrency slots."""
-
-    Output = graphene.NonNull(graphene.Boolean)
-
-    class Meta:
-        name = "FreeConcurrencySlotsMutation"
-
-    class Arguments:
-        runId = graphene.Argument(graphene.NonNull(graphene.String))
-        stepKey = graphene.Argument(graphene.String)
-
-    @capture_error
-    @check_permission(Permissions.EDIT_CONCURRENCY_LIMIT)
-    def mutate(self, graphene_info, runId: str, stepKey: Optional[str] = None):
-        event_log_storage = graphene_info.context.instance.event_log_storage
-        if stepKey:
-            event_log_storage.free_concurrency_slot_for_step(runId, stepKey)
-        else:
-            event_log_storage.free_concurrency_slots_for_run(runId)
-        return True
-
-
 class GrapheneFreeConcurrencySlotsForRunMutation(graphene.Mutation):
     """Frees the concurrency slots occupied by a specific run."""
 
@@ -1039,38 +756,29 @@ class GrapheneMutation(graphene.ObjectType):
 
     launchPipelineExecution = GrapheneLaunchRunMutation.Field()
     launchRun = GrapheneLaunchRunMutation.Field()
-    launchMultipleRuns = GrapheneLaunchMultipleRunsMutation.Field()
     launchPipelineReexecution = GrapheneLaunchRunReexecutionMutation.Field()
     launchRunReexecution = GrapheneLaunchRunReexecutionMutation.Field()
     startSchedule = GrapheneStartScheduleMutation.Field()
     stopRunningSchedule = GrapheneStopRunningScheduleMutation.Field()
-    resetSchedule = GrapheneResetScheduleMutation.Field()
     startSensor = GrapheneStartSensorMutation.Field()
     setSensorCursor = GrapheneSetSensorCursorMutation.Field()
     stopSensor = GrapheneStopSensorMutation.Field()
-    resetSensor = GrapheneResetSensorMutation.Field()
     sensorDryRun = GrapheneSensorDryRunMutation.Field()
     scheduleDryRun = GrapheneScheduleDryRunMutation.Field()
     terminatePipelineExecution = GrapheneTerminateRunMutation.Field()
     terminateRun = GrapheneTerminateRunMutation.Field()
-    terminateRuns = GrapheneTerminateRunsMutation.Field()
     deletePipelineRun = GrapheneDeleteRunMutation.Field()
     deleteRun = GrapheneDeleteRunMutation.Field()
     reloadRepositoryLocation = GrapheneReloadRepositoryLocationMutation.Field()
     reloadWorkspace = GrapheneReloadWorkspaceMutation.Field()
     shutdownRepositoryLocation = GrapheneShutdownRepositoryLocationMutation.Field()
     wipeAssets = GrapheneAssetWipeMutation.Field()
-    reportRunlessAssetEvents = GrapheneReportRunlessAssetEventsMutation.Field()
     launchPartitionBackfill = GrapheneLaunchBackfillMutation.Field()
     resumePartitionBackfill = GrapheneResumeBackfillMutation.Field()
-    reexecutePartitionBackfill = GrapheneReexecuteBackfillMutation.Field()
     cancelPartitionBackfill = GrapheneCancelBackfillMutation.Field()
     logTelemetry = GrapheneLogTelemetryMutation.Field()
     setNuxSeen = GrapheneSetNuxSeenMutation.Field()
     addDynamicPartition = GrapheneAddDynamicPartitionMutation.Field()
-    deleteDynamicPartitions = GrapheneDeleteDynamicPartitionsMutation.Field()
     setAutoMaterializePaused = GrapheneSetAutoMaterializePausedMutation.Field()
     setConcurrencyLimit = GrapheneSetConcurrencyLimitMutation.Field()
-    deleteConcurrencyLimit = GrapheneDeleteConcurrencyLimitMutation.Field()
     freeConcurrencySlotsForRun = GrapheneFreeConcurrencySlotsForRunMutation.Field()
-    freeConcurrencySlots = GrapheneFreeConcurrencySlotsMutation.Field()

@@ -1,27 +1,43 @@
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, AbstractSet, Optional  # noqa: UP035
+from typing import (
+    TYPE_CHECKING,
+    AbstractSet,
+    Iterator,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Type,
+)
 
-from dagster._core.definitions.utils import DEFAULT_IO_MANAGER_KEY
-from dagster._core.errors import DagsterInvalidDefinitionError, DagsterInvalidInvocationError
-from dagster._record import record
 from dagster._utils.merger import merge_dicts
 
+from ..errors import DagsterInvalidDefinitionError, DagsterInvalidInvocationError
+from .utils import DEFAULT_IO_MANAGER_KEY
+
 if TYPE_CHECKING:
-    from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
-    from dagster._core.definitions.resource_definition import ResourceDefinition
+    from .resource_definition import ResourceDefinition
 
 
 class ResourceRequirement(ABC):
     @property
-    def expected_type(self) -> type:
-        from dagster._core.definitions.resource_definition import ResourceDefinition
+    @abstractmethod
+    def key(self) -> str:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def describe_requirement(self) -> str:
+        raise NotImplementedError()
+
+    @property
+    def expected_type(self) -> Type:
+        from .resource_definition import ResourceDefinition
 
         return ResourceDefinition
 
     @property
     def is_io_manager_requirement(self) -> bool:
-        from dagster._core.storage.io_manager import IInputManagerDefinition, IOManagerDefinition
+        from ..storage.io_manager import IInputManagerDefinition, IOManagerDefinition
 
         return (
             self.expected_type == IOManagerDefinition
@@ -41,41 +57,15 @@ class ResourceRequirement(ABC):
             if isinstance(resource_def, self.expected_type)
         ]
 
-    @abstractmethod
-    def is_satisfied(self, resource_defs: Mapping[str, "ResourceDefinition"]) -> bool: ...
+    def resource_is_expected_type(self, resource_defs: Mapping[str, "ResourceDefinition"]) -> bool:
+        # Expects resource key to be in resource_defs
+        return isinstance(resource_defs[self.key], self.expected_type)
 
-    @abstractmethod
-    def ensure_satisfied(self, resource_defs: Mapping[str, "ResourceDefinition"]): ...
-
-
-class ResourceKeyRequirement(ResourceRequirement, ABC):
-    @property
-    @abstractmethod
-    def key(self) -> str:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def describe_requirement(self) -> str:
-        raise NotImplementedError()
-
-    def is_satisfied(self, resource_defs: Mapping[str, "ResourceDefinition"]) -> bool:
-        return self.key in resource_defs and isinstance(resource_defs[self.key], self.expected_type)
-
-    def ensure_satisfied(self, resource_defs: Mapping[str, "ResourceDefinition"]):
-        requirement_expected_type_name = self.expected_type.__name__
-        if self.key not in resource_defs:
-            raise DagsterInvalidDefinitionError(
-                f"{self.describe_requirement()} was not provided. Please"
-                f" provide a {requirement_expected_type_name} to key '{self.key}', or change"
-                " the required key to one of the following keys which points to an"
-                f" {requirement_expected_type_name}:"
-                f" {self.keys_of_expected_type(resource_defs)}"
-            )
-        resource_def = resource_defs[self.key]
-        if not isinstance(resource_def, self.expected_type):
-            raise DagsterInvalidDefinitionError(
-                f"{self.describe_requirement()}, but received {type(resource_def)}."
-            )
+    def resources_contain_key(
+        self,
+        resource_defs: Mapping[str, "ResourceDefinition"],
+    ) -> bool:
+        return self.key in resource_defs
 
 
 class ResourceAddable(ABC):
@@ -86,25 +76,24 @@ class ResourceAddable(ABC):
         raise NotImplementedError()
 
 
-@record
-class OpDefinitionResourceRequirement(ResourceKeyRequirement):
-    key: str  # pyright: ignore[reportIncompatibleMethodOverride]
-    node_description: str
-
+class OpDefinitionResourceRequirement(
+    NamedTuple("_OpDefinitionResourceRequirement", [("key", str), ("node_description", str)]),
+    ResourceRequirement,
+):
     def describe_requirement(self) -> str:
         return f"resource with key '{self.key}' required by {self.node_description}"
 
 
-@record
-class InputManagerRequirement(ResourceKeyRequirement):
-    key: str  # pyright: ignore[reportIncompatibleMethodOverride]
-    node_description: str
-    input_name: str
-    root_input: bool
-
+class InputManagerRequirement(
+    NamedTuple(
+        "_InputManagerRequirement",
+        [("key", str), ("node_description", str), ("input_name", str), ("root_input", bool)],
+    ),
+    ResourceRequirement,
+):
     @property
-    def expected_type(self) -> type:
-        from dagster._core.storage.io_manager import IInputManagerDefinition
+    def expected_type(self) -> Type:
+        from ..storage.io_manager import IInputManagerDefinition
 
         return IInputManagerDefinition
 
@@ -115,34 +104,19 @@ class InputManagerRequirement(ResourceKeyRequirement):
         )
 
 
-# The ResourceRequirement for unexecutable external assets. Is an analogue to
-# `SourceAssetIOManagerRequirement`.
-@record
-class ExternalAssetIOManagerRequirement(ResourceKeyRequirement):
-    key: str  # pyright: ignore[reportIncompatibleMethodOverride]
-    asset_key: Optional[str]
-
+class SourceAssetIOManagerRequirement(
+    NamedTuple(
+        "_InputManagerRequirement",
+        [
+            ("key", str),
+            ("asset_key", Optional[str]),
+        ],
+    ),
+    ResourceRequirement,
+):
     @property
-    def expected_type(self) -> type:
-        from dagster._core.storage.io_manager import IOManagerDefinition
-
-        return IOManagerDefinition
-
-    def describe_requirement(self) -> str:
-        external_asset_descriptor = (
-            f"external asset with key {self.asset_key}" if self.asset_key else "external asset"
-        )
-        return f"io manager with key '{self.key}' required by {external_asset_descriptor}"
-
-
-@record
-class SourceAssetIOManagerRequirement(ResourceKeyRequirement):
-    key: str  # pyright: ignore[reportIncompatibleMethodOverride]
-    asset_key: Optional[str]
-
-    @property
-    def expected_type(self) -> type:
-        from dagster._core.storage.io_manager import IOManagerDefinition
+    def expected_type(self) -> Type:
+        from ..storage.io_manager import IOManagerDefinition
 
         return IOManagerDefinition
 
@@ -153,15 +127,15 @@ class SourceAssetIOManagerRequirement(ResourceKeyRequirement):
         return f"io manager with key '{self.key}' required by {source_asset_descriptor}"
 
 
-@record
-class OutputManagerRequirement(ResourceKeyRequirement):
-    key: str  # pyright: ignore[reportIncompatibleMethodOverride]
-    node_description: str
-    output_name: str
-
+class OutputManagerRequirement(
+    NamedTuple(
+        "_OutputManagerRequirement", [("key", str), ("node_description", str), ("output_name", str)]
+    ),
+    ResourceRequirement,
+):
     @property
-    def expected_type(self) -> type:
-        from dagster._core.storage.io_manager import IOManagerDefinition
+    def expected_type(self) -> Type:
+        from ..storage.io_manager import IOManagerDefinition
 
         return IOManagerDefinition
 
@@ -172,12 +146,13 @@ class OutputManagerRequirement(ResourceKeyRequirement):
         )
 
 
-@record
-class HookResourceRequirement(ResourceKeyRequirement):
-    key: str  # pyright: ignore[reportIncompatibleMethodOverride]
-    attached_to: Optional[str]
-    hook_name: str
-
+class HookResourceRequirement(
+    NamedTuple(
+        "_HookResourceRequirement",
+        [("key", str), ("attached_to", Optional[str]), ("hook_name", str)],
+    ),
+    ResourceRequirement,
+):
     def describe_requirement(self) -> str:
         attached_to_desc = f"attached to {self.attached_to}" if self.attached_to else ""
         return (
@@ -185,20 +160,18 @@ class HookResourceRequirement(ResourceKeyRequirement):
         )
 
 
-@record
-class TypeResourceRequirement(ResourceKeyRequirement):
-    key: str  # pyright: ignore[reportIncompatibleMethodOverride]
-    type_display_name: str
-
+class TypeResourceRequirement(
+    NamedTuple("_TypeResourceRequirement", [("key", str), ("type_display_name", str)]),
+    ResourceRequirement,
+):
     def describe_requirement(self) -> str:
         return f"resource with key '{self.key}' required by type '{self.type_display_name}'"
 
 
-@record
-class TypeLoaderResourceRequirement(ResourceKeyRequirement):
-    key: str  # pyright: ignore[reportIncompatibleMethodOverride]
-    type_display_name: str
-
+class TypeLoaderResourceRequirement(
+    NamedTuple("_TypeLoaderResourceRequirement", [("key", str), ("type_display_name", str)]),
+    ResourceRequirement,
+):
     def describe_requirement(self) -> str:
         return (
             f"resource with key '{self.key}' required by the loader on type"
@@ -206,22 +179,59 @@ class TypeLoaderResourceRequirement(ResourceKeyRequirement):
         )
 
 
-@record
-class ResourceDependencyRequirement(ResourceKeyRequirement):
-    key: str  # pyright: ignore[reportIncompatibleMethodOverride]
-    source_key: Optional[str]
-
+class ResourceDependencyRequirement(
+    NamedTuple("_ResourceDependencyRequirement", [("key", str), ("source_key", Optional[str])]),
+    ResourceRequirement,
+):
     def describe_requirement(self) -> str:
         source_descriptor = f" by resource with key '{self.source_key}'" if self.source_key else ""
         return f"resource with key '{self.key}' required{source_descriptor}"
+
+
+class RequiresResources(ABC):
+    @property
+    @abstractmethod
+    def required_resource_keys(self) -> AbstractSet[str]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_resource_requirements(
+        self, outer_context: Optional[object] = None
+    ) -> Iterator[ResourceRequirement]:
+        raise NotImplementedError()
+
+
+def ensure_resources_of_expected_type(
+    resource_defs: Mapping[str, "ResourceDefinition"],
+    requirements: Sequence[ResourceRequirement],
+) -> None:
+    for requirement in requirements:
+        if requirement.resources_contain_key(
+            resource_defs
+        ) and not requirement.resource_is_expected_type(resource_defs):
+            raise DagsterInvalidDefinitionError(
+                f"{requirement.describe_requirement()}, but received"
+                f" {type(resource_defs[requirement.key])}."
+            )
 
 
 def ensure_requirements_satisfied(
     resource_defs: Mapping[str, "ResourceDefinition"],
     requirements: Sequence[ResourceRequirement],
 ) -> None:
+    ensure_resources_of_expected_type(resource_defs, requirements)
+
+    # Error if resource defs don't provide the correct resource key
     for requirement in requirements:
-        requirement.ensure_satisfied(resource_defs)
+        if not requirement.resources_contain_key(resource_defs):
+            requirement_expected_type_name = requirement.expected_type.__name__
+            raise DagsterInvalidDefinitionError(
+                f"{requirement.describe_requirement()} was not provided. Please"
+                f" provide a {requirement_expected_type_name} to key '{requirement.key}', or change"
+                " the required key to one of the following keys which points to an"
+                f" {requirement_expected_type_name}:"
+                f" {requirement.keys_of_expected_type(resource_defs)}"
+            )
 
 
 def get_resource_key_conflicts(
@@ -236,7 +246,7 @@ def get_resource_key_conflicts(
 def merge_resource_defs(
     old_resource_defs: Mapping[str, "ResourceDefinition"],
     resource_defs_to_merge_in: Mapping[str, "ResourceDefinition"],
-    requires_resources: "AssetsDefinition",
+    requires_resources: RequiresResources,
 ) -> Mapping[str, "ResourceDefinition"]:
     from dagster._core.execution.resources_init import get_transitive_required_resource_keys
 
@@ -255,15 +265,9 @@ def merge_resource_defs(
 
     # Ensure top-level resource requirements are met - except for
     # io_manager, since that is a default it can be resolved later.
-    requirements = [
-        *requires_resources.get_resource_requirements(),
-        *[
-            req
-            for key, resource in merged_resource_defs.items()
-            for req in resource.get_resource_requirements(source_key=key)
-        ],
-    ]
-    ensure_requirements_satisfied(merged_resource_defs, requirements)
+    ensure_requirements_satisfied(
+        merged_resource_defs, list(requires_resources.get_resource_requirements())
+    )
 
     # Get all transitive resource dependencies from other resources.
     relevant_keys = get_transitive_required_resource_keys(

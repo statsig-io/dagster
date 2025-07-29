@@ -12,11 +12,11 @@ class StepHandle(NamedTuple("_StepHandle", [("node_handle", NodeHandle), ("key",
     """A reference to an ExecutionStep that was determined statically."""
 
     def __new__(cls, node_handle: NodeHandle, key: Optional[str] = None):
-        return super().__new__(
+        return super(StepHandle, cls).__new__(
             cls,
             node_handle=check.inst_param(node_handle, "node_handle", NodeHandle),
             # mypy can't tell that if default is set, this is guaranteed to be a str
-            key=cast("str", check.opt_str_param(key, "key", default=str(node_handle))),
+            key=cast(str, check.opt_str_param(key, "key", default=node_handle.to_string())),
         )
 
     def to_key(self) -> str:
@@ -45,13 +45,13 @@ class UnresolvedStepHandle(NamedTuple("_UnresolvedStepHandle", [("node_handle", 
     """A reference to an UnresolvedMappedExecutionStep in an execution."""
 
     def __new__(cls, node_handle: NodeHandle):
-        return super().__new__(
+        return super(UnresolvedStepHandle, cls).__new__(
             cls,
             node_handle=check.inst_param(node_handle, "node_handle", NodeHandle),
         )
 
-    def to_key(self) -> str:
-        return f"{self.node_handle}[?]"
+    def to_key(self):
+        return f"{self.node_handle.to_string()}[?]"
 
     def resolve(self, map_key) -> "ResolvedFromDynamicStepHandle":
         return ResolvedFromDynamicStepHandle(self.node_handle, map_key)
@@ -71,14 +71,16 @@ class ResolvedFromDynamicStepHandle(
     """
 
     def __new__(cls, node_handle: NodeHandle, mapping_key: str, key: Optional[str] = None):
-        return super().__new__(
+        return super(ResolvedFromDynamicStepHandle, cls).__new__(
             cls,
             node_handle=check.inst_param(node_handle, "node_handle", NodeHandle),
             mapping_key=check.str_param(mapping_key, "mapping_key"),
             # mypy can't tell that if default is set, this is guaranteed to be a str
             key=cast(
-                "str",
-                check.opt_str_param(key, "key", default=f"{node_handle}[{mapping_key}]"),
+                str,
+                check.opt_str_param(
+                    key, "key", default=f"{node_handle.to_string()}[{mapping_key}]"
+                ),
             ),
         )
 

@@ -1,13 +1,12 @@
-import {Button, Dialog, DialogFooter, Icon} from '@dagster-io/ui-components';
-import {StyledRawCodeMirror} from '@dagster-io/ui-components/editor';
-import {useEffect, useState} from 'react';
+import {Button, DialogFooter, Dialog, Icon, StyledRawCodeMirror} from '@dagster-io/ui-components';
+import * as React from 'react';
 
 import {IPluginSidebarProps} from '../plugins';
 
-export const SidebarComponent = (props: IPluginSidebarProps) => {
-  const [open, setOpen] = useState(false);
+export const SidebarComponent: React.FC<IPluginSidebarProps> = (props) => {
+  const [open, setOpen] = React.useState(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const onClose = () => setOpen(true);
     document.addEventListener('show-kind-info', onClose);
     return () => document.removeEventListener('show-kind-info', onClose);

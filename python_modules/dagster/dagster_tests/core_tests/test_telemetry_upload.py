@@ -1,16 +1,15 @@
 import logging
 import os
-from unittest import mock
 
-import dagster as dg
+import mock
 import pytest
 import responses
 from click.testing import CliRunner
 from dagster._cli.job import job_execute_command
+from dagster._core.telemetry import cleanup_telemetry_logger
 from dagster._core.telemetry_upload import get_dagster_telemetry_url, upload_logs
-from dagster._core.test_utils import environ
+from dagster._core.test_utils import environ, instance_for_test
 from dagster._utils import pushd, script_relative_path
-from dagster_shared.telemetry import cleanup_telemetry_logger
 
 
 def path_to_file(path):
@@ -31,7 +30,7 @@ def test_dagster_telemetry_upload(env):
 
     responses.add(responses.POST, get_dagster_telemetry_url())
 
-    with dg.instance_for_test(overrides={"telemetry": {"enabled": True}}):
+    with instance_for_test(overrides={"telemetry": {"enabled": True}}):
         with environ(env):
             runner = CliRunner()
             with pushd(path_to_file("")):
@@ -66,7 +65,7 @@ def test_dagster_telemetry_upload(env):
 )
 @responses.activate
 def test_dagster_telemetry_no_test_env_upload(env):
-    with dg.instance_for_test():
+    with instance_for_test():
         with environ(env):
             runner = CliRunner()
             with pushd(path_to_file("")):

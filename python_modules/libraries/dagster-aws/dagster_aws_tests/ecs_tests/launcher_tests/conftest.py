@@ -1,22 +1,21 @@
 import json
 from collections import namedtuple
-from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import Any, Callable, ContextManager  # noqa: UP035
+from typing import Any, Callable, ContextManager, Iterator, Mapping, Sequence
 
 import boto3
 import moto
 import pytest
 from dagster._core.definitions.job_definition import JobDefinition
+from dagster._core.host_representation.external import ExternalJob
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation.external import RemoteJob
 from dagster._core.storage.dagster_run import DagsterRun
 from dagster._core.test_utils import in_process_test_workspace, instance_for_test
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._core.workspace.context import WorkspaceRequestContext
 from dagster._utils.warnings import disable_dagster_warnings
 
-from dagster_aws_tests.ecs_tests.launcher_tests import repo
+from . import repo
 
 Secret = namedtuple("Secret", ["name", "arn"])
 
@@ -71,7 +70,6 @@ def task_definition(ecs, image, environment):
                         "condition": "SUCCESS",
                     },
                 ],
-                "healthCheck": {"command": ["HELLO"]},
             },
             {
                 "name": "other",
@@ -156,7 +154,7 @@ def instance_cm(stub_aws, stub_ecs_metadata) -> Callable[..., ContextManager[Dag
 
 @pytest.fixture
 def instance(
-    instance_cm: Callable[..., ContextManager[DagsterInstance]],
+    instance_cm: Callable[..., ContextManager[DagsterInstance]]
 ) -> Iterator[DagsterInstance]:
     with instance_cm(
         {
@@ -179,7 +177,7 @@ def instance_with_log_group(
 
 @pytest.fixture
 def instance_with_resources(
-    instance_cm: Callable[..., ContextManager[DagsterInstance]],
+    instance_cm: Callable[..., ContextManager[DagsterInstance]]
 ) -> Iterator[DagsterInstance]:
     with instance_cm(
         config={
@@ -218,7 +216,7 @@ def instance_dont_use_current_task(
 
 @pytest.fixture
 def instance_fargate_spot(
-    instance_cm: Callable[..., ContextManager[DagsterInstance]],
+    instance_cm: Callable[..., ContextManager[DagsterInstance]]
 ) -> Iterator[DagsterInstance]:
     with instance_cm(
         config={
@@ -268,46 +266,46 @@ def job() -> JobDefinition:
 
 
 @pytest.fixture
-def remote_job(workspace: WorkspaceRequestContext) -> RemoteJob:
+def external_job(workspace: WorkspaceRequestContext) -> ExternalJob:
     location = workspace.get_code_location(workspace.code_location_names[0])
-    return location.get_repository(repo.repository.name).get_full_job(repo.job.name)
+    return location.get_repository(repo.repository.name).get_full_external_job(repo.job.name)
 
 
 @pytest.fixture
-def other_remote_job(other_workspace: WorkspaceRequestContext) -> RemoteJob:
+def other_external_job(other_workspace: WorkspaceRequestContext) -> ExternalJob:
     location = other_workspace.get_code_location(other_workspace.code_location_names[0])
-    return location.get_repository(repo.repository.name).get_full_job(repo.job.name)
+    return location.get_repository(repo.repository.name).get_full_external_job(repo.job.name)
 
 
 @pytest.fixture
-def run(instance: DagsterInstance, job: JobDefinition, remote_job: RemoteJob) -> DagsterRun:
+def run(instance: DagsterInstance, job: JobDefinition, external_job: ExternalJob) -> DagsterRun:
     return instance.create_run_for_job(
         job,
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
 
 
 @pytest.fixture
 def other_run(
-    instance: DagsterInstance, job: JobDefinition, other_remote_job: RemoteJob
+    instance: DagsterInstance, job: JobDefinition, other_external_job: ExternalJob
 ) -> DagsterRun:
     return instance.create_run_for_job(
         job,
-        remote_job_origin=other_remote_job.get_remote_origin(),
-        job_code_origin=other_remote_job.get_python_origin(),
+        external_job_origin=other_external_job.get_external_origin(),
+        job_code_origin=other_external_job.get_python_origin(),
     )
 
 
 @pytest.fixture
 def launch_run(
-    workspace: WorkspaceRequestContext, job: JobDefinition, remote_job: RemoteJob
+    workspace: WorkspaceRequestContext, job: JobDefinition, external_job: ExternalJob
 ) -> Callable[[DagsterInstance], None]:
     def _launch_run(instance: DagsterInstance) -> None:
         run = instance.create_run_for_job(
             job,
-            remote_job_origin=remote_job.get_remote_origin(),
-            job_code_origin=remote_job.get_python_origin(),
+            external_job_origin=external_job.get_external_origin(),
+            job_code_origin=external_job.get_python_origin(),
         )
         instance.launch_run(run.run_id, workspace)
 
@@ -333,7 +331,7 @@ def custom_instance_cm(stub_aws, stub_ecs_metadata):
 
 @pytest.fixture
 def custom_instance(
-    custom_instance_cm: Callable[..., ContextManager[DagsterInstance]],
+    custom_instance_cm: Callable[..., ContextManager[DagsterInstance]]
 ) -> Iterator[DagsterInstance]:
     with custom_instance_cm() as dagster_instance:
         yield dagster_instance
@@ -356,12 +354,12 @@ def custom_workspace(
 
 @pytest.fixture
 def custom_run(
-    custom_instance: DagsterInstance, job: JobDefinition, remote_job: RemoteJob
+    custom_instance: DagsterInstance, job: JobDefinition, external_job: ExternalJob
 ) -> DagsterRun:
     return custom_instance.create_run_for_job(
         job,
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
 
 
@@ -479,9 +477,6 @@ def container_context_config(configured_secret: Secret) -> Mapping[str, Any]:
             ],
             "run_ecs_tags": [{"key": "ABC", "value": "DEF"}],  # with value
             "repository_credentials": "fake-secret-arn",
-            "server_health_check": {
-                "command": ["HELLO"],
-            },
         },
     }
 
@@ -506,7 +501,6 @@ def other_container_context_config(other_configured_secret):
             "server_resources": {
                 "cpu": "2048",
                 "memory": "4096",
-                "replica_count": 2,
             },
             "task_role_arn": "other-task-role",
             "execution_role_arn": "other-fake-execution-role",
@@ -545,13 +539,6 @@ def other_container_context_config(other_configured_secret):
                 }
             ],
             "repository_credentials": "fake-secret-arn",
-            "server_health_check": {
-                "command": ["CMD-SHELL", "curl -f http://localhost/ || exit 1"],
-                "interval": 30,
-                "timeout": 5,
-                "retries": 3,
-                "startPeriod": 0,
-            },
         },
     }
 
@@ -559,12 +546,12 @@ def other_container_context_config(other_configured_secret):
 @pytest.fixture
 def launch_run_with_container_context(
     job: JobDefinition,
-    remote_job: RemoteJob,
+    external_job: ExternalJob,
     workspace: WorkspaceRequestContext,
     container_context_config,
 ):
     def _launch_run(instance):
-        python_origin = remote_job.get_python_origin()
+        python_origin = external_job.get_python_origin()
         python_origin = python_origin._replace(
             repository_origin=python_origin.repository_origin._replace(
                 container_context=container_context_config,
@@ -573,7 +560,7 @@ def launch_run_with_container_context(
 
         run = instance.create_run_for_job(
             job,
-            remote_job_origin=remote_job.get_remote_origin(),
+            external_job_origin=external_job.get_external_origin(),
             job_code_origin=python_origin,
         )
         instance.launch_run(run.run_id, workspace)

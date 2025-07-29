@@ -13,7 +13,6 @@
 ### examples/assets_smoke_test
 # -e examples/assets_smoke_test
 #   -e python_modules/dagster[pyright,test]
-#   -e python_modules/dagster-pipes[stubs]
 #   -e python_modules/dagster-webserver
 #   -e python_modules/dagster-graphql
 #   -e python_modules/libraries/dagster-pandas/
@@ -31,22 +30,18 @@
 ### examples/project_fully_featured (and experimental version)
 -e examples/project_fully_featured[tests]
   -e python_modules/dagster[pyright,test]
-  -e python_modules/dagster-pipes
-  -e python_modules/libraries/dagster-shared
   -e python_modules/dagster-webserver
   -e python_modules/dagster-graphql
-  -e python_modules/libraries/dagster-aws[stubs]
+  -e python_modules/libraries/dagster-aws/
   -e python_modules/libraries/dagster-dbt/
   -e python_modules/libraries/dagster-duckdb-pandas/
     -e python_modules/libraries/dagster-duckdb/
     -e python_modules/libraries/dagster-duckdb-pyspark/
   -e python_modules/libraries/dagster-pandas/
   -e python_modules/libraries/dagster-postgres/
-  -e python_modules/libraries/dagster-gcp[test,dataproc]
   -e python_modules/libraries/dagster-pyspark/
   -e python_modules/libraries/dagster-slack/
   -e python_modules/libraries/dagster-spark/
   -e python_modules/libraries/dagster-snowflake/
     -e python_modules/libraries/dagster-snowflake-pandas/
-    -e python_modules/libraries/dagster-snowflake-polars/
     -e python_modules/libraries/dagster-snowflake-pyspark/

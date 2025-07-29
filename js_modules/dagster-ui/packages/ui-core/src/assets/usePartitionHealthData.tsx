@@ -1,21 +1,21 @@
+import {gql, useApolloClient} from '@apollo/client';
 import isEqual from 'lodash/isEqual';
 import keyBy from 'lodash/keyBy';
-import {useEffect, useMemo, useState} from 'react';
+import React from 'react';
 
-import {AssetPartitionStatus, emptyAssetPartitionStatusCounts} from './AssetPartitionStatus';
-import {Transition, assembleRangesFromTransitions} from './MultipartitioningSupport';
-import {usePartitionDataSubscriber} from './PartitionSubscribers';
-import {AssetKey} from './types';
-import {gql, useApolloClient} from '../apollo-client';
-import {
-  PartitionHealthQuery,
-  PartitionHealthQueryVariables,
-} from './types/usePartitionHealthData.types';
 import {assertUnreachable} from '../app/Util';
 import {LiveDataForNode} from '../asset-graph/Utils';
 import {PartitionDefinitionType, PartitionRangeStatus} from '../graphql/types';
 import {assembleIntoSpans} from '../partitions/SpanRepresentation';
-import {useBlockTraceUntilTrue} from '../performance/TraceContext';
+
+import {AssetPartitionStatus, emptyAssetPartitionStatusCounts} from './AssetPartitionStatus';
+import {assembleRangesFromTransitions, Transition} from './MultipartitioningSupport';
+import {usePartitionDataSubscriber} from './PartitionSubscribers';
+import {AssetKey} from './types';
+import {
+  PartitionHealthQuery,
+  PartitionHealthQueryVariables,
+} from './types/usePartitionHealthData.types';
 
 type PartitionHealthMaterializedPartitions = Extract<
   PartitionHealthQuery['assetNodeOrError'],
@@ -49,9 +49,7 @@ export interface PartitionHealthData {
 export interface PartitionHealthDataMerged {
   dimensions: PartitionHealthDimension[];
 
-  // Slower - looks up indexes and then calls `stateForKeyIdx`
   stateForKey: (dimensionKeys: string[]) => AssetPartitionStatus[];
-
   stateForKeyIdx: (dimenstionIdxs: number[]) => AssetPartitionStatus[];
 
   rangesForSingleDimension: (
@@ -134,7 +132,7 @@ export function buildPartitionHealthData(data: PartitionHealthQuery, loadKey: As
       return AssetPartitionStatus.MISSING;
     }
     if (!d0Range.subranges || dIndexes.length === 1) {
-      return d0Range.value[0] ?? AssetPartitionStatus.MISSING; // 1D case
+      return d0Range.value[0]!; // 1D case
     }
     const d1Range = d0Range.subranges.find(
       (r) => r.start.idx <= dIndexes[1]! && r.end.idx >= dIndexes[1]!,
@@ -379,8 +377,8 @@ export function keyCountByStateInSelection(
                 ),
               )
             : b.value.includes(status)
-              ? secondDimensionKeyCount
-              : 0),
+            ? secondDimensionKeyCount
+            : 0),
       0,
     );
   };
@@ -418,17 +416,14 @@ function addKeyIndexesToMaterializedRanges(
   }
   if (partitions.__typename === 'DefaultPartitionStatuses') {
     const dim = dimensions[0]!;
-    const materializedPartitionKeys = new Set(partitions.materializedPartitions);
-    const materializingPartitionKeys = new Set(partitions.materializingPartitions);
-    const failedPartitionKeys = new Set(partitions.failedPartitions);
     const spans = assembleIntoSpans(dim.partitionKeys, (key) =>
-      materializedPartitionKeys.has(key)
+      partitions.materializedPartitions.includes(key)
         ? AssetPartitionStatus.MATERIALIZED
-        : materializingPartitionKeys.has(key)
-          ? AssetPartitionStatus.MATERIALIZING
-          : failedPartitionKeys.has(key)
-            ? AssetPartitionStatus.FAILED
-            : AssetPartitionStatus.MISSING,
+        : partitions.materializingPartitions.includes(key)
+        ? AssetPartitionStatus.MATERIALIZING
+        : partitions.failedPartitions.includes(key)
+        ? AssetPartitionStatus.FAILED
+        : AssetPartitionStatus.MISSING,
     );
     return spans.map(
       (s) =>
@@ -526,14 +521,14 @@ export function usePartitionHealthData(
   assetsCacheKey = '',
   cacheClearStrategy: 'immediate' | 'background' = 'background',
 ) {
-  const [partitionsLastUpdated, setPartitionsLastUpdatedAt] = useState<string>('');
+  const [partitionsLastUpdated, setPartitionsLastUpdatedAt] = React.useState<string>('');
   usePartitionDataSubscriber(() => {
     setPartitionsLastUpdatedAt(Date.now().toString());
   });
 
   const cacheKey = `${assetsCacheKey}-${partitionsLastUpdated}`;
 
-  const [result, setResult] = useState<(PartitionHealthData & {fetchedAt: string})[]>([]);
+  const [result, setResult] = React.useState<(PartitionHealthData & {fetchedAt: string})[]>([]);
   const client = useApolloClient();
 
   const assetKeyJSONs = assetKeys.map((k) => JSON.stringify(k));
@@ -545,7 +540,7 @@ export function usePartitionHealthData(
   // Fetching partition health ranges can take a while -- if the "Background" refresh
   // style is enabled, fill our `result` state with whatever we can from the Apollo
   // cache. This is especially helpful if you're navigating between assets in the UI.
-  useEffect(() => {
+  React.useEffect(() => {
     if (cacheClearStrategy === 'immediate') {
       return;
     }
@@ -574,15 +569,11 @@ export function usePartitionHealthData(
     });
   }, [assetKeyJSON, cacheClearStrategy, client.cache]);
 
-  const [loading, setLoading] = useState(true);
-  useBlockTraceUntilTrue('usePartitionHealthData', !loading);
-
   // Refresh state health ranges, one asset key at a time. This kicks off one
   // request and then missingKeyJSON updates when that is complete, kicking
   // off the next query.
-  useMemo(() => {
+  React.useMemo(() => {
     if (!missingKeyJSON) {
-      setLoading(false);
       return;
     }
     const loadKey: AssetKey = JSON.parse(missingKeyJSON);
@@ -603,7 +594,7 @@ export function usePartitionHealthData(
     run();
   }, [client, missingKeyJSON, cacheKey]);
 
-  const data = useMemo(() => {
+  return React.useMemo(() => {
     const assetKeyJSONs = JSON.parse(assetKeyJSON);
     return result.filter(
       (r) =>
@@ -611,8 +602,6 @@ export function usePartitionHealthData(
         (r.fetchedAt === cacheKey || cacheClearStrategy === 'background'),
     );
   }, [assetKeyJSON, result, cacheKey, cacheClearStrategy]);
-  useBlockTraceUntilTrue('usePartitionHealthData', data.length === assetKeys.length);
-  return data;
 }
 
 // This function returns a string value that changes when the partition health bar
@@ -621,17 +610,16 @@ export function usePartitionHealthData(
 //
 export const healthRefreshHintFromLiveData = (liveData: LiveDataForNode | undefined) =>
   liveData
-    ? `${liveData.lastMaterialization?.timestamp},${
-        liveData.runWhichFailedToMaterialize?.id
-      },${JSON.stringify(liveData.partitionStats)}`
+    ? `${liveData.lastMaterialization?.timestamp},${liveData.runWhichFailedToMaterialize
+        ?.id},${JSON.stringify(liveData.partitionStats)}`
     : `-`;
 
 const rangeStatusToState = (rangeStatus: PartitionRangeStatus) =>
   rangeStatus === PartitionRangeStatus.MATERIALIZED
     ? AssetPartitionStatus.MATERIALIZED
     : rangeStatus === PartitionRangeStatus.MATERIALIZING
-      ? AssetPartitionStatus.MATERIALIZING
-      : AssetPartitionStatus.FAILED;
+    ? AssetPartitionStatus.MATERIALIZING
+    : AssetPartitionStatus.FAILED;
 
 export const PARTITION_HEALTH_QUERY = gql`
   query PartitionHealthQuery($assetKey: AssetKeyInput!) {

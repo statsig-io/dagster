@@ -8,8 +8,6 @@ EbsVolumeType = Enum(
 
 
 class EmrClusterState(PyEnum):
-    """Cluster state for EMR."""
-
     Starting = "STARTING"
     Bootstrapping = "BOOTSTRAPPING"
     Running = "RUNNING"
@@ -29,8 +27,6 @@ EMR_CLUSTER_DONE_STATES = EMR_CLUSTER_TERMINATED_STATES + [EmrClusterState.Waiti
 
 
 class EmrStepState(PyEnum):
-    """Step state for EMR."""
-
     Pending = "PENDING"
     Running = "RUNNING"
     Continue = "CONTINUE"

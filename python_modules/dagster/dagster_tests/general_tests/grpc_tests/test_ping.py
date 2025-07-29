@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import re
@@ -7,22 +6,15 @@ import threading
 import time
 from unittest import mock
 
-import dagster as dg
 import dagster._check as check
-import dagster_shared.seven as seven
+import dagster._seven as seven
 import pytest
 from dagster._core.errors import DagsterUserCodeUnreachableError
-from dagster._core.utils import FuturesAwareThreadPoolExecutor
-from dagster._grpc.client import DagsterGrpcClient, ephemeral_grpc_api_client
-from dagster._grpc.constants import GrpcServerCommand
-from dagster._grpc.server import (
-    DagsterCodeServerUtilizationMetrics,
-    DagsterGrpcServer,
-    GrpcServerProcess,
-    open_server_process,
-)
+from dagster._core.test_utils import instance_for_test
+from dagster._grpc import DagsterGrpcClient, DagsterGrpcServer, ephemeral_grpc_api_client
+from dagster._grpc.server import GrpcServerProcess, open_server_process
+from dagster._serdes.ipc import interrupt_ipc_subprocess_pid
 from dagster._utils import find_free_port, safe_tempfile_path
-from dagster_shared.ipc import interrupt_ipc_subprocess_pid
 
 
 def _cleanup_process(process):
@@ -43,7 +35,6 @@ def test_server_socket_on_windows():
                 dagster_api_servicer=mock.MagicMock(),
                 logger=logging.getLogger("dagster.code_server"),
                 socket=skt,
-                threadpool_executor=FuturesAwareThreadPoolExecutor(),
             )
 
 
@@ -59,22 +50,16 @@ def test_server_port_and_socket():
                 logger=logging.getLogger("dagster.code_server"),
                 socket=skt,
                 port=find_free_port(),
-                threadpool_executor=FuturesAwareThreadPoolExecutor(),
             )
 
 
 @pytest.mark.skipif(seven.IS_WINDOWS, reason="Unix-only test")
 def test_server_socket():
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         with safe_tempfile_path() as skt:
-            server_process = open_server_process(
-                instance.get_ref(), port=None, socket=skt, server_command=GrpcServerCommand.API_GRPC
-            )
+            server_process = open_server_process(instance.get_ref(), port=None, socket=skt)
             try:
-                assert DagsterGrpcClient(socket=skt).ping("foobar") == {
-                    "echo": "foobar",
-                    "serialized_server_utilization_metrics": "",
-                }
+                assert DagsterGrpcClient(socket=skt).ping("foobar") == "foobar"
             finally:
                 interrupt_ipc_subprocess_pid(server_process.pid)
                 server_process.terminate()
@@ -83,7 +68,7 @@ def test_server_socket():
 
 @pytest.mark.skipif(seven.IS_WINDOWS, reason="Unix-only test")
 def test_process_killed_after_server_finished():
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         raw_process = None
         try:
             with GrpcServerProcess(instance_ref=instance.get_ref()) as server_process:
@@ -103,23 +88,18 @@ def test_process_killed_after_server_finished():
             # verify socket is cleaned up
             assert not os.path.exists(socket)
         finally:
-            raw_process.terminate()  # pyright: ignore[reportOptionalMemberAccess]
-            raw_process.wait()  # pyright: ignore[reportOptionalMemberAccess]
+            raw_process.terminate()
+            raw_process.wait()
 
 
 def test_server_port():
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         port = find_free_port()
-        server_process = open_server_process(
-            instance.get_ref(), port=port, socket=None, server_command=GrpcServerCommand.API_GRPC
-        )
+        server_process = open_server_process(instance.get_ref(), port=port, socket=None)
         assert server_process is not None
 
         try:
-            assert DagsterGrpcClient(port=port).ping("foobar") == {
-                "echo": "foobar",
-                "serialized_server_utilization_metrics": "",
-            }
+            assert DagsterGrpcClient(port=port).ping("foobar") == "foobar"
         finally:
             _cleanup_process(server_process)
 
@@ -154,7 +134,7 @@ def test_client_port():
 def test_client_port_bad_host():
     port = find_free_port()
     with pytest.raises(check.CheckError, match="Must provide a hostname"):
-        DagsterGrpcClient(port=port, host=None)  # pyright: ignore[reportArgumentType]
+        DagsterGrpcClient(port=port, host=None)
 
 
 @pytest.mark.skipif(seven.IS_WINDOWS, reason="Unix-only test")
@@ -175,10 +155,7 @@ def test_client_port_and_socket():
 
 def test_ephemeral_client():
     with ephemeral_grpc_api_client() as api_client:
-        assert api_client.ping("foo") == {
-            "echo": "foo",
-            "serialized_server_utilization_metrics": "",
-        }
+        assert api_client.ping("foo") == "foo"
 
 
 def test_streaming():
@@ -197,23 +174,17 @@ def test_get_server_id():
 
 def create_server_process():
     port = find_free_port()
-    with dg.instance_for_test() as instance:
-        server_process = open_server_process(
-            instance.get_ref(), port=port, socket=None, server_command=GrpcServerCommand.API_GRPC
-        )
+    with instance_for_test() as instance:
+        server_process = open_server_process(instance.get_ref(), port=port, socket=None)
         assert server_process is not None
         return port, server_process
 
 
 def test_fixed_server_id():
     port = find_free_port()
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         server_process = open_server_process(
-            instance.get_ref(),
-            port=port,
-            socket=None,
-            fixed_server_id="fixed_id",
-            server_command=GrpcServerCommand.API_GRPC,
+            instance.get_ref(), port=port, socket=None, fixed_server_id="fixed_id"
         )
         assert server_process is not None
 
@@ -234,7 +205,7 @@ def test_detect_server_restart():
     finally:
         _cleanup_process(server_process)
 
-    server_process.communicate(timeout=5)
+    seven.wait_for_process(server_process, timeout=5)
     with pytest.raises(DagsterUserCodeUnreachableError):
         api_client.get_server_id()
 
@@ -248,26 +219,3 @@ def test_detect_server_restart():
         _cleanup_process(server_process)
 
     assert server_id_one != server_id_two
-
-
-def test_ping_metrics_retrieval():
-    with dg.instance_for_test() as instance:
-        port = find_free_port()
-        server_process = open_server_process(
-            instance.get_ref(),
-            port=port,
-            socket=None,
-            enable_metrics=True,
-            server_command=GrpcServerCommand.API_GRPC,
-        )
-        assert server_process is not None
-
-        try:
-            result = DagsterGrpcClient(port=port).ping("foobar")
-            assert result["echo"] == "foobar"
-            metrics = json.loads(result["serialized_server_utilization_metrics"])
-            assert all(
-                key in metrics for key in DagsterCodeServerUtilizationMetrics.__annotations__
-            )
-        finally:
-            _cleanup_process(server_process)

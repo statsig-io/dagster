@@ -1,37 +1,15 @@
-import {gql} from '../apollo-client';
-import {
-  ResetScheduleMutation,
-  StartThisScheduleMutation,
-  StopScheduleMutation,
-} from './types/ScheduleMutations.types';
+import {gql} from '@apollo/client';
+import * as React from 'react';
+
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
-import {INSTIGATION_STATE_BASE_FRAGMENT} from '../instigation/InstigationStateBaseFragment';
+
+import {StartThisScheduleMutation, StopScheduleMutation} from './types/ScheduleMutations.types';
 
 export const START_SCHEDULE_MUTATION = gql`
   mutation StartThisSchedule($scheduleSelector: ScheduleSelector!) {
     startSchedule(scheduleSelector: $scheduleSelector) {
-      ... on ScheduleStateResult {
-        scheduleState {
-          id
-          ...InstigationStateBaseFragment
-        }
-      }
-      ... on UnauthorizedError {
-        message
-      }
-      ...PythonErrorFragment
-    }
-  }
-
-  ${INSTIGATION_STATE_BASE_FRAGMENT}
-  ${PYTHON_ERROR_FRAGMENT}
-`;
-
-export const STOP_SCHEDULE_MUTATION = gql`
-  mutation StopSchedule($id: String!) {
-    stopRunningSchedule(id: $id) {
       ... on ScheduleStateResult {
         scheduleState {
           id
@@ -49,9 +27,12 @@ export const STOP_SCHEDULE_MUTATION = gql`
   ${PYTHON_ERROR_FRAGMENT}
 `;
 
-export const RESET_SCHEDULE_MUTATION = gql`
-  mutation ResetSchedule($scheduleSelector: ScheduleSelector!) {
-    resetSchedule(scheduleSelector: $scheduleSelector) {
+export const STOP_SCHEDULE_MUTATION = gql`
+  mutation StopSchedule($scheduleOriginId: String!, $scheduleSelectorId: String!) {
+    stopRunningSchedule(
+      scheduleOriginId: $scheduleOriginId
+      scheduleSelectorId: $scheduleSelectorId
+    ) {
       ... on ScheduleStateResult {
         scheduleState {
           id
@@ -70,7 +51,7 @@ export const RESET_SCHEDULE_MUTATION = gql`
 `;
 
 export const displayScheduleMutationErrors = (
-  data: StartThisScheduleMutation | StopScheduleMutation | ResetScheduleMutation,
+  data: StartThisScheduleMutation | StopScheduleMutation,
 ) => {
   let error;
   if ('startSchedule' in data && data.startSchedule.__typename === 'PythonError') {
@@ -80,8 +61,6 @@ export const displayScheduleMutationErrors = (
     data.stopRunningSchedule.__typename === 'PythonError'
   ) {
     error = data.stopRunningSchedule;
-  } else if ('resetSchedule' in data && data.resetSchedule.__typename === 'PythonError') {
-    error = data.resetSchedule;
   }
 
   if (error) {

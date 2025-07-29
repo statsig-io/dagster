@@ -6,12 +6,8 @@ import pytest
 from dagster_webserver.app import create_app_from_workspace_process_context
 from starlette.testclient import TestClient
 
-from dagster._cli.workspace.cli_target import (
-    WorkspaceOpts,
-    workspace_opts_to_load_target,
-)
+from dagster._cli.workspace import get_workspace_process_context_from_kwargs
 from dagster._core.test_utils import instance_for_test
-from dagster._core.workspace.context import WorkspaceProcessContext
 from dagster._utils import check_script, pushd, script_relative_path
 
 PIPELINES_OR_ERROR_QUERY = """
@@ -103,15 +99,10 @@ def path_to_tutorial_file(path):
     )
 
 
-def load_dagster_webserver_for_workspace_cli_args(
-    n_pipelines=1, *, workspace_opts: WorkspaceOpts
-):
+def load_dagster_webserver_for_workspace_cli_args(n_pipelines=1, **kwargs):
     with instance_for_test() as instance:
-        with WorkspaceProcessContext(
-            instance,
-            version="",
-            read_only=False,
-            workspace_load_target=workspace_opts_to_load_target(workspace_opts),
+        with get_workspace_process_context_from_kwargs(
+            instance, version="", read_only=False, kwargs=kwargs
         ) as workspace_process_context:
             client = TestClient(
                 create_app_from_workspace_process_context(workspace_process_context)
@@ -141,7 +132,7 @@ def test_load_pipeline(
     with pushd(path_to_tutorial_file(dirname)):
         filepath = path_to_tutorial_file(os.path.join(dirname, filename))
         load_dagster_webserver_for_workspace_cli_args(
-            workspace_opts=WorkspaceOpts(python_file=(filepath,), attribute=fn_name),
+            python_file=(filepath,), fn_name=fn_name
         )
 
 

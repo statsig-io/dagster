@@ -1,4 +1,5 @@
 import {Group, IconName} from '@dagster-io/ui-components';
+import * as React from 'react';
 
 import {buildRepoAddress, buildRepoPathForHuman} from '../workspace/buildRepoAddress';
 import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';

@@ -1,41 +1,60 @@
 import enum
+import sys
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
-from typing import Optional
-from unittest import mock
+from typing import List, Mapping, Optional
 
-import dagster as dg
+import mock
 import pytest
 from dagster import (
     AssetExecutionContext,
+    Config,
+    ConfigurableIOManagerFactory,
+    ConfigurableLegacyIOManagerAdapter,
     ConfigurableResource,
     DagsterInstance,
+    Definitions,
+    IAttachDifferentObjectToOpContext,
     InitResourceContext,
+    IOManager,
+    IOManagerDefinition,
+    ResourceDependency,
+    ResourceParam,
+    RunConfig,
+    asset,
+    build_init_resource_context,
+    io_manager,
+    job,
+    materialize,
+    op,
+    resource,
 )
 from dagster._check import CheckError
 from dagster._config.pythonic_config import ConfigurableResourceFactory
+from dagster._core.definitions.assets_job import build_assets_job
+from dagster._core.errors import (
+    DagsterInvalidDefinitionError,
+)
 from dagster._utils.cached_method import cached_method
 from pydantic import (
     Field as PyField,
     ValidationError,
-    create_model,
 )
 
 
 def test_basic_structured_resource():
     out_txt = []
 
-    class WriterResource(dg.ConfigurableResource):
+    class WriterResource(ConfigurableResource):
         prefix: str
 
         def output(self, text: str) -> None:
             out_txt.append(f"{self.prefix}{text}")
 
-    @dg.op
+    @op
     def hello_world_op(writer: WriterResource):
         writer.output("hello, world!")
 
-    @dg.job(resource_defs={"writer": WriterResource(prefix="")})
+    @job(resource_defs={"writer": WriterResource(prefix="")})
     def no_prefix_job():
         hello_world_op()
 
@@ -44,7 +63,7 @@ def test_basic_structured_resource():
 
     out_txt.clear()
 
-    @dg.job(resource_defs={"writer": WriterResource(prefix="greeting: ")})
+    @job(resource_defs={"writer": WriterResource(prefix="greeting: ")})
     def prefix_job():
         hello_world_op()
 
@@ -55,41 +74,42 @@ def test_basic_structured_resource():
 def test_basic_structured_resource_assets() -> None:
     out_txt = []
 
-    class WriterResource(dg.ConfigurableResource):
+    class WriterResource(ConfigurableResource):
         prefix: str
 
         def output(self, text: str) -> None:
             out_txt.append(f"{self.prefix}{text}")
 
-    @dg.asset
+    @asset
     def hello_world_asset(writer: WriterResource):
         writer.output("hello, world!")
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[hello_world_asset],
         resources={"writer": WriterResource(prefix="greeting: ")},
     )
 
-    assert defs.resolve_implicit_global_asset_job_def().execute_in_process().success
+    assert defs.get_implicit_global_asset_job_def().execute_in_process().success
     assert out_txt == ["greeting: hello, world!"]
 
 
 def test_invalid_config() -> None:
-    class MyResource(dg.ConfigurableResource):
+    class MyResource(ConfigurableResource):
         foo: int
 
     with pytest.raises(
         ValidationError,
     ):
-        MyResource(foo="why")  # type: ignore
+        MyResource(foo="why")  # pyright: ignore[reportGeneralTypeIssues]
 
 
+@pytest.mark.skipif(sys.version_info < (3, 8), reason="requires python3.8")
 def test_caching_within_resource():
     called = {"greeting": 0, "get_introduction": 0}
 
     from functools import cached_property
 
-    class GreetingResource(dg.ConfigurableResource):
+    class GreetingResource(ConfigurableResource):
         name: str
 
         @cached_property
@@ -103,19 +123,19 @@ def test_caching_within_resource():
             called["get_introduction"] += 1
             return f"My name is {self.name}" if verbose else f"I'm {self.name}"
 
-    @dg.op
+    @op
     def hello_world_op(greeting: GreetingResource):
         assert greeting.greeting == "Hello, Dagster"
         assert greeting.get_introduction(verbose=True) == "My name is Dagster"
         assert greeting.get_introduction(verbose=False) == "I'm Dagster"
 
-    @dg.op
+    @op
     def another_op(greeting: GreetingResource):
         assert greeting.greeting == "Hello, Dagster"
         assert greeting.get_introduction(verbose=True) == "My name is Dagster"
         assert greeting.get_introduction(verbose=False) == "I'm Dagster"
 
-    @dg.job(resource_defs={"greeting": GreetingResource(name="Dagster")})
+    @job(resource_defs={"greeting": GreetingResource(name="Dagster")})
     def hello_world_job():
         hello_world_op()
         another_op()
@@ -128,24 +148,29 @@ def test_caching_within_resource():
 
     called = {"greeting": 0, "get_introduction": 0}
 
-    @dg.asset
+    @asset
     def hello_world_asset(greeting: GreetingResource):
         assert greeting.greeting == "Hello, Dagster"
         assert greeting.get_introduction(verbose=True) == "My name is Dagster"
         assert greeting.get_introduction(verbose=False) == "I'm Dagster"
         return greeting.greeting
 
-    @dg.asset
+    @asset
     def another_asset(greeting: GreetingResource, hello_world_asset):
         assert hello_world_asset == "Hello, Dagster"
         assert greeting.greeting == "Hello, Dagster"
         assert greeting.get_introduction(verbose=True) == "My name is Dagster"
         assert greeting.get_introduction(verbose=False) == "I'm Dagster"
 
-    assert dg.materialize(
-        [hello_world_asset, another_asset],
-        resources={"greeting": GreetingResource(name="Dagster")},
-    ).success
+    assert (
+        build_assets_job(
+            "blah",
+            [hello_world_asset, another_asset],
+            resource_defs={"greeting": GreetingResource(name="Dagster")},
+        )
+        .execute_in_process()
+        .success
+    )
 
     assert called["greeting"] == 1
     assert called["get_introduction"] == 2
@@ -154,7 +179,7 @@ def test_caching_within_resource():
 def test_abc_resource():
     out_txt = []
 
-    class Writer(dg.ConfigurableResource, ABC):
+    class Writer(ConfigurableResource, ABC):
         @abstractmethod
         def output(self, text: str) -> None:
             pass
@@ -171,15 +196,15 @@ def test_abc_resource():
         def output(self, text: str) -> None:
             out_txt.append(f"{text} " * self.repetitions)
 
-    @dg.op
+    @op
     def hello_world_op(writer: Writer):
         writer.output("hello, world!")
 
     # Can't instantiate abstract class
     with pytest.raises(TypeError):
-        Writer()  # pyright: ignore[reportAbstractUsage]
+        Writer()
 
-    @dg.job(resource_defs={"writer": PrefixedWriterResource(prefix="greeting: ")})
+    @job(resource_defs={"writer": PrefixedWriterResource(prefix="greeting: ")})
     def prefixed_job():
         hello_world_op()
 
@@ -188,7 +213,7 @@ def test_abc_resource():
 
     out_txt.clear()
 
-    @dg.job(resource_defs={"writer": RepetitiveWriterResource(repetitions=3)})
+    @job(resource_defs={"writer": RepetitiveWriterResource(repetitions=3)})
     def repetitive_writer_job():
         hello_world_op()
 
@@ -202,21 +227,21 @@ def test_yield_in_resource_function():
     class ResourceWithCleanup(ConfigurableResourceFactory[bool]):
         idx: int
 
-        def create_resource(self, context):  # pyright: ignore[reportIncompatibleMethodOverride]
+        def create_resource(self, context):
             called.append(f"creation_{self.idx}")
             yield True
             called.append(f"cleanup_{self.idx}")
 
-    @dg.op
+    @op
     def check_resource_created(
-        resource_with_cleanup_1: dg.ResourceParam[bool],
-        resource_with_cleanup_2: dg.ResourceParam[bool],
+        resource_with_cleanup_1: ResourceParam[bool],
+        resource_with_cleanup_2: ResourceParam[bool],
     ):
         assert resource_with_cleanup_1 is True
         assert resource_with_cleanup_2 is True
         called.append("op")
 
-    @dg.job(
+    @job(
         resource_defs={
             "resource_with_cleanup_1": ResourceWithCleanup(idx=1),
             "resource_with_cleanup_2": ResourceWithCleanup(idx=2),
@@ -237,99 +262,99 @@ def test_migration_attach_bare_object_to_context() -> None:
         def foo(self) -> str:
             return "foo"
 
-    class MyClientResource(dg.ConfigurableResource, dg.IAttachDifferentObjectToOpContext):
+    class MyClientResource(ConfigurableResource, IAttachDifferentObjectToOpContext):
         def get_client(self) -> MyClient:
             return MyClient()
 
         def get_object_to_set_on_execution_context(self) -> MyClient:
             return self.get_client()
 
-    @dg.asset(required_resource_keys={"my_client"})
+    @asset(required_resource_keys={"my_client"})
     def uses_client_asset_unmigrated(context) -> str:
         assert context.resources.my_client
         assert context.resources.my_client.foo() == "foo"
         executed["unmigrated"] = True
         return "foo"
 
-    @dg.asset
+    @asset
     def uses_client_asset_migrated(my_client: MyClientResource) -> str:
         assert my_client
         assert my_client.get_client().foo() == "foo"
         executed["migrated"] = True
         return "foo"
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[uses_client_asset_migrated, uses_client_asset_unmigrated],
         resources={"my_client": MyClientResource()},
     )
 
-    asset_job = defs.resolve_implicit_global_asset_job_def()
+    asset_job = defs.get_implicit_global_asset_job_def()
     assert asset_job
     assert asset_job.execute_in_process().success
     assert executed["unmigrated"]
     assert executed["migrated"]
 
 
-class AnIOManagerImplementation(dg.IOManager):
+class AnIOManagerImplementation(IOManager):
     def __init__(self, a_config_value: str):
         self.a_config_value = a_config_value
 
-    def load_input(self, _):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def load_input(self, _):
         pass
 
-    def handle_output(self, _, obj):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def handle_output(self, _, obj):
         pass
 
 
 def test_io_manager_adapter():
-    @dg.io_manager(config_schema={"a_config_value": str})
+    @io_manager(config_schema={"a_config_value": str})
     def an_io_manager(context: InitResourceContext) -> AnIOManagerImplementation:
         return AnIOManagerImplementation(context.resource_config["a_config_value"])
 
-    class AdapterForIOManager(dg.ConfigurableLegacyIOManagerAdapter):
+    class AdapterForIOManager(ConfigurableLegacyIOManagerAdapter):
         a_config_value: str
 
         @property
-        def wrapped_io_manager(self) -> dg.IOManagerDefinition:
+        def wrapped_io_manager(self) -> IOManagerDefinition:
             return an_io_manager
 
     executed = {}
 
-    @dg.asset
+    @asset
     def an_asset(context: AssetExecutionContext):
         assert context.resources.io_manager.a_config_value == "passed-in-configured"
         executed["yes"] = True
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[an_asset],
         resources={"io_manager": AdapterForIOManager(a_config_value="passed-in-configured")},
     )
-    defs.resolve_implicit_global_asset_job_def().execute_in_process()
+    defs.get_implicit_global_asset_job_def().execute_in_process()
 
     assert executed["yes"]
 
 
 def test_io_manager_factory_class():
     # now test without the adapter
-    class AnIOManagerFactory(dg.ConfigurableIOManagerFactory):
+    class AnIOManagerFactory(ConfigurableIOManagerFactory):
         a_config_value: str
 
-        def create_io_manager(self, _) -> dg.IOManager:  # pyright: ignore[reportIncompatibleMethodOverride]
+        def create_io_manager(self, _) -> IOManager:
             """Implement as one would implement a @io_manager decorator function."""
             return AnIOManagerImplementation(self.a_config_value)
 
     executed = {}
 
-    @dg.asset
+    @asset
     def another_asset(context: AssetExecutionContext):
         assert context.resources.io_manager.a_config_value == "passed-in-factory"
         executed["yes"] = True
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[another_asset],
         resources={"io_manager": AnIOManagerFactory(a_config_value="passed-in-factory")},
     )
-    defs.resolve_implicit_global_asset_job_def().execute_in_process()
+    defs.get_implicit_global_asset_job_def().execute_in_process()
 
     assert executed["yes"]
 
@@ -337,23 +362,23 @@ def test_io_manager_factory_class():
 def test_structured_resource_runtime_config():
     out_txt = []
 
-    class WriterResource(dg.ConfigurableResource):
+    class WriterResource(ConfigurableResource):
         prefix: str
 
         def output(self, text: str) -> None:
             out_txt.append(f"{self.prefix}{text}")
 
-    @dg.asset
+    @asset
     def hello_world_asset(writer: WriterResource):
         writer.output("hello, world!")
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[hello_world_asset],
         resources={"writer": WriterResource.configure_at_launch()},
     )
 
     assert (
-        defs.resolve_implicit_global_asset_job_def()
+        defs.get_implicit_global_asset_job_def()
         .execute_in_process({"resources": {"writer": {"config": {"prefix": ""}}}})
         .success
     )
@@ -362,7 +387,7 @@ def test_structured_resource_runtime_config():
     out_txt.clear()
 
     assert (
-        defs.resolve_implicit_global_asset_job_def()
+        defs.get_implicit_global_asset_job_def()
         .execute_in_process({"resources": {"writer": {"config": {"prefix": "greeting: "}}}})
         .success
     )
@@ -375,24 +400,24 @@ def test_runtime_config_run_config_obj():
 
     out_txt = []
 
-    class WriterResource(dg.ConfigurableResource):
+    class WriterResource(ConfigurableResource):
         prefix: str
 
         def output(self, text: str) -> None:
             out_txt.append(f"{self.prefix}{text}")
 
-    @dg.asset
+    @asset
     def hello_world_asset(writer: WriterResource):
         writer.output("hello, world!")
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[hello_world_asset],
         resources={"writer": WriterResource.configure_at_launch()},
     )
 
     assert (
-        defs.resolve_implicit_global_asset_job_def()
-        .execute_in_process(dg.RunConfig(resources={"writer": WriterResource(prefix="greeting: ")}))
+        defs.get_implicit_global_asset_job_def()
+        .execute_in_process(RunConfig(resources={"writer": WriterResource(prefix="greeting: ")}))
         .success
     )
     assert out_txt == ["greeting: hello, world!"]
@@ -405,7 +430,7 @@ def test_basic_enum_override_with_resource_instance() -> None:
 
     setup_executed = {}
 
-    class MyResource(dg.ConfigurableResource):
+    class MyResource(ConfigurableResource):
         my_enum: BasicEnum
 
         def setup_for_execution(self, context: InitResourceContext) -> None:
@@ -415,11 +440,11 @@ def test_basic_enum_override_with_resource_instance() -> None:
                 BasicEnum.B.value,
             ]
 
-    @dg.asset
+    @asset
     def asset_with_resource(context, my_resource: MyResource):
         return my_resource.my_enum.value
 
-    result_one = dg.materialize(
+    result_one = materialize(
         [asset_with_resource],
         resources={"my_resource": MyResource(my_enum=BasicEnum.A)},
     )
@@ -429,7 +454,7 @@ def test_basic_enum_override_with_resource_instance() -> None:
 
     setup_executed.clear()
 
-    result_two = dg.materialize(
+    result_two = materialize(
         [asset_with_resource],
         resources={"my_resource": MyResource(my_enum=BasicEnum.A)},
         run_config={"resources": {"my_resource": {"config": {"my_enum": "B"}}}},
@@ -445,14 +470,14 @@ def test_basic_enum_override_with_resource_configured_at_launch() -> None:
         A = "a_value"
         B = "b_value"
 
-    class MyResource(dg.ConfigurableResource):
+    class MyResource(ConfigurableResource):
         my_enum: AnotherEnum
 
-    @dg.asset
+    @asset
     def asset_with_resource(context, my_resource: MyResource):
         return my_resource.my_enum.value
 
-    result_one = dg.materialize(
+    result_one = materialize(
         [asset_with_resource],
         resources={"my_resource": MyResource.configure_at_launch()},
         run_config={"resources": {"my_resource": {"config": {"my_enum": "B"}}}},
@@ -461,7 +486,7 @@ def test_basic_enum_override_with_resource_configured_at_launch() -> None:
     assert result_one.success
     assert result_one.output_for_node("asset_with_resource") == "b_value"
 
-    result_two = dg.materialize(
+    result_two = materialize(
         [asset_with_resource],
         resources={"my_resource": MyResource.configure_at_launch(my_enum=AnotherEnum.A)},
         run_config={"resources": {"my_resource": {"config": {"my_enum": "B"}}}},
@@ -478,12 +503,12 @@ def test_resources_which_return():
         def create_resource(self, context) -> str:
             return self.a_string
 
-    class MyResource(dg.ConfigurableResource):
-        string_from_resource: dg.ResourceDependency[str]
+    class MyResource(ConfigurableResource):
+        string_from_resource: ResourceDependency[str]
 
     completed = {}
 
-    @dg.asset
+    @asset
     def my_asset(my_resource: MyResource):
         assert my_resource.string_from_resource == "foo"
         completed["yes"] = True
@@ -491,20 +516,20 @@ def test_resources_which_return():
     str_resource = StringResource(a_string="foo")
     my_resource = MyResource(string_from_resource=str_resource)
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[my_asset],
         resources={
             "my_resource": my_resource,
         },
     )
 
-    assert defs.resolve_implicit_global_asset_job_def().execute_in_process().success
+    assert defs.get_implicit_global_asset_job_def().execute_in_process().success
     assert completed["yes"]
 
     str_resource_partial = StringResource.configure_at_launch()
-    my_resource = MyResource(string_from_resource=str_resource_partial)  # pyright: ignore[reportArgumentType]
+    my_resource = MyResource(string_from_resource=str_resource_partial)
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[my_asset],
         resources={
             "str_resource_partial": str_resource_partial,
@@ -513,7 +538,7 @@ def test_resources_which_return():
     )
 
     assert (
-        defs.resolve_implicit_global_asset_job_def()
+        defs.get_implicit_global_asset_job_def()
         .execute_in_process(
             {
                 "resources": {
@@ -533,16 +558,16 @@ def test_resources_which_return():
 def test_nested_config_class() -> None:
     # Validate that we can nest Config classes in a pythonic resource
 
-    class User(dg.Config):
+    class User(Config):
         name: str
         age: int
 
-    class UsersResource(dg.ConfigurableResource):
-        users: list[User]
+    class UsersResource(ConfigurableResource):
+        users: List[User]
 
     executed = {}
 
-    @dg.asset
+    @asset
     def an_asset(users_resource: UsersResource):
         assert len(users_resource.users) == 2
         assert users_resource.users[0].name == "Bob"
@@ -552,7 +577,7 @@ def test_nested_config_class() -> None:
 
         executed["yes"] = True
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[an_asset],
         resources={
             "users_resource": UsersResource(
@@ -564,46 +589,8 @@ def test_nested_config_class() -> None:
         },
     )
 
-    assert defs.resolve_implicit_global_asset_job_def().execute_in_process().success
+    assert defs.get_implicit_global_asset_job_def().execute_in_process().success
     assert executed["yes"]
-
-
-# https://github.com/dagster-io/dagster/issues/27223
-@pytest.mark.parametrize("child_resource_fields_all_have_default_values", [True, False])
-def test_nested_config_class_with_runtime_config(
-    child_resource_fields_all_have_default_values: bool,
-) -> None:
-    # Type hinting a dynamically-generated Pydantic model is impossible:
-    # https://stackoverflow.com/q/78838473
-    ChildResource = create_model(
-        "ChildResource",
-        date=(str, "2025-01-20" if child_resource_fields_all_have_default_values else ...),
-        __base__=ConfigurableResource,
-    )
-
-    class ParentResource(dg.ConfigurableResource):
-        child: ChildResource  # pyright: ignore[reportInvalidTypeForm]
-
-    @dg.asset
-    def test_asset(
-        child: ChildResource,  # pyright: ignore[reportInvalidTypeForm]
-        parent: ParentResource,
-    ) -> None:
-        assert child.date == "2025-01-21"
-        assert parent.child.date == "2025-01-21"
-
-    child = ChildResource.configure_at_launch()
-    dg.materialize(
-        [test_asset],
-        resources={
-            "child": child,
-            "parent": ParentResource.configure_at_launch(child=child),
-        },
-        run_config={
-            "loggers": {"console": {"config": {"log_level": "ERROR"}}},
-            "resources": {"child": {"config": {"date": "2025-01-21"}}},
-        },
-    )
 
 
 def test_using_enum_simple() -> None:
@@ -613,15 +600,15 @@ def test_using_enum_simple() -> None:
         FOO = "foo"
         BAR = "bar"
 
-    class MyResource(dg.ConfigurableResource):
+    class MyResource(ConfigurableResource):
         an_enum: SimpleEnum
 
-    @dg.asset
+    @asset
     def an_asset(my_resource: MyResource):
         assert my_resource.an_enum == SimpleEnum.FOO
         executed["yes"] = True
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[an_asset],
         resources={
             "my_resource": MyResource(
@@ -630,11 +617,11 @@ def test_using_enum_simple() -> None:
         },
     )
 
-    assert defs.resolve_implicit_global_asset_job_def().execute_in_process().success
+    assert defs.get_implicit_global_asset_job_def().execute_in_process().success
     assert executed["yes"]
     executed.clear()
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[an_asset],
         resources={
             "my_resource": MyResource.configure_at_launch(),
@@ -642,7 +629,7 @@ def test_using_enum_simple() -> None:
     )
 
     assert (
-        defs.resolve_implicit_global_asset_job_def()
+        defs.get_implicit_global_asset_job_def()
         .execute_in_process(
             {"resources": {"my_resource": {"config": {"an_enum": SimpleEnum.FOO.name}}}}
         )
@@ -658,17 +645,17 @@ def test_using_enum_complex() -> None:
         FOO = "foo"
         BAR = "bar"
 
-    class MyResource(dg.ConfigurableResource):
-        list_of_enums: list[MyEnum]
+    class MyResource(ConfigurableResource):
+        list_of_enums: List[MyEnum]
         optional_enum: Optional[MyEnum] = None
 
-    @dg.asset
+    @asset
     def an_asset(my_resource: MyResource):
         assert my_resource.optional_enum is None
         assert my_resource.list_of_enums == [MyEnum.FOO, MyEnum.BAR]
         executed["yes"] = True
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[an_asset],
         resources={
             "my_resource": MyResource(
@@ -677,7 +664,7 @@ def test_using_enum_complex() -> None:
         },
     )
 
-    assert defs.resolve_implicit_global_asset_job_def().execute_in_process().success
+    assert defs.get_implicit_global_asset_job_def().execute_in_process().success
     assert executed["yes"]
     executed.clear()
 
@@ -685,25 +672,25 @@ def test_using_enum_complex() -> None:
 def test_resource_defs_on_asset() -> None:
     executed = {}
 
-    class MyResource(dg.ConfigurableResource):
+    class MyResource(ConfigurableResource):
         a_str: str
 
-    @dg.asset(resource_defs={"my_resource": MyResource(a_str="foo")})
+    @asset(resource_defs={"my_resource": MyResource(a_str="foo")})
     def an_asset(my_resource: MyResource):
         assert my_resource.a_str == "foo"
         executed["yes"] = True
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[an_asset],
     )
-    defs.resolve_implicit_global_asset_job_def().execute_in_process()
+    defs.get_implicit_global_asset_job_def().execute_in_process()
 
     assert executed["yes"]
 
     # Cannot specify both required_resource_keys and resources as args
     with pytest.raises(CheckError):
 
-        @dg.asset(required_resource_keys={"my_other_resource"})
+        @asset(required_resource_keys={"my_other_resource"})
         def an_other_asset(my_resource: MyResource):
             pass
 
@@ -711,21 +698,21 @@ def test_resource_defs_on_asset() -> None:
 def test_extending_resource() -> None:
     executed = {}
 
-    class BaseResource(dg.ConfigurableResource):
+    class BaseResource(ConfigurableResource):
         a_str: str = "bar"
         an_int: int = 1
 
     class ExtendingResource(BaseResource):
         a_float: float = 1.0
 
-    @dg.op
+    @op
     def hello_world_op(writer: ExtendingResource):
         assert writer.a_str == "foo"
         assert writer.an_int == 1
         assert writer.a_float == 1.0
         executed["yes"] = True
 
-    @dg.job(resource_defs={"writer": ExtendingResource(a_str="foo")})
+    @job(resource_defs={"writer": ExtendingResource(a_str="foo")})
     def no_prefix_job() -> None:
         hello_world_op()
 
@@ -736,10 +723,10 @@ def test_extending_resource() -> None:
 def test_extending_resource_nesting() -> None:
     executed = {}
 
-    class NestedResource(dg.ConfigurableResource):
+    class NestedResource(ConfigurableResource):
         a_str: str
 
-    class BaseResource(dg.ConfigurableResource):
+    class BaseResource(ConfigurableResource):
         nested: NestedResource
         a_str: str = "bar"
         an_int: int = 1
@@ -747,7 +734,7 @@ def test_extending_resource_nesting() -> None:
     class ExtendingResource(BaseResource):
         a_float: float = 1.0
 
-    @dg.asset
+    @asset
     def an_asset(writer: ExtendingResource):
         assert writer.a_str == "foo"
         assert writer.nested.a_str == "baz"
@@ -755,17 +742,17 @@ def test_extending_resource_nesting() -> None:
         assert writer.a_float == 1.0
         executed["yes"] = True
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[an_asset],
         resources={"writer": ExtendingResource(a_str="foo", nested=NestedResource(a_str="baz"))},
     )
-    assert defs.resolve_implicit_global_asset_job_def().execute_in_process().success
+    assert defs.get_implicit_global_asset_job_def().execute_in_process().success
 
     assert executed["yes"]
     executed.clear()
 
     nested_defer = NestedResource.configure_at_launch()
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[an_asset],
         resources={
             "nested_deferred": nested_defer,
@@ -773,7 +760,7 @@ def test_extending_resource_nesting() -> None:
         },
     )
     assert (
-        defs.resolve_implicit_global_asset_job_def()
+        defs.get_implicit_global_asset_job_def()
         .execute_in_process(
             run_config={"resources": {"nested_deferred": {"config": {"a_str": "baz"}}}}
         )
@@ -786,22 +773,22 @@ def test_extending_resource_nesting() -> None:
 def test_execute_in_process() -> None:
     out_txt = []
 
-    class WriterResource(dg.ConfigurableResource):
+    class WriterResource(ConfigurableResource):
         prefix: str
 
         def output(self, text: str) -> None:
             out_txt.append(f"{self.prefix}{text}")
 
-    @dg.op
+    @op
     def hello_world_op(writer: WriterResource):
         writer.output("hello, world!")
 
-    @dg.job
+    @job
     def hello_world_job() -> None:
         hello_world_op()
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="resource with key 'writer' required by op 'hello_world_op' was not provided",
     ):
         hello_world_job.execute_in_process()
@@ -818,17 +805,17 @@ def test_execute_in_process() -> None:
 def test_aliased_field_structured_resource():
     out_txt = []
 
-    class WriterResource(dg.ConfigurableResource):
+    class WriterResource(ConfigurableResource):
         prefix_: str = PyField(..., alias="prefix")
 
         def output(self, text: str) -> None:
             out_txt.append(f"{self.prefix_}{text}")
 
-    @dg.op
+    @op
     def hello_world_op(writer: WriterResource):
         writer.output("hello, world!")
 
-    @dg.job(resource_defs={"writer": WriterResource(prefix="")})
+    @job(resource_defs={"writer": WriterResource(prefix="")})
     def no_prefix_job():
         hello_world_op()
 
@@ -837,7 +824,7 @@ def test_aliased_field_structured_resource():
 
     out_txt.clear()
 
-    @dg.job(resource_defs={"writer": WriterResource(prefix="greeting: ")})
+    @job(resource_defs={"writer": WriterResource(prefix="greeting: ")})
     def prefix_job():
         hello_world_op()
 
@@ -846,7 +833,7 @@ def test_aliased_field_structured_resource():
 
     out_txt.clear()
 
-    @dg.job(resource_defs={"writer": WriterResource.configure_at_launch()})
+    @job(resource_defs={"writer": WriterResource.configure_at_launch()})
     def prefix_job_at_runtime():
         hello_world_op()
 
@@ -863,30 +850,29 @@ def test_from_resource_context_and_to_config_field() -> None:
         def create_resource(self, context) -> str:
             return self.a_string + "bar"
 
-    @dg.resource(config_schema=StringResource.to_config_schema())
+    @resource(config_schema=StringResource.to_config_schema())
     def string_resource_function_style(context: InitResourceContext) -> str:
         return StringResource.from_resource_context(context)
 
     assert (
-        string_resource_function_style(dg.build_init_resource_context({"a_string": "foo"}))
-        == "foobar"
+        string_resource_function_style(build_init_resource_context({"a_string": "foo"})) == "foobar"
     )
 
 
 def test_from_resource_context_and_to_config_field_complex() -> None:
-    class MyComplexConfigResource(dg.ConfigurableResource):
+    class MyComplexConfigResource(ConfigurableResource):
         a_string: str
-        a_list_of_ints: list[int]
-        a_map_of_lists_of_maps_of_floats: Mapping[str, list[Mapping[str, float]]]
+        a_list_of_ints: List[int]
+        a_map_of_lists_of_maps_of_floats: Mapping[str, List[Mapping[str, float]]]
 
-    @dg.resource(config_schema=MyComplexConfigResource.to_config_schema())
+    @resource(config_schema=MyComplexConfigResource.to_config_schema())
     def complex_config_resource_function_style(
         context: InitResourceContext,
     ) -> MyComplexConfigResource:
         return MyComplexConfigResource.from_resource_context(context)
 
     complex_config_resource = complex_config_resource_function_style(
-        dg.build_init_resource_context(
+        build_init_resource_context(
             {
                 "a_string": "foo",
                 "a_list_of_ints": [1, 2, 3],
@@ -906,21 +892,21 @@ def test_from_resource_context_and_to_config_field_complex() -> None:
 
 
 def test_from_resource_context_and_to_config_empty() -> None:
-    class NoConfigResource(dg.ConfigurableResource[str]):
+    class NoConfigResource(ConfigurableResource[str]):
         def get_string(self) -> str:
             return "foo"
 
-    @dg.resource(config_schema=NoConfigResource.to_config_schema())
+    @resource(config_schema=NoConfigResource.to_config_schema())
     def string_resource_function_style(context: InitResourceContext) -> str:
         return NoConfigResource.from_resource_context(context).get_string()  # type: ignore  # (??)
 
-    assert string_resource_function_style(dg.build_init_resource_context()) == "foo"
+    assert string_resource_function_style(build_init_resource_context()) == "foo"
 
 
 def test_context_on_resource_basic() -> None:
     executed = {}
 
-    class ContextUsingResource(dg.ConfigurableResource):
+    class ContextUsingResource(ConfigurableResource):
         def access_context(self) -> None:
             self.get_resource_context()
 
@@ -931,27 +917,27 @@ def test_context_on_resource_basic() -> None:
 
     # Can access context after binding one
     ContextUsingResource().with_replaced_resource_context(
-        dg.build_init_resource_context()
-    ).access_context()
+        build_init_resource_context()
+    ).access_context()  # type: ignore  # (??)
 
-    @dg.asset
+    @asset
     def my_test_asset(context_using: ContextUsingResource) -> None:
         context_using.access_context()
         executed["yes"] = True
 
-    defs = dg.Definitions(
+    defs = Definitions(
         assets=[my_test_asset],
         resources={"context_using": ContextUsingResource()},
     )
 
-    assert defs.resolve_implicit_global_asset_job_def().execute_in_process().success
+    assert defs.get_implicit_global_asset_job_def().execute_in_process().success
     assert executed["yes"]
 
 
 def test_context_on_resource_use_instance() -> None:
     executed = {}
 
-    class OutputDirResource(dg.ConfigurableResource):
+    class OutputDirResource(ConfigurableResource):
         output_dir: Optional[str] = None
 
         def get_effective_output_dir(self) -> str:
@@ -975,29 +961,29 @@ def test_context_on_resource_use_instance() -> None:
         with DagsterInstance.ephemeral() as instance:
             assert (
                 OutputDirResource(output_dir=None)
-                .with_replaced_resource_context(dg.build_init_resource_context(instance=instance))
-                .get_effective_output_dir()
+                .with_replaced_resource_context(build_init_resource_context(instance=instance))
+                .get_effective_output_dir()  # type: ignore  # (??)
                 == "/tmp"
             )
 
-        @dg.asset
+        @asset
         def my_other_output_asset(output_dir: OutputDirResource) -> None:
             assert output_dir.get_effective_output_dir() == "/tmp"
             executed["yes"] = True
 
-        defs = dg.Definitions(
+        defs = Definitions(
             assets=[my_other_output_asset],
             resources={"output_dir": OutputDirResource()},
         )
 
-        assert defs.resolve_implicit_global_asset_job_def().execute_in_process().success
+        assert defs.get_implicit_global_asset_job_def().execute_in_process().success
         assert executed["yes"]
 
 
 def test_context_on_resource_runtime_config() -> None:
     executed = {}
 
-    class OutputDirResource(dg.ConfigurableResource):
+    class OutputDirResource(ConfigurableResource):
         output_dir: Optional[str] = None
 
         def get_effective_output_dir(self) -> str:
@@ -1013,18 +999,18 @@ def test_context_on_resource_runtime_config() -> None:
     ) as storage_directory:
         storage_directory.return_value = "/tmp"
 
-        @dg.asset
+        @asset
         def my_other_output_asset(output_dir: OutputDirResource) -> None:
             assert output_dir.get_effective_output_dir() == "/tmp"
             executed["yes"] = True
 
-        defs = dg.Definitions(
+        defs = Definitions(
             assets=[my_other_output_asset],
             resources={"output_dir": OutputDirResource.configure_at_launch()},
         )
 
         assert (
-            defs.resolve_implicit_global_asset_job_def()
+            defs.get_implicit_global_asset_job_def()
             .execute_in_process(
                 run_config={"resources": {"output_dir": {"config": {"output_dir": None}}}}
             )
@@ -1036,7 +1022,7 @@ def test_context_on_resource_runtime_config() -> None:
 def test_context_on_resource_nested() -> None:
     executed = {}
 
-    class OutputDirResource(dg.ConfigurableResource):
+    class OutputDirResource(ConfigurableResource):
         output_dir: Optional[str] = None
 
         def get_effective_output_dir(self) -> str:
@@ -1047,7 +1033,7 @@ def test_context_on_resource_nested() -> None:
             assert context.instance
             return context.instance.storage_directory()
 
-    class OutputDirWrapperResource(dg.ConfigurableResource):
+    class OutputDirWrapperResource(ConfigurableResource):
         output_dir: OutputDirResource
 
     with pytest.raises(
@@ -1062,22 +1048,22 @@ def test_context_on_resource_nested() -> None:
     ) as storage_directory:
         storage_directory.return_value = "/tmp"
 
-        @dg.asset
+        @asset
         def my_other_output_asset(wrapper: OutputDirWrapperResource) -> None:
             assert wrapper.output_dir.get_effective_output_dir() == "/tmp"
             executed["yes"] = True
 
-        defs = dg.Definitions(
+        defs = Definitions(
             assets=[my_other_output_asset],
             resources={"wrapper": OutputDirWrapperResource(output_dir=OutputDirResource())},
         )
 
-        assert defs.resolve_implicit_global_asset_job_def().execute_in_process().success
+        assert defs.get_implicit_global_asset_job_def().execute_in_process().success
         assert executed["yes"]
 
 
 def test_telemetry_custom_resource():
-    class MyResource(dg.ConfigurableResource):
+    class MyResource(ConfigurableResource):
         my_value: str
 
         @classmethod
@@ -1088,7 +1074,7 @@ def test_telemetry_custom_resource():
 
 
 def test_telemetry_dagster_resource():
-    class MyResource(dg.ConfigurableResource):
+    class MyResource(ConfigurableResource):
         my_value: str
 
         @classmethod
@@ -1096,26 +1082,3 @@ def test_telemetry_dagster_resource():
             return True
 
     assert MyResource(my_value="foo")._is_dagster_maintained()  # noqa: SLF001
-
-
-def test_partial_resource_checks() -> None:
-    class IntResource(dg.ConfigurableResource):
-        my_int: int
-
-    class StrResource(dg.ConfigurableResource):
-        my_str: str
-
-    class MergeResource(dg.ConfigurableResource):
-        str_res: StrResource
-        int_res: IntResource
-
-    MergeResource(
-        str_res=StrResource.configure_at_launch(),
-        int_res=IntResource.configure_at_launch(),
-    )
-
-    # this should fail but does not https://github.com/dagster-io/dagster/issues/18017
-    MergeResource(
-        int_res=StrResource.configure_at_launch(),
-        str_res=IntResource.configure_at_launch(),
-    )

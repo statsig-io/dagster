@@ -1,38 +1,34 @@
+import {gql} from '@apollo/client';
 import {Box, MetadataTable} from '@dagster-io/ui-components';
+import * as React from 'react';
 
-import {gql} from '../apollo-client';
-import {AssetNodeOpMetadataFragment} from './types/AssetMetadata.types';
 import {DAGSTER_TYPE_FRAGMENT} from '../dagstertype/DagsterType';
 import {DagsterTypeFragment} from '../dagstertype/types/DagsterType.types';
-import {HIDDEN_METADATA_ENTRY_LABELS, MetadataEntry} from '../metadata/MetadataEntry';
-import {METADATA_ENTRY_FRAGMENT} from '../metadata/MetadataEntryFragment';
-import {MetadataEntryFragment} from '../metadata/types/MetadataEntryFragment.types';
+import {MetadataEntry, METADATA_ENTRY_FRAGMENT} from '../metadata/MetadataEntry';
+import {MetadataEntryFragment} from '../metadata/types/MetadataEntry.types';
+
+import {AssetNodeOpMetadataFragment} from './types/AssetMetadata.types';
 
 export const metadataForAssetNode = (
-  assetNode: AssetNodeOpMetadataFragment | null | undefined,
+  assetNode: AssetNodeOpMetadataFragment,
 ): {assetType?: DagsterTypeFragment; assetMetadata: MetadataEntryFragment[]} => {
-  const assetType = assetNode?.type ? assetNode.type : undefined;
-  const assetMetadata = assetNode?.metadataEntries || [];
+  const assetType = assetNode.type ? assetNode.type : undefined;
+  const assetMetadata = assetNode.metadataEntries || [];
   return {assetType, assetMetadata};
 };
 
-export const AssetMetadataTable = ({
-  assetMetadata,
-  repoLocation,
-}: {
+export const AssetMetadataTable: React.FC<{
   assetMetadata: MetadataEntryFragment[];
   repoLocation: string;
-}) => {
-  const rows = assetMetadata
-    .filter((entry) => !HIDDEN_METADATA_ENTRY_LABELS.has(entry.label))
-    .map((entry) => {
-      return {
-        key: entry.label,
-        value: <MetadataEntry entry={entry} repoLocation={repoLocation} />,
-      };
-    });
+}> = ({assetMetadata, repoLocation}) => {
+  const rows = assetMetadata.map((entry) => {
+    return {
+      key: entry.label,
+      value: <MetadataEntry entry={entry} repoLocation={repoLocation} />,
+    };
+  });
   return (
-    <Box padding={{vertical: 16, horizontal: 24}} style={{overflowX: 'auto'}}>
+    <Box padding={{vertical: 16, horizontal: 24}}>
       <MetadataTable rows={rows} />
     </Box>
   );

@@ -14,14 +14,14 @@ from dagster._core.types.dagster_type import PythonObjectDagsterType
 from dagster._core.workspace.context import WorkspaceRequestContext
 from dagster._legacy import OutputDefinition
 from dagster_graphql.schema.roots.mutation import execution_params_from_graphql
-from dagster_graphql.test.utils import execute_dagster_graphql, infer_job_selector
+from dagster_graphql.test.utils import execute_dagster_graphql, infer_pipeline_selector
 
-from dagster_graphql_tests.graphql.production_query import PRODUCTION_QUERY
+from .production_query import PRODUCTION_QUERY
 
 
 @dagster_type_loader(str)
 def df_input_schema(_context, path):
-    with open(path, encoding="utf8") as fd:
+    with open(path, "r", encoding="utf8") as fd:
         return [OrderedDict(sorted(x.items(), key=lambda x: x[0])) for x in csv.DictReader(fd)]
 
 
@@ -33,7 +33,7 @@ PoorMansDataFrame = PythonObjectDagsterType(
 
 
 def test_enum_query(graphql_context: WorkspaceRequestContext):
-    selector = infer_job_selector(graphql_context, "job_with_enum_config")
+    selector = infer_pipeline_selector(graphql_context, "job_with_enum_config")
 
     ENUM_QUERY = """
     query EnumQuery($selector: PipelineSelector!) {
@@ -126,7 +126,7 @@ query TypeRenderQuery($selector: PipelineSelector!) {
 
 
 def test_type_rendering(graphql_context: WorkspaceRequestContext):
-    selector = infer_job_selector(graphql_context, "more_complicated_nested_config")
+    selector = infer_pipeline_selector(graphql_context, "more_complicated_nested_config")
     result = execute_dagster_graphql(graphql_context, TYPE_RENDER_QUERY, {"selector": selector})
     assert not result.errors
     assert result.data
@@ -139,8 +139,8 @@ def define_circular_dependency_job():
             node_defs=[
                 OpDefinition(
                     name="csolid",
-                    ins={"num": In("num", PoorMansDataFrame)},  # pyright: ignore[reportArgumentType]
-                    outs={"result": OutputDefinition(PoorMansDataFrame)},  # pyright: ignore[reportArgumentType]
+                    ins={"num": In("num", PoorMansDataFrame)},
+                    outs={"result": OutputDefinition(PoorMansDataFrame)},
                     compute_fn=lambda *_args: None,
                 )
             ],
@@ -149,13 +149,13 @@ def define_circular_dependency_job():
     )
 
 
-@repository  # pyright: ignore[reportArgumentType]
-def the_test_repository():
+@repository
+def test_repository():
     return {"jobs": {"circular_dependency_job": define_circular_dependency_job}}
 
 
 def test_pipeline_or_error_by_name(graphql_context: WorkspaceRequestContext):
-    selector = infer_job_selector(graphql_context, "csv_hello_world_two")
+    selector = infer_pipeline_selector(graphql_context, "csv_hello_world_two")
     result = execute_dagster_graphql(
         graphql_context,
         """
@@ -175,7 +175,7 @@ def test_pipeline_or_error_by_name(graphql_context: WorkspaceRequestContext):
 
 
 def test_pipeline_or_error_by_name_not_found(graphql_context: WorkspaceRequestContext):
-    selector = infer_job_selector(graphql_context, "foobar")
+    selector = infer_pipeline_selector(graphql_context, "foobar")
     result = execute_dagster_graphql(
         graphql_context,
         """
@@ -231,35 +231,3 @@ def test_params_from_graphql():
             "runConfigData": "",
         }
     )
-
-
-def test_repo_not_found(graphql_context: WorkspaceRequestContext):
-    selector = {
-        "repositoryLocationName": "junk",
-        "repositoryName": "junk",
-    }
-    result = execute_dagster_graphql(
-        graphql_context,
-        """
-        query repo($selector: RepositorySelector!) {
-          repositoryOrError(repositorySelector: $selector) {
-            __typename
-          }
-        }""",
-        {"selector": selector},
-    )
-    assert not result.errors
-    assert result.data["repositoryOrError"]["__typename"] == "RepositoryNotFoundError"
-
-    result = execute_dagster_graphql(
-        graphql_context,
-        """
-        query repos($selector: RepositorySelector!) {
-          repositoriesOrError(repositorySelector: $selector) {
-            __typename
-          }
-        }""",
-        {"selector": selector},
-    )
-    assert not result.errors
-    assert result.data["repositoriesOrError"]["__typename"] == "RepositoryNotFoundError"

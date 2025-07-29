@@ -1,5 +1,4 @@
-from collections.abc import Mapping, Sequence
-from typing import Optional
+from typing import Mapping, Optional, Sequence, Type
 
 import dagster._check as check
 from dagster import InputContext, MetadataValue, OutputContext, TableColumn, TableSchema
@@ -9,8 +8,6 @@ from dagster_snowflake import SnowflakeIOManager, build_snowflake_io_manager
 from dagster_snowflake.snowflake_io_manager import SnowflakeDbClient
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import StructType
-
-from dagster_snowflake_pyspark.constants import SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER_PYSPARK
 
 SNOWFLAKE_CONNECTOR = "net.snowflake.spark.snowflake"
 
@@ -28,7 +25,6 @@ def _get_snowflake_options(config, table_slice: TableSlice) -> Mapping[str, str]
         "sfDatabase": config["database"],
         "sfSchema": table_slice.schema,
         "sfWarehouse": config["warehouse"],
-        "APPLICATION": SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER_PYSPARK,
     }
 
     return conf
@@ -56,7 +52,7 @@ class SnowflakePySparkTypeHandler(DbTypeHandler[DataFrame]):
             def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
                 ...
 
-            Definitions(
+            defs = Definitions(
                 assets=[my_table],
                 resources={
                     "io_manager": MySnowflakeIOManager(database="MY_DATABASE", account=EnvVar("SNOWFLAKE_ACCOUNT"), warehouse="my_warehouse", ...)
@@ -65,7 +61,7 @@ class SnowflakePySparkTypeHandler(DbTypeHandler[DataFrame]):
 
     """
 
-    def handle_output(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def handle_output(
         self, context: OutputContext, table_slice: TableSlice, obj: DataFrame, _
     ) -> Mapping[str, RawMetadataValue]:
         options = _get_snowflake_options(context.resource_config, table_slice)
@@ -87,7 +83,7 @@ class SnowflakePySparkTypeHandler(DbTypeHandler[DataFrame]):
             ),
         }
 
-    def load_input(self, context: InputContext, table_slice: TableSlice, _) -> DataFrame:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def load_input(self, context: InputContext, table_slice: TableSlice, _) -> DataFrame:
         options = _get_snowflake_options(context.resource_config, table_slice)
 
         spark = SparkSession.builder.getOrCreate()  # type: ignore
@@ -132,7 +128,7 @@ Examples:
         def my_table() -> DataFrame:  # the name of the asset will be the table name
             ...
 
-        Definitions(
+        defs = Definitions(
             assets=[my_table],
             resources={
                 "io_manager": snowflake_pyspark_io_manager.configured({
@@ -147,38 +143,10 @@ Examples:
 
     Note that the warehouse configuration value is required when using the snowflake_pyspark_io_manager
 
-    You can set a default schema to store the assets using the ``schema`` configuration value of the Snowflake I/O
-    Manager. This schema will be used if no other schema is specified directly on an asset or op.
-
-    .. code-block:: python
-
-        Definitions(
-            assets=[my_table]
-            resources={"io_manager" snowflake_pyspark_io_manager.configured(
-                {"database": "my_database", "schema": "my_schema", ...} # will be used as the schema
-            )}
-        )
-
-
-    On individual assets, you an also specify the schema where they should be stored using metadata or
-    by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-    take precedence.
-
-    .. code-block:: python
-
-        @asset(
-            key_prefix=["my_schema"]  # will be used as the schema in snowflake
-        )
-        def my_table() -> DataFrame:
-            ...
-
-        @asset(
-            metadata={"schema": "my_schema"}  # will be used as the schema in snowflake
-        )
-        def my_other_table() -> DataFrame:
-            ...
-
-    For ops, the schema can be specified by including a "schema" entry in output metadata.
+    If you do not provide a schema, Dagster will determine a schema based on the assets and ops using
+    the I/O Manager. For assets, the schema will be determined from the asset key.
+    For ops, the schema can be specified by including a "schema" entry in output metadata. If "schema" is not provided
+    via config or on the asset/op, "public" will be used for the schema.
 
     .. code-block:: python
 
@@ -186,9 +154,8 @@ Examples:
             out={"my_table": Out(metadata={"schema": "my_schema"})}
         )
         def make_my_table() -> DataFrame:
+            # the returned value will be stored at my_schema.my_table
             ...
-
-    If none of these is provided, the schema will default to "public".
 
     To only use specific columns of a table as input to a downstream op or asset, add the metadata "columns" to the
     In or AssetIn.
@@ -226,7 +193,7 @@ class SnowflakePySparkIOManager(SnowflakeIOManager):
             def my_table() -> DataFrame:  # the name of the asset will be the table name
                 ...
 
-            Definitions(
+            defs = Definitions(
                 assets=[my_table],
                 resources={
                     "io_manager": SnowflakePySparkIOManager(
@@ -241,38 +208,10 @@ class SnowflakePySparkIOManager(SnowflakeIOManager):
 
         Note that the warehouse configuration value is required when using the SnowflakePySparkIOManager
 
-        You can set a default schema to store the assets using the ``schema`` configuration value of the Snowflake I/O
-        Manager. This schema will be used if no other schema is specified directly on an asset or op.
-
-        .. code-block:: python
-
-            Definitions(
-                assets=[my_table]
-                resources={
-                    "io_manager" SnowflakePySparkIOManager(database="my_database", schema="my_schema", ...)
-                }
-            )
-
-
-        On individual assets, you an also specify the schema where they should be stored using metadata or
-        by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-        take precedence.
-
-        .. code-block:: python
-
-            @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in snowflake
-            )
-            def my_table() -> DataFrame:
-                ...
-
-            @asset(
-                metadata={"schema": "my_schema"}  # will be used as the schema in snowflake
-            )
-            def my_other_table() -> DataFrame:
-                ...
-
-        For ops, the schema can be specified by including a "schema" entry in output metadata.
+        If you do not provide a schema, Dagster will determine a schema based on the assets and ops using
+        the I/O Manager. For assets, the schema will be determined from the asset key, as in the above example.
+        For ops, the schema can be specified by including a "schema" entry in output metadata. If "schema" is not provided
+        via config or on the asset/op, "public" will be used for the schema.
 
         .. code-block:: python
 
@@ -280,9 +219,9 @@ class SnowflakePySparkIOManager(SnowflakeIOManager):
                 out={"my_table": Out(metadata={"schema": "my_schema"})}
             )
             def make_my_table() -> DataFrame:
+                # the returned value will be stored at my_schema.my_table
                 ...
 
-        If none of these is provided, the schema will default to "public".
         To only use specific columns of a table as input to a downstream op or asset, add the metadata "columns" to the
         In or AssetIn.
 
@@ -306,5 +245,5 @@ class SnowflakePySparkIOManager(SnowflakeIOManager):
         return [SnowflakePySparkTypeHandler()]
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> Optional[Type]:
         return DataFrame

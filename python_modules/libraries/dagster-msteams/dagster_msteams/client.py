@@ -1,8 +1,5 @@
-from collections.abc import Mapping
-from typing import Optional, cast
-from urllib.parse import urlparse
+from typing import Mapping, Optional
 
-import dagster._check as check
 from requests import codes, exceptions, post
 
 
@@ -32,13 +29,6 @@ class TeamsClient:
                 self._proxy["https"] = https_proxy
         self._headers = {"Content-Type": "application/json"}
 
-    def is_legacy_webhook(self) -> bool:
-        parsed_url = urlparse(self._hook_url)
-        if parsed_url.hostname is None:
-            check.failed(f"No hostname found in webhook URL: {self._hook_url}")
-
-        return cast("str", parsed_url.hostname).endswith(".webhook.office.com")
-
     def post_message(self, payload: Mapping) -> bool:  # pragma: no cover
         response = post(
             self._hook_url,
@@ -48,13 +38,7 @@ class TeamsClient:
             timeout=self._timeout,
             verify=self._verify,
         )
-        if self.is_legacy_webhook():
-            if response.status_code == codes["ok"] and response.text == "1":
-                return True
-            else:
-                raise exceptions.RequestException(response.text)
+        if response.status_code == codes["ok"] and response.text == "1":
+            return True
         else:
-            if response.ok:
-                return True
-            else:
-                raise exceptions.RequestException(response.text)
+            raise exceptions.RequestException(response.text)

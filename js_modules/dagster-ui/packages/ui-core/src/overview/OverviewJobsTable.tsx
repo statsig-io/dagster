@@ -1,17 +1,16 @@
 import {Tag, Tooltip} from '@dagster-io/ui-components';
 import {useVirtualizer} from '@tanstack/react-virtual';
-import {useMemo, useRef} from 'react';
+import * as React from 'react';
 
-import {OVERVIEW_COLLAPSED_KEY} from './OverviewExpansionKey';
-import {useFeatureFlags} from '../app/Flags';
-import {Container, Inner, TABLE_HEADER_HEIGHT} from '../ui/VirtualizedTable';
+import {Container, Inner} from '../ui/VirtualizedTable';
 import {findDuplicateRepoNames} from '../ui/findDuplicateRepoNames';
 import {useRepoExpansionState} from '../ui/useRepoExpansionState';
 import {VirtualizedJobHeader, VirtualizedJobRow} from '../workspace/VirtualizedJobRow';
-import {VirtualizedObserveJobRow} from '../workspace/VirtualizedObserveJobRow';
-import {DynamicRepoRow} from '../workspace/VirtualizedWorkspaceTable';
+import {RepoRow} from '../workspace/VirtualizedWorkspaceTable';
 import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
 import {RepoAddress} from '../workspace/types';
+
+import {OVERVIEW_COLLAPSED_KEY} from './OverviewExpansionKey';
 
 type Repository = {
   repoAddress: RepoAddress;
@@ -29,10 +28,9 @@ type RowType =
   | {type: 'header'; repoAddress: RepoAddress; jobCount: number}
   | {type: 'job'; repoAddress: RepoAddress; isJob: boolean; name: string};
 
-export const OverviewJobsTable = ({repos}: Props) => {
-  const {flagUseNewObserveUIs} = useFeatureFlags();
-  const parentRef = useRef<HTMLDivElement | null>(null);
-  const allKeys = useMemo(
+export const OverviewJobsTable: React.FC<Props> = ({repos}) => {
+  const parentRef = React.useRef<HTMLDivElement | null>(null);
+  const allKeys = React.useMemo(
     () => repos.map(({repoAddress}) => repoAddressAsHumanString(repoAddress)),
     [repos],
   );
@@ -42,7 +40,7 @@ export const OverviewJobsTable = ({repos}: Props) => {
     allKeys,
   );
 
-  const flattened: RowType[] = useMemo(() => {
+  const flattened: RowType[] = React.useMemo(() => {
     const flat: RowType[] = [];
     repos.forEach(({repoAddress, jobs}) => {
       flat.push({type: 'header', repoAddress, jobCount: jobs.length});
@@ -63,7 +61,7 @@ export const OverviewJobsTable = ({repos}: Props) => {
     getScrollElement: () => parentRef.current,
     estimateSize: (ii: number) => {
       const row = flattened[ii];
-      return row?.type === 'header' ? TABLE_HEADER_HEIGHT : 64;
+      return row?.type === 'header' ? 32 : 64;
     },
     overscan: 10,
   });
@@ -72,73 +70,47 @@ export const OverviewJobsTable = ({repos}: Props) => {
   const items = rowVirtualizer.getVirtualItems();
 
   return (
-    <div style={{overflow: 'hidden'}}>
-      <Container ref={parentRef}>
-        {flagUseNewObserveUIs ? null : <VirtualizedJobHeader />}
-        <Inner $totalHeight={totalHeight}>
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              transform: `translateY(${items[0]?.start ?? 0}px)`,
-            }}
-          >
-            {items.map(({index, key}) => {
+    <>
+      <VirtualizedJobHeader />
+      <div style={{overflow: 'hidden'}}>
+        <Container ref={parentRef}>
+          <Inner $totalHeight={totalHeight}>
+            {items.map(({index, key, size, start}) => {
               const row: RowType = flattened[index]!;
               const type = row!.type;
-
-              if (type === 'header') {
-                return (
-                  <DynamicRepoRow
-                    key={key}
-                    repoAddress={row.repoAddress}
-                    ref={rowVirtualizer.measureElement}
-                    index={index}
-                    onToggle={onToggle}
-                    onToggleAll={onToggleAll}
-                    expanded={expandedKeys.includes(repoAddressAsHumanString(row.repoAddress))}
-                    showLocation={duplicateRepoNames.has(row.repoAddress.name)}
-                    rightElement={
-                      <Tooltip
-                        content={row.jobCount === 1 ? '1 job' : `${row.jobCount} jobs`}
-                        placement="top"
-                      >
-                        <Tag>{row.jobCount}</Tag>
-                      </Tooltip>
-                    }
-                  />
-                );
-              }
-
-              if (flagUseNewObserveUIs) {
-                return (
-                  <VirtualizedObserveJobRow
-                    key={key}
-                    index={index}
-                    ref={rowVirtualizer.measureElement}
-                    name={row.name}
-                    isJob={row.isJob}
-                    repoAddress={row.repoAddress}
-                  />
-                );
-              }
-
-              return (
+              return type === 'header' ? (
+                <RepoRow
+                  repoAddress={row.repoAddress}
+                  key={key}
+                  height={size}
+                  start={start}
+                  onToggle={onToggle}
+                  onToggleAll={onToggleAll}
+                  expanded={expandedKeys.includes(repoAddressAsHumanString(row.repoAddress))}
+                  showLocation={duplicateRepoNames.has(row.repoAddress.name)}
+                  rightElement={
+                    <Tooltip
+                      content={row.jobCount === 1 ? '1 job' : `${row.jobCount} jobs`}
+                      placement="top"
+                    >
+                      <Tag>{row.jobCount}</Tag>
+                    </Tooltip>
+                  }
+                />
+              ) : (
                 <VirtualizedJobRow
                   key={key}
-                  index={index}
-                  ref={rowVirtualizer.measureElement}
                   name={row.name}
                   isJob={row.isJob}
                   repoAddress={row.repoAddress}
+                  height={size}
+                  start={start}
                 />
               );
             })}
-          </div>
-        </Inner>
-      </Container>
-    </div>
+          </Inner>
+        </Container>
+      </div>
+    </>
   );
 };

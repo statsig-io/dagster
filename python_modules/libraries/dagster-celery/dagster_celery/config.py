@@ -1,8 +1,4 @@
-from dagster_celery.defaults import (
-    broker_transport_options,
-    task_default_priority,
-    task_default_queue,
-)
+from .defaults import broker_transport_options, task_default_priority, task_default_queue
 
 DEFAULT_CONFIG = {
     # 'task_queue_max_priority': 10,
@@ -18,8 +14,3 @@ class dict_wrapper:
 
     def __init__(self, dictionary):
         self.__dict__ = dictionary
-
-
-TASK_EXECUTE_PLAN_NAME = "execute_plan"
-TASK_EXECUTE_JOB_NAME = "execute_job"
-TASK_RESUME_JOB_NAME = "resume_job"

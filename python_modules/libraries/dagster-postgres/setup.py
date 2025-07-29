@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: dict[str, str] = {}
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_postgres/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -23,11 +24,10 @@ setup(
     description="A Dagster integration for postgres",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-postgres",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: 3.13",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
@@ -38,7 +38,6 @@ setup(
         ]
     },
     include_package_data=True,
-    python_requires=">=3.9,<3.14",
-    install_requires=[f"dagster{pin}", "psycopg2-binary"],
+    install_requires=["dagster==1.4.16", "psycopg2-binary"],
     zip_safe=False,
 )

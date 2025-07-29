@@ -1,4 +1,3 @@
-# serializer version: 1
 # name: TestPartitionSets.test_get_partition_set[0]
   dict({
     'partitionSetOrError': dict({

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import styled, {css} from 'styled-components';
 
-import {Colors} from './Color';
+import {Colors} from './Colors';
 import {IconWrapper} from './Icon';
 import {FontFamily} from './styles';
 
@@ -31,23 +31,20 @@ export const getTabContent = (props: TabStyleProps & {title?: React.ReactNode}) 
     <>
       {title}
       {icon}
-      {count !== undefined ? (
-        <Count $disabled={!!props.disabled}>{count === 'indeterminate' ? '\u2013' : count}</Count>
-      ) : null}
+      {count !== undefined ? <Count>{count === 'indeterminate' ? '–' : count}</Count> : null}
     </>
   );
 };
 
-const Count = styled.div<{$disabled: boolean}>`
+const Count = styled.div`
   display: inline;
   font-family: ${FontFamily.monospace};
   font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.02%;
-  padding: 0 6px;
-  color: ${({$disabled}) => ($disabled ? Colors.textDisabled() : Colors.textDefault())};
-  background: ${Colors.backgroundGray()};
-  border-radius: 4px;
+  padding: 0 4px;
+  color: ${Colors.Gray900};
+  background: ${Colors.Gray100};
 `;
 
 export const tabCSS = css<TabStyleProps>`
@@ -57,7 +54,7 @@ export const tabCSS = css<TabStyleProps>`
   line-height: 20px;
   font-weight: 600;
   padding: ${({$size}) => ($size === 'small' ? '10px 0' : '16px 0')};
-  box-shadow: ${({selected}) => (selected ? Colors.textDefault() : 'transparent')} 0 -2px 0 inset;
+  box-shadow: ${({selected}) => (selected ? Colors.Blue500 : 'transparent')} 0 -2px 0 inset;
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -68,23 +65,19 @@ export const tabCSS = css<TabStyleProps>`
     cursor: pointer;
     user-select: none;
     color: ${({selected, disabled}) =>
-      selected ? Colors.textDefault() : disabled ? Colors.textDisabled() : Colors.textLight()};
+      selected ? Colors.Blue500 : disabled ? Colors.Gray300 : Colors.Gray700};
   }
 
-  ${({disabled}) =>
-    disabled
-      ? css`
-          & ${IconWrapper} {
-            background-color: ${Colors.textDisabled()};
-          }
-        `
-      : null}
+  & ${IconWrapper} {
+    background: ${({selected, disabled}) =>
+      selected ? Colors.Blue500 : disabled ? Colors.Gray300 : ''};
+  }
 
   /* Focus outline only when using keyboard, not when focusing via mouse. */
   &:focus {
     outline: none !important;
     box-shadow: ${({selected, disabled}) =>
-        selected ? Colors.textDefault() : disabled ? 'transparent' : Colors.accentGray()}
+        selected ? Colors.Blue500 : disabled ? 'transparent' : Colors.Blue200}
       0 -2px 0 inset;
   }
 
@@ -93,10 +86,12 @@ export const tabCSS = css<TabStyleProps>`
     a {
       text-decoration: none;
       color: ${({selected, disabled}) =>
-        selected ? Colors.textDefault() : disabled ? Colors.textDisabled() : Colors.textDefault()};
+        selected ? Colors.Blue700 : disabled ? Colors.Gray300 : Colors.Blue700};
     }
-
-    ${({disabled}) => (disabled ? `color: ${Colors.textDisabled()};` : null)}
+    ${IconWrapper} {
+      color: ${({selected, disabled}) =>
+        selected ? Colors.Blue700 : disabled ? Colors.Gray300 : ''};
+    }
   }
 `;
 

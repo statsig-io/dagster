@@ -1,24 +1,17 @@
+import {useMutation} from '@apollo/client';
 // eslint-disable-next-line no-restricted-imports
 import {ProgressBar} from '@blueprintjs/core';
 import {
   Button,
   Colors,
-  Dialog,
   DialogBody,
   DialogFooter,
+  Dialog,
   Group,
   Icon,
 } from '@dagster-io/ui-components';
-import {useEffect} from 'react';
+import * as React from 'react';
 
-import {START_SENSOR_MUTATION, STOP_SENSOR_MUTATION} from './SensorMutations';
-import {useMutation} from '../apollo-client';
-import {
-  StartSensorMutation,
-  StartSensorMutationVariables,
-  StopRunningSensorMutation,
-  StopRunningSensorMutationVariables,
-} from './types/SensorMutations.types';
 import {
   OpenWithIntent,
   useInstigationStateReducer,
@@ -26,6 +19,14 @@ import {
 import {BasicInstigationStateFragment} from '../overview/types/BasicInstigationStateFragment.types';
 import {NavigationBlock} from '../runs/NavigationBlock';
 import {RepoAddress} from '../workspace/types';
+
+import {START_SENSOR_MUTATION, STOP_SENSOR_MUTATION} from './SensorMutations';
+import {
+  StartSensorMutation,
+  StartSensorMutationVariables,
+  StopRunningSensorMutation,
+  StopRunningSensorMutationVariables,
+} from './types/SensorMutations.types';
 
 export type SensorInfo = {
   repoAddress: RepoAddress;
@@ -47,7 +48,7 @@ export const SensorStateChangeDialog = (props: Props) => {
   const [state, dispatch] = useInstigationStateReducer();
 
   // If the dialog is newly closed, reset state.
-  useEffect(() => {
+  React.useEffect(() => {
     if (openWithIntent === 'not-open') {
       dispatch({type: 'reset'});
     }
@@ -91,7 +92,8 @@ export const SensorStateChangeDialog = (props: Props) => {
   const stop = async (sensor: SensorInfo) => {
     const {sensorName, sensorState} = sensor;
     const variables = {
-      id: sensorState.id,
+      jobOriginId: sensorState.id,
+      jobSelectorId: sensorState.selectorId,
     };
 
     const {data} = await stopSensor({variables});
@@ -228,7 +230,7 @@ export const SensorStateChangeDialog = (props: Props) => {
       <Group direction="column" spacing={8}>
         {successCount ? (
           <Group direction="row" spacing={8} alignItems="flex-start">
-            <Icon name="check_circle" color={Colors.accentGreen()} />
+            <Icon name="check_circle" color={Colors.Green500} />
             <div>
               {openWithIntent === 'start'
                 ? `Successfully started ${
@@ -243,7 +245,7 @@ export const SensorStateChangeDialog = (props: Props) => {
         {errorCount ? (
           <Group direction="column" spacing={8}>
             <Group direction="row" spacing={8} alignItems="flex-start">
-              <Icon name="warning" color={Colors.accentYellow()} />
+              <Icon name="warning" color={Colors.Yellow500} />
               <div>
                 {openWithIntent === 'start'
                   ? `Could not start ${errorCount === 1 ? '1 sensor' : `${errorCount} sensors`}:`

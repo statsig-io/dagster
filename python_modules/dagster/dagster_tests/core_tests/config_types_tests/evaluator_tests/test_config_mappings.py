@@ -1,20 +1,32 @@
-import dagster as dg
 import pytest
+from dagster import (
+    ConfigMapping,
+    DagsterConfigMappingFunctionError,
+    DagsterInvalidConfigError,
+    Field,
+    In,
+    Int,
+    Output,
+    String,
+    graph,
+    job,
+    op,
+)
 
 
-@dg.op
+@op
 def pipe(input_str):
     return input_str
 
 
-@dg.op(config_schema=dg.Field(dg.String, is_required=False))
+@op(config_schema=Field(String, is_required=False))
 def scalar_config_op(context):
-    yield dg.Output(context.op_config)
+    yield Output(context.op_config)
 
 
-@dg.graph(
-    config=dg.ConfigMapping(
-        config_schema={"override_str": dg.Field(dg.String)},
+@graph(
+    config=ConfigMapping(
+        config_schema={"override_str": Field(String)},
         config_fn=lambda cfg: {"scalar_config_op": {"config": cfg["override_str"]}},
     )
 )
@@ -23,16 +35,16 @@ def wrap():
 
 
 def test_multiple_overrides_job():
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"nesting_override": dg.Field(dg.String)},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"nesting_override": Field(String)},
             config_fn=lambda cfg: {"wrap": {"config": {"override_str": cfg["nesting_override"]}}},
         )
     )
     def nesting_wrap():
         return wrap()
 
-    @dg.job
+    @job
     def wrap_job():
         nesting_wrap.alias("outer_wrap")()
 
@@ -48,7 +60,7 @@ def test_multiple_overrides_job():
 
 
 def test_good_override():
-    @dg.job
+    @job
     def wrap_job():
         wrap.alias("do_stuff")()
 
@@ -63,12 +75,12 @@ def test_good_override():
 
 
 def test_missing_config():
-    @dg.job
+    @job
     def wrap_job():
         wrap.alias("do_stuff")()
 
     expected_suggested_config = {"ops": {"do_stuff": {"config": {"override_str": "..."}}}}
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         wrap_job.execute_in_process()
 
     assert len(exc_info.value.errors) == 1
@@ -77,7 +89,7 @@ def test_missing_config():
     )
     assert str(expected_suggested_config) in exc_info.value.errors[0].message
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         wrap_job.execute_in_process({})
 
     assert len(exc_info.value.errors) == 1
@@ -87,7 +99,7 @@ def test_missing_config():
     assert str(expected_suggested_config) in exc_info.value.errors[0].message
 
     expected_suggested_config = expected_suggested_config["ops"]
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         wrap_job.execute_in_process({"ops": {}})
 
     assert len(exc_info.value.errors) == 1
@@ -97,7 +109,7 @@ def test_missing_config():
     assert str(expected_suggested_config) in exc_info.value.errors[0].message
 
     expected_suggested_config = expected_suggested_config["do_stuff"]
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         wrap_job.execute_in_process({"ops": {"do_stuff": {}}})
 
     assert len(exc_info.value.errors) == 1
@@ -107,7 +119,7 @@ def test_missing_config():
     assert str(expected_suggested_config) in exc_info.value.errors[0].message
 
     expected_suggested_config = expected_suggested_config["config"]
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         wrap_job.execute_in_process({"ops": {"do_stuff": {"config": {}}}})
 
     assert len(exc_info.value.errors) == 1
@@ -118,20 +130,20 @@ def test_missing_config():
 
 
 def test_bad_override():
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"does_not_matter": dg.Field(dg.String)},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"does_not_matter": Field(String)},
             config_fn=lambda _cfg: {"scalar_config_op": {"config": 1234}},
         )
     )
     def bad_wrap():
         return scalar_config_op()
 
-    @dg.job
+    @job
     def wrap_job():
         bad_wrap.alias("do_stuff")()
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         wrap_job.execute_in_process(
             {
                 "ops": {"do_stuff": {"config": {"does_not_matter": "blah"}}},
@@ -154,21 +166,21 @@ def test_config_mapper_throws():
     def _config_fn_throws(_cfg):
         raise SomeUserException()
 
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"does_not_matter": dg.Field(dg.String)},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"does_not_matter": Field(String)},
             config_fn=_config_fn_throws,
         )
     )
     def bad_wrap():
         return scalar_config_op()
 
-    @dg.job
+    @job
     def wrap_job():
         bad_wrap.alias("do_stuff")()
 
     with pytest.raises(
-        dg.DagsterConfigMappingFunctionError,
+        DagsterConfigMappingFunctionError,
         match=(
             "The config mapping function on graph 'do_stuff' "
             "in job 'wrap_job' has thrown an unexpected error during its "
@@ -179,14 +191,14 @@ def test_config_mapper_throws():
             {"ops": {"do_stuff": {"config": {"does_not_matter": "blah"}}}},
         )
 
-    @dg.graph
+    @graph
     def wrap_invocations():
         bad_wrap()
 
     # Workaround to check error message for job since GraphDefinition currently does not accept
     # config mapping: https://github.com/dagster-io/dagster/issues/4831
     with pytest.raises(
-        dg.DagsterConfigMappingFunctionError,
+        DagsterConfigMappingFunctionError,
         match=(
             "The config mapping function on graph 'bad_wrap' "
             "in job 'wrap_invocations' has thrown an unexpected error during its "
@@ -205,24 +217,24 @@ def test_config_mapper_throws_nested():
     def _config_fn_throws(_cfg):
         raise SomeUserException()
 
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"does_not_matter": dg.Field(dg.String)},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"does_not_matter": Field(String)},
             config_fn=_config_fn_throws,
         )
     )
     def bad_wrap():
         return scalar_config_op()
 
-    @dg.graph
+    @graph
     def container():
         return bad_wrap.alias("layer1")()
 
-    @dg.job
+    @job
     def wrap_job():
         container.alias("layer0")()
 
-    with pytest.raises(dg.DagsterConfigMappingFunctionError) as exc_info:
+    with pytest.raises(DagsterConfigMappingFunctionError) as exc_info:
         wrap_job.execute_in_process(
             {"ops": {"layer0": {"ops": {"layer1": {"config": {"does_not_matter": "blah"}}}}}},
         )
@@ -236,20 +248,20 @@ def test_config_mapper_throws_nested():
 
 
 def test_composite_config_field():
-    @dg.op(config_schema={"inner": dg.Field(dg.String)})
+    @op(config_schema={"inner": Field(String)})
     def inner_op(context):
         return context.op_config["inner"]
 
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"override": dg.Int},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"override": Int},
             config_fn=lambda cfg: {"inner_op": {"config": {"inner": str(cfg["override"])}}},
         )
     )
     def test():
         return inner_op()
 
-    @dg.job
+    @job
     def test_job():
         test()
 
@@ -259,29 +271,29 @@ def test_composite_config_field():
 
 
 def test_nested_composite_config_field():
-    @dg.op(config_schema={"inner": dg.Field(dg.String)})
+    @op(config_schema={"inner": Field(String)})
     def inner_op(context):
         return context.op_config["inner"]
 
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"override": dg.Int},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"override": Int},
             config_fn=lambda cfg: {"inner_op": {"config": {"inner": str(cfg["override"])}}},
         )
     )
     def outer():
         return inner_op()
 
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"override": dg.Int},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"override": Int},
             config_fn=lambda cfg: {"outer": {"config": {"override": cfg["override"]}}},
         )
     )
     def test():
         return outer()
 
-    @dg.job
+    @job
     def test_job():
         test()
 
@@ -293,19 +305,19 @@ def test_nested_composite_config_field():
 
 
 def test_nested_with_inputs():
-    @dg.op(
-        ins={"some_input": dg.In(dg.String)},
-        config_schema={"basic_key": dg.Field(dg.String)},
+    @op(
+        ins={"some_input": In(String)},
+        config_schema={"basic_key": Field(String)},
     )
     def basic(context, some_input):
-        yield dg.Output(context.op_config["basic_key"] + " - " + some_input)
+        yield Output(context.op_config["basic_key"] + " - " + some_input)
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_fn=lambda cfg: {
                 "basic": {"config": {"basic_key": "override." + cfg["inner_first"]}}
             },
-            config_schema={"inner_first": dg.Field(dg.String)},
+            config_schema={"inner_first": Field(String)},
         )
     )
     def inner_wrap(some_input):
@@ -319,16 +331,16 @@ def test_nested_with_inputs():
             }
         }
 
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"outer_first": dg.Field(dg.String)},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"outer_first": Field(String)},
             config_fn=outer_wrap_fn,
         )
     )
     def outer_wrap():
         return inner_wrap()
 
-    @dg.job(name="config_mapping")
+    @job(name="config_mapping")
     def config_mapping_job():
         pipe(outer_wrap())
 
@@ -341,12 +353,12 @@ def test_nested_with_inputs():
 
 
 def test_wrap_none_config_and_inputs():
-    @dg.op(
+    @op(
         config_schema={
-            "config_field_a": dg.Field(dg.String),
-            "config_field_b": dg.Field(dg.String),
+            "config_field_a": Field(String),
+            "config_field_b": Field(String),
         },
-        ins={"input_a": dg.In(dg.String), "input_b": dg.In(dg.String)},
+        ins={"input_a": In(String), "input_b": In(String)},
     )
     def basic(context, input_a, input_b):
         res = ".".join(
@@ -357,13 +369,13 @@ def test_wrap_none_config_and_inputs():
                 input_b,
             ]
         )
-        yield dg.Output(res)
+        yield Output(res)
 
-    @dg.graph
+    @graph
     def wrap_none():
         return basic()
 
-    @dg.job(name="config_mapping")
+    @job(name="config_mapping")
     def config_mapping_job():
         pipe(wrap_none())
 
@@ -392,7 +404,7 @@ def test_wrap_none_config_and_inputs():
     assert result.output_for_node("pipe") == "set_config_a.set_config_b.set_input_a.set_input_b"
 
     # Check bad input override
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         result = config_mapping_job.execute_in_process(
             {
                 "ops": {
@@ -420,7 +432,7 @@ def test_wrap_none_config_and_inputs():
     )
 
     # Check bad config override
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         result = config_mapping_job.execute_in_process(
             {
                 "ops": {
@@ -449,12 +461,12 @@ def test_wrap_none_config_and_inputs():
 
 
 def test_wrap_all_config_no_inputs():
-    @dg.op(
+    @op(
         config_schema={
-            "config_field_a": dg.Field(dg.String),
-            "config_field_b": dg.Field(dg.String),
+            "config_field_a": Field(String),
+            "config_field_b": Field(String),
         },
-        ins={"input_a": dg.In(dg.String), "input_b": dg.In(dg.String)},
+        ins={"input_a": In(String), "input_b": In(String)},
     )
     def basic(context, input_a, input_b):
         res = ".".join(
@@ -465,10 +477,10 @@ def test_wrap_all_config_no_inputs():
                 input_b,
             ]
         )
-        yield dg.Output(res)
+        yield Output(res)
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_fn=lambda cfg: {
                 "basic": {
                     "config": {
@@ -478,15 +490,15 @@ def test_wrap_all_config_no_inputs():
                 }
             },
             config_schema={
-                "config_field_a": dg.Field(dg.String),
-                "config_field_b": dg.Field(dg.String),
+                "config_field_a": Field(String),
+                "config_field_b": Field(String),
             },
         )
     )
     def wrap_all_config_no_inputs(input_a, input_b):
         return basic(input_a, input_b)
 
-    @dg.job(name="config_mapping")
+    @job(name="config_mapping")
     def config_mapping_job():
         pipe(wrap_all_config_no_inputs())
 
@@ -509,7 +521,7 @@ def test_wrap_all_config_no_inputs():
     assert result.success
     assert result.output_for_node("pipe") == "override_a.override_b.set_input_a.set_input_b"
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         result = config_mapping_job.execute_in_process(
             {
                 "ops": {
@@ -532,7 +544,7 @@ def test_wrap_all_config_no_inputs():
         in exc_info.value.errors[0].message
     )
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         result = config_mapping_job.execute_in_process(
             {
                 "ops": {
@@ -557,12 +569,12 @@ def test_wrap_all_config_no_inputs():
 
 
 def test_wrap_all_config_one_input():
-    @dg.op(
+    @op(
         config_schema={
-            "config_field_a": dg.Field(dg.String),
-            "config_field_b": dg.Field(dg.String),
+            "config_field_a": Field(String),
+            "config_field_b": Field(String),
         },
-        ins={"input_a": dg.In(dg.String), "input_b": dg.In(dg.String)},
+        ins={"input_a": In(String), "input_b": In(String)},
     )
     def basic(context, input_a, input_b):
         res = ".".join(
@@ -573,10 +585,10 @@ def test_wrap_all_config_one_input():
                 input_b,
             ]
         )
-        yield dg.Output(res)
+        yield Output(res)
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_fn=lambda cfg: {
                 "basic": {
                     "config": {
@@ -587,15 +599,15 @@ def test_wrap_all_config_one_input():
                 }
             },
             config_schema={
-                "config_field_a": dg.Field(dg.String),
-                "config_field_b": dg.Field(dg.String),
+                "config_field_a": Field(String),
+                "config_field_b": Field(String),
             },
         )
     )
     def wrap_all_config_one_input(input_a):
         return basic(input_a)
 
-    @dg.job(name="config_mapping")
+    @job(name="config_mapping")
     def config_mapping_job():
         pipe(wrap_all_config_one_input())
 
@@ -615,7 +627,7 @@ def test_wrap_all_config_one_input():
     assert result.success
     assert result.output_for_node("pipe") == "override_a.override_b.set_input_a.set_input_b"
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         result = config_mapping_job.execute_in_process(
             {
                 "ops": {
@@ -635,7 +647,7 @@ def test_wrap_all_config_one_input():
         in exc_info.value.errors[0].message
     )
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         result = config_mapping_job.execute_in_process(
             {
                 "ops": {
@@ -657,12 +669,12 @@ def test_wrap_all_config_one_input():
 
 
 def test_wrap_all_config_and_inputs():
-    @dg.op(
+    @op(
         config_schema={
-            "config_field_a": dg.Field(dg.String),
-            "config_field_b": dg.Field(dg.String),
+            "config_field_a": Field(String),
+            "config_field_b": Field(String),
         },
-        ins={"input_a": dg.In(dg.String), "input_b": dg.In(dg.String)},
+        ins={"input_a": In(String), "input_b": In(String)},
     )
     def basic(context, input_a, input_b):
         res = ".".join(
@@ -673,13 +685,13 @@ def test_wrap_all_config_and_inputs():
                 input_b,
             ]
         )
-        yield dg.Output(res)
+        yield Output(res)
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={
-                "config_field_a": dg.Field(dg.String),
-                "config_field_b": dg.Field(dg.String),
+                "config_field_a": Field(String),
+                "config_field_b": Field(String),
             },
             config_fn=lambda cfg: {
                 "basic": {
@@ -698,7 +710,7 @@ def test_wrap_all_config_and_inputs():
     def wrap_all():
         return basic()
 
-    @dg.job(name="config_mapping")
+    @job(name="config_mapping")
     def config_mapping_job():
         pipe(wrap_all())
 
@@ -720,7 +732,7 @@ def test_wrap_all_config_and_inputs():
         result.output_for_node("pipe") == "override_a.override_b.override_input_a.override_input_b"
     )
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         result = config_mapping_job.execute_in_process(
             {
                 "ops": {
@@ -752,8 +764,8 @@ def test_wrap_all_config_and_inputs():
 def test_empty_config():
     # Testing that this definition does *not* raise
     # See: https://github.com/dagster-io/dagster/issues/1606
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={},
             config_fn=lambda _: {"scalar_config_op": {"config": "an input"}},
         )
@@ -761,7 +773,7 @@ def test_empty_config():
     def wrap_graph():
         return scalar_config_op()
 
-    @dg.job
+    @job
     def wrap_job():
         wrap_graph()
 
@@ -773,8 +785,8 @@ def test_empty_config():
 
 
 def test_nested_empty_config():
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={},
             config_fn=lambda _: {"scalar_config_op": {"config": "an input"}},
         )
@@ -782,11 +794,11 @@ def test_nested_empty_config():
     def wrap_graph():
         return scalar_config_op()
 
-    @dg.graph
+    @graph
     def double_wrap():
         return wrap_graph()
 
-    @dg.job
+    @job
     def wrap_job():
         double_wrap()
 
@@ -798,12 +810,12 @@ def test_nested_empty_config():
 
 
 def test_nested_empty_config_input():
-    @dg.op
+    @op
     def number(num):
         return num
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={},
             config_fn=lambda _: {"number": {"inputs": {"num": {"value": 4}}}},
         )
@@ -811,12 +823,12 @@ def test_nested_empty_config_input():
     def wrap_graph():
         return number()
 
-    @dg.graph
+    @graph
     def double_wrap(num):
         number(num)
         return wrap_graph()
 
-    @dg.job
+    @job
     def wrap_job():
         double_wrap()
 
@@ -828,11 +840,11 @@ def test_nested_empty_config_input():
 
 
 def test_default_config_schema():
-    @dg.graph(config=dg.ConfigMapping(config_fn=lambda _cfg: {}))
+    @graph(config=ConfigMapping(config_fn=lambda _cfg: {}))
     def config_fn_only():
         scalar_config_op()
 
-    @dg.job
+    @job
     def wrap_job():
         config_fn_only()
 

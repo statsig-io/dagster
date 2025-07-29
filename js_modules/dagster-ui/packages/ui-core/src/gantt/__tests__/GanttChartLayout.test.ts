@@ -28,7 +28,7 @@ describe('toGraphQueryItems', () => {
       key: 'depends_on_nothing',
       root: true,
       state: undefined,
-      width: 200,
+      width: 100,
       x: 16,
       y: 0,
     });
@@ -37,8 +37,8 @@ describe('toGraphQueryItems', () => {
       key: 'depends_on_yesterday',
       root: false,
       state: undefined,
-      width: 200,
-      x: 252,
+      width: 100,
+      x: 152,
       y: 1,
     });
   });

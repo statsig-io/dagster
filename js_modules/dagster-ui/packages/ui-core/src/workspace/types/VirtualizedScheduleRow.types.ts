@@ -22,8 +22,6 @@ export type SingleScheduleQuery = {
           __typename: 'InstigationState';
           id: string;
           runningCount: number;
-          hasStartPermission: boolean;
-          hasStopPermission: boolean;
           selectorId: string;
           status: Types.InstigationStatus;
           ticks: Array<{
@@ -49,7 +47,6 @@ export type SingleScheduleQuery = {
             __typename: 'Run';
             id: string;
             status: Types.RunStatus;
-            creationTime: number;
             startTime: number | null;
             endTime: number | null;
             updateTime: number | null;
@@ -60,5 +57,3 @@ export type SingleScheduleQuery = {
       }
     | {__typename: 'ScheduleNotFoundError'};
 };
-
-export const SingleScheduleQueryVersion = '508a47e32ce04ba5be52c66cd592b74147bf98ec85b9f5d0e4db45172bd9a897';

@@ -1,17 +1,14 @@
 import os
 import sys
-from collections.abc import Iterator
-from typing import Optional
-from unittest import mock
+from typing import Iterator, Optional
 
-import dagster as dg
 import pytest
+from dagster._core.host_representation.external import ExternalRepository
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation.external import RemoteRepository
 from dagster._core.test_utils import (
     SingleThreadPoolExecutor,
     create_test_daemon_workspace_context,
-    load_remote_repo,
+    instance_for_test,
 )
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._core.workspace.context import WorkspaceProcessContext
@@ -37,22 +34,17 @@ def submit_executor(request):
 
 
 @pytest.fixture(name="instance_module_scoped", scope="module")
-def instance_module_scoped_fixture() -> Iterator[dg.DagsterInstance]:
-    with mock.patch(
-        "dagster._core.instance.DagsterInstance.get_tick_termination_check_interval",
-        return_value=1,  # check that the sensor is enabled after every run submission
-    ):
-        with dg.instance_for_test(
-            overrides={
-                "run_launcher": {"module": "dagster._core.test_utils", "class": "MockedRunLauncher"}
-            },
-            synchronous_run_coordinator=True,
-        ) as instance:
-            yield instance
+def instance_module_scoped_fixture() -> Iterator[DagsterInstance]:
+    with instance_for_test(
+        overrides={
+            "run_launcher": {"module": "dagster._core.test_utils", "class": "MockedRunLauncher"}
+        }
+    ) as instance:
+        yield instance
 
 
 @pytest.fixture(name="instance", scope="function")
-def instance_fixture(instance_module_scoped: DagsterInstance) -> Iterator[dg.DagsterInstance]:
+def instance_fixture(instance_module_scoped: DagsterInstance) -> Iterator[DagsterInstance]:
     instance_module_scoped.wipe()
     instance_module_scoped.wipe_all_schedules()
     yield instance_module_scoped
@@ -62,7 +54,7 @@ def create_workspace_load_target(attribute: Optional[str] = "the_repo") -> Modul
     return ModuleTarget(
         module_name="dagster_tests.daemon_sensor_tests.test_sensor_run",
         attribute=attribute,
-        working_directory=os.path.join(os.path.dirname(__file__), "..", ".."),
+        working_directory=os.path.dirname(__file__),
         location_name="test_location",
     )
 
@@ -76,9 +68,13 @@ def workspace_fixture(instance_module_scoped: DagsterInstance) -> Iterator[Works
         yield workspace
 
 
-@pytest.fixture(name="remote_repo", scope="module")
-def external_repo_fixture(workspace_context: WorkspaceProcessContext) -> RemoteRepository:
-    return load_remote_repo(workspace_context, "the_repo")
+@pytest.fixture(name="external_repo", scope="module")
+def external_repo_fixture(workspace_context: WorkspaceProcessContext) -> ExternalRepository:
+    code_location = next(
+        iter(workspace_context.create_request_context().get_workspace_snapshot().values())
+    ).code_location
+    assert code_location
+    return code_location.get_repository("the_repo")
 
 
 def loadable_target_origin() -> LoadableTargetOrigin:

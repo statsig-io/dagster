@@ -1,5 +1,5 @@
+import {gql, useMutation, useQuery} from '@apollo/client';
 import {
-  Body2,
   Box,
   Button,
   Checkbox,
@@ -13,23 +13,8 @@ import {
   Tooltip,
 } from '@dagster-io/ui-components';
 import * as React from 'react';
+import {useHistory} from 'react-router-dom';
 
-import {
-  DAEMON_NOT_RUNNING_ALERT_INSTANCE_FRAGMENT,
-  DaemonNotRunningAlert,
-  USING_DEFAULT_LAUNCHER_ALERT_INSTANCE_FRAGMENT,
-  UsingDefaultLauncherAlert,
-  isBackfillDaemonHealthy,
-  showBackfillErrorToast,
-  showBackfillSuccessToast,
-} from './BackfillMessaging';
-import {DimensionRangeWizard} from './DimensionRangeWizard';
-import {PartitionRunStatusCheckboxes, countsByState} from './PartitionRunStatusCheckboxes';
-import {gql, useMutation, useQuery} from '../apollo-client';
-import {
-  BackfillSelectorQuery,
-  BackfillSelectorQueryVariables,
-} from './types/BackfillSelector.types';
 import {PipelineRunTag} from '../app/ExecutionSessionStorage';
 import {filterByQuery} from '../app/GraphQueryImpl';
 import {isTimeseriesPartition} from '../assets/MultipartitioningSupport';
@@ -43,39 +28,52 @@ import {
 } from '../instance/backfill/types/BackfillUtils.types';
 import {LaunchButton} from '../launchpad/LaunchButton';
 import {TagContainer, TagEditor} from '../launchpad/TagEditor';
-import {tagsWithUIExecutionTags} from '../launchpad/uiExecutionTags';
 import {explodeCompositesInHandleGraph} from '../pipelines/CompositeSupport';
 import {GRAPH_EXPLORER_SOLID_HANDLE_FRAGMENT} from '../pipelines/GraphExplorer';
 import {GraphQueryInput} from '../ui/GraphQueryInput';
 import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
 import {RepoAddress} from '../workspace/types';
 
+import {
+  DaemonNotRunningAlert,
+  DAEMON_NOT_RUNNING_ALERT_INSTANCE_FRAGMENT,
+  showBackfillErrorToast,
+  showBackfillSuccessToast,
+  UsingDefaultLauncherAlert,
+  USING_DEFAULT_LAUNCHER_ALERT_INSTANCE_FRAGMENT,
+} from './BackfillMessaging';
+import {DimensionRangeWizard} from './DimensionRangeWizard';
+import {countsByState, PartitionRunStatusCheckboxes} from './PartitionRunStatusCheckboxes';
+import {
+  BackfillSelectorQuery,
+  BackfillSelectorQueryVariables,
+} from './types/BackfillSelector.types';
+
 interface BackfillOptions {
   reexecute: boolean;
   fromFailure: boolean;
 }
 
-export const BackfillPartitionSelector = ({
+export const BackfillPartitionSelector: React.FC<{
+  partitionSetName: string;
+  partitionNames: string[];
+  runStatusData: {[partitionName: string]: RunStatus};
+  pipelineName: string;
+  onLaunch?: (backfillId: string, stepQuery: string) => void;
+  onCancel?: () => void;
+  onSubmit: () => void;
+  repoAddress: RepoAddress;
+}> = ({
   partitionSetName,
   onLaunch,
   onCancel,
   onSubmit,
   repoAddress,
   runStatusData,
-  refreshing,
   pipelineName,
   partitionNames,
-}: {
-  partitionSetName: string;
-  partitionNames: string[];
-  runStatusData: {[partitionName: string]: RunStatus};
-  refreshing: boolean;
-  pipelineName: string;
-  onLaunch?: (backfillId: string, stepQuery: string) => void;
-  onCancel?: () => void;
-  onSubmit: () => void;
-  repoAddress: RepoAddress;
 }) => {
+  const history = useHistory();
   const [range, _setRange] = React.useState<string[]>(
     Object.keys(runStatusData).filter(
       (k) => !runStatusData[k] || runStatusData[k] === RunStatus.FAILURE,
@@ -121,7 +119,7 @@ export const BackfillPartitionSelector = ({
   }, [onLaunch]);
 
   const onSuccess = (backfillId: string) => {
-    showBackfillSuccessToast(backfillId);
+    showBackfillSuccessToast(history, backfillId, false);
     onLaunch?.(backfillId, query);
   };
 
@@ -180,19 +178,7 @@ export const BackfillPartitionSelector = ({
     <>
       <DialogBody>
         <Box flex={{direction: 'column', gap: 24}}>
-          <Section
-            title={
-              <Box flex={{justifyContent: 'space-between'}}>
-                <div>Partitions</div>
-                {refreshing && (
-                  <Box flex={{gap: 4, alignItems: 'center'}}>
-                    <Spinner purpose="body-text" />
-                    <Body2 color={Colors.textLight()}>Refreshing...</Body2>
-                  </Box>
-                )}
-              </Box>
-            }
-          >
+          <Section title="Partitions">
             <Box>
               Select partitions to materialize. Click and drag to select a range on the timeline.
             </Box>
@@ -252,7 +238,7 @@ export const BackfillPartitionSelector = ({
                       placement="top"
                       content="For each partition, if the most recent run failed, launch a re-execution starting from the steps that failed. Only applies for selections of failed partitions."
                     >
-                      <Icon name="info" color={Colors.accentGray()} />
+                      <Icon name="info" color={Colors.Gray500} />
                     </Tooltip>
                   </Box>
                 }
@@ -268,7 +254,7 @@ export const BackfillPartitionSelector = ({
                   placement="top"
                   content="Applies a step-selection to each run for the requested partitions."
                 >
-                  <Icon name="info" color={Colors.accentGray()} />
+                  <Icon name="info" color={Colors.Gray500} />
                 </Tooltip>
               </Box>
             }
@@ -284,7 +270,7 @@ export const BackfillPartitionSelector = ({
                 autoApplyChanges={true}
               />
               {query ? (
-                <div style={{color: Colors.textLight()}}>
+                <div style={{color: Colors.Gray500}}>
                   {stepRows.length} step{stepRows.length === 1 ? '' : 's'} selected
                 </div>
               ) : null}
@@ -299,9 +285,7 @@ export const BackfillPartitionSelector = ({
               onRequestClose={() => setTagEditorOpen(false)}
             />
             {tags.length ? (
-              <div
-                style={{border: `1px solid ${Colors.borderDefault()}`, borderRadius: 8, padding: 3}}
-              >
+              <div style={{border: `1px solid ${Colors.Gray300}`, borderRadius: 8, padding: 3}}>
                 <TagContainer tagsFromSession={tags} onRequestEdit={() => setTagEditorOpen(true)} />
               </div>
             ) : (
@@ -312,7 +296,7 @@ export const BackfillPartitionSelector = ({
           </Section>
 
           <Box flex={{direction: 'column', gap: 16}}>
-            {!isBackfillDaemonHealthy(instance) ? <DaemonNotRunningAlert /> : null}
+            <DaemonNotRunningAlert instance={instance} />
 
             <UsingDefaultLauncherAlert instance={instance} />
           </Box>
@@ -342,17 +326,7 @@ export const BackfillPartitionSelector = ({
   );
 };
 
-const LaunchBackfillButton = ({
-  partitionSetName,
-  partitionNames,
-  reexecutionSteps,
-  fromFailure,
-  tags,
-  onSuccess,
-  onError,
-  onSubmit,
-  repoAddress,
-}: {
+const LaunchBackfillButton: React.FC<{
   partitionSetName: string;
   partitionNames: string[];
   reexecutionSteps?: string[];
@@ -362,6 +336,16 @@ const LaunchBackfillButton = ({
   onError: (data: LaunchPartitionBackfillMutation | null | undefined) => void;
   onSubmit: () => void;
   repoAddress: RepoAddress;
+}> = ({
+  partitionSetName,
+  partitionNames,
+  reexecutionSteps,
+  fromFailure,
+  tags,
+  onSuccess,
+  onError,
+  onSubmit,
+  repoAddress,
 }) => {
   const repositorySelector = repoAddressToSelector(repoAddress);
   const mounted = React.useRef(true);
@@ -389,7 +373,7 @@ const LaunchBackfillButton = ({
           partitionNames,
           reexecutionSteps,
           fromFailure,
-          tags: tagsWithUIExecutionTags(tags),
+          tags,
         },
       },
     });

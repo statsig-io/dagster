@@ -1,9 +1,10 @@
 #!/bin/bash
 WEBSERVER_VERSION=$1
 WEBSERVER_LIBRARY_VERSION=$2
-USER_CODE_VERSION=$3
-USER_CODE_LIBRARY_VERSION=$4
-USER_CODE_DEFINITIONS_FILE=$5
+WEBSERVER_PACKAGE=$3
+USER_CODE_VERSION=$4
+USER_CODE_LIBRARY_VERSION=$5
+USER_CODE_DEFINITIONS_FILE=$6
 
 if [ "$WEBSERVER_VERSION" = "current_branch" ]; then
     export WEBSERVER_DOCKERFILE="./Dockerfile_webserver_source"
@@ -50,7 +51,6 @@ alias copy_py="rsync -av \
       --exclude .coverage"
 
 copy_py $ROOT/python_modules/dagster \
-        $ROOT/python_modules/dagster-pipes \
         $ROOT/python_modules/dagit \
         $ROOT/python_modules/dagster-webserver \
         $ROOT/python_modules/dagster-graphql \
@@ -58,13 +58,13 @@ copy_py $ROOT/python_modules/dagster \
 
 copy_py $ROOT/python_modules/libraries/dagster-postgres \
         $ROOT/python_modules/libraries/dagster-docker \
-        $ROOT/python_modules/libraries/dagster-shared \
         python_modules/libraries/
 
 echo -e "--- \033[32m:docker: Building Docker images\033[0m"
 docker-compose build \
     --build-arg WEBSERVER_VERSION="${WEBSERVER_VERSION}" \
     --build-arg WEBSERVER_LIBRARY_VERSION="${WEBSERVER_LIBRARY_VERSION}" \
+    --build-arg WEBSERVER_PACKAGE="${WEBSERVER_PACKAGE}" \
     --build-arg USER_CODE_VERSION="${USER_CODE_VERSION}" \
     --build-arg USER_CODE_LIBRARY_VERSION="${USER_CODE_LIBRARY_VERSION}" \
     --build-arg USER_CODE_DEFINITIONS_FILE="${USER_CODE_DEFINITIONS_FILE}"

@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional, Union
 
 import dagster._check as check
 from dagster._config import (
@@ -92,9 +91,9 @@ def _get_user_code_error_str_lambda(
     configured_definition: "ConfigurableDefinition",
 ) -> Callable[[], str]:
     return lambda: (
-        f"The config mapping function on a `configured` {configured_definition.__class__.__name__} has thrown an unexpected "
+        "The config mapping function on a `configured` {} has thrown an unexpected "
         "error during its execution."
-    )
+    ).format(configured_definition.__class__.__name__)
 
 
 class ConfiguredDefinitionConfigSchema(IDefinitionConfigSchema):
@@ -108,7 +107,7 @@ class ConfiguredDefinitionConfigSchema(IDefinitionConfigSchema):
         config_schema: Optional[IDefinitionConfigSchema],
         config_or_config_fn: object,
     ):
-        from dagster._core.definitions.configurable import ConfigurableDefinition
+        from .configurable import ConfigurableDefinition
 
         self.parent_def = check.inst_param(
             parent_definition, "parent_definition", ConfigurableDefinition

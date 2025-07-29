@@ -1,13 +1,23 @@
 import os
 
-import dagster as dg
+from dagster import (
+    AssetSelection,
+    Definitions,
+    DynamicPartitionsDefinition,
+    RunRequest,
+    SensorResult,
+    asset,
+    define_asset_job,
+    sensor,
+)
 
 # start_dynamic_partitions_marker
-images_partitions_def = dg.DynamicPartitionsDefinition(name="images")
+images_partitions_def = DynamicPartitionsDefinition(name="images")
 
 
-@dg.asset(partitions_def=images_partitions_def)
-def images(context: dg.AssetExecutionContext): ...
+@asset(partitions_def=images_partitions_def)
+def images(context):
+    ...
 
 
 # end_dynamic_partitions_marker
@@ -15,26 +25,24 @@ def images(context: dg.AssetExecutionContext): ...
 # start_dynamic_partitions_2
 
 
-images_job = dg.define_asset_job(
-    "images_job",
-    dg.AssetSelection.assets("images"),
-    partitions_def=images_partitions_def,
+images_job = define_asset_job(
+    "images_job", AssetSelection.keys("images"), partitions_def=images_partitions_def
 )
 
 
-@dg.sensor(job=images_job)
-def image_sensor(context: dg.SensorEvaluationContext):
+@sensor(job=images_job)
+def image_sensor(context):
     new_images = [
         img_filename
         for img_filename in os.listdir(os.getenv("MY_DIRECTORY"))
-        if not images_partitions_def.has_partition_key(
-            img_filename, dynamic_partitions_store=context.instance
+        if not context.instance.has_dynamic_partition(
+            images_partitions_def.name, img_filename
         )
     ]
 
-    return dg.SensorResult(
+    return SensorResult(
         run_requests=[
-            dg.RunRequest(partition_key=img_filename) for img_filename in new_images
+            RunRequest(partition_key=img_filename) for img_filename in new_images
         ],
         dynamic_partitions_requests=[
             images_partitions_def.build_add_request(new_images)
@@ -44,4 +52,4 @@ def image_sensor(context: dg.SensorEvaluationContext):
 
 # end_dynamic_partitions_2
 
-defs = dg.Definitions([images], sensors=[image_sensor], jobs=[images_job])
+defs = Definitions([images], sensors=[image_sensor], jobs=[images_job])

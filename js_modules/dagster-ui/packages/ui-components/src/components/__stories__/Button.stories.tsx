@@ -1,8 +1,8 @@
 import {Meta} from '@storybook/react';
+import * as React from 'react';
 
 import {Box} from '../Box';
 import {Button, JoinedButtons} from '../Button';
-import {Colors} from '../Color';
 import {Group} from '../Group';
 import {Icon} from '../Icon';
 import {Menu, MenuItem} from '../Menu';
@@ -24,16 +24,6 @@ export const Default = () => {
         Button
       </Button>
       <Button icon={<Icon name="cached" />} />
-      <Box
-        background={Colors.backgroundLight()}
-        padding={16}
-        flex={{direction: 'column', alignItems: 'stretch'}}
-        style={{width: 320}}
-      >
-        <Button>
-          <div style={{width: '100%', textAlign: 'center'}}>Full-width Flex Child</div>
-        </Button>
-      </Box>
     </Group>
   );
 };
@@ -41,7 +31,7 @@ export const Default = () => {
 export const Intent = () => {
   return (
     <Group direction="column" spacing={8}>
-      <Button icon={<Icon name="star" />}>Intent not defined</Button>
+      <Button icon={<Icon name="star" />}>No intent set</Button>
       <Button icon={<Icon name="star" />} intent="primary">
         Primary
       </Button>
@@ -65,7 +55,7 @@ export const Outlined = () => {
   return (
     <Group direction="column" spacing={8}>
       <Button outlined icon={<Icon name="star" />}>
-        Intent not defined
+        No intent set
       </Button>
       <Button outlined icon={<Icon name="star" />} intent="primary">
         Primary
@@ -185,19 +175,13 @@ export const Joined = () => {
 export function LoadingStates() {
   return (
     <Box flex={{direction: 'row', gap: 12}}>
-      <Button loading icon={<Icon name="wysiwyg" />}>
+      <Button loading={true} icon={<Icon name="wysiwyg" />}>
         Test
       </Button>
-      <Button loading icon={<Icon name="close" />} rightIcon={<Icon name="cached" />}>
+      <Button loading={true} icon={<Icon name="close" />} rightIcon={<Icon name="cached" />}>
         Test
       </Button>
-      <Button loading rightIcon={<Icon name="wysiwyg" />}>
-        Test
-      </Button>
-      <Button loading intent="primary">
-        Test
-      </Button>
-      <Button loading intent="danger">
+      <Button loading={true} rightIcon={<Icon name="wysiwyg" />}>
         Test
       </Button>
     </Box>

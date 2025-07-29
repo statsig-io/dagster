@@ -5,7 +5,8 @@ from dagster._annotations import public
 from dagster._core.definitions.job_definition import JobDefinition
 from dagster._core.definitions.logger_definition import LoggerDefinition
 from dagster._core.errors import DagsterInvariantViolationError
-from dagster._core.execution.context.output import RUN_ID_PLACEHOLDER
+
+from .output import RUN_ID_PLACEHOLDER
 
 
 class InitLoggerContext:
@@ -74,7 +75,9 @@ class UnboundInitLoggerContext(InitLoggerContext):
     """
 
     def __init__(self, logger_config: Any, job_def: Optional[JobDefinition]):
-        super().__init__(logger_config, logger_def=None, job_def=job_def, run_id=None)
+        super(UnboundInitLoggerContext, self).__init__(
+            logger_config, logger_def=None, job_def=job_def, run_id=None
+        )
 
     @property
     def logger_def(self) -> LoggerDefinition:

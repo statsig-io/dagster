@@ -3,39 +3,50 @@ import os
 import tempfile
 from difflib import SequenceMatcher
 from typing import Any
-from unittest import mock
+from unittest.mock import MagicMock
 
-import dagster as dg
-import pytest
 from click.testing import CliRunner
+from dagster import (
+    ConfigurableIOManager,
+    ConfigurableResource,
+    DailyPartitionsDefinition,
+    Definitions,
+    DynamicPartitionsDefinition,
+    FreshnessPolicy,
+    MultiPartitionsDefinition,
+    SourceAsset,
+    StaticPartitionsDefinition,
+    asset,
+    define_asset_job,
+    io_manager,
+    observable_source_asset,
+    repository,
+    resource,
+)
 from dagster._cli.job import job_execute_command
+from dagster._core.definitions.auto_materialize_policy import AutoMaterializePolicy
 from dagster._core.definitions.reconstruct import get_ephemeral_repository_name
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
 from dagster._core.execution.context.input import InputContext
 from dagster._core.execution.context.output import OutputContext
-from dagster._core.remote_representation.external_data import RepositorySnap
-from dagster._core.remote_representation.handle import RepositoryHandle
+from dagster._core.host_representation.external import ExternalRepository
+from dagster._core.host_representation.external_data import external_repository_data_from_def
+from dagster._core.host_representation.handle import RepositoryHandle
 from dagster._core.storage.io_manager import dagster_maintained_io_manager
-from dagster._core.storage.runs import SqlRunStorage
 from dagster._core.telemetry import (
     TELEMETRY_STR,
     UPDATE_REPO_STATS,
+    cleanup_telemetry_logger,
+    get_or_create_dir_from_dagster_home,
     get_or_set_instance_id,
-    get_stats_from_remote_repo,
+    get_stats_from_external_repo,
     hash_name,
-    log_action,
     log_workspace_stats,
     write_telemetry_log_line,
 )
-from dagster._core.test_utils import environ
+from dagster._core.test_utils import environ, instance_for_test
 from dagster._core.workspace.load import load_workspace_process_context_from_yaml_paths
-from dagster._utils import pushd, script_relative_path
-from dagster_shared.telemetry import (
-    cleanup_telemetry_logger,
-    get_or_create_dir_from_dagster_home,
-    get_telemetry_logger,
-)
-from dagster_test.utils.data_factory import remote_repository
+from dagster._utils import file_relative_path, pushd, script_relative_path
 
 EXPECTED_KEYS = set(
     [
@@ -55,29 +66,12 @@ EXPECTED_KEYS = set(
 )
 
 
-@pytest.fixture
-def telemetry_caplog(caplog):
-    # telemetry logger doesn't propagate to the root logger, so need to attach the caplog handler
-    get_telemetry_logger().addHandler(caplog.handler)
-    yield caplog
-    get_telemetry_logger().removeHandler(caplog.handler)
-
-    # Needed to avoid file contention issues on windows with the telemetry log file
-    cleanup_telemetry_logger()
-
-
 def path_to_file(path):
     return script_relative_path(os.path.join("./", path))
 
 
-@pytest.fixture
-def instance():
-    with dg.instance_for_test() as instance:
-        return instance
-
-
-def test_dagster_telemetry_enabled(telemetry_caplog):
-    with dg.instance_for_test(overrides={"telemetry": {"enabled": True}}):
+def test_dagster_telemetry_enabled(caplog):
+    with instance_for_test(overrides={"telemetry": {"enabled": True}}):
         runner = CliRunner()
         with pushd(path_to_file("")):
             job_attribute = "qux_job"
@@ -92,7 +86,7 @@ def test_dagster_telemetry_enabled(telemetry_caplog):
                 ],
             )
 
-            for record in telemetry_caplog.records:
+            for record in caplog.records:
                 message = json.loads(record.getMessage())
                 if message.get("action") == UPDATE_REPO_STATS:
                     metadata = message.get("metadata")
@@ -102,39 +96,15 @@ def test_dagster_telemetry_enabled(telemetry_caplog):
                         get_ephemeral_repository_name(job_name)
                     )
                 assert set(message.keys()) == EXPECTED_KEYS
-            assert len(telemetry_caplog.records) == 9
+            assert len(caplog.records) == 9
             assert result.exit_code == 0
 
-
-def test_dagster_telemetry_disabled_avoids_run_storage_query(telemetry_caplog):
-    """Verify that when telemetry is disabled, we don't query run_storage_id."""
-    with dg.instance_for_test(overrides={"telemetry": {"enabled": False}}) as instance:
-        # Ensure the instance uses SqlRunStorage for the mock target to be relevant
-        assert isinstance(instance.run_storage, SqlRunStorage)
-
-        with mock.patch.object(
-            SqlRunStorage, "get_run_storage_id", wraps=instance.run_storage.get_run_storage_id
-        ) as mock_get_id:
-            # Call a function that triggers the telemetry info check
-            log_action(instance, "TEST_ACTION")
-
-            # Assert that the run storage ID was not queried
-            mock_get_id.assert_not_called()
-
-    # Double check: enable telemetry and ensure it *is* called
-    with dg.instance_for_test(overrides={"telemetry": {"enabled": True}}) as instance_enabled:
-        assert isinstance(instance_enabled.run_storage, SqlRunStorage)
-        with mock.patch.object(
-            SqlRunStorage,
-            "get_run_storage_id",
-            wraps=instance_enabled.run_storage.get_run_storage_id,
-        ) as mock_get_id_enabled:
-            log_action(instance_enabled, "TEST_ACTION_ENABLED")
-            mock_get_id_enabled.assert_called_once()
+        # Needed to avoid file contention issues on windows with the telemetry log file
+        cleanup_telemetry_logger()
 
 
-def test_dagster_telemetry_disabled(telemetry_caplog):
-    with dg.instance_for_test(overrides={"telemetry": {"enabled": False}}):
+def test_dagster_telemetry_disabled(caplog):
+    with instance_for_test(overrides={"telemetry": {"enabled": False}}):
         runner = CliRunner()
         with pushd(path_to_file("")):
             job_name = "qux_job"
@@ -151,13 +121,13 @@ def test_dagster_telemetry_disabled(telemetry_caplog):
         assert not os.path.exists(
             os.path.join(get_or_create_dir_from_dagster_home("logs"), "event.log")
         )
-        assert len(telemetry_caplog.records) == 0
+        assert len(caplog.records) == 0
         assert result.exit_code == 0
 
 
-def test_dagster_telemetry_unset(telemetry_caplog):
+def test_dagster_telemetry_unset(caplog):
     with tempfile.TemporaryDirectory() as temp_dir:
-        with dg.instance_for_test(temp_dir=temp_dir, overrides={"telemetry": {"enabled": True}}):
+        with instance_for_test(temp_dir=temp_dir, overrides={"telemetry": {"enabled": True}}):
             runner = CliRunner(env={"DAGSTER_HOME": temp_dir})
             with pushd(path_to_file("")):
                 job_attribute = "qux_job"
@@ -167,7 +137,7 @@ def test_dagster_telemetry_unset(telemetry_caplog):
                     ["-f", path_to_file("test_cli_commands.py"), "-a", job_attribute],
                 )
 
-                for record in telemetry_caplog.records:
+                for record in caplog.records:
                     message = json.loads(record.getMessage())
                     if message.get("action") == UPDATE_REPO_STATS:
                         metadata = message.get("metadata")
@@ -178,24 +148,27 @@ def test_dagster_telemetry_unset(telemetry_caplog):
                         )
                     assert set(message.keys()) == EXPECTED_KEYS
 
-                assert len(telemetry_caplog.records) == 9
+                assert len(caplog.records) == 9
                 assert result.exit_code == 0
+
+            # Needed to avoid file contention issues on windows with the telemetry log file
+            cleanup_telemetry_logger()
 
 
 def get_dynamic_partitioned_asset_repo():
-    @dg.asset(partitions_def=dg.DynamicPartitionsDefinition(name="fruit"))
+    @asset(partitions_def=DynamicPartitionsDefinition(name="fruit"))
     def my_asset(_):
         pass
 
-    @dg.repository
+    @repository
     def my_repo():
-        return [dg.define_asset_job("dynamic_job"), my_asset]
+        return [define_asset_job("dynamic_job"), my_asset]
 
     return my_repo
 
 
-def test_update_repo_stats_dynamic_partitions(telemetry_caplog):
-    with dg.instance_for_test(overrides={"telemetry": {"enabled": True}}) as instance:
+def test_update_repo_stats_dynamic_partitions(caplog):
+    with instance_for_test(overrides={"telemetry": {"enabled": True}}) as instance:
         instance.add_dynamic_partitions("fruit", ["apple"])
         runner = CliRunner()
         with pushd(path_to_file("")):
@@ -215,7 +188,7 @@ def test_update_repo_stats_dynamic_partitions(telemetry_caplog):
                 ],
             )
 
-            for record in telemetry_caplog.records:
+            for record in caplog.records:
                 message = json.loads(record.getMessage())
                 if message.get("action") == UPDATE_REPO_STATS:
                     metadata = message.get("metadata")
@@ -223,173 +196,177 @@ def test_update_repo_stats_dynamic_partitions(telemetry_caplog):
                     assert metadata.get("num_dynamic_partitioned_assets_in_repo") == str(1)
             assert result.exit_code == 0
 
+        # Needed to avoid file contention issues on windows with the telemetry log file
+        cleanup_telemetry_logger()
 
-def test_get_stats_from_remote_repo_partitions():
-    @dg.asset(partitions_def=dg.StaticPartitionsDefinition(["foo", "bar"]))
+
+def test_get_stats_from_external_repo_partitions():
+    @asset(partitions_def=StaticPartitionsDefinition(["foo", "bar"]))
     def asset1(): ...
 
-    @dg.asset(partitions_def=dg.DailyPartitionsDefinition(start_date="2022-01-01"))
+    @asset(partitions_def=DailyPartitionsDefinition(start_date="2022-01-01"))
     def asset2(): ...
 
-    @dg.asset
+    @asset
     def asset3(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(assets=[asset1, asset2, asset3]).get_repository_def()
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(assets=[asset1, asset2, asset3]).get_repository_def()
         ),
-        repository_handle=RepositoryHandle.for_test(),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["num_partitioned_assets_in_repo"] == "2"
 
 
-def test_get_stats_from_remote_repo_multi_partitions(instance):
-    @dg.asset(
-        partitions_def=dg.MultiPartitionsDefinition(
+def test_get_stats_from_external_repo_multi_partitions():
+    @asset(
+        partitions_def=MultiPartitionsDefinition(
             {
-                "dim1": dg.StaticPartitionsDefinition(["foo", "bar"]),
-                "dim2": dg.DailyPartitionsDefinition(start_date="2022-01-01"),
+                "dim1": StaticPartitionsDefinition(["foo", "bar"]),
+                "dim2": DailyPartitionsDefinition(start_date="2022-01-01"),
             }
         )
     )
     def multi_partitioned_asset(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(assets=[multi_partitioned_asset]).get_repository_def()
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(assets=[multi_partitioned_asset]).get_repository_def()
         ),
-        repository_handle=RepositoryHandle.for_test(),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["num_multi_partitioned_assets_in_repo"] == "1"
     assert stats["num_partitioned_assets_in_repo"] == "1"
 
 
-def test_get_stats_from_remote_repo_source_assets():
-    source_asset1 = dg.SourceAsset("source_asset1")
+def test_get_stats_from_external_repo_source_assets():
+    source_asset1 = SourceAsset("source_asset1")
 
-    @dg.asset
+    @asset
     def asset1(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(assets=[source_asset1, asset1]).get_repository_def()
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(assets=[source_asset1, asset1]).get_repository_def()
         ),
-        repository_handle=RepositoryHandle.for_test(),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["num_source_assets_in_repo"] == "1"
 
 
-def test_get_stats_from_remote_repo_observable_source_assets():
-    source_asset1 = dg.SourceAsset("source_asset1")
+def test_get_stats_from_external_repo_observable_source_assets():
+    source_asset1 = SourceAsset("source_asset1")
 
-    @dg.observable_source_asset
+    @observable_source_asset
     def source_asset2(): ...
 
-    @dg.asset
+    @asset
     def asset1(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(assets=[source_asset1, source_asset2, asset1]).get_repository_def()
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(assets=[source_asset1, source_asset2, asset1]).get_repository_def()
         ),
-        repository_handle=RepositoryHandle.for_test(),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["num_source_assets_in_repo"] == "2"
     assert stats["num_observable_source_assets_in_repo"] == "1"
 
 
-def test_get_stats_from_remote_repo_freshness_policies():
-    @dg.asset(legacy_freshness_policy=dg.LegacyFreshnessPolicy(maximum_lag_minutes=30))
+def test_get_stats_from_external_repo_freshness_policies():
+    @asset(freshness_policy=FreshnessPolicy(maximum_lag_minutes=30))
     def asset1(): ...
 
-    @dg.asset
+    @asset
     def asset2(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(dg.Definitions(assets=[asset1, asset2]).get_repository_def()),
-        repository_handle=RepositoryHandle.for_test(),
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(assets=[asset1, asset2]).get_repository_def()
+        ),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["num_assets_with_freshness_policies_in_repo"] == "1"
 
 
-def test_get_stats_from_remote_repo_code_versions():
-    @dg.asset(code_version="hello")
+def test_get_status_from_external_repo_auto_materialize_policy():
+    @asset(auto_materialize_policy=AutoMaterializePolicy.lazy())
     def asset1(): ...
 
-    @dg.asset
+    @asset
     def asset2(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(dg.Definitions(assets=[asset1, asset2]).get_repository_def()),
-        repository_handle=RepositoryHandle.for_test(),
+    @asset(auto_materialize_policy=AutoMaterializePolicy.eager())
+    def asset3(): ...
+
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(assets=[asset1, asset2, asset3]).get_repository_def()
+        ),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
+    assert stats["num_assets_with_eager_auto_materialize_policies_in_repo"] == "1"
+    assert stats["num_assets_with_lazy_auto_materialize_policies_in_repo"] == "1"
+
+
+def test_get_stats_from_external_repo_code_versions():
+    @asset(code_version="hello")
+    def asset1(): ...
+
+    @asset
+    def asset2(): ...
+
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(assets=[asset1, asset2]).get_repository_def()
+        ),
+        repository_handle=MagicMock(spec=RepositoryHandle),
+    )
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["num_assets_with_code_versions_in_repo"] == "1"
 
 
-def test_get_stats_from_remote_repo_code_checks():
-    @dg.asset
-    def my_asset(): ...
-
-    @dg.asset_check(asset=my_asset)  # pyright: ignore[reportArgumentType]
-    def my_check(): ...
-
-    @dg.asset_check(asset=my_asset)  # pyright: ignore[reportArgumentType]
-    def my_check_2(): ...
-
-    @dg.asset
-    def my_other_asset(): ...
-
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(
-                assets=[my_asset, my_other_asset], asset_checks=[my_check, my_check_2]
-            ).get_repository_def()
-        ),
-        repository_handle=RepositoryHandle.for_test(),
-    )
-    stats = get_stats_from_remote_repo(remote_repo)
-    assert stats["num_asset_checks"] == "2"
-    assert stats["num_assets_with_checks"] == "1"
-
-
-def test_get_stats_from_remote_repo_dbt():
-    @dg.asset(compute_kind="dbt")
+def test_get_stats_from_external_repo_dbt():
+    @asset(compute_kind="dbt")
     def asset1(): ...
 
-    @dg.asset
+    @asset
     def asset2(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(dg.Definitions(assets=[asset1, asset2]).get_repository_def()),
-        repository_handle=RepositoryHandle.for_test(),
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(assets=[asset1, asset2]).get_repository_def()
+        ),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["num_dbt_assets_in_repo"] == "1"
 
 
-def test_get_stats_from_remote_repo_resources():
-    class MyResource(dg.ConfigurableResource):
+def test_get_stats_from_external_repo_resources():
+    class MyResource(ConfigurableResource):
         foo: str
 
         @classmethod
         def _is_dagster_maintained(cls) -> bool:
             return True
 
-    class CustomResource(dg.ConfigurableResource):
+    class CustomResource(ConfigurableResource):
         baz: str
 
-    @dg.asset
+    @asset
     def asset1(my_resource: MyResource, custom_resource: CustomResource): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(
                 assets=[asset1],
                 resources={
                     "my_resource": MyResource(foo="bar"),
@@ -397,17 +374,17 @@ def test_get_stats_from_remote_repo_resources():
                 },
             ).get_repository_def()
         ),
-        repository_handle=RepositoryHandle.for_test(),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["dagster_resources"] == [
         {"module_name": "dagster_tests", "class_name": "MyResource"}
     ]
     assert stats["has_custom_resources"] == "True"
 
 
-def test_get_stats_from_remote_repo_io_managers():
-    class MyIOManager(dg.ConfigurableIOManager):
+def test_get_stats_from_external_repo_io_managers():
+    class MyIOManager(ConfigurableIOManager):
         foo: str
 
         @classmethod
@@ -420,7 +397,7 @@ def test_get_stats_from_remote_repo_io_managers():
         def load_input(self, context: InputContext) -> Any:
             return 1
 
-    class CustomIOManager(dg.ConfigurableIOManager):
+    class CustomIOManager(ConfigurableIOManager):
         baz: str
 
         def handle_output(self, context: OutputContext, obj: Any) -> None:
@@ -429,12 +406,12 @@ def test_get_stats_from_remote_repo_io_managers():
         def load_input(self, context: InputContext) -> Any:
             return 1
 
-    @dg.asset
+    @asset
     def asset1(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(
                 assets=[asset1],
                 resources={
                     "my_io_manager": MyIOManager(foo="bar"),
@@ -442,31 +419,31 @@ def test_get_stats_from_remote_repo_io_managers():
                 },
             ).get_repository_def()
         ),
-        repository_handle=RepositoryHandle.for_test(),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["dagster_resources"] == [
         {"module_name": "dagster_tests", "class_name": "MyIOManager"}
     ]
     assert stats["has_custom_resources"] == "True"
 
 
-def test_get_stats_from_remote_repo_functional_resources():
+def test_get_stats_from_external_repo_functional_resources():
     @dagster_maintained_resource
-    @dg.resource(config_schema={"foo": str})
+    @resource(config_schema={"foo": str})
     def my_resource():
         return 1
 
-    @dg.resource(config_schema={"baz": str})
+    @resource(config_schema={"baz": str})
     def custom_resource():
         return 2
 
-    @dg.asset(required_resource_keys={"my_resource", "custom_resource"})
+    @asset(required_resource_keys={"my_resource", "custom_resource"})
     def asset1(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(
                 assets=[asset1],
                 resources={
                     "my_resource": my_resource.configured({"foo": "bar"}),
@@ -474,31 +451,31 @@ def test_get_stats_from_remote_repo_functional_resources():
                 },
             ).get_repository_def()
         ),
-        repository_handle=RepositoryHandle.for_test(),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["dagster_resources"] == [
         {"module_name": "dagster_tests", "class_name": "my_resource"}
     ]
     assert stats["has_custom_resources"] == "True"
 
 
-def test_get_stats_from_remote_repo_functional_io_managers():
+def test_get_stats_from_external_repo_functional_io_managers():
     @dagster_maintained_io_manager
-    @dg.io_manager(config_schema={"foo": str})  # pyright: ignore[reportArgumentType]
+    @io_manager(config_schema={"foo": str})
     def my_io_manager():
         return 1
 
-    @dg.io_manager(config_schema={"baz": str})  # pyright: ignore[reportArgumentType]
+    @io_manager(config_schema={"baz": str})
     def custom_io_manager():
         return 2
 
-    @dg.asset
+    @asset
     def asset1(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(
                 assets=[asset1],
                 resources={
                     "my_io_manager": my_io_manager.configured({"foo": "bar"}),
@@ -506,42 +483,24 @@ def test_get_stats_from_remote_repo_functional_io_managers():
                 },
             ).get_repository_def()
         ),
-        repository_handle=RepositoryHandle.for_test(),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["dagster_resources"] == [
         {"module_name": "dagster_tests", "class_name": "my_io_manager"}
     ]
     assert stats["has_custom_resources"] == "True"
 
 
-def test_get_stats_from_remote_repo_pipes_client():
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(
-                resources={
-                    "pipes_subprocess_client": dg.PipesSubprocessClient(),
-                },
-            ).get_repository_def()
-        ),
-        repository_handle=RepositoryHandle.for_test(),
-    )
-    stats = get_stats_from_remote_repo(remote_repo)
-    assert stats["dagster_resources"] == [
-        {"module_name": "dagster", "class_name": "PipesSubprocessClient"}
-    ]
-    assert stats["has_custom_resources"] == "False"
-
-
-def test_get_stats_from_remote_repo_delayed_resource_configuration():
-    class MyResource(dg.ConfigurableResource):
+def test_get_stats_from_external_repo_delayed_resource_configuration():
+    class MyResource(ConfigurableResource):
         foo: str
 
         @classmethod
         def _is_dagster_maintained(cls) -> bool:
             return True
 
-    class MyIOManager(dg.ConfigurableIOManager):
+    class MyIOManager(ConfigurableIOManager):
         foo: str
 
         @classmethod
@@ -555,24 +514,24 @@ def test_get_stats_from_remote_repo_delayed_resource_configuration():
             return 1
 
     @dagster_maintained_resource
-    @dg.resource(config_schema={"foo": str})
+    @resource(config_schema={"foo": str})
     def my_resource():
         return 1
 
     @dagster_maintained_io_manager
-    @dg.io_manager(config_schema={"foo": str})  # pyright: ignore[reportArgumentType]
+    @io_manager(config_schema={"foo": str})
     def my_io_manager():
         return 1
 
-    @dg.asset
+    @asset
     def asset1(my_resource: MyResource): ...
 
-    @dg.asset(required_resource_keys={"my_other_resource"})
+    @asset(required_resource_keys={"my_other_resource"})
     def asset2(): ...
 
-    remote_repo = remote_repository(
-        RepositorySnap.from_def(
-            dg.Definitions(
+    external_repo = ExternalRepository(
+        external_repository_data_from_def(
+            Definitions(
                 assets=[asset1, asset2],
                 resources={
                     "my_io_manager": MyIOManager.configure_at_launch(),
@@ -582,9 +541,9 @@ def test_get_stats_from_remote_repo_delayed_resource_configuration():
                 },
             ).get_repository_def()
         ),
-        repository_handle=RepositoryHandle.for_test(),
+        repository_handle=MagicMock(spec=RepositoryHandle),
     )
-    stats = get_stats_from_remote_repo(remote_repo)
+    stats = get_stats_from_external_repo(external_repo)
     assert stats["dagster_resources"] == [
         {"module_name": "dagster_tests", "class_name": "MyIOManager"},
         {"module_name": "dagster_tests", "class_name": "my_io_manager"},
@@ -595,9 +554,9 @@ def test_get_stats_from_remote_repo_delayed_resource_configuration():
 
 
 # TODO - not sure what this test is testing for, so unclear as to how to update it to jobs
-def test_repo_stats(telemetry_caplog):
+def test_repo_stats(caplog):
     with tempfile.TemporaryDirectory() as temp_dir:
-        with dg.instance_for_test(temp_dir=temp_dir, overrides={"telemetry": {"enabled": True}}):
+        with instance_for_test(temp_dir=temp_dir, overrides={"telemetry": {"enabled": True}}):
             runner = CliRunner(env={"DAGSTER_HOME": temp_dir})
             with pushd(path_to_file("")):
                 job_name = "double_adder_job"
@@ -605,11 +564,11 @@ def test_repo_stats(telemetry_caplog):
                     job_execute_command,
                     [
                         "-f",
-                        dg.file_relative_path(__file__, "../../general_tests/test_repository.py"),
+                        file_relative_path(__file__, "../../general_tests/test_repository.py"),
                         "-a",
                         "dagster_test_repository",
                         "--config",
-                        dg.file_relative_path(__file__, "../../environments/double_adder_job.yaml"),
+                        file_relative_path(__file__, "../../environments/double_adder_job.yaml"),
                         "-j",
                         job_name,
                         "--tags",
@@ -619,7 +578,7 @@ def test_repo_stats(telemetry_caplog):
 
                 assert result.exit_code == 0, result.stdout
 
-                for record in telemetry_caplog.records:
+                for record in caplog.records:
                     message = json.loads(record.getMessage())
                     if message.get("action") == UPDATE_REPO_STATS:
                         metadata = message.get("metadata")
@@ -628,23 +587,29 @@ def test_repo_stats(telemetry_caplog):
                         assert metadata.get("repo_hash") == hash_name("dagster_test_repository")
                     assert set(message.keys()) == EXPECTED_KEYS
 
-                assert len(telemetry_caplog.records) == 7
+                assert len(caplog.records) == 7
                 assert result.exit_code == 0
 
+            # Needed to avoid file contention issues on windows with the telemetry log file
+            cleanup_telemetry_logger()
 
-def test_log_workspace_stats(telemetry_caplog):
-    with dg.instance_for_test(overrides={"telemetry": {"enabled": True}}) as instance:
+
+def test_log_workspace_stats(caplog):
+    with instance_for_test(overrides={"telemetry": {"enabled": True}}) as instance:
         with load_workspace_process_context_from_yaml_paths(
-            instance, [dg.file_relative_path(__file__, "./multi_env_telemetry_workspace.yaml")]
+            instance, [file_relative_path(__file__, "./multi_env_telemetry_workspace.yaml")]
         ) as context:
             log_workspace_stats(instance, context)
 
-            for record in telemetry_caplog.records:
+            for record in caplog.records:
                 message = json.loads(record.getMessage())
                 assert message.get("action") == UPDATE_REPO_STATS
                 assert set(message.keys()) == EXPECTED_KEYS
 
-            assert len(telemetry_caplog.records) == 2
+            assert len(caplog.records) == 2
+
+        # Needed to avoid file contention issues on windows with the telemetry log file
+        cleanup_telemetry_logger()
 
 
 # Sanity check that the hash function maps these similar names to sufficiently dissimilar strings
@@ -668,7 +633,7 @@ def test_write_telemetry_log_line_writes_to_dagster_home():
     with tempfile.TemporaryDirectory() as temp_dir:
         with environ({"DAGSTER_HOME": temp_dir}):
             write_telemetry_log_line({"foo": "bar"})
-            with open(os.path.join(temp_dir, "logs", "event.log"), encoding="utf8") as f:
+            with open(os.path.join(temp_dir, "logs", "event.log"), "r", encoding="utf8") as f:
                 res = json.load(f)
                 assert res == {"foo": "bar"}
 
@@ -679,7 +644,7 @@ def test_write_telemetry_log_line_writes_to_dagster_home():
             os.rmdir(os.path.join(temp_dir, "logs"))
 
             write_telemetry_log_line({"foo": "bar"})
-            with open(os.path.join(temp_dir, "logs", "event.log"), encoding="utf8") as f:
+            with open(os.path.join(temp_dir, "logs", "event.log"), "r", encoding="utf8") as f:
                 res = json.load(f)
                 assert res == {"foo": "bar"}
 

@@ -1,9 +1,7 @@
 import memoize from 'lodash/memoize';
 import * as React from 'react';
 
-import {AppContext} from './AppContext';
-import {AssetCheck, AssetKeyInput} from '../graphql/types';
-import {useSetStateUpdateCallback} from '../hooks/useSetStateUpdateCallback';
+import {AssetKeyInput} from '../graphql/types';
 import {getJSONForKey, useStateWithStorage} from '../hooks/useStateWithStorage';
 import {
   LaunchpadSessionPartitionSetsFragment,
@@ -11,6 +9,8 @@ import {
 } from '../launchpad/types/LaunchpadAllowedRoot.types';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
 import {RepoAddress} from '../workspace/types';
+
+import {AppContext} from './AppContext';
 
 // Internal LocalStorage data format and mutation helpers
 
@@ -31,22 +31,8 @@ export interface PipelineRunTag {
 }
 
 export type SessionBase =
-  | {
-      type: 'preset';
-      presetName: string;
-      tags: PipelineRunTag[] | null;
-    }
-  | {
-      type: 'asset-job-partition';
-      partitionName: string | null;
-      tags: PipelineRunTag[] | null;
-    }
-  | {
-      type: 'op-job-partition-set';
-      partitionsSetName: string;
-      partitionName: string | null;
-      tags: PipelineRunTag[] | null;
-    };
+  | {presetName: string; tags: PipelineRunTag[] | null}
+  | {partitionsSetName: string; partitionName: string | null; tags: PipelineRunTag[] | null};
 
 export interface IExecutionSession {
   key: string;
@@ -55,10 +41,7 @@ export interface IExecutionSession {
   base: SessionBase | null;
   mode: string | null;
   needsRefresh: boolean;
-  assetSelection: {assetKey: AssetKeyInput; opNames?: string[]}[] | null;
-  // Nullable for backwards compatibility
-  assetChecksAvailable?: Pick<AssetCheck, 'name' | 'canExecuteIndividually' | 'assetKey'>[];
-  includeSeparatelyExecutableChecks: boolean;
+  assetSelection: {assetKey: AssetKeyInput; opNames: string[]}[] | null;
   solidSelection: string[] | null;
   solidSelectionQuery: string | null;
   flattenGraphs: boolean;
@@ -111,8 +94,6 @@ export const createSingleSession = (initial: IExecutionSessionChanges = {}, key?
     base: null,
     needsRefresh: false,
     assetSelection: null,
-    assetChecksAvailable: [],
-    includeSeparatelyExecutableChecks: true,
     solidSelection: null,
     solidSelectionQuery: '*',
     flattenGraphs: false,
@@ -144,7 +125,7 @@ export function applyCreateSession(
   };
 }
 
-type StorageHook = [IStorageData, (data: React.SetStateAction<IStorageData>) => void];
+type StorageHook = [IStorageData, (data: IStorageData) => void];
 
 const buildValidator =
   (initial: Partial<IExecutionSession> = {}) =>
@@ -183,10 +164,7 @@ export function useExecutionSessionStorage(
   );
 
   const [state, setState] = useStateWithStorage(key, validator);
-  const wrappedSetState = useSetStateUpdateCallback(
-    state,
-    writeLaunchpadSessionToStorage(setState),
-  );
+  const wrappedSetState = writeLaunchpadSessionToStorage(setState);
 
   return [state, wrappedSetState];
 }
@@ -244,7 +222,7 @@ export const useInitialDataForMode = (
   partitionSets: LaunchpadSessionPartitionSetsFragment,
   rootDefaultYaml: string | undefined,
   shouldPopulateWithDefaults: boolean,
-): {base?: SessionBase; runConfigYaml?: string} => {
+) => {
   const {isJob, isAssetJob, presets} = pipeline;
   const partitionSetsForMode = partitionSets.results;
 
@@ -256,23 +234,14 @@ export const useInitialDataForMode = (
     // `default` preset
     if (presetsForMode.length === 1 && (isAssetJob || partitionSetsForMode.length === 0)) {
       return {
-        base: {
-          type: 'preset',
-          presetName: presetsForMode[0]!.name,
-          tags: null,
-        },
+        base: {presetName: presetsForMode[0]!.name, tags: null},
         runConfigYaml: presetsForMode[0]!.runConfigYaml,
       };
     }
 
     if (!presetsForMode.length && partitionSetsForMode.length === 1) {
       return {
-        base: {
-          type: 'op-job-partition-set',
-          partitionsSetName: partitionSetsForMode[0]!.name,
-          partitionName: null,
-          tags: null,
-        },
+        base: {partitionsSetName: partitionSetsForMode[0]!.name, partitionName: null, tags: null},
         runConfigYaml: rootDefaultYaml,
       };
     }
@@ -300,7 +269,7 @@ export const allStoredSessions = () => {
         // If it's not a parseable object, it's not a launchpad session.
         try {
           parsed = JSON.parse(value);
-        } catch {
+        } catch (e) {
           continue;
         }
 
@@ -346,12 +315,13 @@ export const MAX_SESSION_WRITE_ATTEMPTS = 10;
  * write is successful or we run out of retries.
  */
 export const writeLaunchpadSessionToStorage =
-  (setState: React.Dispatch<React.SetStateAction<IStorageData>>) => (data: IStorageData) => {
+  (setState: React.Dispatch<React.SetStateAction<IStorageData | undefined>>) =>
+  (data: IStorageData) => {
     const tryWrite = (data: IStorageData) => {
       try {
         setState(data);
         return true;
-      } catch {
+      } catch (e) {
         // The data could not be written to localStorage. This is probably due to
         // a QuotaExceededError, but since different browsers use slightly different
         // objects for this, we don't try to get clever detecting it.

@@ -1,3 +1,5 @@
+from typing import List
+
 import pandas as pd
 
 from dagster import AssetIn, Definitions, asset
@@ -23,12 +25,12 @@ class PandasSeriesIOManager:
 
 
 @asset
-def first_asset() -> list[int]:
+def first_asset() -> List[int]:
     return [1, 2, 3]
 
 
 @asset
-def second_asset() -> list[int]:
+def second_asset() -> List[int]:
     return [4, 5, 6]
 
 

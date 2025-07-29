@@ -3,13 +3,12 @@ import pickle
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator, Sequence
-from typing import TYPE_CHECKING, Callable, Optional, cast
+from typing import TYPE_CHECKING, Callable, Iterator, Optional, Sequence, cast
 
 import dagster._check as check
 from dagster._config import Field, StringSource
 from dagster._core.code_pointer import FileCodePointer, ModuleCodePointer
-from dagster._core.definitions.partitions.definition import DynamicPartitionsDefinition
+from dagster._core.definitions.partition import DynamicPartitionsDefinition
 from dagster._core.definitions.reconstruct import ReconstructableJob, ReconstructableRepository
 from dagster._core.definitions.resource_definition import dagster_maintained_resource, resource
 from dagster._core.definitions.step_launcher import StepLauncher, StepRunRef
@@ -82,7 +81,7 @@ class LocalExternalStepLauncher(StepLauncher):
         file_manager = LocalFileManager(".")
         events_file_handle = LocalFileHandle(events_file_path)
         events_data = file_manager.read_data(events_file_handle)
-        all_events = cast("Sequence[EventLogEntry]", deserialize_value(pickle.loads(events_data)))
+        all_events = cast(Sequence[EventLogEntry], deserialize_value(pickle.loads(events_data)))
 
         for event in all_events:
             # write each pickled event from the external instance to the local instance
@@ -165,7 +164,7 @@ def external_instance_from_step_run_ref(
     by a StepRunRef by pre-populating certain values.
 
     Args:
-        step_run_ref (StepRunRef): The reference to the step that we want to execute
+        step_run_ref (StepRunRef): The reference to the the step that we want to execute
         event_listener_fn (EventLogEntry -> Any): A function that handles each individual
             EventLogEntry created on this instance. Generally used to send these events back to
             the host instance.
@@ -224,7 +223,7 @@ def step_run_ref_to_step_context(
     # Since for_step is abstract for IPlanContext, its return type is IStepContext.
     # Since we are launching from a PlanExecutionContext, the type will always be
     # StepExecutionContext.
-    step_execution_context = cast("StepExecutionContext", step_execution_context)
+    step_execution_context = cast(StepExecutionContext, step_execution_context)
 
     return step_execution_context
 

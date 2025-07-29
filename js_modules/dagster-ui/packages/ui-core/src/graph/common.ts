@@ -1,5 +1,6 @@
-import type {OpGraphLayout, OpLayout} from './layout';
-import type {AssetGraphLayout, AssetLayout} from '../asset-graph/layout';
+import {AssetGraphLayout, AssetLayout} from '../asset-graph/layout';
+
+import {OpGraphLayout, OpLayout} from './layout';
 
 export type Edge = {a: string; b: string};
 
@@ -36,17 +37,13 @@ export const isNodeOffscreen = (
 export const closestNodeInDirection = (
   layout: OpGraphLayout | AssetGraphLayout,
   selectedNodeKey: string | undefined,
-  dir: 'left' | 'right' | 'up' | 'down',
+  dir: string,
 ): string | undefined => {
   if (!selectedNodeKey) {
     return;
   }
 
-  const current = layout.nodes[selectedNodeKey];
-  if (!current) {
-    return;
-  }
-
+  const current = layout.nodes[selectedNodeKey]!;
   const center = (op: OpLayout | AssetLayout): {x: number; y: number} => ({
     x: op.bounds.x + op.bounds.width / 2,
     y: op.bounds.y + op.bounds.height / 2,

@@ -1,4 +1,4 @@
-from dagster import Field, OpExecutionContext, configured, op
+from dagster import Field, configured, op
 
 
 @op(
@@ -7,7 +7,7 @@ from dagster import Field, OpExecutionContext, configured, op
         "word": Field(str, is_required=False, default_value="hello"),
     }
 )
-def example(context: OpExecutionContext):
+def example(context):
     for _ in range(context.op_config["iterations"]):
         context.log.info(context.op_config["word"])
 

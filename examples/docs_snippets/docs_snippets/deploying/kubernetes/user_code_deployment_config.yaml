@@ -11,9 +11,9 @@ dagster-user-deployments:
         - "/example_project/example_repo/repo.py"
       port: 3030
       envConfigMaps:
-        - name: my-config-map
+        - my-config-map
       envSecrets:
-        - name: my-secret
+        - my-secret
       labels:
         foo_label: bar_value
       volumes:

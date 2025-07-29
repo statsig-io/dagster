@@ -1,13 +1,20 @@
 import json
-from typing import Any
 
-import dagster as dg
 import pytest
-from dagster._core.definitions.partitions.partitioned_config import partitioned_config
-from dagster._time import create_datetime
+from dagster import (
+    DagsterUnknownPartitionError,
+    StaticPartitionsDefinition,
+    daily_partitioned_config,
+    dynamic_partitioned_config,
+    job,
+    op,
+    static_partitioned_config,
+)
+from dagster._core.definitions.partition import partitioned_config
+from dagster._seven.compat.pendulum import create_pendulum_time
 
 
-@dg.op
+@op
 def my_op(context):
     context.log.info(context.op_config)
 
@@ -15,20 +22,14 @@ def my_op(context):
 RUN_CONFIG = {"ops": {"my_op": {"config": "hello"}}}
 
 
-@pytest.mark.parametrize(
-    "config_val", [RUN_CONFIG, dg.RunConfig(**RUN_CONFIG)], ids=["dict", "RunConfig"]
-)
-def test_static_partitioned_job(config_val: Any):
-    @dg.static_partitioned_config(["blah"], tags_for_partition_key_fn=lambda key: {"foo": key})
+def test_static_partitioned_job():
+    @static_partitioned_config(["blah"], tags_for_partition_key_fn=lambda key: {"foo": key})
     def my_static_partitioned_config(_partition_key: str):
-        return config_val
+        return RUN_CONFIG
 
-    assert (
-        my_static_partitioned_config.get_run_config_for_partition_key("")["ops"]
-        == RUN_CONFIG["ops"]
-    )
+    assert my_static_partitioned_config("") == RUN_CONFIG
 
-    @dg.job(config=my_static_partitioned_config)
+    @job(config=my_static_partitioned_config)
     def my_job():
         my_op()
 
@@ -39,12 +40,12 @@ def test_static_partitioned_job(config_val: Any):
     assert result.success
     assert result.dagster_run.tags["foo"] == "blah"
 
-    with pytest.raises(dg.DagsterUnknownPartitionError, match="Could not find a partition"):
+    with pytest.raises(DagsterUnknownPartitionError, match="Could not find a partition"):
         result = my_job.execute_in_process(partition_key="doesnotexist")
 
 
 def test_time_based_partitioned_job():
-    @dg.daily_partitioned_config(
+    @daily_partitioned_config(
         start_date="2021-05-05",
         tags_for_partition_fn=lambda start, end: {"foo": start.strftime("%Y-%m-%d")},
     )
@@ -53,11 +54,11 @@ def test_time_based_partitioned_job():
 
     assert my_daily_partitioned_config(None, None) == RUN_CONFIG
 
-    @dg.job(config=my_daily_partitioned_config)
+    @job(config=my_daily_partitioned_config)
     def my_job():
         my_op()
 
-    freeze_datetime = create_datetime(
+    freeze_datetime = create_pendulum_time(
         year=2021, month=5, day=6, hour=23, minute=59, second=59, tz="UTC"
     )
     partition_keys = my_daily_partitioned_config.get_partition_keys(freeze_datetime)
@@ -69,12 +70,12 @@ def test_time_based_partitioned_job():
     assert result.success
     assert result.dagster_run.tags["foo"] == "2021-05-05"
 
-    with pytest.raises(dg.DagsterUnknownPartitionError, match="Could not find a partition"):
+    with pytest.raises(DagsterUnknownPartitionError, match="Could not find a partition"):
         result = my_job.execute_in_process(partition_key="doesnotexist")
 
 
 def test_general_partitioned_config():
-    partitions_def = dg.StaticPartitionsDefinition(["blah"])
+    partitions_def = StaticPartitionsDefinition(["blah"])
 
     @partitioned_config(partitions_def, tags_for_partition_key_fn=lambda key: {"foo": key})
     def my_partitioned_config(_partition_key):
@@ -82,7 +83,7 @@ def test_general_partitioned_config():
 
     assert my_partitioned_config("blah") == {"ops": {"my_op": {"config": "blah"}}}
 
-    @dg.job(config=my_partitioned_config)
+    @job(config=my_partitioned_config)
     def my_job():
         my_op()
 
@@ -93,7 +94,7 @@ def test_general_partitioned_config():
     assert result.success
     assert result.dagster_run.tags["foo"] == "blah"
 
-    with pytest.raises(dg.DagsterUnknownPartitionError, match="Could not find a partition"):
+    with pytest.raises(DagsterUnknownPartitionError, match="Could not find a partition"):
         result = my_job.execute_in_process(partition_key="doesnotexist")
 
 
@@ -101,13 +102,13 @@ def test_dynamic_partitioned_config():
     def partition_fn(_current_time=None):
         return ["blah"]
 
-    @dg.dynamic_partitioned_config(partition_fn, tags_for_partition_key_fn=lambda key: {"foo": key})
+    @dynamic_partitioned_config(partition_fn, tags_for_partition_key_fn=lambda key: {"foo": key})
     def my_dynamic_partitioned_config(_partition_key):
         return RUN_CONFIG
 
     assert my_dynamic_partitioned_config("") == RUN_CONFIG
 
-    @dg.job(config=my_dynamic_partitioned_config)
+    @job(config=my_dynamic_partitioned_config)
     def my_job():
         my_op()
 
@@ -118,7 +119,7 @@ def test_dynamic_partitioned_config():
     assert result.success
     assert result.dagster_run.tags["foo"] == "blah"
 
-    with pytest.raises(dg.DagsterUnknownPartitionError, match="Could not find a partition"):
+    with pytest.raises(DagsterUnknownPartitionError, match="Could not find a partition"):
         result = my_job.execute_in_process(partition_key="doesnotexist")
 
 
@@ -126,16 +127,15 @@ def test_dict_partitioned_config_tags():
     def partition_fn(_current_time=None):
         return ["blah"]
 
-    @dg.dynamic_partitioned_config(
-        partition_fn,
-        tags_for_partition_key_fn=lambda key: {"foo": {"bar": key}},  # pyright: ignore[reportArgumentType]
+    @dynamic_partitioned_config(
+        partition_fn, tags_for_partition_key_fn=lambda key: {"foo": {"bar": key}}
     )
     def my_dynamic_partitioned_config(_partition_key):
         return RUN_CONFIG
 
     assert my_dynamic_partitioned_config("") == RUN_CONFIG
 
-    @dg.job(config=my_dynamic_partitioned_config)
+    @job(config=my_dynamic_partitioned_config)
     def my_job():
         my_op()
 

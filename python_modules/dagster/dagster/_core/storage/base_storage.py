@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 
 from dagster._core.instance import MayHaveInstanceWeakref, T_DagsterInstance
-from dagster._core.storage.event_log.base import EventLogStorage
-from dagster._core.storage.runs.base import RunStorage
-from dagster._core.storage.schedules.base import ScheduleStorage
+
+from .event_log.base import EventLogStorage
+from .runs.base import RunStorage
+from .schedules.base import ScheduleStorage
 
 
 class DagsterStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance]):

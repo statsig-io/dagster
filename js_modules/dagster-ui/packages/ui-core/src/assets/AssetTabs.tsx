@@ -1,9 +1,11 @@
 import {Tab, Tabs} from '@dagster-io/ui-components';
 import qs from 'qs';
-import {useMemo} from 'react';
+import * as React from 'react';
+
+import {TabLink} from '../ui/TabLink';
 
 import {AssetViewParams} from './types';
-import {TabLink} from '../ui/TabLink';
+import {AssetViewDefinitionNodeFragment} from './types/AssetView.types';
 
 interface Props {
   selectedTab: string;
@@ -28,23 +30,17 @@ export const AssetTabs = (props: Props) => {
 };
 
 export const DEFAULT_ASSET_TAB_ORDER = [
-  'overview',
   'partitions',
   'events',
   'checks',
+  'plots',
+  'definition',
   'lineage',
-  'automation',
-] as const;
+  'auto-materialize-history',
+];
 
 export type AssetTabConfigInput = {
-  definition:
-    | {
-        isMaterializable: boolean;
-        automationCondition: {__typename: 'AutomationCondition'} | null | undefined;
-        partitionDefinition: {__typename: 'PartitionDefinition'} | null | undefined;
-      }
-    | null
-    | undefined;
+  definition: AssetViewDefinitionNodeFragment | null;
   params: AssetViewParams;
 };
 
@@ -58,52 +54,56 @@ export type AssetTabConfig = {
 
 export const buildAssetViewParams = (params: AssetViewParams) => `?${qs.stringify(params)}`;
 
-export const buildAssetTabMap = (input: AssetTabConfigInput) => {
-  const {definition} = input;
-
+export const buildAssetTabMap = (input: AssetTabConfigInput): Record<string, AssetTabConfig> => {
+  const {definition, params} = input;
   return {
-    overview: {
-      id: 'overview',
-      title: 'Overview',
-      to: buildAssetViewParams({view: 'overview'}),
-    } as AssetTabConfig,
     partitions: {
       id: 'partitions',
       title: 'Partitions',
-      to: buildAssetViewParams({view: 'partitions'}),
-      hidden: !definition?.partitionDefinition || !definition?.isMaterializable,
-    } as AssetTabConfig,
+      to: buildAssetViewParams({...params, view: 'partitions'}),
+      hidden: !definition?.partitionDefinition || definition?.isSource,
+    },
     checks: {
       id: 'checks',
       title: 'Checks',
-      to: buildAssetViewParams({view: 'checks'}),
-    } as AssetTabConfig,
+      to: buildAssetViewParams({...params, view: 'checks'}),
+      hidden: !definition?.hasAssetChecks,
+    },
     events: {
       id: 'events',
       title: 'Events',
-      to: buildAssetViewParams({view: 'events', partition: undefined}),
-    } as AssetTabConfig,
+      to: buildAssetViewParams({...params, view: 'events', partition: undefined}),
+    },
+    plots: {
+      id: 'plots',
+      title: 'Plots',
+      to: buildAssetViewParams({...params, view: 'plots'}),
+    },
+    definition: {
+      id: 'definition',
+      title: 'Definition',
+      to: buildAssetViewParams({...params, view: 'definition'}),
+      disabled: !definition,
+    },
     lineage: {
       id: 'lineage',
       title: 'Lineage',
-      to: buildAssetViewParams({view: 'lineage'}),
+      to: buildAssetViewParams({...params, view: 'lineage'}),
       disabled: !definition,
-    } as AssetTabConfig,
-    automation: {
-      id: 'automation',
-      title: 'Automation',
-      to: buildAssetViewParams({view: 'automation'}),
+    },
+    'auto-materialize-history': {
+      id: 'auto-materialize-history',
+      title: 'Auto-materialize history',
+      to: buildAssetViewParams({...params, view: 'auto-materialize-history'}),
       disabled: !definition,
-      hidden: !definition?.automationCondition,
-    } as AssetTabConfig,
+      hidden: !definition?.autoMaterializePolicy,
+    },
   };
 };
 
-export const useAssetTabs = (input: AssetTabConfigInput): AssetTabConfig[] => {
-  return useMemo(() => {
-    const tabConfigs = buildAssetTabMap(input);
-    return DEFAULT_ASSET_TAB_ORDER.map((tabId) => tabConfigs[tabId]).filter(
-      (tab) => !!tab && !tab.hidden,
-    );
-  }, [input]);
+export const buildAssetTabs = (input: AssetTabConfigInput): AssetTabConfig[] => {
+  const tabConfigs = buildAssetTabMap(input);
+  return DEFAULT_ASSET_TAB_ORDER.map((tabId) => tabConfigs[tabId]).filter(
+    (tab): tab is AssetTabConfig => !!tab && !tab.hidden,
+  );
 };

@@ -1,4 +1,4 @@
-import {useCallback, useContext, useMemo} from 'react';
+import * as React from 'react';
 
 import {AppContext} from '../app/AppContext';
 import {useStateWithStorage} from '../hooks/useStateWithStorage';
@@ -13,7 +13,7 @@ export const buildStorageKey = (basePath: string, key: string) => `${basePath}:d
  * e.g. for the left nav or run timeline.
  */
 export const useRepoExpansionState = (collapsedKey: string, allKeys: string[]) => {
-  const {basePath} = useContext(AppContext);
+  const {basePath} = React.useContext(AppContext);
 
   const collapsedStorageKey = buildStorageKey(basePath, collapsedKey);
   const [collapsedKeys, setCollapsedKeys] = useStateWithStorage<string[]>(
@@ -21,9 +21,9 @@ export const useRepoExpansionState = (collapsedKey: string, allKeys: string[]) =
     validateExpandedKeys,
   );
 
-  const onToggle = useCallback(
-    (_key: string | RepoAddress) => {
-      const key = typeof _key === 'object' ? repoAddressAsHumanString(_key) : _key;
+  const onToggle = React.useCallback(
+    (repoAddress: RepoAddress) => {
+      const key = repoAddressAsHumanString(repoAddress);
       setCollapsedKeys((current) => {
         const nextCollapsedKeys = new Set(current || []);
         if (nextCollapsedKeys.has(key)) {
@@ -37,16 +37,12 @@ export const useRepoExpansionState = (collapsedKey: string, allKeys: string[]) =
     [setCollapsedKeys],
   );
 
-  const onToggleAll = useCallback(
+  const onToggleAll = React.useCallback(
     (expand: boolean) => {
       setCollapsedKeys((current) => {
         const nextCollapsedKeys = new Set(current || []);
         allKeys.forEach((key) => {
-          if (expand) {
-            nextCollapsedKeys.delete(key);
-          } else {
-            nextCollapsedKeys.add(key);
-          }
+          expand ? nextCollapsedKeys.delete(key) : nextCollapsedKeys.add(key);
         });
         return Array.from(nextCollapsedKeys);
       });
@@ -54,12 +50,12 @@ export const useRepoExpansionState = (collapsedKey: string, allKeys: string[]) =
     [allKeys, setCollapsedKeys],
   );
 
-  const expandedKeys = useMemo(() => {
+  const expandedKeys = React.useMemo(() => {
     const collapsedSet = new Set(collapsedKeys);
     return allKeys.filter((key) => !collapsedSet.has(key));
   }, [allKeys, collapsedKeys]);
 
-  return useMemo(
+  return React.useMemo(
     () => ({
       expandedKeys,
       onToggle,

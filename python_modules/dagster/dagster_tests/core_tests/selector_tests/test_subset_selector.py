@@ -1,6 +1,6 @@
-import dagster as dg
 import pytest
-from dagster import in_process_executor
+from dagster import In, asset, define_asset_job, in_process_executor, job, op, repository
+from dagster._core.errors import DagsterExecutionStepNotFoundError, DagsterInvalidSubsetError
 from dagster._core.selector.subset_selector import (
     MAX_NUM,
     Traverser,
@@ -12,32 +12,32 @@ from dagster._core.selector.subset_selector import (
 )
 
 
-@dg.op
+@op
 def return_one():
     return 1
 
 
-@dg.op
+@op
 def return_two():
     return 2
 
 
-@dg.op(ins={"num1": dg.In(), "num2": dg.In()})
+@op(ins={"num1": In(), "num2": In()})
 def add_nums(num1, num2):
     return num1 + num2
 
 
-@dg.op(ins={"num": dg.In()})
+@op(ins={"num": In()})
 def multiply_two(num):
     return num * 2
 
 
-@dg.op(ins={"num": dg.In()})
+@op(ins={"num": In()})
 def add_one(num):
     return num + 1
 
 
-@dg.job(executor_def=in_process_executor)
+@job(executor_def=in_process_executor)
 def foo_job():
     """return_one ---> add_nums --> multiply_two --> add_one
     return_two --|.
@@ -46,7 +46,7 @@ def foo_job():
 
 
 def test_generate_dep_graph():
-    graph = generate_dep_graph(foo_job)  # pyright: ignore[reportArgumentType]
+    graph = generate_dep_graph(foo_job)
     assert graph == {
         "upstream": {
             "return_one": set(),
@@ -66,7 +66,7 @@ def test_generate_dep_graph():
 
 
 def test_traverser():
-    graph = generate_dep_graph(foo_job)  # pyright: ignore[reportArgumentType]
+    graph = generate_dep_graph(foo_job)
     traverser = Traverser(graph)
 
     assert traverser.fetch_upstream(item_name="return_one", depth=1) == set()
@@ -81,7 +81,7 @@ def test_traverser():
 
 
 def test_traverser_invalid():
-    graph = generate_dep_graph(foo_job)  # pyright: ignore[reportArgumentType]
+    graph = generate_dep_graph(foo_job)
     traverser = Traverser(graph)
 
     assert traverser.fetch_upstream(item_name="some_solid", depth=1) == set()
@@ -100,15 +100,15 @@ def test_parse_clause_invalid():
 
 
 def test_parse_op_selection_single():
-    op_selection_single = parse_op_queries(foo_job, ["add_nums"])  # pyright: ignore[reportArgumentType]
+    op_selection_single = parse_op_queries(foo_job, ["add_nums"])
     assert len(op_selection_single) == 1
     assert op_selection_single == {"add_nums"}
 
-    op_selection_star = parse_op_queries(foo_job, ["add_nums*"])  # pyright: ignore[reportArgumentType]
+    op_selection_star = parse_op_queries(foo_job, ["add_nums*"])
     assert len(op_selection_star) == 3
     assert set(op_selection_star) == {"add_nums", "multiply_two", "add_one"}
 
-    op_selection_both = parse_op_queries(foo_job, ["*add_nums+"])  # pyright: ignore[reportArgumentType]
+    op_selection_both = parse_op_queries(foo_job, ["*add_nums+"])
     assert len(op_selection_both) == 4
     assert set(op_selection_both) == {
         "return_one",
@@ -119,7 +119,7 @@ def test_parse_op_selection_single():
 
 
 def test_parse_op_selection_multi():
-    op_selection_multi_disjoint = parse_op_queries(foo_job, ["return_one", "add_nums+"])  # pyright: ignore[reportArgumentType]
+    op_selection_multi_disjoint = parse_op_queries(foo_job, ["return_one", "add_nums+"])
     assert len(op_selection_multi_disjoint) == 3
     assert set(op_selection_multi_disjoint) == {
         "return_one",
@@ -127,7 +127,7 @@ def test_parse_op_selection_multi():
         "multiply_two",
     }
 
-    op_selection_multi_overlap = parse_op_queries(foo_job, ["*add_nums", "return_one+"])  # pyright: ignore[reportArgumentType]
+    op_selection_multi_overlap = parse_op_queries(foo_job, ["*add_nums", "return_one+"])
     assert len(op_selection_multi_overlap) == 3
     assert set(op_selection_multi_overlap) == {
         "return_one",
@@ -136,18 +136,18 @@ def test_parse_op_selection_multi():
     }
 
     with pytest.raises(
-        dg.DagsterInvalidSubsetError,
+        DagsterInvalidSubsetError,
         match="No qualified ops to execute found for op_selection",
     ):
-        parse_op_queries(foo_job, ["*add_nums", "a"])  # pyright: ignore[reportArgumentType]
+        parse_op_queries(foo_job, ["*add_nums", "a"])
 
 
 def test_parse_op_selection_invalid():
     with pytest.raises(
-        dg.DagsterInvalidSubsetError,
+        DagsterInvalidSubsetError,
         match="No qualified ops to execute found for op_selection",
     ):
-        parse_op_queries(foo_job, ["some,solid"])  # pyright: ignore[reportArgumentType]
+        parse_op_queries(foo_job, ["some,solid"])
 
 
 step_deps = {
@@ -192,7 +192,7 @@ def test_clause_to_subset(clause, expected_subset):
             "e": {"f"},
         },
     }
-    assert set(clause_to_subset(graph, clause, lambda x: x)) == set(expected_subset.split(","))  # pyright: ignore[reportArgumentType]
+    assert set(clause_to_subset(graph, clause, lambda x: x)) == set(expected_subset.split(","))
 
 
 def test_parse_step_selection_single():
@@ -236,7 +236,7 @@ def test_parse_step_selection_multi():
     }
 
     with pytest.raises(
-        dg.DagsterExecutionStepNotFoundError,
+        DagsterExecutionStepNotFoundError,
         match="Step selection refers to unknown step: a",
     ):
         parse_step_selection(step_deps, ["*add_nums", "a"])
@@ -244,29 +244,29 @@ def test_parse_step_selection_multi():
 
 def test_parse_step_selection_invalid():
     with pytest.raises(
-        dg.DagsterInvalidSubsetError,
+        DagsterInvalidSubsetError,
         match="No qualified steps to execute found for step_selection",
     ):
         parse_step_selection(step_deps, ["1+some_solid"])
 
 
-@dg.asset
+@asset
 def my_asset(context):
     assert context.job_def.asset_selection_data is not None
     return 1
 
 
-@dg.asset
+@asset
 def asset_2(my_asset):
     return my_asset
 
 
-@dg.repository
+@repository
 def asset_house():
     return [
         my_asset,
         asset_2,
-        dg.define_asset_job("asset_selection_job", selection="*", executor_def=in_process_executor),
+        define_asset_job("asset_selection_job", selection="*", executor_def=in_process_executor),
     ]
 
 

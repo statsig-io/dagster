@@ -10,27 +10,22 @@ import uuid
 import warnings
 from contextlib import contextmanager
 
-from dagster_shared.ipc import interrupt_ipc_subprocess, open_ipc_subprocess
-from dagster_shared.seven import IS_WINDOWS
-
-from dagster._core.execution.scripts import poll_compute_logs, watch_orphans
+from dagster._core.execution import poll_compute_logs, watch_orphans
+from dagster._serdes.ipc import interrupt_ipc_subprocess, open_ipc_subprocess
+from dagster._seven import IS_WINDOWS, wait_for_process
 from dagster._utils import ensure_file
 
 WIN_PY36_COMPUTE_LOG_DISABLED_MSG = """\u001b[33mWARNING: Compute log capture is disabled for the current environment. Set the environment variable `PYTHONLEGACYWINDOWSSTDIO` to enable.\n\u001b[0m"""
 
 
 def create_compute_log_file_key():
-    # Ensure that if user code has seeded the random module that it
-    # doesn't cause the same file key for each step (but the random
-    # seed is still restored afterwards)
-    rng = random.Random(int.from_bytes(os.urandom(16), "big"))
-    return "".join(rng.choice(string.ascii_lowercase) for x in range(8))
+    return "".join(random.choice(string.ascii_lowercase) for x in range(8))
 
 
 @contextmanager
 def redirect_to_file(stream, filepath):
     with open(filepath, "a+", buffering=1, encoding="utf8") as file_stream:
-        with redirect_stream(file_stream, stream):  # pyright: ignore[reportArgumentType]
+        with redirect_stream(file_stream, stream):
             yield
 
 
@@ -67,7 +62,7 @@ def redirect_stream(to_stream=os.devnull, from_stream=sys.stdout):
     with os.fdopen(os.dup(from_fd), "wb") as copied:
         from_stream.flush()
         try:
-            os.dup2(_fileno(to_stream), from_fd)  # pyright: ignore[reportArgumentType]
+            os.dup2(_fileno(to_stream), from_fd)
         except ValueError:
             with open(to_stream, "wb") as to_file:
                 os.dup2(to_file.fileno(), from_fd)
@@ -75,7 +70,7 @@ def redirect_stream(to_stream=os.devnull, from_stream=sys.stdout):
             yield from_stream
         finally:
             from_stream.flush()
-            to_stream.flush()  # pyright: ignore[reportAttributeAccessIssue]
+            to_stream.flush()
             os.dup2(copied.fileno(), from_fd)
 
 
@@ -106,7 +101,7 @@ def execute_windows_tail(path, stream):
             )
             yield (tail_process.pid, None)
         finally:
-            if tail_process:  # pyright: ignore[reportPossiblyUnboundVariable]
+            if tail_process:
                 start_time = time.time()
                 while not os.path.isfile(ipc_output_file):
                     if time.time() - start_time > 15:
@@ -116,7 +111,7 @@ def execute_windows_tail(path, stream):
                 # Now that we know the tail process has started, tell it to terminate once there is
                 # nothing more to output
                 interrupt_ipc_subprocess(tail_process)
-                tail_process.communicate(timeout=30)
+                wait_for_process(tail_process)
 
 
 @contextmanager
@@ -144,15 +139,10 @@ def execute_posix_tail(path, stream):
 
         yield (tail_process.pid, watcher_process.pid)
     finally:
-        # The posix tail process has default interval check 1s, which may lead to missing logs on stdout/stderr.
-        # Allow users to add delay before killing tail process.
-        # More here: https://github.com/dagster-io/dagster/issues/23336
-        time.sleep(float(os.getenv("DAGSTER_COMPUTE_LOG_TAIL_WAIT_AFTER_FINISH", "0")))
-
-        if tail_process:  # pyright: ignore[reportPossiblyUnboundVariable]
+        if tail_process:
             _clean_up_subprocess(tail_process)
 
-        if watcher_process:  # pyright: ignore[reportPossiblyUnboundVariable]
+        if watcher_process:
             _clean_up_subprocess(watcher_process)
 
 
@@ -160,7 +150,7 @@ def _clean_up_subprocess(subprocess_obj):
     try:
         if subprocess_obj:
             subprocess_obj.terminate()
-            subprocess_obj.communicate(timeout=30)
+            wait_for_process(subprocess_obj)
     except OSError:
         pass
 

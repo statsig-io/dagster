@@ -25,7 +25,7 @@ interface Props {
   onSetFilter: (level: LogLevel, enabled: boolean) => void;
 }
 
-export const LogFilterSelect = ({options, onSetFilter}: Props) => {
+export const LogFilterSelect: React.FC<Props> = ({options, onSetFilter}) => {
   const [showMenu, setShowMenu] = React.useState(false);
 
   const levels = Object.keys(options);
@@ -72,7 +72,7 @@ export const LogFilterSelect = ({options, onSetFilter}: Props) => {
                           style={{flex: 1}}
                         >
                           <div>{label}</div>
-                          <div style={{color: Colors.textLight()}}>{compactNumber(count)}</div>
+                          <div style={{color: Colors.Gray500}}>{compactNumber(count)}</div>
                         </Box>
                       }
                     />
@@ -89,9 +89,7 @@ export const LogFilterSelect = ({options, onSetFilter}: Props) => {
         icon={<Icon name="filter_alt" />}
         rightIcon={<Icon name="expand_more" />}
       >
-        <span style={{fontVariantNumeric: 'tabular-nums'}}>
-          Levels ({enabledCount}/{levels.length})
-        </span>
+        Levels ({enabledCount})
       </FilterButton>
     </Popover>
   );

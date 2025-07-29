@@ -1,9 +1,10 @@
 import {Button, Dialog, DialogBody, DialogFooter, FontFamily} from '@dagster-io/ui-components';
 import * as React from 'react';
-import styled, {createGlobalStyle} from 'styled-components';
+import styled from 'styled-components';
+
+import {testId} from '../testing/testId';
 
 import {copyValue} from './DomUtils';
-import {testId} from '../testing/testId';
 
 const CURRENT_ALERT_CHANGED = 'alert-changed';
 
@@ -73,14 +74,13 @@ export const CustomAlertProvider = () => {
       onClose={() => setCustomAlert(null)}
       style={{width: 'auto', maxWidth: '80vw'}}
       isOpen={!!alert}
-      portalClassName="custom-alert-portal"
     >
       {alert ? (
         <DialogBody data-testid={testId('alert-body')}>
           <Body ref={body}>{alert.body}</Body>
         </DialogBody>
       ) : null}
-      <DialogFooter topBorder>
+      <DialogFooter>
         <Button autoFocus={false} onClick={onCopy}>
           Copy
         </Button>
@@ -95,12 +95,5 @@ export const CustomAlertProvider = () => {
 const Body = styled.div`
   white-space: pre-line;
   font-family: ${FontFamily.monospace};
-  font-size: 14px;
-  font-variant-ligatures: none;
-`;
-
-export const GlobalCustomAlertPortalStyle = createGlobalStyle`
-  .custom-alert-portal {
-    z-index: 1000;
-  }
+  font-size: 16px;
 `;

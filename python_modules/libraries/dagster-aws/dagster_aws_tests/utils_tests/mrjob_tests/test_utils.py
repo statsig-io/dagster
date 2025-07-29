@@ -1,10 +1,9 @@
+import socket
 import ssl
 import time
 from datetime import datetime, timedelta
 
 import botocore
-from dagster._vendored.dateutil.tz import tzutc
-
 from dagster_aws.utils.mrjob.utils import (
     _boto3_now,
     _client_error_code,
@@ -13,53 +12,54 @@ from dagster_aws.utils.mrjob.utils import (
     _wrap_aws_client,
     strip_microseconds,
 )
+from dateutil.tz import tzutc
 
 EPS = 10.0
 
 
 def test_client_error_code():
     code = "Timeout"
-    ex = botocore.exceptions.ClientError({"Error": {"Code": code}}, "foo")  # pyright: ignore[reportAttributeAccessIssue]
+    ex = botocore.exceptions.ClientError({"Error": {"Code": code}}, "foo")
     assert _client_error_code(ex) == code
 
-    empty_ex = botocore.exceptions.ClientError({}, "foo")  # pyright: ignore[reportAttributeAccessIssue]
+    empty_ex = botocore.exceptions.ClientError({}, "foo")
     assert _client_error_code(empty_ex) == ""
 
 
 def test_client_error_status():
     code = 403
-    ex = botocore.exceptions.ClientError({"Error": {"HTTPStatusCode": code}}, "foo")  # pyright: ignore[reportAttributeAccessIssue]
+    ex = botocore.exceptions.ClientError({"Error": {"HTTPStatusCode": code}}, "foo")
     assert _client_error_status(ex) == code
 
-    empty_ex = botocore.exceptions.ClientError({}, "foo")  # pyright: ignore[reportAttributeAccessIssue]
+    empty_ex = botocore.exceptions.ClientError({}, "foo")
     assert _client_error_status(empty_ex) is None
 
 
 def test_is_retriable_client_error():
-    ex = botocore.exceptions.ClientError({"Error": {"Code": "Timeout"}}, "foo")  # pyright: ignore[reportAttributeAccessIssue]
+    ex = botocore.exceptions.ClientError({"Error": {"Code": "Timeout"}}, "foo")
     assert _is_retriable_client_error(ex)
 
-    ex = botocore.exceptions.ClientError({"Error": {"Code": "Not retryable"}}, "foo")  # pyright: ignore[reportAttributeAccessIssue]
+    ex = botocore.exceptions.ClientError({"Error": {"Code": "Not retryable"}}, "foo")
     assert not _is_retriable_client_error(ex)
 
-    ex = botocore.exceptions.ClientError({"Error": {"HTTPStatusCode": 505}}, "foo")  # pyright: ignore[reportAttributeAccessIssue]
+    ex = botocore.exceptions.ClientError({"Error": {"HTTPStatusCode": 505}}, "foo")
     assert _is_retriable_client_error(ex)
 
-    ex = botocore.exceptions.ClientError({"Error": {"HTTPStatusCode": 403}}, "foo")  # pyright: ignore[reportAttributeAccessIssue]
+    ex = botocore.exceptions.ClientError({"Error": {"HTTPStatusCode": 403}}, "foo")
     assert not _is_retriable_client_error(ex)
 
     assert _is_retriable_client_error(ssl.SSLError("The read operation timed out"))
     assert not _is_retriable_client_error(ssl.SSLError("Unknown error"))
 
-    assert _is_retriable_client_error(OSError(110, "Connection timed out"))
-    assert not _is_retriable_client_error(OSError(12345, "Unknown error"))
+    assert _is_retriable_client_error(socket.error(110, "Connection timed out"))
+    assert not _is_retriable_client_error(socket.error(12345, "Unknown error"))
 
 
 def test_wrap_aws_client(mock_s3_resource):
     client = _wrap_aws_client(mock_s3_resource.meta.client, min_backoff=1000)
     res = client.list_buckets()
-    assert res["ResponseMetadata"]["HTTPStatusCode"] == 200  # pyright: ignore[reportOptionalSubscript]
-    assert res["Buckets"] == []  # pyright: ignore[reportOptionalSubscript]
+    assert res["ResponseMetadata"]["HTTPStatusCode"] == 200
+    assert res["Buckets"] == []
 
 
 def test_boto3_now():

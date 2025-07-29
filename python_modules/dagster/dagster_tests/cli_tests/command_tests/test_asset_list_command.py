@@ -1,13 +1,13 @@
 from typing import Optional
 
-import dagster as dg
 from click.testing import CliRunner
 from dagster._cli.asset import asset_list_command
+from dagster._utils import file_relative_path
 
 
 def invoke_list(select: Optional[str] = None, partition: Optional[str] = None):
     runner = CliRunner()
-    options = ["-f", dg.file_relative_path(__file__, "assets.py")]
+    options = ["-f", file_relative_path(__file__, "assets.py")]
     if select:
         options.extend(["--select", select])
     return runner.invoke(asset_list_command, options)
@@ -18,7 +18,7 @@ def test_empty():
 
     result = runner.invoke(asset_list_command, [])
     assert result.exit_code == 2
-    assert "Invalid set of CLI arguments for loading repository/job" in result.output
+    assert "Must specify a python file or module name" in result.output
 
 
 def test_no_selection():
@@ -28,14 +28,9 @@ def test_no_selection():
         == "\n".join(
             [
                 "asset1",
-                "asset_assert_with_config",
-                "asset_with_config",
                 "differently_partitioned_asset",
                 "downstream_asset",
-                "fail_asset",
-                "multi_run_partitioned_asset",
                 "partitioned_asset",
-                "single_run_partitioned_asset",
                 "some/key/prefix/asset_with_prefix",
             ]
         )

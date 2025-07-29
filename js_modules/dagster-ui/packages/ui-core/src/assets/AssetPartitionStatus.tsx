@@ -39,13 +39,13 @@ export const assetPartitionStatusToText = (status: AssetPartitionStatus) => {
 const assetPartitionStatusToColor = (status: AssetPartitionStatus) => {
   switch (status) {
     case AssetPartitionStatus.MATERIALIZED:
-      return Colors.accentGreen();
+      return Colors.Green500;
     case AssetPartitionStatus.MATERIALIZING:
-      return Colors.accentBlue();
+      return Colors.Blue500;
     case AssetPartitionStatus.FAILED:
-      return Colors.accentRed();
+      return Colors.Red500;
     case AssetPartitionStatus.MISSING:
-      return Colors.accentGray();
+      return Colors.Gray200;
     default:
       assertUnreachable(status);
   }
@@ -53,7 +53,7 @@ const assetPartitionStatusToColor = (status: AssetPartitionStatus) => {
 
 export const assetPartitionStatusesToStyle = (status: AssetPartitionStatus[]): CSSProperties => {
   if (status.length === 0) {
-    return {background: Colors.backgroundLight()};
+    return {background: Colors.Gray200};
   }
   if (status.length === 1) {
     return {background: assetPartitionStatusToColor(status[0]!)};

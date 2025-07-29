@@ -1,48 +1,30 @@
 import {pathHorizontalDiagonal, pathVerticalDiagonal} from '@vx/shape';
-import memoize from 'lodash/memoize';
+
+import {featureEnabled, FeatureFlag} from '../app/Flags';
+import {COMMON_COLLATOR} from '../app/Util';
+import {RunStatus, StaleStatus} from '../graphql/types';
 
 import {AssetNodeKeyFragment} from './types/AssetNode.types';
-import {COMMON_COLLATOR} from '../app/Util';
+import {AssetNodeForGraphQueryFragment} from './types/useAssetGraphData.types';
 import {
-  AssetCheckLiveFragment,
+  AssetGraphLiveQuery,
   AssetLatestInfoFragment,
   AssetLatestInfoRunFragment,
   AssetNodeLiveFragment,
   AssetNodeLiveFreshnessInfoFragment,
   AssetNodeLiveMaterializationFragment,
   AssetNodeLiveObservationFragment,
-} from '../asset-data/types/AssetBaseDataProvider.types';
-import {AssetStaleDataFragment} from '../asset-data/types/AssetStaleStatusDataProvider.types';
-import {RunStatus} from '../graphql/types';
-import {WorkspaceAssetFragment} from '../workspace/WorkspaceContext/types/WorkspaceQueries.types';
+} from './types/useLiveDataForAssetKeys.types';
 
-export enum AssetGraphViewType {
-  GLOBAL = 'global',
-  JOB = 'job',
-  GROUP = 'group',
-  CATALOG = 'catalog',
-}
-
-/**
- * IMPORTANT: This file is used by the WebWorker so make sure we don't indirectly import React or anything that relies on window/document
- */
-
-/**
- * IMPORTANT: This file is used by the WebWorker so make sure we don't indirectly import React or anything that relies on window/document
- */
-
-type AssetNode = WorkspaceAssetFragment;
+type AssetNode = AssetNodeForGraphQueryFragment;
 type AssetKey = AssetNodeKeyFragment;
-type AssetLiveNode = AssetNodeLiveFragment & {
-  freshnessInfo: AssetNodeLiveFreshnessInfoFragment | null | undefined;
-};
+type AssetLiveNode = AssetNodeLiveFragment;
 type AssetLatestInfo = AssetLatestInfoFragment;
 
 export const __ASSET_JOB_PREFIX = '__ASSET_JOB';
-export const __ANONYMOUS_ASSET_JOB_PREFIX = '__anonymous_asset_job';
 
 export function isHiddenAssetGroupJob(jobName: string) {
-  return jobName.startsWith(__ASSET_JOB_PREFIX) || jobName.startsWith(__ANONYMOUS_ASSET_JOB_PREFIX);
+  return jobName.startsWith(__ASSET_JOB_PREFIX);
 }
 
 // IMPORTANT: We use this, rather than AssetNode.id throughout this file because
@@ -54,10 +36,6 @@ export function isHiddenAssetGroupJob(jobName: string) {
 //
 export type GraphId = string;
 export const toGraphId = (key: {path: string[]}): GraphId => JSON.stringify(key.path);
-export const fromGraphId = (graphId: GraphId): AssetNodeKeyFragment => ({
-  path: JSON.parse(graphId),
-  __typename: 'AssetKey',
-});
 
 export interface GraphNode {
   id: GraphId;
@@ -69,7 +47,6 @@ export interface GraphData {
   nodes: {[assetId: GraphId]: GraphNode};
   downstream: {[assetId: GraphId]: {[childAssetId: GraphId]: boolean}};
   upstream: {[assetId: GraphId]: {[parentAssetId: GraphId]: boolean}};
-  expandedGroups?: string[];
 }
 
 export const buildGraphData = (assetNodes: AssetNode[]) => {
@@ -134,23 +111,24 @@ export const graphHasCycles = (graphData: GraphData) => {
   };
   let hasCycles = false;
   while (nodes.size !== 0 && !hasCycles) {
-    hasCycles = search([], nodes.values().next().value!);
+    hasCycles = search([], nodes.values().next().value);
   }
   return hasCycles;
 };
 
-export const buildSVGPathHorizontal = pathHorizontalDiagonal({
-  source: (s: any) => s.source,
-  target: (s: any) => s.target,
-  x: (s: any) => s.x,
-  y: (s: any) => s.y,
-});
-export const buildSVGPathVertical = pathVerticalDiagonal({
-  source: (s: any) => s.source,
-  target: (s: any) => s.target,
-  x: (s: any) => s.x,
-  y: (s: any) => s.y,
-});
+export const buildSVGPath = featureEnabled(FeatureFlag.flagHorizontalDAGs)
+  ? pathHorizontalDiagonal({
+      source: (s: any) => s.source,
+      target: (s: any) => s.target,
+      x: (s: any) => s.x,
+      y: (s: any) => s.y,
+    })
+  : pathVerticalDiagonal({
+      source: (s: any) => s.source,
+      target: (s: any) => s.target,
+      x: (s: any) => s.x,
+      y: (s: any) => s.y,
+    });
 
 export interface LiveDataForNode {
   stepKey: string;
@@ -159,24 +137,20 @@ export interface LiveDataForNode {
   runWhichFailedToMaterialize: AssetLatestInfoRunFragment | null;
   lastMaterialization: AssetNodeLiveMaterializationFragment | null;
   lastMaterializationRunStatus: RunStatus | null; // only available if runWhichFailedToMaterialize is null
-  freshnessInfo: AssetNodeLiveFreshnessInfoFragment | null | undefined;
+  freshnessInfo: AssetNodeLiveFreshnessInfoFragment | null;
   lastObservation: AssetNodeLiveObservationFragment | null;
-  assetChecks: AssetCheckLiveFragment[];
+  staleStatus: StaleStatus | null;
+  staleCauses: AssetGraphLiveQuery['assetNodes'][0]['staleCauses'];
+  assetChecks: AssetGraphLiveQuery['assetNodes'][0]['assetChecks'];
   partitionStats: {
     numMaterialized: number;
     numMaterializing: number;
     numPartitions: number;
     numFailed: number;
   } | null;
-  opNames: string[];
 }
 
-export type LiveDataForNodeWithStaleData = LiveDataForNode & {
-  staleStatus: AssetStaleDataFragment['staleStatus'];
-  staleCauses: AssetStaleDataFragment['staleCauses'];
-};
-
-export const MISSING_LIVE_DATA: LiveDataForNodeWithStaleData = {
+export const MISSING_LIVE_DATA: LiveDataForNode = {
   unstartedRunIds: [],
   inProgressRunIds: [],
   runWhichFailedToMaterialize: null,
@@ -188,7 +162,6 @@ export const MISSING_LIVE_DATA: LiveDataForNodeWithStaleData = {
   staleStatus: null,
   staleCauses: [],
   assetChecks: [],
-  opNames: [],
   stepKey: '',
 };
 
@@ -196,62 +169,56 @@ export interface LiveData {
   [assetId: GraphId]: LiveDataForNode;
 }
 
+export const buildLiveData = ({assetNodes, assetsLatestInfo}: AssetGraphLiveQuery) => {
+  const data: LiveData = {};
+
+  for (const liveNode of assetNodes) {
+    const graphId = toGraphId(liveNode.assetKey);
+    const assetLatestInfo = assetsLatestInfo.find(
+      (r) => JSON.stringify(r.assetKey) === JSON.stringify(liveNode.assetKey),
+    );
+
+    data[graphId] = buildLiveDataForNode(liveNode, assetLatestInfo);
+  }
+
+  return data;
+};
+
 export const buildLiveDataForNode = (
   assetNode: AssetLiveNode,
   assetLatestInfo?: AssetLatestInfo,
 ): LiveDataForNode => {
   const lastMaterialization = assetNode.assetMaterializations[0] || null;
   const lastObservation = assetNode.assetObservations[0] || null;
-  const latestRun = assetLatestInfo?.latestRun ? assetLatestInfo.latestRun : null;
+  const latestRunForAsset = assetLatestInfo?.latestRun ? assetLatestInfo.latestRun : null;
+
+  const runWhichFailedToMaterialize =
+    (latestRunForAsset?.status === 'FAILURE' &&
+      (!lastMaterialization || lastMaterialization.runId !== latestRunForAsset?.id) &&
+      latestRunForAsset) ||
+    null;
 
   return {
     lastMaterialization,
     lastMaterializationRunStatus:
-      latestRun && lastMaterialization?.runId === latestRun.id ? latestRun.status : null,
+      latestRunForAsset && lastMaterialization?.runId === latestRunForAsset?.id
+        ? latestRunForAsset.status
+        : null,
     lastObservation,
-    assetChecks:
-      assetNode.assetChecksOrError.__typename === 'AssetChecks'
-        ? assetNode.assetChecksOrError.checks
-        : [],
+    assetChecks: assetNode.assetChecks,
+    staleStatus: assetNode.staleStatus,
+    staleCauses: assetNode.staleCauses,
     stepKey: stepKeyForAsset(assetNode),
     freshnessInfo: assetNode.freshnessInfo,
     inProgressRunIds: assetLatestInfo?.inProgressRunIds || [],
     unstartedRunIds: assetLatestInfo?.unstartedRunIds || [],
     partitionStats: assetNode.partitionStats || null,
-    runWhichFailedToMaterialize:
-      latestRun && shouldDisplayRunFailure(latestRun, lastMaterialization) ? latestRun : null,
-    opNames: assetNode.opNames,
+    runWhichFailedToMaterialize,
   };
 };
 
-export function shouldDisplayRunFailure(
-  latestRun: AssetLatestInfoRunFragment,
-  lastMaterialization: AssetNodeLiveMaterializationFragment | null,
-) {
-  if (latestRun.status !== 'FAILURE') {
-    return false; // The run did not fail
-  }
-  if (lastMaterialization) {
-    if (lastMaterialization && lastMaterialization.runId === latestRun.id) {
-      // The run failed, but it successfully emitted the latest materialization event. This
-      // is caused by the run failing in a later step.
-      return false;
-    }
-    if (Number(lastMaterialization.timestamp) > Number(latestRun.endTime) * 1000) {
-      // The latest materialization is NEWER than the latest run. This is caused by the user
-      // reporting a materialization manually.
-      return false;
-    }
-  }
-  return true;
-}
-
 export function tokenForAssetKey(key: {path: string[]}) {
   return key.path.join('/');
-}
-
-export function tokenToAssetKey(token: string) {
-  return {path: token.split('/')};
 }
 
 export function displayNameForAssetKey(key: {path: string[]}) {
@@ -274,31 +241,20 @@ export const itemWithAssetKey = (key: {path: string[]}) => {
   return (asset: {assetKey: {path: string[]}}) => tokenForAssetKey(asset.assetKey) === token;
 };
 
-export const isGroupId = (str: string) => /^[^@:]+@[^@:]+:.+$/.test(str);
+export function walkTreeUpwards(
+  nodeId: string,
+  graphData: GraphData,
+  callback: (nodeId: string) => void,
+) {
+  // TODO
+  console.log({nodeId, graphData, callback});
+}
 
-export const groupIdForNode = (node: GraphNode) =>
-  [
-    node.definition.repository.name,
-    '@',
-    node.definition.repository.location.name,
-    ':',
-    node.definition.groupName,
-  ].join('');
-
-// Inclusive
-export const getUpstreamNodes = memoize(
-  (assetKey: AssetNodeKeyFragment, graphData: GraphData): AssetNodeKeyFragment[] => {
-    const upstream = Object.keys(graphData.upstream[toGraphId(assetKey)] || {});
-    const currentUpstream = upstream.map((graphId) => fromGraphId(graphId));
-    return [
-      assetKey,
-      ...currentUpstream,
-      ...currentUpstream.map((graphId) => getUpstreamNodes(graphId, graphData)).flat(),
-    ].filter(
-      (key, index, arr) =>
-        // Filter out non uniques
-        arr.findIndex((key2) => JSON.stringify(key2) === JSON.stringify(key)) === index,
-    );
-  },
-  (key, data) => JSON.stringify({key, data}),
-);
+export function walkTreeDownwards(
+  nodeId: string,
+  graphData: GraphData,
+  callback: (nodeId: string) => void,
+) {
+  // TODO
+  console.log({nodeId, graphData, callback});
+}

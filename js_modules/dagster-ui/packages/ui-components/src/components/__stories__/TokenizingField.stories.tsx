@@ -1,8 +1,8 @@
 import {Meta} from '@storybook/react';
-import {useState} from 'react';
+import * as React from 'react';
 import styled from 'styled-components';
 
-import {Colors} from '../Color';
+import {Colors} from '../Colors';
 import {Group} from '../Group';
 import {
   Suggestion,
@@ -18,7 +18,7 @@ export default {
 } as Meta;
 
 export const Default = () => {
-  const [value, setValue] = useState<TokenizingFieldValue[]>([]);
+  const [value, setValue] = React.useState<TokenizingFieldValue[]>([]);
 
   const suggestions = [
     {
@@ -41,7 +41,7 @@ export const Default = () => {
 };
 
 export const TokenProvider = () => {
-  const [value, setValue] = useState<TokenizingFieldValue[]>([]);
+  const [value, setValue] = React.useState<TokenizingFieldValue[]>([]);
 
   return (
     <TokenizingField
@@ -55,7 +55,7 @@ export const TokenProvider = () => {
 };
 
 export const TokenAndSuggestionProviders = () => {
-  const [value, setValue] = useState<TokenizingFieldValue[]>([]);
+  const [value, setValue] = React.useState<TokenizingFieldValue[]>([]);
 
   const users = {
     'ben@dagsterlabs.com': 'Ben Pankow',
@@ -85,12 +85,12 @@ export const TokenAndSuggestionProviders = () => {
 };
 
 export const CustomSuggestionRenderer = () => {
-  const [value, setValue] = useState<TokenizingFieldValue[]>([]);
+  const [value, setValue] = React.useState<TokenizingFieldValue[]>([]);
   const colors = {
-    Red: Colors.accentRed(),
-    Green: Colors.accentGreen(),
-    Blue: Colors.accentBlue(),
-    Yellow: Colors.accentYellow(),
+    Red: Colors.Red500,
+    Green: Colors.Green500,
+    Blue: Colors.Blue500,
+    Yellow: Colors.Yellow500,
   };
 
   const suggestionProviders: SuggestionProvider[] = [{values: () => Object.keys(colors)}];

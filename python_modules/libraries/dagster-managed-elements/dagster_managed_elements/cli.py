@@ -2,9 +2,8 @@ import functools
 import importlib
 import logging
 import sys
-from collections.abc import Sequence
 from types import ModuleType
-from typing import Optional
+from typing import Optional, Sequence
 
 import click
 import click_spinner

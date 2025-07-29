@@ -9,16 +9,7 @@ export type OpsRootQueryVariables = Types.Exact<{
 export type OpsRootQuery = {
   __typename: 'Query';
   repositoryOrError:
-    | {
-        __typename: 'PythonError';
-        message: string;
-        stack: Array<string>;
-        errorChain: Array<{
-          __typename: 'ErrorChainLink';
-          isExplicitLink: boolean;
-          error: {__typename: 'PythonError'; message: string; stack: Array<string>};
-        }>;
-      }
+    | {__typename: 'PythonError'}
     | {
         __typename: 'Repository';
         id: string;
@@ -242,5 +233,3 @@ export type OpsRootUsedSolidFragment = {
     pipeline: {__typename: 'Pipeline'; id: string; isJob: boolean; name: string};
   }>;
 };
-
-export const OpsRootQueryVersion = 'a8ce0cedc4ebcc5ed0007d8795360ce5635ceefe1882802f88162b457f2058a4';

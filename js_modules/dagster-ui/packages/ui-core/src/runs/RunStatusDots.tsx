@@ -1,19 +1,15 @@
-import {Colors, Icon, Popover, Spinner} from '@dagster-io/ui-components';
-import {memo} from 'react';
+import {Popover, Spinner} from '@dagster-io/ui-components';
+import * as React from 'react';
 import styled, {css, keyframes} from 'styled-components';
+
+import {RunStatus} from '../graphql/types';
 
 import {RunStats} from './RunStats';
 import {RUN_STATUS_COLORS} from './RunStatusTag';
 import {inProgressStatuses, queuedStatuses} from './RunStatuses';
-import {RunStatus} from '../graphql/types';
 
-export const RunStatusWithStats = memo(
-  ({
-    runId,
-    ...rest
-  }: RunStatusProps & {
-    runId: string;
-  }) => (
+export const RunStatusWithStats: React.FC<RunStatusProps & {runId: string}> = React.memo(
+  ({runId, ...rest}) => (
     <Popover
       position="bottom"
       interactionKind="hover"
@@ -30,21 +26,12 @@ interface RunStatusProps {
   size?: number;
 }
 
-export const RunStatusIndicator = memo(({status, size}: RunStatusProps) => {
+export const RunStatusIndicator: React.FC<RunStatusProps> = React.memo(({status, size}) => {
   if (status === 'STARTED' || status === 'CANCELING') {
     return <Spinner purpose="caption-text" />;
   }
   if (status === 'SCHEDULED') {
     return <RunStatusDot status={status} size={size || 12} />;
-  }
-  if (status === 'SUCCESS') {
-    return <Icon name="run_success" color={Colors.accentGreen()} size={16} />;
-  }
-  if (status === 'FAILURE') {
-    return <Icon name="run_failed" color={Colors.accentRed()} size={16} />;
-  }
-  if (status === 'CANCELED') {
-    return <Icon name="run_canceled" color={Colors.accentGray()} size={16} />;
   }
   return (
     <RunStatusDot
@@ -61,7 +48,7 @@ const pulseAnimation = keyframes`
   }
 
   50% {
-    filter: brightness(0.6);
+    filter: brightness(0.7);
   }
 
   100% {
@@ -88,6 +75,6 @@ export const RunStatusDot = styled.div<{
   background: ${({status}) => RUN_STATUS_COLORS[status]};
   &:hover {
     animation: none;
-    filter: brightness(0.6);
+    filter: brightness(0.7);
   }
 `;

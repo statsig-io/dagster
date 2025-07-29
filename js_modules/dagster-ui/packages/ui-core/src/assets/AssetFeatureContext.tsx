@@ -1,43 +1,26 @@
 import * as React from 'react';
 
-import {AssetTabConfig, AssetTabConfigInput, useAssetTabs} from './AssetTabs';
-import {AssetKey, AssetViewParams} from './types';
-import {GraphData} from '../asset-graph/Utils';
-import {AssetKeyInput} from '../graphql/types';
-import {AssetViewDefinitionNodeFragment} from './types/AssetView.types';
+import {AssetTabConfig, AssetTabConfigInput, buildAssetTabs} from './AssetTabs';
+import {AssetChecksBanner} from './asset-checks/AssetChecksBanner';
+import {AssetKey} from './types';
+import {AssetNodeDefinitionFragment} from './types/AssetNodeDefinition.types';
 
 export type AssetViewFeatureInput = {
   selectedTab: string;
   assetKey: AssetKey;
-  definition: AssetViewDefinitionNodeFragment | null;
+  definition: AssetNodeDefinitionFragment | null;
 };
 
 type AssetFeatureContextType = {
-  LineageOptions?: React.ComponentType<{
-    assetKey: AssetKeyInput;
-    params: AssetViewParams;
-    setParams: (params: AssetViewParams) => void;
-  }>;
-  LineageGraph?: React.ComponentType<{
-    params: AssetViewParams;
-    assetKey: AssetKeyInput;
-    assetGraphData: GraphData;
-  }>;
-
-  useTabBuilder: (input: AssetTabConfigInput) => AssetTabConfig[];
+  tabBuilder: (input: AssetTabConfigInput) => AssetTabConfig[];
   renderFeatureView: (input: AssetViewFeatureInput) => React.ReactNode;
-  AssetColumnLinksCell: (input: {column: string | null}) => React.ReactNode;
-
-  enableAssetHealthOverviewPreview: boolean;
+  AssetChecksBanner: React.FunctionComponent<Record<string, never>>;
 };
 
 export const AssetFeatureContext = React.createContext<AssetFeatureContextType>({
-  useTabBuilder: () => [],
+  tabBuilder: () => [],
   renderFeatureView: () => <span />,
-  AssetColumnLinksCell: () => undefined,
-  LineageOptions: undefined,
-  LineageGraph: undefined,
-  enableAssetHealthOverviewPreview: false,
+  AssetChecksBanner: () => <span />,
 });
 
 const renderFeatureView = () => <span />;
@@ -45,12 +28,9 @@ const renderFeatureView = () => <span />;
 export const AssetFeatureProvider = ({children}: {children: React.ReactNode}) => {
   const value = React.useMemo(() => {
     return {
-      useTabBuilder: useAssetTabs,
+      tabBuilder: buildAssetTabs,
       renderFeatureView,
-      AssetColumnLinksCell: () => undefined,
-      LineageOptions: undefined,
-      LineageGraph: undefined,
-      enableAssetHealthOverviewPreview: false,
+      AssetChecksBanner,
     };
   }, []);
 

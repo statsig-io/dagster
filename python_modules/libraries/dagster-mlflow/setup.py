@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: dict[str, str] = {}
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_mlflow/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -23,19 +24,13 @@ setup(
     description="Package for mlflow Dagster framework components.",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-mlflow",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
     packages=find_packages(exclude=["dagster_mlflow_tests*"]),
-    include_package_data=True,
-    python_requires=">=3.9,<3.14",
-    install_requires=[
-        f"dagster{pin}",
-        "mlflow",
-        "pandas",
-        "protobuf!=5.29.0",  # https://github.com/protocolbuffers/protobuf/issues/19430
-    ],
+    install_requires=["dagster==1.4.16", "mlflow", "pandas"],
     zip_safe=False,
 )

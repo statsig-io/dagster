@@ -1,4 +1,4 @@
-import {DUNDER_REPO_NAME, buildRepoAddress} from '../../workspace/buildRepoAddress';
+import {buildRepoAddress, DUNDER_REPO_NAME} from '../../workspace/buildRepoAddress';
 import {repoAddressAsHumanString} from '../../workspace/repoAddressAsString';
 import {sortRepoBuckets} from '../sortRepoBuckets';
 

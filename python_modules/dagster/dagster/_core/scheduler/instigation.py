@@ -1,18 +1,10 @@
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
 from enum import Enum
-from typing import AbstractSet, Any, Generic, NamedTuple, Optional, Union  # noqa: UP035
+from typing import Any, List, NamedTuple, Optional, Sequence, Union
 
-from dagster_shared.serdes import EnumSerializer, deserialize_value, whitelist_for_serdes
 from typing_extensions import TypeAlias
 
 import dagster._check as check
-from dagster._core.definitions import RunRequest
-from dagster._core.definitions.asset_key import T_EntityKey, entity_key_from_db_string
-from dagster._core.definitions.declarative_automation.serialized_objects import (
-    AutomationConditionEvaluationWithRunIds,
-)
-from dagster._core.definitions.events import AssetKey, AssetKeyPartitionKey
+from dagster._core.definitions.auto_materialize_rule import AutoMaterializeAssetEvaluation
 
 # re-export
 from dagster._core.definitions.run_request import (
@@ -20,39 +12,28 @@ from dagster._core.definitions.run_request import (
     SkipReason as SkipReason,
 )
 from dagster._core.definitions.selector import InstigatorSelector, RepositorySelector
-from dagster._core.definitions.sensor_definition import SensorType
-from dagster._core.remote_representation.origin import RemoteInstigatorOrigin
+from dagster._core.host_representation.origin import ExternalInstigatorOrigin
 from dagster._serdes import create_snapshot_id
-from dagster._time import get_current_timestamp, utc_datetime_from_naive
-from dagster._utils import xor
+from dagster._serdes.serdes import (
+    deserialize_value,
+    whitelist_for_serdes,
+)
+from dagster._utils import datetime_as_float, xor
 from dagster._utils.error import SerializableErrorInfo
 from dagster._utils.merger import merge_dicts
 
 InstigatorData: TypeAlias = Union["ScheduleInstigatorData", "SensorInstigatorData"]
 
 
-class InstigatorStatusBackcompatSerializer(EnumSerializer):
-    def unpack(self, value: str):
-        if value == InstigatorStatus.AUTOMATICALLY_RUNNING.name:
-            value = InstigatorStatus.DECLARED_IN_CODE.name
-
-        return super().unpack(value)
-
-
-@whitelist_for_serdes(
-    serializer=InstigatorStatusBackcompatSerializer,
-    old_storage_names={"JobStatus"},
-)
+@whitelist_for_serdes(old_storage_names={"JobStatus"})
 class InstigatorStatus(Enum):
-    # User has taken some manual action to change the status of the run instigator
+    # User has taken some action to start the run instigator
     RUNNING = "RUNNING"
-    STOPPED = "STOPPED"
 
-    # The run instigator status is controlled by its default setting in code
-    DECLARED_IN_CODE = "DECLARED_IN_CODE"
-
-    # DEPRECATED: use InstigatorStatus.DECLARED_IN_CODE
+    # The run instigator is running, but only because of its default setting
     AUTOMATICALLY_RUNNING = "AUTOMATICALLY_RUNNING"
+
+    STOPPED = "STOPPED"
 
 
 @whitelist_for_serdes
@@ -81,7 +62,7 @@ class DynamicPartitionsRequestResult(
         if not xor(added_partitions is None, deleted_partitions is None):
             check.failed("Exactly one of added_partitions and deleted_partitions must be provided")
 
-        return super().__new__(
+        return super(DynamicPartitionsRequestResult, cls).__new__(
             cls,
             check.str_param(partitions_def_name, "partitions_def_name"),
             added_partitions,
@@ -103,12 +84,6 @@ class SensorInstigatorData(
             # the last time a tick was initiated, used to prevent issuing multiple threads from
             # evaluating ticks within the minimum interval
             ("last_tick_start_timestamp", Optional[float]),
-            # the last time the sensor was started
-            ("last_sensor_start_timestamp", Optional[float]),
-            ("sensor_type", Optional[SensorType]),
-            # the last time the tick completed evaluation, used to detect cases where ticks are
-            # interrupted part way through
-            ("last_tick_success_timestamp", Optional[float]),
         ],
     )
 ):
@@ -119,33 +94,14 @@ class SensorInstigatorData(
         min_interval: Optional[int] = None,
         cursor: Optional[str] = None,
         last_tick_start_timestamp: Optional[float] = None,
-        last_sensor_start_timestamp: Optional[float] = None,
-        sensor_type: Optional[SensorType] = None,
-        last_tick_success_timestamp: Optional[float] = None,
     ):
-        return super().__new__(
+        return super(SensorInstigatorData, cls).__new__(
             cls,
             check.opt_float_param(last_tick_timestamp, "last_tick_timestamp"),
             check.opt_str_param(last_run_key, "last_run_key"),
             check.opt_int_param(min_interval, "min_interval"),
             check.opt_str_param(cursor, "cursor"),
             check.opt_float_param(last_tick_start_timestamp, "last_tick_start_timestamp"),
-            check.opt_float_param(last_sensor_start_timestamp, "last_sensor_start_timestamp"),
-            check.opt_inst_param(sensor_type, "sensor_type", SensorType),
-            check.opt_float_param(last_tick_success_timestamp, "last_tick_success_timestamp"),
-        )
-
-    def with_sensor_start_timestamp(self, start_timestamp: float) -> "SensorInstigatorData":
-        check.float_param(start_timestamp, "start_timestamp")
-        return SensorInstigatorData(
-            self.last_tick_timestamp,
-            self.last_run_key,
-            self.min_interval,
-            self.cursor,
-            self.last_tick_start_timestamp,
-            start_timestamp,
-            self.sensor_type,
-            self.last_tick_success_timestamp,
         )
 
 
@@ -171,7 +127,7 @@ class ScheduleInstigatorData(
         if not isinstance(cron_schedule, str):
             cron_schedule = check.sequence_param(cron_schedule, "cron_schedule", of_type=str)
 
-        return super().__new__(
+        return super(ScheduleInstigatorData, cls).__new__(
             cls,
             cron_schedule,
             # Time in UTC at which the user started running the schedule (distinct from
@@ -212,7 +168,7 @@ class InstigatorState(
     NamedTuple(
         "_InstigationState",
         [
-            ("origin", RemoteInstigatorOrigin),
+            ("origin", ExternalInstigatorOrigin),
             ("instigator_type", InstigatorType),
             ("status", InstigatorStatus),
             ("instigator_data", Optional[InstigatorData]),
@@ -221,14 +177,14 @@ class InstigatorState(
 ):
     def __new__(
         cls,
-        origin: RemoteInstigatorOrigin,
+        origin: ExternalInstigatorOrigin,
         instigator_type: InstigatorType,
         status: InstigatorStatus,
         instigator_data: Optional[InstigatorData] = None,
     ):
-        return super().__new__(
+        return super(InstigatorState, cls).__new__(
             cls,
-            check.inst_param(origin, "origin", RemoteInstigatorOrigin),
+            check.inst_param(origin, "origin", ExternalInstigatorOrigin),
             check.inst_param(instigator_type, "instigator_type", InstigatorType),
             check.inst_param(status, "status", InstigatorStatus),
             check_instigator_data(instigator_type, instigator_data),
@@ -248,13 +204,13 @@ class InstigatorState(
 
     @property
     def repository_origin_id(self) -> str:
-        return self.origin.repository_origin.get_id()
+        return self.origin.external_repository_origin.get_id()
 
     @property
     def repository_selector(self) -> RepositorySelector:
         return RepositorySelector(
-            location_name=self.origin.repository_origin.code_location_origin.location_name,
-            repository_name=self.origin.repository_origin.repository_name,
+            self.origin.external_repository_origin.code_location_origin.location_name,
+            self.origin.external_repository_origin.repository_name,
         )
 
     @property
@@ -269,9 +225,9 @@ class InstigatorState(
     def selector_id(self) -> str:
         return create_snapshot_id(
             InstigatorSelector(
-                location_name=self.origin.repository_origin.code_location_origin.location_name,
-                repository_name=self.origin.repository_origin.repository_name,
-                name=self.origin.instigator_name,
+                self.origin.external_repository_origin.code_location_origin.location_name,
+                self.origin.external_repository_origin.repository_name,
+                self.origin.instigator_name,
             )
         )
 
@@ -293,12 +249,6 @@ class InstigatorState(
             instigator_data=instigator_data,
         )
 
-    @property
-    def sensor_instigator_data(self) -> Optional["SensorInstigatorData"]:
-        if isinstance(self.instigator_data, SensorInstigatorData):
-            return self.instigator_data
-        return None
-
 
 @whitelist_for_serdes(old_storage_names={"JobTickStatus"})
 class TickStatus(Enum):
@@ -313,7 +263,7 @@ class TickStatus(Enum):
 )
 class InstigatorTick(NamedTuple("_InstigatorTick", [("tick_id", int), ("tick_data", "TickData")])):
     def __new__(cls, tick_id: int, tick_data: "TickData"):
-        return super().__new__(
+        return super(InstigatorTick, cls).__new__(
             cls,
             check.int_param(tick_id, "tick_id"),
             check.inst_param(tick_data, "tick_data", TickData),
@@ -321,14 +271,7 @@ class InstigatorTick(NamedTuple("_InstigatorTick", [("tick_id", int), ("tick_dat
 
     def with_status(self, status: TickStatus, **kwargs: Any):
         check.inst_param(status, "status", TickStatus)
-        end_timestamp = get_current_timestamp() if status != TickStatus.STARTED else None
-        kwargs["end_timestamp"] = end_timestamp
         return self._replace(tick_data=self.tick_data.with_status(status, **kwargs))
-
-    def with_run_requests(
-        self, run_requests: Sequence[RunRequest], **kwargs: Any
-    ) -> "InstigatorTick":
-        return self._replace(tick_data=self.tick_data.with_run_requests(run_requests, **kwargs))
 
     def with_reason(self, skip_reason: str) -> "InstigatorTick":
         check.opt_str_param(skip_reason, "skip_reason")
@@ -356,11 +299,6 @@ class InstigatorTick(NamedTuple("_InstigatorTick", [("tick_id", int), ("tick_dat
             )
         )
 
-    def with_user_interrupted(self, user_interrupted: bool) -> "InstigatorTick":
-        return self._replace(
-            tick_data=self.tick_data.with_user_interrupted(user_interrupted=user_interrupted)
-        )
-
     @property
     def instigator_origin_id(self) -> str:
         return self.tick_data.instigator_origin_id
@@ -380,10 +318,6 @@ class InstigatorTick(NamedTuple("_InstigatorTick", [("tick_id", int), ("tick_dat
     @property
     def timestamp(self) -> float:
         return self.tick_data.timestamp
-
-    @property
-    def end_timestamp(self) -> Optional[float]:
-        return self.tick_data.end_timestamp
 
     @property
     def status(self) -> TickStatus:
@@ -418,12 +352,8 @@ class InstigatorTick(NamedTuple("_InstigatorTick", [("tick_id", int), ("tick_dat
         return self.tick_data.failure_count
 
     @property
-    def log_key(self) -> Optional[list[str]]:
+    def log_key(self) -> Optional[List[str]]:
         return self.tick_data.log_key
-
-    @property
-    def consecutive_failure_count(self) -> int:
-        return self.tick_data.consecutive_failure_count
 
     @property
     def is_completed(self) -> bool:
@@ -447,102 +377,6 @@ class InstigatorTick(NamedTuple("_InstigatorTick", [("tick_id", int), ("tick_dat
     ) -> Sequence[DynamicPartitionsRequestResult]:
         return self.tick_data.dynamic_partitions_request_results
 
-    @property
-    def requested_asset_materialization_count(self) -> int:
-        if self.tick_data.status != TickStatus.SUCCESS:
-            return 0
-
-        asset_partitions_from_single_runs = set()
-        num_assets_requested_from_backfill_runs = 0
-        num_requested_checks = 0
-        for run_request in self.tick_data.run_requests or []:
-            if run_request.requires_backfill_daemon():
-                asset_graph_subset = check.not_none(run_request.asset_graph_subset)
-                num_assets_requested_from_backfill_runs += (
-                    asset_graph_subset.num_partitions_and_non_partitioned_assets
-                )
-            else:
-                for asset_key in run_request.asset_selection or []:
-                    asset_partitions_from_single_runs.add(
-                        AssetKeyPartitionKey(asset_key, run_request.partition_key)
-                    )
-                for asset_check_key in run_request.asset_check_keys or []:
-                    num_requested_checks += 1
-        return (
-            len(asset_partitions_from_single_runs)
-            + num_assets_requested_from_backfill_runs
-            + num_requested_checks
-        )
-
-    @property
-    def requested_assets_and_partitions(self) -> Mapping[AssetKey, AbstractSet[str]]:
-        if self.tick_data.status != TickStatus.SUCCESS:
-            return {}
-
-        partitions_by_asset_key = {}
-        for run_request in self.tick_data.run_requests or []:
-            if run_request.requires_backfill_daemon():
-                asset_graph_subset = check.not_none(run_request.asset_graph_subset)
-                for asset_key_partition_key in asset_graph_subset.iterate_asset_partitions():
-                    if asset_key_partition_key.asset_key not in partitions_by_asset_key:
-                        partitions_by_asset_key[asset_key_partition_key.asset_key] = set()
-                    if asset_key_partition_key.partition_key:
-                        partitions_by_asset_key[asset_key_partition_key.asset_key].add(
-                            asset_key_partition_key.partition_key
-                        )
-            else:
-                for asset_key in run_request.asset_selection or []:
-                    if asset_key not in partitions_by_asset_key:
-                        partitions_by_asset_key[asset_key] = set()
-
-                    if run_request.partition_key:
-                        partitions_by_asset_key[asset_key].add(run_request.partition_key)
-                for asset_check_key in run_request.asset_check_keys or []:
-                    asset_key = asset_check_key.asset_key
-                    if asset_key not in partitions_by_asset_key:
-                        partitions_by_asset_key[asset_key] = set()
-
-                    partitions_by_asset_key[asset_key].add(asset_check_key.name)
-
-        return partitions_by_asset_key
-
-    @property
-    def requested_asset_keys(self) -> AbstractSet[AssetKey]:
-        if self.tick_data.status != TickStatus.SUCCESS:
-            return set()
-
-        return set(self.requested_assets_and_partitions.keys())
-
-    @property
-    def run_requests(self) -> Optional[Sequence[RunRequest]]:
-        return self.tick_data.run_requests
-
-    @property
-    def reserved_run_ids_with_requests(self) -> Iterable[tuple[str, RunRequest]]:
-        reserved_run_ids = self.tick_data.reserved_run_ids or []
-        return zip(reserved_run_ids, self.run_requests or [])
-
-    @property
-    def unsubmitted_run_ids_with_requests(self) -> Sequence[tuple[str, RunRequest]]:
-        reserved_run_ids = self.tick_data.reserved_run_ids or []
-        unrequested_run_ids = set(reserved_run_ids) - set(self.tick_data.run_ids)
-        return [
-            (run_id, run_request)
-            for run_id, run_request in self.reserved_run_ids_with_requests
-            if run_id in unrequested_run_ids
-        ]
-
-    @property
-    def automation_condition_evaluation_id(self) -> int:
-        """Returns a unique identifier for the current automation condition evaluation. In general,
-        this will be identical to the current tick id, but in cases where an evaluation needs to
-        be retried, an override value may be set.
-        """
-        if self.tick_data.auto_materialize_evaluation_id is not None:
-            return self.tick_data.auto_materialize_evaluation_id
-        else:
-            return self.tick_id
-
 
 @whitelist_for_serdes(
     old_storage_names={"JobTickData"},
@@ -560,7 +394,7 @@ class TickData(
             ("instigator_name", str),
             ("instigator_type", InstigatorType),
             ("status", TickStatus),
-            ("timestamp", float),  # Time the tick started
+            ("timestamp", float),
             ("run_ids", Sequence[str]),
             ("run_keys", Sequence[str]),
             ("error", Optional[SerializableErrorInfo]),
@@ -569,20 +403,11 @@ class TickData(
             ("origin_run_ids", Sequence[str]),
             ("failure_count", int),
             ("selector_id", Optional[str]),
-            ("log_key", Optional[list[str]]),
+            ("log_key", Optional[List[str]]),
             (
                 "dynamic_partitions_request_results",
                 Sequence[DynamicPartitionsRequestResult],
             ),
-            ("end_timestamp", Optional[float]),  # Time the tick finished
-            ("run_requests", Optional[Sequence[RunRequest]]),  # run requests created by the tick
-            ("auto_materialize_evaluation_id", Optional[int]),
-            ("reserved_run_ids", Optional[Sequence[str]]),
-            ("consecutive_failure_count", int),
-            (
-                "user_interrupted",
-                bool,
-            ),  # indicates if a user stopped the tick while submitting runs
         ],
     )
 ):
@@ -597,34 +422,15 @@ class TickData(
         status (TickStatus): The status of the tick, which can be updated
         timestamp (float): The timestamp at which this instigator evaluation started
         run_id (str): The run created by the tick.
-        run_keys (Sequence[str]): Unique user-specified identifiers for the runs created by this
-            instigator.
         error (SerializableErrorInfo): The error caught during execution. This is set only when
             the status is ``TickStatus.Failure``
         skip_reason (str): message for why the tick was skipped
-        cursor (Optional[str]): Cursor output by this tick.
         origin_run_ids (List[str]): The runs originated from the schedule/sensor.
-        failure_count (int): The number of times this particular tick has failed (to determine
-            whether the next tick should be a retry of that tick).
-            For example, for a schedule, this tracks the number of attempts we have made for a
-            particular scheduled execution time. The next tick will attempt to retry the most recent
-            tick if it failed and its failure count is less than the configured retry limit.
+        failure_count (int): The number of times this tick has failed. If the status is not
+            FAILED, this is the number of previous failures before it reached the current state.
         dynamic_partitions_request_results (Sequence[DynamicPartitionsRequestResult]): The results
             of the dynamic partitions requests evaluated within the tick.
-        end_timestamp (Optional[float]) Time that this tick finished.
-        run_requests (Optional[Sequence[RunRequest]]) The RunRequests that were requested by this
-            tick. Currently only used by the AUTO_MATERIALIZE type.
-        auto_materialize_evaluation_id (Optinoal[int]) For AUTO_MATERIALIZE ticks, the evaluation ID
-            that can be used to index into the asset_daemon_asset_evaluations table.
-        reserved_run_ids (Optional[Sequence[str]]): A list of run IDs to use for each of the
-            run_requests. Used to ensure that if the tick fails partway through, we don't create
-            any duplicate runs for the tick. Currently only used by AUTO_MATERIALIZE ticks.
-        consecutive_failure_count (Optional[int]): The number of times this instigator has failed
-            consecutively. Differs from failure_count in that it spans multiple executions, whereas
-            failure_count measures the number of times that a particular tick should retry. For
-            example, if a daily schedule fails on 3 consecutive days, failure_count tracks the
-            number of failures for each day, and consecutive_failure_count tracks the total
-            number of consecutive failures across all days.
+
     """
 
     def __new__(
@@ -642,20 +448,14 @@ class TickData(
         origin_run_ids: Optional[Sequence[str]] = None,
         failure_count: Optional[int] = None,
         selector_id: Optional[str] = None,
-        log_key: Optional[list[str]] = None,
+        log_key: Optional[List[str]] = None,
         dynamic_partitions_request_results: Optional[
             Sequence[DynamicPartitionsRequestResult]
         ] = None,
-        end_timestamp: Optional[float] = None,
-        run_requests: Optional[Sequence[RunRequest]] = None,
-        auto_materialize_evaluation_id: Optional[int] = None,
-        reserved_run_ids: Optional[Sequence[str]] = None,
-        consecutive_failure_count: Optional[int] = None,
-        user_interrupted: bool = False,
     ):
         _validate_tick_args(instigator_type, status, run_ids, error, skip_reason)
         check.opt_list_param(log_key, "log_key", of_type=str)
-        return super().__new__(
+        return super(TickData, cls).__new__(
             cls,
             check.str_param(instigator_origin_id, "instigator_origin_id"),
             check.str_param(instigator_name, "instigator_name"),
@@ -676,28 +476,26 @@ class TickData(
                 "dynamic_partitions_request_results",
                 of_type=DynamicPartitionsRequestResult,
             ),
-            end_timestamp=end_timestamp,
-            run_requests=check.opt_sequence_param(run_requests, "run_requests"),
-            auto_materialize_evaluation_id=auto_materialize_evaluation_id,
-            reserved_run_ids=check.opt_sequence_param(reserved_run_ids, "reserved_run_ids"),
-            consecutive_failure_count=check.opt_int_param(
-                consecutive_failure_count, "consecutive_failure_count", 0
-            ),
-            user_interrupted=user_interrupted,
         )
 
     def with_status(
         self,
         status: TickStatus,
-        **kwargs,
+        error: Optional[SerializableErrorInfo] = None,
+        timestamp: Optional[float] = None,
+        failure_count: Optional[int] = None,
     ) -> "TickData":
         return TickData(
             **merge_dicts(
                 self._asdict(),
                 {
                     "status": status,
+                    "error": error,
+                    "timestamp": timestamp if timestamp is not None else self.timestamp,
+                    "failure_count": (
+                        failure_count if failure_count is not None else self.failure_count
+                    ),
                 },
-                kwargs,
             )
         )
 
@@ -724,19 +522,12 @@ class TickData(
             )
         )
 
-    def with_run_requests(
-        self,
-        run_requests: Sequence[RunRequest],
-        reserved_run_ids: Optional[Sequence[str]] = None,
-        cursor: Optional[str] = None,
-    ) -> "TickData":
+    def with_failure_count(self, failure_count: int) -> "TickData":
         return TickData(
             **merge_dicts(
                 self._asdict(),
                 {
-                    "run_requests": run_requests,
-                    "reserved_run_ids": reserved_run_ids,
-                    "cursor": cursor,
+                    "failure_count": failure_count,
                 },
             )
         )
@@ -785,14 +576,6 @@ class TickData(
             )
         )
 
-    def with_user_interrupted(self, user_interrupted: bool):
-        return TickData(
-            **merge_dicts(
-                self._asdict(),
-                {"user_interrupted": user_interrupted},
-            )
-        )
-
 
 def _validate_tick_args(
     instigator_type: InstigatorType,
@@ -819,25 +602,19 @@ def _validate_tick_args(
         )
 
 
-@dataclass
-class AutoMaterializeAssetEvaluationRecord(Generic[T_EntityKey]):
+class AutoMaterializeAssetEvaluationRecord(NamedTuple):
     id: int
-    serialized_evaluation_body: str
+    evaluation: AutoMaterializeAssetEvaluation
     evaluation_id: int
     timestamp: float
-    key: T_EntityKey
 
     @classmethod
-    def from_db_row(cls, row) -> "AutoMaterializeAssetEvaluationRecord":
-        return AutoMaterializeAssetEvaluationRecord(
+    def from_db_row(cls, row):
+        return cls(
             id=row["id"],
-            serialized_evaluation_body=row["asset_evaluation_body"],
+            evaluation=deserialize_value(
+                row["asset_evaluation_body"], AutoMaterializeAssetEvaluation
+            ),
             evaluation_id=row["evaluation_id"],
-            timestamp=utc_datetime_from_naive(row["create_timestamp"]).timestamp(),
-            key=entity_key_from_db_string(row["asset_key"]),
-        )
-
-    def get_evaluation_with_run_ids(self) -> AutomationConditionEvaluationWithRunIds[T_EntityKey]:
-        return deserialize_value(
-            self.serialized_evaluation_body, AutomationConditionEvaluationWithRunIds
+            timestamp=datetime_as_float(row["create_timestamp"]),
         )

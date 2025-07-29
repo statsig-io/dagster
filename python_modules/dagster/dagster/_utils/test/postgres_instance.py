@@ -1,13 +1,54 @@
 import os
 import subprocess
+import tempfile
 import warnings
 from contextlib import contextmanager
 
 import pytest
 
 import dagster._check as check
+from dagster import file_relative_path
+from dagster._core.test_utils import instance_for_test
+from dagster._utils.merger import merge_dicts
 
 BUILDKITE = bool(os.getenv("BUILDKITE"))
+
+
+@contextmanager
+def postgres_instance_for_test(dunder_file, container_name, overrides=None, conn_args=None):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with TestPostgresInstance.docker_service_up_or_skip(
+            file_relative_path(dunder_file, "docker-compose.yml"),
+            container_name,
+            conn_args=conn_args,
+        ) as pg_conn_string:
+            TestPostgresInstance.clean_run_storage(pg_conn_string)
+            TestPostgresInstance.clean_event_log_storage(pg_conn_string)
+            TestPostgresInstance.clean_schedule_storage(pg_conn_string)
+            with instance_for_test(
+                temp_dir=temp_dir,
+                overrides=merge_dicts(
+                    {
+                        "run_storage": {
+                            "module": "dagster_postgres.run_storage.run_storage",
+                            "class": "PostgresRunStorage",
+                            "config": {"postgres_url": pg_conn_string},
+                        },
+                        "event_log_storage": {
+                            "module": "dagster_postgres.event_log.event_log",
+                            "class": "PostgresEventLogStorage",
+                            "config": {"postgres_url": pg_conn_string},
+                        },
+                        "schedule_storage": {
+                            "module": "dagster_postgres.schedule_storage.schedule_storage",
+                            "class": "PostgresScheduleStorage",
+                            "config": {"postgres_url": pg_conn_string},
+                        },
+                    },
+                    overrides if overrides else {},
+                ),
+            ) as instance:
+                yield instance
 
 
 class TestPostgresInstance:
@@ -34,7 +75,7 @@ class TestPostgresInstance:
         from dagster_postgres.utils import get_conn_string
 
         return get_conn_string(
-            **dict(  # pyright: ignore[reportArgumentType]
+            **dict(
                 dict(
                     username="test",
                     password="test",
@@ -65,7 +106,9 @@ class TestPostgresInstance:
             TestPostgresInstance.dagster_postgres_installed(),
             "dagster_postgres must be installed to test with postgres",
         )
-        from dagster_postgres.event_log import PostgresEventLogStorage
+        from dagster_postgres.event_log import (
+            PostgresEventLogStorage,
+        )
 
         storage = PostgresEventLogStorage.create_clean_storage(
             conn_string, should_autocreate_tables=should_autocreate_tables
@@ -79,7 +122,9 @@ class TestPostgresInstance:
             TestPostgresInstance.dagster_postgres_installed(),
             "dagster_postgres must be installed to test with postgres",
         )
-        from dagster_postgres.schedule_storage.schedule_storage import PostgresScheduleStorage
+        from dagster_postgres.schedule_storage.schedule_storage import (
+            PostgresScheduleStorage,
+        )
 
         storage = PostgresScheduleStorage.create_clean_storage(
             conn_string, should_autocreate_tables=should_autocreate_tables
@@ -112,10 +157,15 @@ class TestPostgresInstance:
             )  # buildkite docker is handled in pipeline setup
             return
 
-        subprocess.run(
-            ["docker-compose", "-f", docker_compose_file, "down", service_name],
-            check=False,
-        )
+        try:
+            subprocess.check_output(
+                ["docker-compose", "-f", docker_compose_file, "stop", service_name]
+            )
+            subprocess.check_output(
+                ["docker-compose", "-f", docker_compose_file, "rm", "-f", service_name]
+            )
+        except subprocess.CalledProcessError:
+            pass
 
         try:
             subprocess.check_output(
@@ -131,13 +181,17 @@ class TestPostgresInstance:
 
         conn_str = TestPostgresInstance.conn_string(**conn_args)
         wait_for_connection(conn_str, retry_limit=10, retry_wait=3)
+        yield conn_str
+
         try:
-            yield conn_str
-        finally:
-            subprocess.run(
-                ["docker-compose", "-f", docker_compose_file, "down", service_name],
-                check=False,
+            subprocess.check_output(
+                ["docker-compose", "-f", docker_compose_file, "stop", service_name]
             )
+            subprocess.check_output(
+                ["docker-compose", "-f", docker_compose_file, "rm", "-f", service_name]
+            )
+        except subprocess.CalledProcessError:
+            pass
 
     @staticmethod
     @contextmanager
@@ -190,7 +244,7 @@ def is_postgres_running(service_name):
 
 class PostgresDockerError(Exception):
     def __init__(self, message, subprocess_error):
-        super().__init__(check.opt_str_param(message, "message"))
+        super(PostgresDockerError, self).__init__(check.opt_str_param(message, "message"))
         self.subprocess_error = check.inst_param(
             subprocess_error, "subprocess_error", subprocess.CalledProcessError
         )

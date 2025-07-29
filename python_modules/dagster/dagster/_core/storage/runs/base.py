@@ -1,16 +1,12 @@
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
-from datetime import datetime
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from typing_extensions import TypedDict
 
 from dagster._core.events import DagsterEvent
-from dagster._core.execution.backfill import BulkActionsFilter, BulkActionStatus, PartitionBackfill
-from dagster._core.execution.telemetry import RunTelemetryData
+from dagster._core.execution.backfill import BulkActionStatus, PartitionBackfill
 from dagster._core.instance import MayHaveInstanceWeakref, T_DagsterInstance
-from dagster._core.snap import ExecutionPlanSnapshot, JobSnap
-from dagster._core.storage.daemon_cursor import DaemonCursorStorage
+from dagster._core.snap import ExecutionPlanSnapshot, JobSnapshot
 from dagster._core.storage.dagster_run import (
     DagsterRun,
     JobBucket,
@@ -23,8 +19,10 @@ from dagster._core.storage.sql import AlembicVersion
 from dagster._daemon.types import DaemonHeartbeat
 from dagster._utils import PrintFn
 
+from ..daemon_cursor import DaemonCursorStorage
+
 if TYPE_CHECKING:
-    from dagster._core.remote_representation.origin import RemoteJobOrigin
+    from dagster._core.host_representation.origin import ExternalJobOrigin
 
 
 class RunGroupInfo(TypedDict):
@@ -56,15 +54,7 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
         """
 
     @abstractmethod
-    def add_historical_run(
-        self, dagster_run: DagsterRun, run_creation_time: datetime
-    ) -> DagsterRun:
-        """Add a historical run to storage."""
-
-    @abstractmethod
-    def handle_run_event(
-        self, run_id: str, event: DagsterEvent, update_timestamp: Optional[datetime] = None
-    ) -> None:
+    def handle_run_event(self, run_id: str, event: DagsterEvent) -> None:
         """Update run storage in accordance to a pipeline run related DagsterEvent.
 
         Args:
@@ -79,7 +69,6 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
         cursor: Optional[str] = None,
         limit: Optional[int] = None,
         bucket_by: Optional[Union[JobBucket, TagBucket]] = None,
-        ascending: bool = False,
     ) -> Sequence[DagsterRun]:
         """Return all the runs present in the storage that match the given filters.
 
@@ -89,8 +78,6 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
                 runs
             cursor (Optional[str]): Starting cursor (run_id) of range of runs
             limit (Optional[int]): Number of results to get. Defaults to infinite.
-            ascending (bool): Sort the result in ascending order if True, descending
-                otherwise. Defaults to descending.
 
         Returns:
             List[PipelineRun]
@@ -130,7 +117,7 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
         """
 
     @abstractmethod
-    def get_run_group(self, run_id: str) -> Optional[tuple[str, Sequence[DagsterRun]]]:
+    def get_run_group(self, run_id: str) -> Optional[Tuple[str, Sequence[DagsterRun]]]:
         """Get the run group to which a given run belongs.
 
         Args:
@@ -171,14 +158,14 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
     @abstractmethod
     def get_run_tags(
         self,
-        tag_keys: Sequence[str],
+        tag_keys: Optional[Sequence[str]] = None,
         value_prefix: Optional[str] = None,
         limit: Optional[int] = None,
-    ) -> Sequence[tuple[str, set[str]]]:
+    ) -> Sequence[Tuple[str, Set[str]]]:
         """Get a list of tag keys and the values that have been associated with them.
 
         Args:
-            tag_keys (Sequence[str]): tag keys to filter by.
+            tag_keys (Optional[Sequence[str]]): tag keys to filter by.
 
         Returns:
             List[Tuple[str, Set[str]]]
@@ -212,16 +199,24 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
             bool
         """
 
-    def add_snapshot(self, snapshot: Union[JobSnap, ExecutionPlanSnapshot]) -> None:
+    def add_snapshot(
+        self,
+        snapshot: Union[JobSnapshot, ExecutionPlanSnapshot],
+        snapshot_id: Optional[str] = None,
+    ) -> None:
         """Add a snapshot to the storage.
 
         Args:
             snapshot (Union[PipelineSnapshot, ExecutionPlanSnapshot])
+            snapshot_id (Optional[str]): [Internal] The id of the snapshot. If not provided, the
+                snapshot id will be generated from a hash of the snapshot. This should only be used
+                in debugging, where we might want to import a historical run whose snapshots were
+                calculated using a different hash function than the current code.
         """
-        if isinstance(snapshot, JobSnap):
-            self.add_job_snapshot(snapshot)
+        if isinstance(snapshot, JobSnapshot):
+            self.add_job_snapshot(snapshot, snapshot_id)
         else:
-            self.add_execution_plan_snapshot(snapshot)
+            self.add_execution_plan_snapshot(snapshot, snapshot_id)
 
     def has_snapshot(self, snapshot_id: str):
         return self.has_job_snapshot(snapshot_id) or self.has_execution_plan_snapshot(snapshot_id)
@@ -238,7 +233,7 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
         """
 
     @abstractmethod
-    def add_job_snapshot(self, job_snapshot: JobSnap) -> str:
+    def add_job_snapshot(self, job_snapshot: JobSnapshot, snapshot_id: Optional[str] = None) -> str:
         """Add a pipeline snapshot to the run store.
 
         Pipeline snapshots are content-addressable, meaning
@@ -248,13 +243,17 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
 
         Args:
             job_snapshot (PipelineSnapshot)
+            snapshot_id (Optional[str]): [Internal] The id of the snapshot. If not provided, the
+                snapshot id will be generated from a hash of the snapshot. This should only be used
+                in debugging, where we might want to import a historical run whose snapshots were
+                calculated using a different hash function than the current code.
 
         Return:
             str: The job_snapshot_id
         """
 
     @abstractmethod
-    def get_job_snapshot(self, job_snapshot_id: str) -> JobSnap:
+    def get_job_snapshot(self, job_snapshot_id: str) -> JobSnapshot:
         """Fetch a snapshot by ID.
 
         Args:
@@ -276,7 +275,9 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
         """
 
     @abstractmethod
-    def add_execution_plan_snapshot(self, execution_plan_snapshot: ExecutionPlanSnapshot) -> str:
+    def add_execution_plan_snapshot(
+        self, execution_plan_snapshot: ExecutionPlanSnapshot, snapshot_id: Optional[str] = None
+    ) -> str:
         """Add an execution plan snapshot to the run store.
 
         Execution plan snapshots are content-addressable, meaning
@@ -286,6 +287,10 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
 
         Args:
             execution_plan_snapshot (ExecutionPlanSnapshot)
+            snapshot_id (Optional[str]): [Internal] The id of the snapshot. If not provided, the
+                snapshot id will be generated from a hash of the snapshot. This should only be used
+                in debugging, where we might want to import a historical run whose snapshots were
+                calculated using a different hash function than the current code.
 
         Return:
             str: The execution_plan_snapshot_id
@@ -327,9 +332,7 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
     def dispose(self) -> None:
         """Explicit lifecycle management."""
 
-    def optimize_for_webserver(
-        self, statement_timeout: int, pool_recycle: int, max_overflow: int
-    ) -> None:
+    def optimize_for_webserver(self, statement_timeout: int, pool_recycle: int) -> None:
         """Allows for optimizing database connection / use in the context of a long lived webserver process."""
 
     # Daemon Heartbeat Storage
@@ -347,18 +350,6 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
     def get_daemon_heartbeats(self) -> Mapping[str, DaemonHeartbeat]:
         """Latest heartbeats of all daemon types."""
 
-    def supports_run_telemetry(self) -> bool:
-        """Whether the storage supports run telemetry."""
-        return False
-
-    def add_run_telemetry(
-        self,
-        run_telemetry: RunTelemetryData,
-        tags: Optional[dict[str, str]] = None,
-    ) -> None:
-        """Not implemented in base class. Should be implemented in subclasses that support telemetry."""
-        pass
-
     @abstractmethod
     def wipe_daemon_heartbeats(self) -> None:
         """Wipe all daemon heartbeats."""
@@ -367,23 +358,11 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
     @abstractmethod
     def get_backfills(
         self,
-        filters: Optional[BulkActionsFilter] = None,
+        status: Optional[BulkActionStatus] = None,
         cursor: Optional[str] = None,
         limit: Optional[int] = None,
-        status: Optional[BulkActionStatus] = None,
     ) -> Sequence[PartitionBackfill]:
         """Get a list of partition backfills."""
-
-    @abstractmethod
-    def get_backfills_count(self, filters: Optional[BulkActionsFilter] = None) -> int:
-        """Return the number of backfills present in the storage that match the given filters.
-
-        Args:
-            filters (Optional[BulkActionsFilter]) -- The filter by which to filter backfills
-
-        Returns:
-            int: The number of backfills that match the given filters.
-        """
 
     @abstractmethod
     def get_backfill(self, backfill_id: str) -> Optional[PartitionBackfill]:
@@ -401,4 +380,4 @@ class RunStorage(ABC, MayHaveInstanceWeakref[T_DagsterInstance], DaemonCursorSto
         return None
 
     @abstractmethod
-    def replace_job_origin(self, run: "DagsterRun", job_origin: "RemoteJobOrigin") -> None: ...
+    def replace_job_origin(self, run: "DagsterRun", job_origin: "ExternalJobOrigin") -> None: ...

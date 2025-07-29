@@ -1,6 +1,18 @@
 import os
 
-import dagster as dg
+from dagster import (
+    DynamicOut,
+    DynamicOutput,
+    In,
+    List,
+    Out,
+    Output,
+    fs_io_manager,
+    job,
+    op,
+)
+from dagster._core.definitions.job_definition import JobDefinition
+from dagster._core.definitions.reconstruct import reconstructable
 from dagster._core.execution.api import create_execution_plan, execute_run
 from dagster._core.execution.plan.inputs import (
     FromConfig,
@@ -17,90 +29,92 @@ from dagster._core.instance import DagsterInstance
 from dagster._core.instance.ref import InstanceRef
 from dagster._core.snap.execution_plan_snapshot import snapshot_from_execution_plan
 from dagster._core.storage.dagster_run import DagsterRunStatus
+from dagster._core.storage.input_manager import input_manager
+from dagster._utils import file_relative_path
 from dagster._utils.test import copy_directory
 
 
-@dg.op(out=dg.Out(int))
+@op(out=Out(int))
 def return_one(_):
     return 1
 
 
-@dg.op(ins={"nums": dg.In(dg.List[int])}, out=dg.Out(int))
+@op(ins={"nums": In(List[int])}, out=Out(int))
 def sum_fan_in(_, nums):
     return sum(nums)
 
 
-@dg.input_manager
+@input_manager
 def fake_input_manager(_context):
     return 678
 
 
-@dg.op(ins={"from_manager": dg.In(input_manager_key="input_manager")})
+@op(ins={"from_manager": In(input_manager_key="input_manager")})
 def input_from_input_manager(_context, from_manager):
     return from_manager
 
 
-@dg.op
+@op
 def multiply_by_two(context, y):
     context.log.info("multiply_by_two is returning " + str(y * 2))
     return y * 2
 
 
-@dg.op
+@op
 def multiply_inputs(context, y, ten):
     context.log.info("multiply_inputs is returning " + str(y * ten))
     return y * ten
 
 
-@dg.op(
+@op(
     out={
-        "optional_output": dg.Out(int, is_required=False),
-        "required_output": dg.Out(int, is_required=True),
+        "optional_output": Out(int, is_required=False),
+        "required_output": Out(int, is_required=True),
     }
 )
 def optional_outputs(_):
-    yield dg.Output(1234, "required_output")
+    yield Output(1234, "required_output")
 
 
-@dg.op
+@op
 def emit_ten(_):
     return 10
 
 
-@dg.op
+@op
 def echo(_, x: int) -> int:
     return x
 
 
-@dg.op(ins={"y": dg.In(int, default_value=7)})
+@op(ins={"y": In(int, default_value=7)})
 def echo_default(_, y: int) -> int:
     return y
 
 
-@dg.op(
-    out=dg.DynamicOut(),
-    ins={"range_input": dg.In(int, default_value=3)},
+@op(
+    out=DynamicOut(),
+    ins={"range_input": In(int, default_value=3)},
 )
 def emit(_context, range_input):
     for i in range(range_input):
-        yield dg.DynamicOutput(value=i, mapping_key=str(i))
+        yield DynamicOutput(value=i, mapping_key=str(i))
 
 
-@dg.op
+@op
 def sum_numbers(_, nums):
     return sum(nums)
 
 
-@dg.op(out=dg.DynamicOut())
+@op(out=DynamicOut())
 def dynamic_echo(_, nums):
     for x in nums:
-        yield dg.DynamicOutput(value=x, mapping_key=str(x))
+        yield DynamicOutput(value=x, mapping_key=str(x))
 
 
-def get_dynamic_job() -> dg.JobDefinition:
-    @dg.job(
+def get_dynamic_job() -> JobDefinition:
+    @job(
         resource_defs={
-            "io_manager": dg.fs_io_manager,
+            "io_manager": fs_io_manager,
             "input_manager": fake_input_manager,
         }
     )
@@ -169,7 +183,7 @@ def _validate_execution_plan(plan):
 # Verify that an previously generated execution plan snapshot can still execute a
 # pipeline successfully
 def test_execution_plan_snapshot_backcompat():
-    src_dir = dg.file_relative_path(__file__, "test_execution_plan_snapshots/")
+    src_dir = file_relative_path(__file__, "test_execution_plan_snapshots/")
     snapshot_dirs = [f for f in os.listdir(src_dir) if not os.path.isfile(os.path.join(src_dir, f))]
     for snapshot_dir_path in snapshot_dirs:
         print(f"Executing a saved run from {snapshot_dir_path}")  # noqa: T201
@@ -182,20 +196,20 @@ def test_execution_plan_snapshot_backcompat():
                 run = runs[0]
                 assert run.status == DagsterRunStatus.NOT_STARTED
 
-                the_job = dg.reconstructable(get_dynamic_job)
+                the_job = reconstructable(get_dynamic_job)
 
                 # First create a brand new plan from the pipeline and validate it
                 new_plan = create_execution_plan(the_job, run_config=run.run_config)
                 _validate_execution_plan(new_plan)
 
                 # Create a snapshot and rebuild it, validate the rebuilt plan
-                new_plan_snapshot = snapshot_from_execution_plan(new_plan, run.job_snapshot_id)  # pyright: ignore[reportArgumentType]
+                new_plan_snapshot = snapshot_from_execution_plan(new_plan, run.job_snapshot_id)
                 rebuilt_plan = ExecutionPlan.rebuild_from_snapshot("dynamic_job", new_plan_snapshot)
                 _validate_execution_plan(rebuilt_plan)
 
                 # Then validate the plan built from the historical snapshot on the run
                 stored_snapshot = instance.get_execution_plan_snapshot(
-                    run.execution_plan_snapshot_id  # pyright: ignore[reportArgumentType]
+                    run.execution_plan_snapshot_id
                 )
 
                 rebuilt_plan = ExecutionPlan.rebuild_from_snapshot("dynamic_job", stored_snapshot)

@@ -30,10 +30,6 @@ If release name contains chart name it will be used as a full name.
 {{- .repository -}}:{{- .tag -}}
 {{- end }}
 
-{{- define "dagster.externalPostgresImage.name" }}
-{{- .registry -}}/{{- .repository -}}:{{- .tag -}}
-{{- end }}
-
 {{- define "dagster.dagsterImage.name" }}
   {{- $ := index . 0 }}
 
@@ -47,11 +43,10 @@ If release name contains chart name it will be used as a full name.
 {{- define "dagster.webserver.dagsterWebserverCommand" -}}
 {{- $_ := include "dagster.backcompat" . | mustFromJson -}}
 {{- $userDeployments := index .Values "dagster-user-deployments" }}
-{{- printf "dagster-webserver -h 0.0.0.0 -p"}} {{ $_.Values.dagsterWebserver.service.port }}
+dagster-webserver -h 0.0.0.0 -p {{ $_.Values.dagsterWebserver.service.port }}
 {{- if $userDeployments.enabled }} -w /dagster-workspace/workspace.yaml {{- end -}}
 {{- with $_.Values.dagsterWebserver.dbStatementTimeout }} --db-statement-timeout {{ . }} {{- end -}}
 {{- with $_.Values.dagsterWebserver.dbPoolRecycle }} --db-pool-recycle {{ . }} {{- end -}}
-{{- with $_.Values.dagsterWebserver.dbPoolMaxOverflow }} --db-pool-max-overflow {{ . }} {{- end -}}
 {{- if $_.Values.dagsterWebserver.pathPrefix }} --path-prefix {{ $_.Values.dagsterWebserver.pathPrefix }} {{- end -}}
 {{- with $_.Values.dagsterWebserver.logLevel }} --log-level {{ . }} {{- end -}}
 {{- if .webserverReadOnly }} --read-only {{- end -}}
@@ -201,6 +196,8 @@ This includes the Dagster webserver, Celery Workers, Run Worker, and Step Worker
 */}}
 {{- define "dagster.shared_env" -}}
 DAGSTER_HOME: {{ .Values.global.dagsterHome | quote }}
+DAGSTER_K8S_PG_PASSWORD_SECRET: {{ include "dagster.postgresql.secretName" . | quote }}
+DAGSTER_K8S_INSTANCE_CONFIG_MAP: "{{ template "dagster.fullname" .}}-instance"
 DAGSTER_K8S_PIPELINE_RUN_NAMESPACE: "{{ .Release.Namespace }}"
 DAGSTER_K8S_PIPELINE_RUN_ENV_CONFIGMAP: "{{ template "dagster.fullname" . }}-pipeline-env"
 DAGSTER_K8S_PIPELINE_RUN_IMAGE: {{ include "dagster.dagsterImage.name" (list $ .Values.pipelineRun.image) | quote }}

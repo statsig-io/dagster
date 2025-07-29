@@ -64,5 +64,3 @@ export type SchedulePartitionStatusResultFragment = {
   partitionName: string;
   runStatus: Types.RunStatus | null;
 };
-
-export const SchedulePartitionStatusQueryVersion = 'f5440153ccc2480dfdd8c6a7e9371c7276d1d27016e3820c0ba1488523e55d5b';

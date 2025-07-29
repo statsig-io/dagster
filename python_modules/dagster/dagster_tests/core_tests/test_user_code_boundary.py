@@ -1,17 +1,25 @@
-import dagster as dg
+from dagster import (
+    In,
+    String,
+    dagster_type_loader,
+    job,
+    op,
+    resource,
+    usable_as_dagster_type,
+)
 
 
 class UserError(Exception):
     def __init__(self):
-        super().__init__("The user has errored")
+        super(UserError, self).__init__("The user has errored")
 
 
 def test_user_error_boundary_op_compute():
-    @dg.op
+    @op
     def throws_user_error(_):
         raise UserError()
 
-    @dg.job
+    @job
     def job_def():
         throws_user_error()
 
@@ -20,19 +28,19 @@ def test_user_error_boundary_op_compute():
 
 
 def test_user_error_boundary_input_hydration():
-    @dg.dagster_type_loader(dg.String)
+    @dagster_type_loader(String)
     def InputHydration(context, hello):
         raise UserError()
 
-    @dg.usable_as_dagster_type(loader=InputHydration)
+    @usable_as_dagster_type(loader=InputHydration)
     class CustomType(str):
         pass
 
-    @dg.op(ins={"custom_type": dg.In(CustomType)})
+    @op(ins={"custom_type": In(CustomType)})
     def input_hydration_op(context, custom_type):
         context.log.info(custom_type)
 
-    @dg.job
+    @job
     def input_hydration_job():
         input_hydration_op()
 
@@ -44,15 +52,15 @@ def test_user_error_boundary_input_hydration():
 
 
 def test_user_error_boundary_resource_init():
-    @dg.resource
+    @resource
     def resource_a(_):
         raise UserError()
 
-    @dg.op(required_resource_keys={"a"})
+    @op(required_resource_keys={"a"})
     def resource_op(_context):
         return "hello"
 
-    @dg.job(resource_defs={"a": resource_a})
+    @job(resource_defs={"a": resource_a})
     def resource_job():
         resource_op()
 

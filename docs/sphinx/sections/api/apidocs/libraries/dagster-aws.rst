@@ -34,8 +34,8 @@ S3
 
 
 
-File Manager
-^^^^^^^^^^^^
+File Manager (Experimental)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. autoclass:: dagster_aws.s3.S3FileHandle
   :members:
@@ -48,15 +48,6 @@ ECS
 ---
 .. autoconfigurable:: dagster_aws.ecs.EcsRunLauncher
   :annotation: RunLauncher
-
-.. autoconfigurable:: dagster_aws.ecs.ecs_executor
-  :annotation: ExecutorDefinition
-
-
-RDS
----
-.. autoconfigurable:: dagster_aws.rds.RDSResource
-  :annotation: ResourceDefinition
 
 
 Redshift
@@ -104,49 +95,6 @@ Resources which surface SecretsManager secrets for use in Dagster resources and 
 .. autoconfigurable:: dagster_aws.secretsmanager.SecretsManagerSecretsResource
   :annotation: ResourceDefinition
 
-SSM
----
-
-.. autoconfigurable:: dagster_aws.ssm.SSMResource
-  :annotation: ResourceDefinition
-
-.. autoconfigurable:: dagster_aws.ssm.ParameterStoreResource
-  :annotation: ResourceDefinition
-
-.. autoclass:: dagster_aws.ssm.ParameterStoreTag
-
-Pipes
---------------
-
-Context Injectors
-^^^^^^^^^^^^^^^^^
-
-.. autoclass:: dagster_aws.pipes.PipesS3ContextInjector
-
-.. autoclass:: dagster_aws.pipes.PipesLambdaEventContextInjector
-
-Message Readers
-^^^^^^^^^^^^^^^
-
-.. autoclass:: dagster_aws.pipes.PipesS3MessageReader
-
-.. autoclass:: dagster_aws.pipes.PipesCloudWatchMessageReader
-   :members: consume_cloudwatch_logs
-
-Clients
-^^^^^^^
-
-.. autoclass:: dagster_aws.pipes.PipesLambdaClient
-
-.. autoclass:: dagster_aws.pipes.PipesGlueClient
-
-.. autoclass:: dagster_aws.pipes.PipesECSClient
-
-.. autoclass:: dagster_aws.pipes.PipesEMRClient
-
-.. autoclass:: dagster_aws.pipes.PipesEMRContainersClient
-
-.. autoclass:: dagster_aws.pipes.PipesEMRServerlessClient
 
 Legacy
 --------

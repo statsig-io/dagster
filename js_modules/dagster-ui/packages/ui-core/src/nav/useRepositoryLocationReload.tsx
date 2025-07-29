@@ -1,22 +1,23 @@
+import {ApolloClient, ApolloError, gql, useApolloClient, useQuery} from '@apollo/client';
 // eslint-disable-next-line no-restricted-imports
 import {Intent} from '@blueprintjs/core';
-import {useCallback, useMemo, useReducer} from 'react';
+import * as React from 'react';
 
-import {ApolloClient, ApolloError, gql, useApolloClient, useQuery} from '../apollo-client';
-import {
-  ReloadRepositoryLocationMutation,
-  ReloadRepositoryLocationMutationVariables,
-  ReloadWorkspaceMutation,
-  ReloadWorkspaceMutationVariables,
-  RepositoryLocationStatusQuery,
-  RepositoryLocationStatusQueryVariables,
-} from './types/useRepositoryLocationReload.types';
 import {showSharedToaster} from '../app/DomUtils';
 import {useInvalidateConfigsForRepo} from '../app/ExecutionSessionStorage';
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
 import {UNAUTHORIZED_ERROR_FRAGMENT} from '../app/PythonErrorInfo';
 import {PythonErrorFragment} from '../app/types/PythonErrorFragment.types';
 import {RepositoryLocationLoadStatus} from '../graphql/types';
+
+import {
+  RepositoryLocationStatusQuery,
+  RepositoryLocationStatusQueryVariables,
+  ReloadRepositoryLocationMutationVariables,
+  ReloadWorkspaceMutationVariables,
+  ReloadWorkspaceMutation,
+  ReloadRepositoryLocationMutation,
+} from './types/useRepositoryLocationReload.types';
 
 type State = {
   mutating: boolean;
@@ -90,7 +91,7 @@ export const useRepositoryLocationReload = ({
   scope: 'location' | 'workspace';
   reloadFn: (client: ApolloClient<any>) => Promise<Action>;
 }) => {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = React.useReducer(reducer, initialState);
   const apollo = useApolloClient();
 
   const invalidateConfigs = useInvalidateConfigsForRepo();
@@ -201,7 +202,7 @@ export const useRepositoryLocationReload = ({
     },
   });
 
-  const tryReload = useCallback(async () => {
+  const tryReload = React.useCallback(async () => {
     dispatch({type: 'start-mutation'});
     const action = await reloadFn(apollo);
     dispatch(action);
@@ -213,7 +214,7 @@ export const useRepositoryLocationReload = ({
   const {mutating, pollStartTime, error, errorLocationId} = state;
   const reloading = mutating || pollStartTime !== null;
 
-  return useMemo(
+  return React.useMemo(
     () => ({reloading, error, errorLocationId, tryReload, mutating}),
     [reloading, error, errorLocationId, tryReload, mutating],
   );

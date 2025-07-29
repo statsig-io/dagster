@@ -44,5 +44,5 @@ def define_schedules():
 
 
 @repository
-def the_test_repo():
+def test():
     return [math, subset_test] + define_schedules()

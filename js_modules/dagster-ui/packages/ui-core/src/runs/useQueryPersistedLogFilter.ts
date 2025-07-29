@@ -1,12 +1,12 @@
 import {tokenizedValueFromString} from '@dagster-io/ui-components';
-import qs from 'qs';
-import {useMemo} from 'react';
+import * as React from 'react';
+
+import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
+import {useStateWithStorage} from '../hooks/useStateWithStorage';
 
 import {DefaultLogLevels, LogLevel} from './LogLevel';
 import {LogFilter} from './LogsProvider';
 import {getRunFilterProviders} from './getRunFilterProviders';
-import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
-import {useStateWithStorage} from '../hooks/useStateWithStorage';
 
 const DELIMITER = '|';
 
@@ -41,11 +41,11 @@ export const DefaultQuerystring: {[key: string]: string} = {
  *   - string (unix timestamp with msec)
  *   - Scrolls directly to log with specified time, if no `logs` filter
  */
-export const decodeRunPageFilters = (qs: qs.ParsedQs) => {
-  const logsQuery = typeof qs['logs'] === 'string' ? qs['logs'] : '';
-  const focusedTimeQuery = typeof qs['focusedTime'] === 'string' ? qs['focusedTime'] : '';
-  const hideNonMatchesQuery = typeof qs['hideNonMatches'] === 'string' ? qs['hideNonMatches'] : '';
-  const levelsQuery = typeof qs['levels'] === 'string' ? qs['levels'] : '';
+export const decodeRunPageFilters = (qs: {[key: string]: string}) => {
+  const logsQuery = qs['logs'] || '';
+  const focusedTimeQuery = qs['focusedTime'] || '';
+  const hideNonMatchesQuery = qs['hideNonMatches'] || '';
+  const levelsQuery = qs['levels'] || '';
 
   const logValues = logsQuery.split(DELIMITER);
   const focusedTime = focusedTimeQuery && !logsQuery ? Number(focusedTimeQuery) : null;
@@ -64,13 +64,7 @@ export const decodeRunPageFilters = (qs: qs.ParsedQs) => {
     levels: levelsValues
       .map((level) => level.toUpperCase())
       .filter((level) => LogLevel.hasOwnProperty(level))
-      .reduce(
-        (accum, level) => {
-          accum[level] = true;
-          return accum;
-        },
-        {} as Record<string, boolean>,
-      ),
+      .reduce((accum, level) => ({...accum, [level]: true}), {}),
   } as LogFilter;
 };
 
@@ -81,7 +75,7 @@ export function encodeRunPageFilters(filter: LogFilter) {
 
   return {
     hideNonMatches: filter.hideNonMatches ? 'true' : 'false',
-    focusedTime: String(filter.focusedTime || ''),
+    focusedTime: filter.focusedTime || '',
     logs: logQueryTokenStrings.join(DELIMITER),
     levels: levelsToQuery(Object.keys(filter.levels).filter((key) => !!filter.levels[key])),
   };
@@ -105,7 +99,7 @@ export function useQueryPersistedLogFilter(): [LogFilter, (updates: LogFilter) =
   // should *not* implicitly update the persisted values.
   const [storedLogLevels] = useStateWithStorage(EnabledRunLogLevelsKey, validateLogLevels);
 
-  const defaults = useMemo(() => {
+  const defaults = React.useMemo(() => {
     const levels = storedLogLevels ?? DefaultLogLevels;
     return {...DefaultQuerystring, levels: levelsToQuery(levels)};
   }, [storedLogLevels]);

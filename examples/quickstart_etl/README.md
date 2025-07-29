@@ -2,10 +2,9 @@
 
 This example is a starter kit for building a daily ETL pipeline. At a high level, this project shows how to ingest data from external sources, explore and transform the data, and materialize outputs that help visualize the data.
 
-_New to Dagster? Learn what Dagster is [in Concepts](https://docs.dagster.io/concepts) or [in the hands-on Tutorials](https://docs.dagster.io/tutorial)._
+*New to Dagster? Learn what Dagster is [in Concepts](https://docs.dagster.io/concepts) or [in the hands-on Tutorials](https://docs.dagster.io/tutorial).*
 
 This guide covers:
-
 - [Dagster starter kit](#dagster-starter-kit)
   - [Introduction](#introduction)
   - [Getting started](#getting-started)
@@ -20,19 +19,20 @@ This guide covers:
     - [Adding new Python dependencies](#adding-new-python-dependencies)
     - [Testing](#testing)
 
+
 ## Introduction
 
 This starter kit includes:
-
 - Basics of creating, connecting, and testing [assets](https://docs.dagster.io/concepts/assets/software-defined-assets) in Dagster.
-- Convenient ways to organize and monitor assets, e.g. [grouping assets](https://docs.dagster.io/concepts/assets/software-defined-assets#grouping-assets), [recording asset metadata](https://docs.dagster.io/concepts/metadata-tags/asset-metadata), etc.
+- Convenient ways to organize and monitor assets, e.g. [grouping assets](https://docs.dagster.io/concepts/assets/software-defined-assets#grouping-assets), [recording asset metadata](https://docs.dagster.io/concepts/assets/software-defined-assets#recording-materialization-metadata), etc.
 - A [schedule](https://docs.dagster.io/concepts/partitions-schedules-sensors/schedules) defined to run a job that generates assets daily.
 - [Scaffolded project layout](https://docs.dagster.io/getting-started/create-new-project) that helps you to quickly get started with everything set up.
+
 
 In this project, we're building an analytical pipeline that explores popular topics on HackerNews.
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/homepage.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/homepage.png" />
 </p>
 
 This project:
@@ -76,7 +76,7 @@ Open http://localhost:3000 with your browser to see the project.
 With the starter project loaded in your browser, click the icon in the top-left corner of the page to expand the navigation. You'll see both jobs and assets listed in the left nav.
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-1-1-left-nav.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-1-1-left-nav.png" />
 </p>
 
 Click on the `hackernews` asset group to view the HackerNews assets and their relationship.
@@ -97,10 +97,11 @@ This project also comes with ways to better organize the assets:
 - **Grouping assets**. We've also assigned all three assets to the group `hackernews`, which is accomplished by providing the `group_name` argument to the `@asset` decorator. Grouping assets can help keep assets organized as your project grows. Learn about asset grouping [here](https://docs.dagster.io/concepts/assets/software-defined-assets#assigning-assets-to-groups).
 - **Adding descriptions.** In the asset graph, the UI also shows the description of each asset. You can specify the description of an asset in the `description` argument to `@asset`. When the argument is not provided and the decorated function has a docstring, Dagster will use the docstring as the description. In this example, the UI is using the docstrings as the descriptions.
 
+
 Now that we've got a basic understanding of Dagster assets, let's materialize them.
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-1-2-materialize-all.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-1-2-materialize-all.png" />
 </p>
 
 Click **Materialize all** to kick off a Dagster run which will pull info from the external APIs and move the data through assets.
@@ -108,47 +109,47 @@ Click **Materialize all** to kick off a Dagster run which will pull info from th
 As you iterate, some assets may become outdated. To refresh them, you can select a subset of assets to run instead of re-running the entire pipeline. This allows us to avoid unnecessary re-runs of expensive computations, only re-materializing the assets that need to be updated. If assets take a long time to run or interact with APIs with restrictive rate limits, selectively re-materializing assets will come in handy.
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-1-3-view-run.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-1-3-view-run.png" />
 </p>
 
 You'll see an indicator pop up with the launched run ID. Click **View** to monitor the run in real-time. This will open a new tab in your browser:
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-1-4-compute-logs.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-1-4-compute-logs.png" />
 </p>
 
-The process will run for a bit. While it's running, you should see the real-time compute logs printed in the UI. _(It may take 1-2 minutes to fetch all top 500 stories from HackerNews in the `hackernews_topstories` step)._
+The process will run for a bit. While it's running, you should see the real-time compute logs printed in the UI. *(It may take 1-2 minutes to fetch all top 500 stories from HackerNews in the `hackernews_topstories` step).*
 
 ## Step 2: Viewing and monitoring assets
 
-When you materialize an asset, the object returned by your asset function is saved. Dagster makes it easy to save these results to disk, to blob storage, to a database, or to any other system. In this example the assets are saved to the file system. In addition to the asset materialization, your asset functions can also generate metadata that is directly visible in Dagster. To view the materialization details and metadata, click on the "ASSET_MATERIALIZATION" event. In this example, the `hackernews_stories_word_cloud` asset materializes a plot that is saved to disk, but we also add the plot as metadata to make it visible in Dagster.
+When you materialize an asset, the object returned by your asset function is saved. Dagster makes it easy to save these results to disk, to blob storage, to a database, or to any other system. In this example the assets are saved to the file system. In addition to the asset materialization,  your asset functions can also generate metadata that is directly visible in Dagster. To view the materialization details and metadata, click on the "ASSET_MATERIALIZATION" event. In this example, the `hackernews_stories_word_cloud` asset materializes a plot that is saved to disk, but we also add the plot as metadata to make it visible in Dagster.
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-2-5-asset-in-logs.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-2-5-asset-in-logs.png" />
 </p>
 
 Click **Show Markdown**. You'll see a word cloud of the top 500 HackerNews story titles generated by the `hackernews_topstories_word_cloud` asset:
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-2-6-hackernews_word_cloud.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-2-6-hackernews_word_cloud.png" />
 </p>
 
-The metadata is recorded in the `hackernews_topstories_word_cloud` asset [in `quickstart_etl/assets/hackernews.py`](./quickstart_etl/assets/hackernews.py). Dagster supports attaching arbitrary [metadata](https://docs.dagster.io/_apidocs/ops#dagster.MetadataValue) to asset materializations. This metadata is also be displayed on the **Activity** tab of the **Asset Details** page in the UI or in the **Asset Lineage** view after selecting an asset. From the compute logs of a run, you can click the **View Asset** to go to the **Asset Details** page.
+The metadata is recorded in the `hackernews_topstories_word_cloud` asset [in `quickstart_etl/assets/hackernews.py`](./quickstart_etl/assets/hackernews.py). Dagster supports attaching arbitrary [metadata](https://docs.dagster.io/_apidocs/ops#dagster.MetadataValue) to asset materializations.  This metadata is also be displayed on the **Activity** tab of the **Asset Details** page in the UI or in the **Asset Lineage** view after selecting an asset. From the compute logs of a run, you can click the **View Asset** to go to the **Asset Details** page.
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-2-7-view-assets.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-2-7-view-assets.png" />
 </p>
 
 This metadata would be useful for monitoring and maintaining the asset as you iterate. Similarly, we've also recorded some metadata in the `hackernews_topstories` asset. You can filter the compute logs by typing the asset name (e.g. `hackernews_topstories`) or the event type (e.g. `type:ASSET_MATERIALIZATION`) in the **Log Filter** input box:
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-2-8-filter.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-2-8-filter.png" />
 </p>
 
 In the results, you'll see that the `hackernews_topstories` asset has two metadata entries: `num_records` and `preview`. Both are defined [in `quickstart_etl/assets/hackernews.py`](./quickstart_etl/assets/hackernews.py), in which we record the first five rows of the output Pandas DataFrame in the `preview` metadata entry using the Markdown type. This could help debug and keep your assets easily monitored. Click **Show Markdown** to view a preview of the output data frame:
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-2-9-preview.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-2-9-preview.png" />
 </p>
 
 Note: You'll find a `path` metadata attached to every asset. This is because assets are, by default, materialized to pickle files on your local filesystem. In most projects, your assets will be materialized to a production system and you can fully customize the I/O using [I/O managers](https://docs.dagster.io/concepts/io-management/io-managers).
@@ -157,7 +158,7 @@ Note: You'll find a `path` metadata attached to every asset. This is because ass
 
 Finally, let's refresh our plots every day so we can monitor popular topics over time. To do so, we can use [schedules](https://docs.dagster.io/concepts/partitions-schedules-sensors/schedules#schedules).
 
-We've defined a daily schedule and job in [`quickstart_etl/definitions.py`](./quickstart_etl/definitions.py) for all assets that are defined in the [`quickstart_etl/assets/`](./quickstart_etl/assets) module.
+We've defined a daily schedule and job in [`quickstart_etl/__init__.py`](./quickstart_etl/__init__.py) for all assets that are defined in the [`quickstart_etl/assets/`](./quickstart_etl/assets) module.
 
 Now, let's turn on the daily schedule within Dagster.
 
@@ -165,13 +166,13 @@ Now, let's turn on the daily schedule within Dagster.
 2. Mouse over the schedule indicator on the top of the page to navigate to the individual schedule page for more info about the schedule.
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-3-1-schedule-off.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-3-1-schedule-off.png" />
 </p>
 
-You can now turn on the schedule switch to set up the daily job we defined in [quickstart_etl/definitions.py](./quickstart_etl/definitions.py).
+You can now turn on the schedule switch to set up the daily job we defined in [quickstart_etl/__init__.py](./quickstart_etl/__init__.py).
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/step-3-2-schedule-on.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/step-3-2-schedule-on.png" />
 </p>
 
 <br />
@@ -180,7 +181,6 @@ You can now turn on the schedule switch to set up the daily job we defined in [q
 Congratulations 🎉 You now have a daily job running in production!
 
 ---
-
 ## Learning more
 
 ### Changing the code locally
@@ -188,21 +188,19 @@ Congratulations 🎉 You now have a daily job running in production!
 When developing pipelines locally, be sure to click the **Reload definition** button in the Dagster UI after you change the code. This ensures that Dagster picks up the latest changes you made.
 
 You can reload the code using the **Deployment** page:
-
 <details><summary>👈 Expand to view the screenshot</summary>
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/more-reload-code.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/more-reload-code.png" />
 </p>
 
 </details>
 
 Or from the left nav or on each job page:
-
 <details><summary>👈 Expand to view the screenshot</summary>
 
 <p align="center">
-    <img height="500" src="https://raw.githubusercontent.com/dagster-io/dagster/master/docs/static/images/quickstarts/basic/more-reload-left-nav.png" />
+    <img height="500" src="../../docs/next/public/images/quickstarts/basic/more-reload-left-nav.png" />
 </p>
 
 </details>
@@ -214,7 +212,6 @@ Environment variables, which are key-value pairs configured outside your source 
 Using environment variables, you can define various configuration options for your Dagster application and securely set up secrets. For example, instead of hard-coding database credentials - which is bad practice and cumbersome for development - you can use environment variables to supply user details. This allows you to parameterize your pipeline without modifying code or insecurely storing sensitive data.
 
 Check out [Using environment variables and secrets](https://docs.dagster.io/guides/dagster/using-environment-variables-and-secrets) for more info and examples.
-
 ### Adding new Python dependencies
 
 You can specify new Python dependencies in `setup.py`.

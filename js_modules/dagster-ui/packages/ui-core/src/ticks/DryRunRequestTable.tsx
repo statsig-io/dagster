@@ -1,12 +1,15 @@
-import {Box, Button, Colors, Icon, Table, Tooltip} from '@dagster-io/ui-components';
-import {useState} from 'react';
+import {Box, Colors, Icon, Table, Tag} from '@dagster-io/ui-components';
+import qs from 'qs';
+import React from 'react';
 
-import {RunConfigDialog} from '../runs/RunConfigDialog';
-import {RunRequestFragment} from './types/RunRequestFragment.types';
 import {PipelineReference} from '../pipelines/PipelineReference';
 import {testId} from '../testing/testId';
-import {useRepository} from '../workspace/WorkspaceContext/util';
+import {AnchorButton} from '../ui/AnchorButton';
+import {useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
+import {workspacePathFromAddress} from '../workspace/workspacePath';
+
+import {RunRequestFragment} from './types/RunRequestFragment.types';
 
 type Props = {
   name: string;
@@ -17,20 +20,24 @@ type Props = {
   mode?: string;
 };
 
-export const RunRequestTable = ({runRequests, isJob, repoAddress, mode, jobName}: Props) => {
+export const RunRequestTable: React.FC<Props> = ({
+  runRequests,
+  isJob,
+  repoAddress,
+  mode,
+  jobName,
+}) => {
   const repo = useRepository(repoAddress);
-  const [selectedRequest, setSelectedRequest] = useState<RunRequestFragment | null>(null);
-  const [visibleDialog, setVisibleDialog] = useState<'config' | null>(null);
 
   const body = (
     <tbody data-testid={testId('table-body')}>
       {runRequests.map((request, index) => {
         return (
           <tr key={index} data-testid={testId(request.runKey || '')}>
-            <td style={{verticalAlign: 'middle'}}>
+            <td>
               <Box flex={{alignItems: 'center', gap: 8}}>
                 <PipelineReference
-                  pipelineName={request.jobName ?? jobName}
+                  pipelineName={jobName}
                   pipelineHrefContext={repoAddress}
                   isJob={!!repo && isJob}
                   showIcon
@@ -38,40 +45,47 @@ export const RunRequestTable = ({runRequests, isJob, repoAddress, mode, jobName}
                 />
               </Box>
             </td>
-            <td style={{width: '7.5%', verticalAlign: 'middle', textAlign: 'center'}}>
-              <PreviewButton
-                request={request}
-                onClick={() => {
-                  setSelectedRequest(request);
-                  setVisibleDialog('config');
-                }}
-              />
+            <td>
+              <Box flex={{direction: 'row', gap: 8}}>
+                {filterTags(request.tags).map(({key, value}) => (
+                  <Tag key={key}>
+                    {key}: {value}
+                  </Tag>
+                ))}
+              </Box>
+            </td>
+            <td>
+              <AnchorButton
+                icon={<Icon name="edit" />}
+                target="_blank"
+                to={workspacePathFromAddress(
+                  repoAddress,
+                  `/pipeline_or_job/${jobName}/playground/setup?${qs.stringify({
+                    mode,
+                    config: request.runConfigYaml,
+                    tags: request.tags,
+                    assetSelection: request.assetSelection?.map(({path}) => ({
+                      assetKey: {path},
+                    })),
+                  })}`,
+                )}
+              >
+                Open in Launchpad
+              </AnchorButton>
             </td>
           </tr>
         );
       })}
-      {selectedRequest && (
-        <RunConfigDialog
-          isOpen={visibleDialog === 'config'}
-          onClose={() => setVisibleDialog(null)}
-          mode={mode || null}
-          runConfigYaml={selectedRequest.runConfigYaml}
-          tags={selectedRequest.tags}
-          isJob={isJob}
-          jobName={jobName}
-          request={selectedRequest}
-          repoAddress={repoAddress}
-        />
-      )}
     </tbody>
   );
   return (
     <div>
-      <Table style={{borderRight: `1px solid ${Colors.keylineDefault()}`, tableLayout: 'fixed'}}>
+      <Table style={{borderRight: `1px solid ${Colors.KeylineGray}`}}>
         <thead>
           <tr>
-            <th>Target</th>
-            <th style={{width: '7.5%'}}>Actions</th>
+            <th>{isJob ? 'Job' : 'Pipeline'} name</th>
+            <th>Tags</th>
+            <th>Configuration</th>
           </tr>
         </thead>
         {body}
@@ -80,14 +94,10 @@ export const RunRequestTable = ({runRequests, isJob, repoAddress, mode, jobName}
   );
 };
 
-function PreviewButton({request, onClick}: {request: RunRequestFragment; onClick: () => void}) {
-  return (
-    <Tooltip content="Preview run config and tags" placement="left-start">
-      <Button
-        icon={<Icon name="data_object" />}
-        onClick={onClick}
-        data-testid={testId(`preview-${request.runKey || ''}`)}
-      />
-    </Tooltip>
-  );
+// Filter out tags we already display in other ways
+function filterTags(tags: Array<{key: string; value: any}>) {
+  return tags.filter(({key}) => {
+    // Exclude the tag that specifies the schedule if this is a schedule name
+    return !['dagster/schedule_name'].includes(key);
+  });
 }

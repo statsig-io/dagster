@@ -1,15 +1,13 @@
 import tempfile
 import time
-from collections.abc import Mapping
 from contextlib import contextmanager
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Union
 
-import dagster as dg
 import dagster._check as check
-from dagster._core.events import DagsterEventType, EngineEventData
+from dagster._core.events import DagsterEvent, DagsterEventType, EngineEventData
+from dagster._core.events.log import EventLogEntry
 from dagster._core.storage.event_log import SqliteEventLogStorage, SqlPollingEventWatcher
 from dagster._core.storage.event_log.base import EventLogCursor
-from dagster._core.utils import make_new_run_id
 from dagster._serdes.config_class import ConfigurableClassData
 from typing_extensions import Self
 
@@ -22,57 +20,50 @@ class SqlitePollingEventLogStorage(SqliteEventLogStorage):
     observe runs.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self._watcher: Optional[SqlPollingEventWatcher] = None
+    def __init__(self, *args, **kwargs):
+        super(SqlitePollingEventLogStorage, self).__init__(*args, **kwargs)
+        self._watcher = SqlPollingEventWatcher(self)
+        self._disposed = False
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_config_value(
         cls, inst_data: ConfigurableClassData, config_value: Mapping[str, Any]
     ) -> Self:
-        return cls(inst_data=inst_data, **config_value)
+        return SqlitePollingEventLogStorage(inst_data=inst_data, **config_value)
 
     def watch(
-        self,
-        run_id: str,
-        cursor: Optional[str],
-        callback: Callable[[dg.EventLogEntry, str], None],
+        self, run_id: str, cursor: Union[str, int], callback: Callable[[EventLogEntry], None]
     ):
         check.str_param(run_id, "run_id")
         check.opt_str_param(cursor, "cursor")
         check.callable_param(callback, "callback")
-        if self._watcher is None:
-            self._watcher = SqlPollingEventWatcher(self)
-
         self._watcher.watch_run(run_id, cursor, callback)
 
-    def end_watch(
-        self,
-        run_id: str,
-        handler: Callable[[dg.EventLogEntry, str], None],
-    ):
+    def end_watch(self, run_id: str, handler: Callable[[EventLogEntry], None]):
         check.str_param(run_id, "run_id")
         check.callable_param(handler, "handler")
-        if self._watcher:
-            self._watcher.unwatch_run(run_id, handler)
+        self._watcher.unwatch_run(run_id, handler)
 
-    def dispose(self) -> None:
-        if self._watcher:
+    def __del__(self):
+        self.dispose()
+
+    def dispose(self):
+        if not self._disposed:
+            self._disposed = True
             self._watcher.close()
-            self._watcher = None
 
 
-RUN_ID = make_new_run_id()
+RUN_ID = "foo"
 
 
 def create_event(count: int, run_id: str = RUN_ID):
-    return dg.EventLogEntry(
+    return EventLogEntry(
         error_info=None,
         user_message=str(count),
         level="debug",
         run_id=run_id,
         timestamp=time.time(),
-        dagster_event=dg.DagsterEvent(
+        dagster_event=DagsterEvent(
             DagsterEventType.ENGINE_EVENT.value,
             "nonce",
             event_specific_data=EngineEventData.in_process(999),

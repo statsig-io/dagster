@@ -23,8 +23,8 @@ COPY requirements-webserver.txt $DAGSTER_HOME
 RUN pip install -r requirements-webserver.txt
 
 # User Code gRPC Server
-# You can include only one set of definitions
-# per code location. Consider adding more code locations
-# if you require multiple sets of definition.
+# You can either include all of your repositories in this
+# stage or you can create multiple stages that each use
+# the same base - one for each repository.
 FROM dagster as user_code
-COPY defs.py $DAGSTER_HOME
+COPY repo.py $DAGSTER_HOME

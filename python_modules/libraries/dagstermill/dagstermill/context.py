@@ -1,5 +1,4 @@
-from collections.abc import Mapping
-from typing import AbstractSet, Any, Optional, cast  # noqa: UP035
+from typing import AbstractSet, Any, Mapping, Optional, cast
 
 from dagster import (
     DagsterRun,
@@ -7,18 +6,14 @@ from dagster import (
     OpDefinition,
     _check as check,
 )
-from dagster._annotations import beta, public
+from dagster._annotations import public
 from dagster._core.definitions.dependency import Node, NodeHandle
-from dagster._core.definitions.repository_definition.repository_definition import (
-    RepositoryDefinition,
-)
-from dagster._core.execution.context.op_execution_context import AbstractComputeExecutionContext
+from dagster._core.execution.context.compute import AbstractComputeExecutionContext
 from dagster._core.execution.context.system import PlanExecutionContext, StepExecutionContext
 from dagster._core.log_manager import DagsterLogManager
 from dagster._core.system_config.objects import ResolvedRunConfig
 
 
-@beta
 class DagstermillExecutionContext(AbstractComputeExecutionContext):
     """Dagstermill-specific execution context.
 
@@ -106,11 +101,6 @@ class DagstermillExecutionContext(AbstractComputeExecutionContext):
         return self._job_def
 
     @property
-    def repository_def(self) -> RepositoryDefinition:
-        """:class:`dagster.RepositoryDefinition`: The repository definition for the context."""
-        raise NotImplementedError
-
-    @property
     def resources(self) -> Any:
         """collections.namedtuple: A dynamically-created type whose properties allow access to
         resources.
@@ -123,7 +113,7 @@ class DagstermillExecutionContext(AbstractComputeExecutionContext):
     @property
     def run(self) -> DagsterRun:
         """:class:`dagster.DagsterRun`: The job run for the context."""
-        return cast("DagsterRun", self._job_context.dagster_run)
+        return cast(DagsterRun, self._job_context.dagster_run)
 
     @property
     def log(self) -> DagsterLogManager:
@@ -141,7 +131,7 @@ class DagstermillExecutionContext(AbstractComputeExecutionContext):
         In interactive contexts, this may be a dagstermill-specific shim, depending whether an
         op definition was passed to ``dagstermill.get_context``.
         """
-        return cast("OpDefinition", self._job_def.node_def_named(self.op_name))
+        return cast(OpDefinition, self._job_def.node_def_named(self.op_name))
 
     @property
     def node(self) -> Node:

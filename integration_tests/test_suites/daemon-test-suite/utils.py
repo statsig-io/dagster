@@ -1,6 +1,7 @@
 import contextlib
 
-from dagster_shared.ipc import interrupt_ipc_subprocess, open_ipc_subprocess
+from dagster import _seven
+from dagster._serdes.ipc import interrupt_ipc_subprocess, open_ipc_subprocess
 
 
 @contextlib.contextmanager
@@ -14,4 +15,4 @@ def start_daemon(timeout=60, workspace_file=None, log_level=None):
         yield
     finally:
         interrupt_ipc_subprocess(p)
-        p.communicate(timeout=timeout)
+        _seven.wait_for_process(p, timeout=timeout)

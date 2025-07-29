@@ -4,7 +4,7 @@ import * as Types from '../../graphql/types';
 
 export type SetSensorCursorMutationVariables = Types.Exact<{
   sensorSelector: Types.SensorSelector;
-  cursor?: Types.InputMaybe<Types.Scalars['String']['input']>;
+  cursor?: Types.InputMaybe<Types.Scalars['String']>;
 }>;
 
 export type SetSensorCursorMutation = {
@@ -36,5 +36,3 @@ export type SetSensorCursorMutation = {
     | {__typename: 'SensorNotFoundError'}
     | {__typename: 'UnauthorizedError'};
 };
-
-export const SetSensorCursorMutationVersion = 'a2982d2698c645a5d39b60415792c233abd90f85d2a2ac7cd626d88c3d3362a2';

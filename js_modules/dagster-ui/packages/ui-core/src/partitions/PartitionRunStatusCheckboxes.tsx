@@ -1,4 +1,5 @@
 import {Box, Checkbox} from '@dagster-io/ui-components';
+import * as React from 'react';
 
 import {RunStatus} from '../graphql/types';
 import {runStatusToBackfillStateString} from '../runs/RunStatusTag';
@@ -18,19 +19,13 @@ export function countsByState(partitionKeysForCounts: {partitionKey: string; sta
   return result;
 }
 
-export const PartitionRunStatusCheckboxes = ({
-  counts,
-  value,
-  onChange,
-  allowed,
-  disabled,
-}: {
+export const PartitionRunStatusCheckboxes: React.FC<{
   counts: {[status: string]: number};
   value: RunStatus[];
   allowed: RunStatus[];
   onChange: (selected: RunStatus[]) => void;
   disabled?: boolean;
-}) => {
+}> = ({counts, value, onChange, allowed, disabled}) => {
   return (
     <Box flex={{direction: 'row', alignItems: 'center', gap: 12}} style={{overflow: 'hidden'}}>
       {allowed.map((status) => (

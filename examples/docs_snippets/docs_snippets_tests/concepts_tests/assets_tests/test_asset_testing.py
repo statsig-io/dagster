@@ -1,4 +1,4 @@
-from unittest import mock
+import mock
 
 
 def test_uses_resource() -> None:

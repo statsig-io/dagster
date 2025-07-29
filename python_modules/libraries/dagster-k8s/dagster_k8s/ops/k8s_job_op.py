@@ -1,34 +1,16 @@
-import os
 import time
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 import kubernetes.config
 import kubernetes.watch
-from dagster import (
-    Enum as DagsterEnum,
-    Field,
-    In,
-    Noneable,
-    Nothing,
-    OpExecutionContext,
-    Permissive,
-    StringSource,
-    op,
-)
-from dagster._annotations import beta
-from dagster._core.errors import DagsterExecutionInterruptedError
+from dagster import Field, In, Noneable, Nothing, OpExecutionContext, Permissive, StringSource, op
+from dagster._annotations import experimental
 from dagster._utils.merger import merge_dicts
 
-from dagster_k8s.client import DEFAULT_JOB_POD_COUNT, DagsterKubernetesClient, k8s_api_retry
-from dagster_k8s.container_context import K8sContainerContext
-from dagster_k8s.job import (
-    DagsterK8sJobConfig,
-    K8sConfigMergeBehavior,
-    UserDefinedDagsterK8sConfig,
-    construct_dagster_k8s_job,
-    get_k8s_job_name,
-)
-from dagster_k8s.launcher import K8sRunLauncher
+from ..client import DEFAULT_JOB_POD_COUNT, DagsterKubernetesClient
+from ..container_context import K8sContainerContext
+from ..job import DagsterK8sJobConfig, construct_dagster_k8s_job, get_k8s_job_name
+from ..launcher import K8sRunLauncher
 
 K8S_JOB_OP_CONFIG = merge_dicts(
     DagsterK8sJobConfig.config_type_container(),
@@ -78,7 +60,7 @@ K8S_JOB_OP_CONFIG = merge_dicts(
             is_required=False,
             description=(
                 "Raw k8s config for the k8s pod's main container"
-                " (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#container-v1-core)."
+                " (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#container-v1-core)."
                 " Keys can either snake_case or camelCase."
             ),
         ),
@@ -114,57 +96,41 @@ K8S_JOB_OP_CONFIG = merge_dicts(
             is_required=False,
             description=(
                 "Raw k8s config for the k8s job's job spec"
-                " (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#jobspec-v1-batch)."
+                " (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#jobspec-v1-batch)."
                 " Keys can either snake_case or camelCase."
-            ),
-        ),
-        "merge_behavior": Field(
-            DagsterEnum.from_python_enum(K8sConfigMergeBehavior),
-            is_required=False,
-            default_value=K8sConfigMergeBehavior.DEEP.value,
-            description=(
-                "How raw k8s config set on this op should be merged with any raw k8s config set on"
-                " the code location that launched the op. By default, the value is SHALLOW, meaning"
-                " that the two dictionaries are shallowly merged - any shared values in the "
-                " dictionaries will be replaced by the values set on this op. Setting it to DEEP"
-                " will recursively merge the two dictionaries, appending list fields together and"
-                " merging dictionary fields."
             ),
         ),
     },
 )
 
 
-@beta
+@experimental
 def execute_k8s_job(
     context: OpExecutionContext,
     image: str,
-    command: Optional[list[str]] = None,
-    args: Optional[list[str]] = None,
+    command: Optional[List[str]] = None,
+    args: Optional[List[str]] = None,
     namespace: Optional[str] = None,
     image_pull_policy: Optional[str] = None,
-    image_pull_secrets: Optional[list[dict[str, str]]] = None,
+    image_pull_secrets: Optional[List[Dict[str, str]]] = None,
     service_account_name: Optional[str] = None,
-    env_config_maps: Optional[list[str]] = None,
-    env_secrets: Optional[list[str]] = None,
-    env_vars: Optional[list[str]] = None,
-    volume_mounts: Optional[list[dict[str, Any]]] = None,
-    volumes: Optional[list[dict[str, Any]]] = None,
-    labels: Optional[dict[str, str]] = None,
-    resources: Optional[dict[str, Any]] = None,
+    env_config_maps: Optional[List[str]] = None,
+    env_secrets: Optional[List[str]] = None,
+    env_vars: Optional[List[str]] = None,
+    volume_mounts: Optional[List[Dict[str, Any]]] = None,
+    volumes: Optional[List[Dict[str, Any]]] = None,
+    labels: Optional[Dict[str, str]] = None,
+    resources: Optional[Dict[str, Any]] = None,
     scheduler_name: Optional[str] = None,
     load_incluster_config: bool = True,
     kubeconfig_file: Optional[str] = None,
     timeout: Optional[int] = None,
-    container_config: Optional[dict[str, Any]] = None,
-    pod_template_spec_metadata: Optional[dict[str, Any]] = None,
-    pod_spec_config: Optional[dict[str, Any]] = None,
-    job_metadata: Optional[dict[str, Any]] = None,
-    job_spec_config: Optional[dict[str, Any]] = None,
+    container_config: Optional[Dict[str, Any]] = None,
+    pod_template_spec_metadata: Optional[Dict[str, Any]] = None,
+    pod_spec_config: Optional[Dict[str, Any]] = None,
+    job_metadata: Optional[Dict[str, Any]] = None,
+    job_spec_config: Optional[Dict[str, Any]] = None,
     k8s_job_name: Optional[str] = None,
-    merge_behavior: K8sConfigMergeBehavior = K8sConfigMergeBehavior.DEEP,
-    delete_failed_k8s_jobs: Optional[bool] = True,
-    _kubeconfig_file_context: Optional[str] = None,
 ):
     """This function is a utility for executing a Kubernetes job from within a Dagster op.
 
@@ -216,7 +182,7 @@ def execute_k8s_job(
         timeout (Optional[int]): Raise an exception if the op takes longer than this timeout in
             seconds to execute. Default: None.
         container_config (Optional[Dict[str, Any]]): Raw k8s config for the k8s pod's main container
-            (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#container-v1-core).
+            (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#container-v1-core).
             Keys can either snake_case or camelCase.Default: None.
         pod_template_spec_metadata (Optional[Dict[str, Any]]): Raw k8s config for the k8s pod's
             metadata (https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/object-meta/#ObjectMeta).
@@ -228,23 +194,12 @@ def execute_k8s_job(
             (https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/object-meta/#ObjectMeta).
             Keys can either snake_case or camelCase. Default: None.
         job_spec_config (Optional[Dict[str, Any]]): Raw k8s config for the k8s job's job spec
-            (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#jobspec-v1-batch).
+            (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#jobspec-v1-batch).
             Keys can either snake_case or camelCase.Default: None.
-        k8s_job_name (Optional[str]): Overrides the name of the k8s job. If not set, will be set
+        k8s_job_name (Optional[str]): Overrides the name of the the k8s job. If not set, will be set
             to a unique name based on the current run ID and the name of the calling op. If set,
             make sure that the passed in name is a valid Kubernetes job name that does not
             already exist in the cluster.
-        merge_behavior (Optional[K8sConfigMergeBehavior]): How raw k8s config set on this op should
-            be merged with any raw k8s config set on the code location that launched the op. By
-            default, the value is K8sConfigMergeBehavior.DEEP, meaning that the two dictionaries
-            are recursively merged, appending list fields together and merging dictionary fields.
-            Setting it to SHALLOW will make the dictionaries shallowly merged - any shared values
-            in the dictionaries will be replaced by the values set on this op.
-        delete_failed_k8s_jobs (bool): Whether to immediately delete failed Kubernetes jobs. If False,
-            failed jobs will remain accessible through the Kubernetes API until deleted by a user or cleaned up by the
-            .spec.ttlSecondsAfterFinished parameter of the job.
-            (https://kubernetes.io/docs/concepts/workloads/controllers/ttlafterfinished/).
-            Defaults to True.
     """
     run_container_context = K8sContainerContext.create_for_run(
         context.dagster_run,
@@ -273,27 +228,36 @@ def execute_k8s_job(
         namespace=namespace,
         resources=resources,
         scheduler_name=scheduler_name,
-        run_k8s_config=UserDefinedDagsterK8sConfig.from_dict(
-            {
-                "container_config": container_config,
-                "pod_template_spec_metadata": pod_template_spec_metadata,
-                "pod_spec_config": pod_spec_config,
-                "job_metadata": job_metadata,
-                "job_spec_config": job_spec_config,
-                "merge_behavior": merge_behavior.value,
-            }
-        ),
+        run_k8s_config={
+            "container_config": container_config,
+            "pod_template_spec_metadata": pod_template_spec_metadata,
+            "pod_spec_config": pod_spec_config,
+            "job_metadata": job_metadata,
+            "job_spec_config": job_spec_config,
+        },
     )
 
     container_context = run_container_context.merge(op_container_context)
 
     namespace = container_context.namespace
 
-    user_defined_k8s_config = container_context.run_k8s_config
+    user_defined_k8s_config = container_context.get_run_user_defined_k8s_config()
 
     k8s_job_config = DagsterK8sJobConfig(
         job_image=image,
         dagster_home=None,
+        image_pull_policy=container_context.image_pull_policy,
+        image_pull_secrets=container_context.image_pull_secrets,
+        service_account_name=container_context.service_account_name,
+        instance_config_map=None,
+        postgres_password_secret=None,
+        env_config_maps=container_context.env_config_maps,
+        env_secrets=container_context.env_secrets,
+        env_vars=container_context.env_vars,
+        volume_mounts=container_context.volume_mounts,
+        volumes=container_context.volumes,
+        labels=container_context.labels,
+        resources=container_context.resources,
     )
 
     job_name = k8s_job_name or get_k8s_job_name(
@@ -309,18 +273,10 @@ def execute_k8s_job(
         "dagster/op": context.op.name,
         "dagster/run-id": context.dagster_run.run_id,
     }
-    if context.dagster_run.remote_job_origin:
+    if context.dagster_run.external_job_origin:
         labels["dagster/code-location"] = (
-            context.dagster_run.remote_job_origin.repository_origin.code_location_origin.location_name
+            context.dagster_run.external_job_origin.external_repository_origin.code_location_origin.location_name
         )
-    env = user_defined_k8s_config.container_config.get("env")
-    deployment_name_env_var = (
-        next((entry for entry in env if entry["name"] == "DAGSTER_CLOUD_DEPLOYMENT_NAME"), None)
-        if env
-        else None
-    )
-    if deployment_name_env_var:
-        labels["dagster/deployment-name"] = deployment_name_env_var["value"]
 
     job = construct_dagster_k8s_job(
         job_config=k8s_job_config,
@@ -335,7 +291,7 @@ def execute_k8s_job(
     if load_incluster_config:
         kubernetes.config.load_incluster_config()
     else:
-        kubernetes.config.load_kube_config(kubeconfig_file, context=_kubeconfig_file_context)
+        kubernetes.config.load_kube_config(kubeconfig_file)
 
     # changing this to be able to be passed in will allow for unit testing
     api_client = DagsterKubernetesClient.production_client()
@@ -350,113 +306,72 @@ def execute_k8s_job(
 
     timeout = timeout or 0
 
-    try:
-        api_client.wait_for_job(
-            job_name=job_name,
-            namespace=namespace,
+    api_client.wait_for_job(
+        job_name=job_name,
+        namespace=namespace,
+        wait_timeout=timeout,
+        start_time=start_time,
+    )
+
+    restart_policy = user_defined_k8s_config.pod_spec_config.get("restart_policy", "Never")
+
+    if restart_policy == "Never":
+        container_name = container_config.get("name", "dagster")
+
+        pods = api_client.wait_for_job_to_have_pods(
+            job_name,
+            namespace,
             wait_timeout=timeout,
             start_time=start_time,
         )
 
-        restart_policy = user_defined_k8s_config.pod_spec_config.get("restart_policy", "Never")
+        pod_names = [p.metadata.name for p in pods]
 
-        if restart_policy == "Never":
-            container_name = container_config.get("name", "dagster")
+        if not pod_names:
+            raise Exception("No pod names in job after it started")
 
-            pods = api_client.wait_for_job_to_have_pods(
-                job_name,
-                namespace,
-                wait_timeout=timeout,
-                start_time=start_time,
-            )
+        pod_to_watch = pod_names[0]
+        watch = kubernetes.watch.Watch()  # consider moving in to api_client
 
-            pod_names = [p.metadata.name for p in pods]
-
-            if not pod_names:
-                raise Exception("No pod names in job after it started")
-
-            pod_to_watch = pod_names[0]
-            watch = kubernetes.watch.Watch()  # consider moving in to api_client
-
-            api_client.wait_for_pod(
-                pod_to_watch,
-                namespace,  # pyright: ignore[reportArgumentType]
-                wait_timeout=timeout,
-                start_time=start_time,  # pyright: ignore[reportArgumentType]
-            )
-
-            log_stream = watch.stream(
-                api_client.core_api.read_namespaced_pod_log,
-                name=pod_to_watch,
-                namespace=namespace,
-                container=container_name,
-            )
-
-            while True:
-                if timeout and time.time() - start_time > timeout:
-                    watch.stop()
-                    raise Exception("Timed out waiting for pod to finish")
-                try:
-                    log_entry = k8s_api_retry(
-                        lambda: next(log_stream),
-                        max_retries=int(
-                            os.getenv("DAGSTER_EXECUTE_K8S_JOB_STREAM_LOGS_RETRIES", "3")
-                        ),
-                        timeout=int(
-                            os.getenv(
-                                "DAGSTER_EXECUTE_K8S_JOB_STREAM_LOGS_WAIT_BETWEEN_ATTEMPTS", "5"
-                            )
-                        ),
-                    )
-                    print(log_entry)  # noqa: T201
-                except StopIteration:
-                    break
-                except Exception:
-                    context.log.warning(
-                        "Error reading pod logs. Giving up and waiting for the pod to finish",
-                        exc_info=True,
-                    )
-                    break
-        else:
-            context.log.info("Pod logs are disabled, because restart_policy is not Never")
-
-        if job_spec_config and job_spec_config.get("parallelism"):
-            num_pods_to_wait_for = job_spec_config["parallelism"]
-        else:
-            num_pods_to_wait_for = DEFAULT_JOB_POD_COUNT
-
-        api_client.wait_for_running_job_to_succeed(
-            job_name=job_name,
-            namespace=namespace,
-            wait_timeout=timeout,
-            start_time=start_time,
-            num_pods_to_wait_for=num_pods_to_wait_for,
+        api_client.wait_for_pod(
+            pod_to_watch, namespace, wait_timeout=timeout, start_time=start_time
         )
-    except (DagsterExecutionInterruptedError, Exception) as e:
-        try:
-            pods = api_client.get_pod_names_in_job(job_name=job_name, namespace=namespace)
-            pod_debug_info = "\n\n".join(
-                [api_client.get_pod_debug_info(pod_name, namespace) for pod_name in pods]
-            )
-        except Exception:
-            context.log.exception(
-                f"Error trying to get pod debug information for failed k8s job {job_name}"
-            )
-        else:
-            context.log.error(
-                f"Debug information for failed k8s job {job_name}:\n\n{pod_debug_info}"
-            )
 
-        if delete_failed_k8s_jobs:
-            context.log.info(
-                f"Deleting Kubernetes job {job_name} in namespace {namespace} due to exception"
-            )
-            api_client.delete_job(job_name=job_name, namespace=namespace)
-        raise e
+        log_stream = watch.stream(
+            api_client.core_api.read_namespaced_pod_log,
+            name=pod_to_watch,
+            namespace=namespace,
+            container=container_name,
+        )
+
+        while True:
+            if timeout and time.time() - start_time > timeout:
+                watch.stop()
+                raise Exception("Timed out waiting for pod to finish")
+
+            try:
+                log_entry = next(log_stream)
+                print(log_entry)  # noqa: T201
+            except StopIteration:
+                break
+    else:
+        context.log.info("Pod logs are disabled, because restart_policy is not Never")
+
+    if job_spec_config and job_spec_config.get("parallelism"):
+        num_pods_to_wait_for = job_spec_config["parallelism"]
+    else:
+        num_pods_to_wait_for = DEFAULT_JOB_POD_COUNT
+    api_client.wait_for_running_job_to_succeed(
+        job_name=job_name,
+        namespace=namespace,
+        wait_timeout=timeout,
+        start_time=start_time,
+        num_pods_to_wait_for=num_pods_to_wait_for,
+    )
 
 
 @op(ins={"start_after": In(Nothing)}, config_schema=K8S_JOB_OP_CONFIG)
-@beta
+@experimental
 def k8s_job_op(context):
     """An op that runs a Kubernetes job using the k8s API.
 
@@ -483,9 +398,4 @@ def k8s_job_op(context):
     .. literalinclude:: ../../../../../../examples/docs_snippets/docs_snippets/deploying/kubernetes/k8s_job_op_rbac.yaml
        :language: YAML
     """
-    if "merge_behavior" in context.op_config:
-        merge_behavior = K8sConfigMergeBehavior(context.op_config.pop("merge_behavior"))
-    else:
-        merge_behavior = K8sConfigMergeBehavior.DEEP
-
-    execute_k8s_job(context, merge_behavior=merge_behavior, **context.op_config)
+    execute_k8s_job(context, **context.op_config)

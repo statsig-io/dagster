@@ -20,7 +20,7 @@ from google.cloud import storage
 from pydantic import Field
 from upath import UPath
 
-from dagster_gcp.gcs.resources import GCSResource
+from .resources import GCSResource
 
 DEFAULT_LEASE_DURATION = 60  # One minute
 
@@ -35,12 +35,12 @@ class PickledObjectGCSIOManager(UPathIOManager):
         super().__init__(base_path=UPath(self.prefix))
 
     def unlink(self, path: UPath) -> None:
-        key = path.as_posix()
+        key = str(path)
         if self.bucket_obj.blob(key).exists():
             self.bucket_obj.blob(key).delete()
 
     def path_exists(self, path: UPath) -> bool:
-        key = path.as_posix()
+        key = str(path)
         blobs = self.client.list_blobs(self.bucket, prefix=key)
         return len(list(blobs)) > 0
 
@@ -57,21 +57,25 @@ class PickledObjectGCSIOManager(UPathIOManager):
         return f"Writing GCS object at: {self._uri_for_path(path)}"
 
     def _uri_for_path(self, path: UPath) -> str:
-        return f"gs://{self.bucket}/{path.as_posix()}"
+        return f"gs://{self.bucket}/{path}"
 
     def make_directory(self, path: UPath) -> None:
         # It is not necessary to create directories in GCP
         return None
 
     def load_from_path(self, context: InputContext, path: UPath) -> Any:
-        bytes_obj = self.bucket_obj.blob(path.as_posix()).download_as_bytes()
+        bytes_obj = self.bucket_obj.blob(str(path)).download_as_bytes()
         return pickle.loads(bytes_obj)
 
     def dump_to_path(self, context: OutputContext, obj: Any, path: UPath) -> None:
+        if self.path_exists(path):
+            context.log.warning(f"Removing existing GCS key: {path}")
+            self.unlink(path)
+
         pickled_obj = pickle.dumps(obj, PICKLE_PROTOCOL)
 
         backoff(
-            self.bucket_obj.blob(path.as_posix()).upload_from_string,
+            self.bucket_obj.blob(str(path)).upload_from_string,
             args=[pickled_obj],
             retry_on=(TooManyRequests, Forbidden, ServiceUnavailable),
         )
@@ -111,15 +115,14 @@ class GCSPickleIOManager(ConfigurableIOManager):
         def asset2(asset1):
             return asset1[:5]
 
-        Definitions(
+        defs = Definitions(
             assets=[asset1, asset2],
             resources={
                 "io_manager": GCSPickleIOManager(
                     gcs_bucket="my-cool-bucket",
-                    gcs_prefix="my-cool-prefix",
-                    gcs=GCSResource(project="my-cool-project")
+                    gcs_prefix="my-cool-prefix"
                 ),
-
+                "gcs": GCSResource(project="my-cool-project")
             }
         )
 
@@ -215,7 +218,7 @@ def gcs_pickle_io_manager(init_context):
         def asset2(asset1):
             return asset1[:5]
 
-        Definitions(
+        defs = Definitions(
             assets=[asset1, asset2],
             resources={
                     "io_manager": gcs_pickle_io_manager.configured(

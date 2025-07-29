@@ -1,21 +1,20 @@
-import {Box, Colors, ConfigTypeSchema, Icon, IconWrapper} from '@dagster-io/ui-components';
+import {gql} from '@apollo/client';
+import {Colors, ConfigTypeSchema, Icon, IconWrapper, Box} from '@dagster-io/ui-components';
+import * as React from 'react';
 import styled from 'styled-components';
+
+import {CONFIG_TYPE_SCHEMA_FRAGMENT} from '../typeexplorer/ConfigTypeSchema';
 
 import {Description} from './Description';
 import {SectionHeader, SectionItemContainer} from './SidebarComponents';
-import {gql} from '../apollo-client';
 import {SidebarResourcesSectionFragment} from './types/SidebarResourcesSection.types';
-import {CONFIG_TYPE_SCHEMA_FRAGMENT} from '../typeexplorer/ConfigTypeSchema';
 
 const NO_DESCRIPTION = '';
 
-export const SidebarResourcesSection = ({
-  mode,
-  showModeName,
-}: {
+export const SidebarResourcesSection: React.FC<{
   mode: SidebarResourcesSectionFragment;
   showModeName?: boolean;
-}) => {
+}> = ({mode, showModeName}) => {
   return (
     <SectionItemContainer key={mode.name}>
       {showModeName && (
@@ -27,7 +26,7 @@ export const SidebarResourcesSection = ({
       <Box flex={{direction: 'column', gap: 16}}>
         {[...mode.resources, ...mode.loggers].map((resource) => (
           <ContextResourceContainer key={resource.name}>
-            <Icon name="resource" color={Colors.accentGray()} />
+            <Icon name="resource" color={Colors.Gray700} />
             <div>
               <ContextResourceHeader>{resource.name}</ContextResourceHeader>
               <Description description={resource.description || NO_DESCRIPTION} />

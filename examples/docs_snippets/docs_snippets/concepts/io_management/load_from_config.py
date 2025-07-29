@@ -1,13 +1,13 @@
-import dagster as dg
+from dagster import job, op
 
 
 # def_start_marker
-@dg.op
-def my_op(context: dg.OpExecutionContext, input_string: str):
+@op
+def my_op(context, input_string: str):
     context.log.info(f"input string: {input_string}")
 
 
-@dg.job
+@job
 def my_job():
     my_op()
 

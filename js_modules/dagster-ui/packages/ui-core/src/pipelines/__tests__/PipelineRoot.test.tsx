@@ -1,10 +1,11 @@
 import {render, screen} from '@testing-library/react';
+import * as React from 'react';
 import {MemoryRouter} from 'react-router-dom';
-import {RecoilRoot} from 'recoil';
 
 import {TestPermissionsProvider} from '../../testing/TestPermissions';
 import {buildRepoAddress} from '../../workspace/buildRepoAddress';
 import {repoAddressAsURLString} from '../../workspace/repoAddressAsString';
+import {JobFeatureProvider} from '../JobFeatureContext';
 import {PipelineRoot} from '../PipelineRoot';
 
 jest.mock('../../launchpad/LaunchpadAllowedRoot', () => ({
@@ -51,11 +52,11 @@ describe('PipelineRoot', () => {
 
   it('renders overview by default', async () => {
     render(
-      <RecoilRoot>
+      <JobFeatureProvider>
         <MemoryRouter initialEntries={[path]}>
           <PipelineRoot repoAddress={repoAddress} />
         </MemoryRouter>
-      </RecoilRoot>,
+      </JobFeatureProvider>,
     );
 
     const overviewDummy = await screen.findByText(/pipeline overview placeholder/i);
@@ -70,13 +71,13 @@ describe('PipelineRoot', () => {
     };
 
     render(
-      <RecoilRoot>
+      <JobFeatureProvider>
         <TestPermissionsProvider locationOverrides={locationPermissions}>
           <MemoryRouter initialEntries={[`${path}/playground`]}>
             <PipelineRoot repoAddress={repoAddress} />
           </MemoryRouter>
         </TestPermissionsProvider>
-      </RecoilRoot>,
+      </JobFeatureProvider>,
     );
 
     const playgroundDummy = await screen.findByText(/launchpad allowed placeholder/i);
@@ -91,13 +92,13 @@ describe('PipelineRoot', () => {
     };
 
     render(
-      <RecoilRoot>
+      <JobFeatureProvider>
         <TestPermissionsProvider locationOverrides={locationPermissions}>
           <MemoryRouter initialEntries={[`${path}/playground`]}>
             <PipelineRoot repoAddress={repoAddress} />
           </MemoryRouter>
         </TestPermissionsProvider>
-      </RecoilRoot>,
+      </JobFeatureProvider>,
     );
 
     const overviewDummy = await screen.findByText(/pipeline or job disambiguation placeholder/i);

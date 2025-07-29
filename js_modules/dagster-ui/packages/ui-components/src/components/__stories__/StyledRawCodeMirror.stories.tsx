@@ -1,6 +1,6 @@
 import {Meta} from '@storybook/react';
 import CodeMirror from 'codemirror';
-import {useCallback, useMemo, useState} from 'react';
+import * as React from 'react';
 
 import {StyledRawCodeMirror} from '../StyledRawCodeMirror';
 
@@ -11,16 +11,16 @@ export default {
 } as Meta;
 
 export const Default = () => {
-  const [value, setValue] = useState('');
-  const onChange = useCallback((editor: CodeMirror.Editor) => {
+  const [value, setValue] = React.useState('');
+  const onChange = React.useCallback((editor: CodeMirror.Editor) => {
     setValue(editor.getValue());
   }, []);
 
-  const onReady = useCallback((editor: CodeMirror.Editor) => {
+  const onReady = React.useCallback((editor: CodeMirror.Editor) => {
     console.log('Ready!', editor);
   }, []);
 
-  const options = useMemo(
+  const options = React.useMemo(
     () => ({
       lineNumbers: true,
       readOnly: false,
@@ -28,7 +28,7 @@ export const Default = () => {
     [],
   );
 
-  const handlers = useMemo(
+  const handlers = React.useMemo(
     () => ({
       onChange,
       onReady,
@@ -40,7 +40,7 @@ export const Default = () => {
 };
 
 export const ReadOnly = () => {
-  const options = useMemo(
+  const options = React.useMemo(
     () => ({
       lineNumbers: true,
       readOnly: true,

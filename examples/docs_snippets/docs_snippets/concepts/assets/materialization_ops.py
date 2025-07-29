@@ -18,10 +18,10 @@ def calculate_bytes(df):
 
 
 # start_materialization_ops_marker_0
-import dagster as dg
+from dagster import op
 
 
-@dg.op
+@op
 def my_simple_op():
     df = read_df()
     remote_storage_path = persist_to_storage(df)
@@ -31,15 +31,15 @@ def my_simple_op():
 # end_materialization_ops_marker_0
 
 # start_materialization_ops_marker_1
-import dagster as dg
+from dagster import AssetMaterialization, op
 
 
-@dg.op
-def my_materialization_op(context: dg.OpExecutionContext):
+@op
+def my_materialization_op(context):
     df = read_df()
     remote_storage_path = persist_to_storage(df)
     context.log_event(
-        dg.AssetMaterialization(
+        AssetMaterialization(
             asset_key="my_dataset", description="Persisted result to storage"
         )
     )
@@ -50,20 +50,20 @@ def my_materialization_op(context: dg.OpExecutionContext):
 
 
 # start_partitioned_asset_materialization
-import dagster as dg
+from dagster import AssetMaterialization, Config, op
 
 
-class MyOpConfig(dg.Config):
+class MyOpConfig(Config):
     date: str
 
 
-@dg.op
-def my_partitioned_asset_op(context: dg.OpExecutionContext, config: MyOpConfig):
+@op
+def my_partitioned_asset_op(context, config: MyOpConfig):
     partition_date = config.date
     df = read_df_for_date(partition_date)
     remote_storage_path = persist_to_storage(df)
     context.log_event(
-        dg.AssetMaterialization(asset_key="my_dataset", partition=partition_date)
+        AssetMaterialization(asset_key="my_dataset", partition=partition_date)
     )
     return remote_storage_path
 
@@ -72,21 +72,21 @@ def my_partitioned_asset_op(context: dg.OpExecutionContext, config: MyOpConfig):
 
 
 # start_materialization_ops_marker_2
-import dagster as dg
+from dagster import AssetMaterialization, MetadataValue, op
 
 
-@dg.op
-def my_metadata_materialization_op(context: dg.OpExecutionContext):
+@op
+def my_metadata_materialization_op(context):
     df = read_df()
     remote_storage_path = persist_to_storage(df)
     context.log_event(
-        dg.AssetMaterialization(
+        AssetMaterialization(
             asset_key="my_dataset",
             description="Persisted result to storage",
             metadata={
                 "text_metadata": "Text-based metadata for this event",
-                "path": dg.MetadataValue.path(remote_storage_path),
-                "dashboard_url": dg.MetadataValue.url(
+                "path": MetadataValue.path(remote_storage_path),
+                "dashboard_url": MetadataValue.url(
                     "http://mycoolsite.com/url_for_my_data"
                 ),
                 "size (bytes)": calculate_bytes(df),
@@ -100,27 +100,27 @@ def my_metadata_materialization_op(context: dg.OpExecutionContext):
 
 
 # start_materialization_ops_marker_3
-import dagster as dg
+from dagster import AssetKey, AssetMaterialization, Output, job, op
 
 
-@dg.op
-def my_asset_key_materialization_op(context: dg.OpExecutionContext):
+@op
+def my_asset_key_materialization_op(context):
     df = read_df()
     remote_storage_path = persist_to_storage(df)
-    yield dg.AssetMaterialization(
-        asset_key=dg.AssetKey(["dashboard", "my_cool_site"]),
+    yield AssetMaterialization(
+        asset_key=AssetKey(["dashboard", "my_cool_site"]),
         description="Persisted result to storage",
         metadata={
-            "dashboard_url": dg.MetadataValue.url("http://mycoolsite.com/dashboard"),
+            "dashboard_url": MetadataValue.url("http://mycoolsite.com/dashboard"),
             "size (bytes)": calculate_bytes(df),
         },
     )
-    yield dg.Output(remote_storage_path)
+    yield Output(remote_storage_path)
 
 
 # end_materialization_ops_marker_3
 
 
-@dg.job
+@job
 def my_asset_job():
     my_materialization_op()

@@ -1,15 +1,29 @@
 import re
 
-import dagster as dg
 import pytest
-from dagster import Int
+from dagster import (
+    DagsterInvariantViolationError,
+    DagsterTypeCheckDidNotPass,
+    Field,
+    Int,
+    op,
+    resource,
+)
+from dagster._core.definitions.decorators import graph
+from dagster._core.definitions.input import In
+from dagster._core.definitions.output import Out
 from dagster._core.test_utils import nesting_graph
-from dagster._core.utility_ops import create_op_with_deps, create_root_op, create_stub_op, input_set
+from dagster._core.utility_ops import (
+    create_op_with_deps,
+    create_root_op,
+    create_stub_op,
+    input_set,
+)
 from dagster._utils.test import wrap_op_in_graph_and_execute
 
 
 def test_single_op_in_isolation():
-    @dg.op
+    @op
     def op_one():
         return 1
 
@@ -19,7 +33,7 @@ def test_single_op_in_isolation():
 
 
 def test_single_op_with_single():
-    @dg.op(ins={"num": dg.In()})
+    @op(ins={"num": In()})
     def add_one_op(num):
         return num + 1
 
@@ -30,7 +44,7 @@ def test_single_op_with_single():
 
 
 def test_single_op_with_multiple_inputs():
-    @dg.op(ins={"num_one": dg.In(), "num_two": dg.In()})
+    @op(ins={"num_one": In(), "num_two": In()})
     def add_op(num_one, num_two):
         return num_one + num_two
 
@@ -47,7 +61,7 @@ def test_single_op_with_multiple_inputs():
 def test_single_op_with_config():
     ran = {}
 
-    @dg.op(config_schema=Int)
+    @op(config_schema=Int)
     def check_config_for_two(context):
         assert context.op_config == 2
         ran["check_config_for_two"] = True
@@ -62,13 +76,13 @@ def test_single_op_with_config():
 
 
 def test_single_op_with_context_config():
-    @dg.resource(config_schema=dg.Field(dg.Int, is_required=False, default_value=2))
+    @resource(config_schema=Field(Int, is_required=False, default_value=2))
     def num_resource(init_context):
         return init_context.resource_config
 
     ran = {"count": 0}
 
-    @dg.op(required_resource_keys={"num"})
+    @op(required_resource_keys={"num"})
     def check_context_config_for_two(context):
         assert context.resources.num == 2
         ran["count"] += 1
@@ -95,7 +109,7 @@ def test_single_op_error():
     class SomeError(Exception):
         pass
 
-    @dg.op
+    @op
     def throw_error():
         raise SomeError()
 
@@ -106,11 +120,11 @@ def test_single_op_error():
 
 
 def test_single_op_type_checking_output_error():
-    @dg.op(out=dg.Out(dg.Int))
+    @op(out=Out(Int))
     def return_string():
         return "ksjdfkjd"
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         wrap_op_in_graph_and_execute(return_string)
 
 
@@ -118,7 +132,7 @@ def test_failing_op_in_isolation():
     class ThisException(Exception):
         pass
 
-    @dg.op
+    @op
     def throw_an_error():
         raise ThisException("nope")
 
@@ -129,11 +143,11 @@ def test_failing_op_in_isolation():
 
 
 def test_graphs():
-    @dg.op
+    @op
     def hello():
         return "hello"
 
-    @dg.graph
+    @graph
     def hello_graph():
         return hello()
 
@@ -147,7 +161,7 @@ def test_graphs():
     assert result.output_for_node("hello") == "hello"
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match=re.escape("hello_graph has no op named goodbye"),
     ):
         _ = result.output_for_node("goodbye")
@@ -160,7 +174,7 @@ def test_graph_with_no_output_mappings():
     node_c = create_op_with_deps("C", node_a)
     node_d = create_op_with_deps("D", node_b, node_c)
 
-    @dg.graph
+    @graph
     def diamond_graph():
         a = node_a(a_source())
         node_d(B=node_b(a), C=node_c(a))
@@ -170,7 +184,7 @@ def test_graph_with_no_output_mappings():
     assert res.success
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match=re.escape(
             "Attempted to retrieve top-level outputs for 'diamond_graph', which has no outputs."
         ),
@@ -188,12 +202,12 @@ def test_execute_nested_graphs():
     nested_graph_job = nesting_graph(2, 2).to_job()
     nested_graph = nested_graph_job.nodes[0].definition
 
-    res = nested_graph.execute_in_process()  # pyright: ignore[reportAttributeAccessIssue]
+    res = nested_graph.execute_in_process()
 
     assert res.success
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match=re.escape("Attempted to retrieve top-level outputs for 'layer_0'"),
     ):
         _ = res.output_value()
@@ -209,7 +223,7 @@ def test_execute_nested_graphs():
 
 
 def test_single_op_with_bad_inputs():
-    @dg.op(ins={"num_one": dg.In(int), "num_two": dg.In(int)})
+    @op(ins={"num_one": In(int), "num_two": In(int)})
     def add_op(num_one, num_two):
         return num_one + num_two
 
@@ -222,8 +236,8 @@ def test_single_op_with_bad_inputs():
 
     assert not result.success
     failure_data = result.failure_data_for_node("add_op")
-    assert failure_data.error.cls_name == "DagsterTypeCheckDidNotPass"  # pyright: ignore[reportOptionalMemberAccess]
+    assert failure_data.error.cls_name == "DagsterTypeCheckDidNotPass"
     assert (
         'Type check failed for step input "num_two" - expected type "Int"'
-        in failure_data.error.message  # pyright: ignore[reportOptionalMemberAccess]
+        in failure_data.error.message
     )

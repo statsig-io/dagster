@@ -3,10 +3,11 @@ import os
 import pickle
 import platform
 import shutil
+import sys
 import time
 import uuid
 from contextlib import contextmanager
-from typing import Optional, TypedDict
+from typing import List, Optional
 
 from dagster import (
     Field,
@@ -23,22 +24,25 @@ from dagster._core.storage.io_manager import dagster_maintained_io_manager
 from wandb import Artifact
 from wandb.data_types import WBValue
 
-from dagster_wandb.resources import WANDB_CLOUD_HOST
-from dagster_wandb.utils.errors import (
+from .resources import WANDB_CLOUD_HOST
+from .utils.errors import (
     WandbArtifactsIOManagerError,
     raise_on_empty_configuration,
     raise_on_unknown_partition_keys,
     raise_on_unknown_read_configuration_keys,
     raise_on_unknown_write_configuration_keys,
 )
-from dagster_wandb.utils.pickling import (
+from .utils.pickling import (
     ACCEPTED_SERIALIZATION_MODULES,
     pickle_artifact_content,
     unpickle_artifact_content,
 )
-from dagster_wandb.version import __version__
+from .version import __version__
 
-UNIT_TEST_RUN_ID = "0ab2e48b-6d63-4ff5-b160-662cc60145f4"
+if sys.version_info >= (3, 8):
+    from typing import TypedDict
+else:
+    from typing_extensions import TypedDict
 
 
 class Config(TypedDict):
@@ -48,7 +52,7 @@ class Config(TypedDict):
     wandb_project: str
     wandb_run_name: Optional[str]
     wandb_run_id: Optional[str]
-    wandb_run_tags: Optional[list[str]]
+    wandb_run_tags: Optional[List[str]]
     base_dir: str
     cache_duration_in_minutes: Optional[int]
 
@@ -157,8 +161,8 @@ class ArtifactsIOManager(IOManager):
 
         with self.wandb_run() as run:
             parameters = {}
-            if context.definition_metadata is not None:
-                parameters = context.definition_metadata.get("wandb_artifact_configuration", {})
+            if context.metadata is not None:
+                parameters = context.metadata.get("wandb_artifact_configuration", {})
 
             raise_on_unknown_write_configuration_keys(parameters)
 
@@ -175,8 +179,8 @@ class ArtifactsIOManager(IOManager):
             serialization_module_parameters = serialization_module.get("parameters", {})
             serialization_module_parameters_with_protocol = {
                 "protocol": (
-                    pickle.HIGHEST_PROTOCOL  # we use the highest available protocol if we don't pass one
-                ),
+                    pickle.HIGHEST_PROTOCOL
+                ),  # we use the highest available protocol if we don't pass one
                 **serialization_module_parameters,
             }
 
@@ -289,7 +293,7 @@ class ArtifactsIOManager(IOManager):
                         context.log.warning(
                             "You've included a 'serialization_module' in the"
                             " 'wandb_artifact_configuration' settings. However, this doesn't have"
-                            " any impact when the output is already a W&B object like e.g Table or"
+                            " any impact when the output is already an W&B object like e.g Table or"
                             " Image."
                         )
                     # Adds the WBValue object using the class name as the name for the file
@@ -360,8 +364,8 @@ class ArtifactsIOManager(IOManager):
     def _download_artifact(self, context: InputContext):
         with self.wandb_run() as run:
             parameters = {}
-            if context.definition_metadata is not None:
-                parameters = context.definition_metadata.get("wandb_artifact_configuration", {})
+            if context.metadata is not None:
+                parameters = context.metadata.get("wandb_artifact_configuration", {})
 
             raise_on_unknown_read_configuration_keys(parameters)
 
@@ -389,10 +393,10 @@ class ArtifactsIOManager(IOManager):
 
                 artifact_name = parameters.get("name")
                 if artifact_name is None:
-                    artifact_name = context.asset_key.path[0]  # name of asset
+                    artifact_name = context.asset_key[0][0]  # name of asset
 
                 partitions = [
-                    (key, f"{artifact_name}.{str(key).replace('|', '-')}")
+                    (key, f"{artifact_name}.{ str(key).replace('|', '-')}")
                     for key in context.asset_partition_keys
                 ]
 
@@ -464,7 +468,7 @@ class ArtifactsIOManager(IOManager):
                                 output[key] = download_path
                                 continue
 
-                    artifact_dir = artifact.download(root=artifacts_path)
+                    artifact_dir = artifact.download(root=artifacts_path, recursive=True)
                     unpickled_content = unpickle_artifact_content(artifact_dir)
                     if unpickled_content is not None:
                         output[key] = unpickled_content
@@ -541,7 +545,7 @@ class ArtifactsIOManager(IOManager):
                 path = artifact.get_path(path)
                 return path.download(root=artifacts_path)
 
-            artifact_dir = artifact.download(root=artifacts_path)
+            artifact_dir = artifact.download(root=artifacts_path, recursive=True)
 
             unpickled_content = unpickle_artifact_content(artifact_dir)
             if unpickled_content is not None:
@@ -707,7 +711,7 @@ def wandb_artifacts_io_manager(context: InitResourceContext):
         cache_duration_in_minutes = context.resource_config.get("cache_duration_in_minutes")
 
     if "PYTEST_CURRENT_TEST" in os.environ:
-        dagster_run_id = UNIT_TEST_RUN_ID
+        dagster_run_id = "unit-testing"
     else:
         dagster_run_id = context.run_id
 

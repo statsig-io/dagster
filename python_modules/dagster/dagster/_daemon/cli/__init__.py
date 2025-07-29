@@ -1,15 +1,24 @@
+# mypy: ignore-errors
+
+
 import os
 import sys
-from contextlib import ExitStack
+import time
 from typing import Optional
+import googlecloudprofiler
+import tracemalloc
+import threading
 
 import click
-from dagster_shared.cli import WorkspaceOpts, workspace_options
-from dagster_shared.ipc import interrupt_on_ipc_shutdown_message
 
 from dagster import __version__ as dagster_version
-from dagster._cli.utils import assert_no_remaining_opts, get_instance_for_cli
-from dagster._cli.workspace.cli_target import workspace_opts_to_load_target
+from dagster._cli.utils import get_instance_for_cli
+from dagster._cli.workspace.cli_target import (
+    ClickArgMapping,
+    ClickArgValue,
+    get_workspace_load_target,
+    workspace_target_argument,
+)
 from dagster._core.instance import DagsterInstance, InstanceRef
 from dagster._core.telemetry import telemetry_wrapper
 from dagster._daemon.controller import (
@@ -22,7 +31,7 @@ from dagster._daemon.controller import (
 )
 from dagster._daemon.daemon import get_telemetry_daemon_session_id
 from dagster._serdes import deserialize_value
-from dagster._utils.interrupts import capture_interrupts, setup_interrupt_handlers
+from dagster._utils.interrupts import capture_interrupts
 
 
 def _get_heartbeat_tolerance():
@@ -30,6 +39,19 @@ def _get_heartbeat_tolerance():
         "DAGSTER_DAEMON_HEARTBEAT_TOLERANCE",
     )
     return int(tolerance) if tolerance else DEFAULT_DAEMON_HEARTBEAT_TOLERANCE_SECONDS
+
+
+stop_dumper = threading.Event()
+
+
+def _dump_tracemalloc_stats_continuously():
+    t = 0
+    while not stop_dumper.is_set():
+        # We do it this way to avoid a long sleep preventing shutdowns
+        if t % 60 == 0:
+            print(tracemalloc.take_snapshot().statistics("lineno")[:50])
+        time.sleep(1)
+        t += 1
 
 
 @click.command(
@@ -49,15 +71,6 @@ def _get_heartbeat_tolerance():
     show_default=True,
     default="info",
     type=click.Choice(["critical", "error", "warning", "info", "debug"], case_sensitive=False),
-    envvar="DAGSTER_DAEMON_LOG_LEVEL",
-)
-@click.option(
-    "--log-format",
-    type=click.Choice(["colored", "json", "rich"], case_sensitive=False),
-    show_default=True,
-    required=False,
-    default="colored",
-    help="Format of the log output from the webserver",
 )
 @click.option(
     "--instance-ref",
@@ -65,58 +78,54 @@ def _get_heartbeat_tolerance():
     required=False,
     hidden=True,
 )
-@click.option(
-    "--shutdown-pipe",
-    type=click.INT,
-    required=False,
-    hidden=True,
-    help="Internal use only. Pass a readable pipe file descriptor to the daemon process that will be monitored for a shutdown signal.",
-)
-@workspace_options
+@workspace_target_argument
 def run_command(
     code_server_log_level: str,
     log_level: str,
-    log_format: str,
     instance_ref: Optional[str],
-    shutdown_pipe: Optional[int],
-    **other_opts: object,
+    **kwargs: ClickArgValue,
 ) -> None:
-    workspace_opts = WorkspaceOpts.extract_from_cli_options(other_opts)
-    assert_no_remaining_opts(other_opts)
-
-    # Essential on windows-- will set up windows interrupt signals to raise KeyboardInterrupt
-    setup_interrupt_handlers()
-
     try:
-        with ExitStack() as stack:
-            if shutdown_pipe:
-                stack.enter_context(interrupt_on_ipc_shutdown_message(shutdown_pipe))
-            stack.enter_context(capture_interrupts())
+        try:
+            dagster_deployment = os.getenv("DAGSTER_DEPLOYMENT")
+            if dagster_deployment is None:
+                dagster_deployment = "UNSET"
+            googlecloudprofiler.start(
+                service="dagster-daemon",
+                service_version=dagster_deployment,
+                verbose=3,
+            )
+            tracemalloc.start()
+            # Start a thread to periodically print out tracemalloc stats
+            tracemalloc_dumper = threading.Thread(target=_dump_tracemalloc_stats_continuously)
+            tracemalloc_dumper.start()
+        except (ValueError, NotImplementedError) as exc:
+            print(exc)  # Handle errors here
+        with capture_interrupts():
             with get_instance_for_cli(
                 instance_ref=deserialize_value(instance_ref, InstanceRef) if instance_ref else None
             ) as instance:
-                _daemon_run_command(
-                    instance, log_level, code_server_log_level, log_format, workspace_opts
-                )
+                _daemon_run_command(instance, log_level, code_server_log_level, kwargs)
+            stop_dumper.set()
+            tracemalloc_dumper.join()
     except KeyboardInterrupt:
+        stop_dumper.set()
+        tracemalloc_dumper.join()
         return  # Exit cleanly on interrupt
 
 
 @telemetry_wrapper(metadata={"DAEMON_SESSION_ID": get_telemetry_daemon_session_id()})
 def _daemon_run_command(
-    instance: DagsterInstance,
-    log_level: str,
-    code_server_log_level: str,
-    log_format: str,
-    workspace_opts: WorkspaceOpts,
+    instance: DagsterInstance, log_level: str, code_server_log_level: str, kwargs: ClickArgMapping
 ) -> None:
+    workspace_load_target = get_workspace_load_target(kwargs)
+
     with daemon_controller_from_instance(
         instance,
-        workspace_load_target=workspace_opts_to_load_target(workspace_opts),
+        workspace_load_target=workspace_load_target,
         heartbeat_tolerance_seconds=_get_heartbeat_tolerance(),
         log_level=log_level,
         code_server_log_level=code_server_log_level,
-        log_format=log_format,
     ) as controller:
         controller.check_daemon_loop()
 

@@ -1,5 +1,6 @@
-import {GanttChartMode} from './Constants';
 import {useStateWithStorage} from '../hooks/useStateWithStorage';
+
+import {GanttChartMode} from './Constants';
 
 const GANTT_CHART_MODE_KEY = 'GanttChartModePreference';
 

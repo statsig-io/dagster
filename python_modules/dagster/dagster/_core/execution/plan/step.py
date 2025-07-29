@@ -1,31 +1,35 @@
 from abc import abstractmethod
-from collections.abc import Mapping, Sequence
 from enum import Enum
-from typing import TYPE_CHECKING, NamedTuple, Optional, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    FrozenSet,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Set,
+    Union,
+    cast,
+)
 
-from dagster_shared.serdes import EnumSerializer, whitelist_for_serdes
 from typing_extensions import TypeGuard
 
 import dagster._check as check
-from dagster._core.execution.plan.handle import (
-    ResolvedFromDynamicStepHandle,
-    StepHandle,
-    UnresolvedStepHandle,
-)
-from dagster._core.execution.plan.inputs import (
-    StepInput,
-    UnresolvedCollectStepInput,
-    UnresolvedMappedStepInput,
-)
-from dagster._core.execution.plan.outputs import StepOutput
+from dagster._core.definitions.utils import validate_tags
+from dagster._serdes.serdes import EnumSerializer, whitelist_for_serdes
 from dagster._utils.merger import merge_dicts
+
+from .handle import ResolvedFromDynamicStepHandle, StepHandle, UnresolvedStepHandle
+from .inputs import StepInput, UnresolvedCollectStepInput, UnresolvedMappedStepInput
+from .outputs import StepOutput
 
 if TYPE_CHECKING:
     from dagster._core.definitions.dependency import NodeHandle
 
 
 class StepKindSerializer(EnumSerializer["StepKind"]):
-    def unpack(self, storage_str: str) -> "StepKind":  # pyright: ignore[reportIncompatibleMethodOverride]
+    def unpack(self, storage_str: str) -> "StepKind":
         # old name for unresolved mapped
         if storage_str == "UNRESOLVED":
             return StepKind.UNRESOLVED_MAPPED
@@ -41,7 +45,7 @@ class StepKind(Enum):
 
 
 def is_executable_step(
-    step: Union["ExecutionStep", "UnresolvedMappedExecutionStep"],
+    step: Union["ExecutionStep", "UnresolvedMappedExecutionStep"]
 ) -> TypeGuard["ExecutionStep"]:
     # This function is set up defensively to ensure new step types handled properly
     if isinstance(step, ExecutionStep):
@@ -80,11 +84,6 @@ class IExecutionStep:
 
     @property
     @abstractmethod
-    def pool(self) -> Optional[str]:
-        pass
-
-    @property
-    @abstractmethod
     def step_inputs(
         self,
     ) -> Sequence[Union[StepInput, UnresolvedCollectStepInput, UnresolvedMappedStepInput]]:
@@ -116,7 +115,7 @@ class IExecutionStep:
         pass
 
 
-class ExecutionStep(  # pyright: ignore[reportIncompatibleVariableOverride]
+class ExecutionStep(
     NamedTuple(
         "_ExecutionStep",
         [
@@ -127,7 +126,6 @@ class ExecutionStep(  # pyright: ignore[reportIncompatibleVariableOverride]
             ("tags", Mapping[str, str]),
             ("logging_tags", Mapping[str, str]),
             ("key", str),
-            ("pool", Optional[str]),
         ],
     ),
     IExecutionStep,
@@ -141,11 +139,10 @@ class ExecutionStep(  # pyright: ignore[reportIncompatibleVariableOverride]
         step_inputs: Sequence[StepInput],
         step_outputs: Sequence[StepOutput],
         tags: Optional[Mapping[str, str]],
-        pool: Optional[str],
         logging_tags: Optional[Mapping[str, str]] = None,
         key: Optional[str] = None,
     ):
-        return super().__new__(
+        return super(ExecutionStep, cls).__new__(
             cls,
             handle=check.inst_param(handle, "handle", (StepHandle, ResolvedFromDynamicStepHandle)),
             job_name=check.str_param(job_name, "job_name"),
@@ -157,8 +154,7 @@ class ExecutionStep(  # pyright: ignore[reportIncompatibleVariableOverride]
                 so.name: so
                 for so in check.sequence_param(step_outputs, "step_outputs", of_type=StepOutput)
             },
-            tags=tags or {},
-            pool=check.opt_str_param(pool, "pool"),
+            tags=validate_tags(check.opt_mapping_param(tags, "tags", key_type=str)),
             logging_tags=merge_dicts(
                 {
                     "step_key": handle.to_key(),
@@ -168,7 +164,7 @@ class ExecutionStep(  # pyright: ignore[reportIncompatibleVariableOverride]
                 check.opt_mapping_param(logging_tags, "logging_tags"),
             ),
             # mypy can't tell that if default is set, this is guaranteed to be a str
-            key=cast("str", check.opt_str_param(key, "key", default=handle.to_key())),
+            key=cast(str, check.opt_str_param(key, "key", default=handle.to_key())),
         )
 
     @property
@@ -207,7 +203,7 @@ class ExecutionStep(  # pyright: ignore[reportIncompatibleVariableOverride]
         check.str_param(name, "name")
         return self.step_input_dict[name]
 
-    def get_execution_dependency_keys(self) -> set[str]:
+    def get_execution_dependency_keys(self) -> Set[str]:
         deps = set()
         for inp in self.step_inputs:
             deps.update(inp.dependency_keys)
@@ -220,7 +216,7 @@ class ExecutionStep(  # pyright: ignore[reportIncompatibleVariableOverride]
         return None
 
 
-class UnresolvedMappedExecutionStep(  # pyright: ignore[reportIncompatibleVariableOverride]
+class UnresolvedMappedExecutionStep(
     NamedTuple(
         "_UnresolvedMappedExecutionStep",
         [
@@ -229,7 +225,6 @@ class UnresolvedMappedExecutionStep(  # pyright: ignore[reportIncompatibleVariab
             ("step_input_dict", Mapping[str, Union[StepInput, UnresolvedMappedStepInput]]),
             ("step_output_dict", Mapping[str, StepOutput]),
             ("tags", Mapping[str, str]),
-            ("pool", Optional[str]),
         ],
     ),
     IExecutionStep,
@@ -243,9 +238,8 @@ class UnresolvedMappedExecutionStep(  # pyright: ignore[reportIncompatibleVariab
         step_inputs: Sequence[Union[StepInput, UnresolvedMappedStepInput]],
         step_outputs: Sequence[StepOutput],
         tags: Optional[Mapping[str, str]],
-        pool: Optional[str],
     ):
-        return super().__new__(
+        return super(UnresolvedMappedExecutionStep, cls).__new__(
             cls,
             handle=check.inst_param(handle, "handle", UnresolvedStepHandle),
             job_name=check.str_param(job_name, "job_name"),
@@ -260,7 +254,6 @@ class UnresolvedMappedExecutionStep(  # pyright: ignore[reportIncompatibleVariab
                 for so in check.sequence_param(step_outputs, "step_outputs", of_type=StepOutput)
             },
             tags=check.opt_mapping_param(tags, "tags", key_type=str),
-            pool=check.opt_str_param(pool, "pool"),
         )
 
     @property
@@ -291,7 +284,7 @@ class UnresolvedMappedExecutionStep(  # pyright: ignore[reportIncompatibleVariab
         check.str_param(name, "name")
         return self.step_output_dict[name]
 
-    def get_all_dependency_keys(self) -> set[str]:
+    def get_all_dependency_keys(self) -> Set[str]:
         deps = set()
         for inp in self.step_inputs:
             if isinstance(inp, StepInput):
@@ -332,7 +325,7 @@ class UnresolvedMappedExecutionStep(  # pyright: ignore[reportIncompatibleVariab
         return next(iter(keys))
 
     @property
-    def resolved_by_step_keys(self) -> frozenset[str]:
+    def resolved_by_step_keys(self) -> FrozenSet[str]:
         keys = set()
         for inp in self.step_inputs:
             if isinstance(inp, UnresolvedMappedStepInput):
@@ -347,7 +340,7 @@ class UnresolvedMappedExecutionStep(  # pyright: ignore[reportIncompatibleVariab
             all(key in mappings for key in self.resolved_by_step_keys),
             "resolving with mappings that do not contain all required step keys",
         )
-        execution_steps: list[ExecutionStep] = []
+        execution_steps: List[ExecutionStep] = []
 
         mapping_keys = mappings[self.resolved_by_step_key][self.resolved_by_output_name]
 
@@ -365,7 +358,6 @@ class UnresolvedMappedExecutionStep(  # pyright: ignore[reportIncompatibleVariab
                     step_inputs=resolved_inputs,
                     step_outputs=self.step_outputs,
                     tags=self.tags,
-                    pool=self.pool,
                 )
             )
 
@@ -382,7 +374,7 @@ def _resolved_input(
     return step_input.resolve(map_key)
 
 
-class UnresolvedCollectExecutionStep(  # pyright: ignore[reportIncompatibleVariableOverride]
+class UnresolvedCollectExecutionStep(
     NamedTuple(
         "_UnresolvedCollectExecutionStep",
         [
@@ -391,7 +383,6 @@ class UnresolvedCollectExecutionStep(  # pyright: ignore[reportIncompatibleVaria
             ("step_input_dict", Mapping[str, Union[StepInput, UnresolvedCollectStepInput]]),
             ("step_output_dict", Mapping[str, StepOutput]),
             ("tags", Mapping[str, str]),
-            ("pool", Optional[str]),
         ],
     ),
     IExecutionStep,
@@ -405,9 +396,8 @@ class UnresolvedCollectExecutionStep(  # pyright: ignore[reportIncompatibleVaria
         step_inputs: Sequence[Union[StepInput, UnresolvedCollectStepInput]],
         step_outputs: Sequence[StepOutput],
         tags: Optional[Mapping[str, str]],
-        pool: Optional[str],
     ):
-        return super().__new__(
+        return super(UnresolvedCollectExecutionStep, cls).__new__(
             cls,
             handle=check.inst_param(handle, "handle", StepHandle),
             job_name=check.str_param(job_name, "job_name"),
@@ -422,7 +412,6 @@ class UnresolvedCollectExecutionStep(  # pyright: ignore[reportIncompatibleVaria
                 for so in check.sequence_param(step_outputs, "step_outputs", of_type=StepOutput)
             },
             tags=check.opt_mapping_param(tags, "tags", key_type=str),
-            pool=check.opt_str_param(pool, "pool"),
         )
 
     @property
@@ -453,7 +442,7 @@ class UnresolvedCollectExecutionStep(  # pyright: ignore[reportIncompatibleVaria
         check.str_param(name, "name")
         return self.step_output_dict[name]
 
-    def get_all_dependency_keys(self) -> set[str]:
+    def get_all_dependency_keys(self) -> Set[str]:
         deps = set()
         for inp in self.step_inputs:
             if isinstance(inp, StepInput):
@@ -473,7 +462,7 @@ class UnresolvedCollectExecutionStep(  # pyright: ignore[reportIncompatibleVaria
         return deps
 
     @property
-    def resolved_by_step_keys(self) -> frozenset[str]:
+    def resolved_by_step_keys(self) -> FrozenSet[str]:
         keys = set()
         for inp in self.step_inputs:
             if isinstance(inp, UnresolvedCollectStepInput):
@@ -504,5 +493,4 @@ class UnresolvedCollectExecutionStep(  # pyright: ignore[reportIncompatibleVaria
             step_inputs=resolved_inputs,
             step_outputs=self.step_outputs,
             tags=self.tags,
-            pool=self.pool,
         )

@@ -15,7 +15,6 @@ export type SingleNonSdaAssetQuery = {
         assetMaterializations: Array<{
           __typename: 'MaterializationEvent';
           runId: string;
-          stepKey: string | null;
           timestamp: string;
         }>;
       }

@@ -1,22 +1,24 @@
 import {MockedResponse} from '@apollo/client/testing';
 
 import {
+  buildWorkspace,
+  buildWorkspaceLocationEntry,
+  buildRepositoryLocation,
+  buildRepository,
+  buildSchedule,
+  buildInstigationState,
   InstigationStatus,
+  buildSensor,
+  buildInstance,
   buildDaemonHealth,
   buildDaemonStatus,
-  buildInstance,
-  buildInstigationState,
-  buildPartitionBackfill,
   buildPartitionBackfills,
-  buildRepository,
-  buildRepositoryLocation,
-  buildSchedule,
-  buildSensor,
-  buildWorkspaceLocationEntry,
+  buildPartitionBackfill,
 } from '../../graphql/types';
 import {InstanceWarningQuery} from '../../instance/types/useDaemonStatus.types';
 import {INSTANCE_WARNING_QUERY} from '../../instance/useDaemonStatus';
-import {buildWorkspaceMocks} from '../../workspace/WorkspaceContext/__fixtures__/Workspace.fixtures';
+import {ROOT_WORKSPACE_QUERY} from '../../workspace/WorkspaceContext';
+import {RootWorkspaceQuery} from '../../workspace/types/WorkspaceContext.types';
 
 const buildRepo = ({
   name,
@@ -53,18 +55,33 @@ const buildRepo = ({
   });
 };
 
-export const buildWorkspaceQueryWithNoSchedulesOrSensors = () =>
-  buildWorkspaceMocks([
-    buildWorkspaceLocationEntry({
-      id: 'ipsum-entry',
-      name: 'ipsum-entry',
-      locationOrLoadError: buildRepositoryLocation({
-        id: 'ipsum',
-        name: 'ipsum',
-        repositories: [buildRepo({name: 'lorem'})],
-      }),
-    }),
-  ]);
+export const buildWorkspaceQueryWithNoSchedulesOrSensors =
+  (): MockedResponse<RootWorkspaceQuery> => {
+    return {
+      request: {
+        query: ROOT_WORKSPACE_QUERY,
+        variables: {},
+      },
+      result: {
+        data: {
+          __typename: 'Query',
+          workspaceOrError: buildWorkspace({
+            locationEntries: [
+              buildWorkspaceLocationEntry({
+                id: 'ipsum-entry',
+                name: 'ipsum-entry',
+                locationOrLoadError: buildRepositoryLocation({
+                  id: 'ipsum',
+                  name: 'ipsum',
+                  repositories: [buildRepo({name: 'lorem'})],
+                }),
+              }),
+            ],
+          }),
+        },
+      },
+    };
+  };
 
 export const buildWorkspaceQueryWithScheduleAndSensor = ({
   schedule,
@@ -72,24 +89,37 @@ export const buildWorkspaceQueryWithScheduleAndSensor = ({
 }: {
   schedule: InstigationStatus;
   sensor: InstigationStatus;
-}) => {
-  return buildWorkspaceMocks([
-    buildWorkspaceLocationEntry({
-      id: 'ipsum-entry' + Math.random(),
-      name: 'ipsum-entry' + Math.random(),
-      locationOrLoadError: buildRepositoryLocation({
-        id: 'ipsum',
-        name: 'ipsum',
-        repositories: [
-          buildRepo({
-            name: 'lorem',
-            schedules: {'my-schedule': schedule},
-            sensors: {'my-sensor': sensor},
-          }),
-        ],
-      }),
-    }),
-  ]);
+}): MockedResponse<RootWorkspaceQuery> => {
+  return {
+    request: {
+      query: ROOT_WORKSPACE_QUERY,
+      variables: {},
+    },
+    result: {
+      data: {
+        __typename: 'Query',
+        workspaceOrError: buildWorkspace({
+          locationEntries: [
+            buildWorkspaceLocationEntry({
+              id: 'ipsum-entry',
+              name: 'ipsum-entry',
+              locationOrLoadError: buildRepositoryLocation({
+                id: 'ipsum',
+                name: 'ipsum',
+                repositories: [
+                  buildRepo({
+                    name: 'lorem',
+                    schedules: {'my-schedule': schedule},
+                    sensors: {'my-sensor': sensor},
+                  }),
+                ],
+              }),
+            }),
+          ],
+        }),
+      },
+    },
+  };
 };
 
 type DaemonHealth = {daemonType: string; healthy: boolean; required: boolean}[];

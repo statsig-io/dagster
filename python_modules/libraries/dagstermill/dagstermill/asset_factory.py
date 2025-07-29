@@ -1,7 +1,6 @@
 import pickle
 import tempfile
-from collections.abc import Iterable, Mapping
-from typing import Any, Callable, Optional, Union, cast
+from typing import Any, Callable, Iterable, Mapping, Optional, Set, Type, Union, cast
 
 import dagster._check as check
 from dagster import (
@@ -17,13 +16,11 @@ from dagster import (
     SourceAsset,
     asset,
 )
-from dagster._annotations import beta, beta_param
 from dagster._config.pythonic_config import Config, infer_schema_from_config_class
-from dagster._config.pythonic_config.type_check_utils import safe_is_subclass
+from dagster._config.pythonic_config.inheritance_utils import safe_is_subclass
 from dagster._core.definitions.events import CoercibleToAssetKey, CoercibleToAssetKeyPrefix
+from dagster._core.definitions.utils import validate_tags
 from dagster._core.execution.context.compute import OpExecutionContext
-from dagster._core.storage.tags import COMPUTE_KIND_TAG
-from dagster._utils.tags import normalize_tags
 
 from dagstermill.factory import _clean_path_for_windows, execute_notebook
 
@@ -70,8 +67,6 @@ def _make_dagstermill_asset_compute_fn(
     return _t_fn
 
 
-@beta
-@beta_param(param="resource_defs")
 def define_dagstermill_asset(
     name: str,
     notebook_path: str,
@@ -80,7 +75,7 @@ def define_dagstermill_asset(
     deps: Optional[Iterable[Union[CoercibleToAssetKey, AssetsDefinition, SourceAsset]]] = None,
     metadata: Optional[Mapping[str, Any]] = None,
     config_schema: Optional[Union[Any, Mapping[str, Any]]] = None,
-    required_resource_keys: Optional[set[str]] = None,
+    required_resource_keys: Optional[Set[str]] = None,
     resource_defs: Optional[Mapping[str, ResourceDefinition]] = None,
     description: Optional[str] = None,
     partitions_def: Optional[PartitionsDefinition] = None,
@@ -89,8 +84,7 @@ def define_dagstermill_asset(
     io_manager_key: Optional[str] = None,
     retry_policy: Optional[RetryPolicy] = None,
     save_notebook_on_failure: bool = False,
-    non_argument_deps: Optional[Union[set[AssetKey], set[str]]] = None,
-    asset_tags: Optional[Mapping[str, Any]] = None,
+    non_argument_deps: Optional[Union[Set[AssetKey], Set[str]]] = None,
 ) -> AssetsDefinition:
     """Creates a Dagster asset for a Jupyter notebook.
 
@@ -120,7 +114,7 @@ def define_dagstermill_asset(
         group_name (Optional[str]): A string name used to organize multiple assets into groups. If not provided,
             the name "default" is used.
         resource_defs (Optional[Mapping[str, ResourceDefinition]]):
-            (Beta) A mapping of resource keys to resource definitions. These resources
+            (Experimental) A mapping of resource keys to resource definitions. These resources
             will be initialized during execution, and can be accessed from the
             context within the notebook.
         io_manager_key (Optional[str]): A string key for the IO manager used to store the output notebook.
@@ -129,7 +123,6 @@ def define_dagstermill_asset(
         save_notebook_on_failure (bool): If True and the notebook fails during execution, the failed notebook will be
             written to the Dagster storage directory. The location of the file will be printed in the Dagster logs.
             Defaults to False.
-        asset_tags (Optional[Dict[str, Any]]): A dictionary of tags to apply to the asset.
         non_argument_deps (Optional[Union[Set[AssetKey], Set[str]]]): Deprecated, use deps instead. Set of asset keys that are
             upstream dependencies, but do not pass an input to the asset.
 
@@ -179,7 +172,7 @@ def define_dagstermill_asset(
         io_manager_key, "io_manager_key", default="output_notebook_io_manager"
     )
 
-    user_tags = normalize_tags(op_tags)
+    user_tags = validate_tags(op_tags)
     if op_tags is not None:
         check.invariant(
             "notebook_path" not in op_tags,
@@ -187,18 +180,15 @@ def define_dagstermill_asset(
             " is reserved for use by Dagster",
         )
         check.invariant(
-            COMPUTE_KIND_TAG not in op_tags,
-            f"user-defined op tags contains the `{COMPUTE_KIND_TAG}` key, but the `{COMPUTE_KIND_TAG}` key is reserved for"
+            "kind" not in op_tags,
+            "user-defined op tags contains the `kind` key, but the `kind` key is reserved for"
             " use by Dagster",
         )
 
-    default_tags = {
-        "notebook_path": _clean_path_for_windows(notebook_path),
-        COMPUTE_KIND_TAG: "ipynb",
-    }
+    default_tags = {"notebook_path": _clean_path_for_windows(notebook_path), "kind": "ipynb"}
 
     if safe_is_subclass(config_schema, Config):
-        config_schema = infer_schema_from_config_class(cast("type[Config]", config_schema))
+        config_schema = infer_schema_from_config_class(cast(Type[Config], config_schema))
 
     return asset(
         name=name,
@@ -217,7 +207,6 @@ def define_dagstermill_asset(
         io_manager_key=io_mgr_key,
         retry_policy=retry_policy,
         non_argument_deps=non_argument_deps,
-        tags=asset_tags,
     )(
         _make_dagstermill_asset_compute_fn(
             name=name,

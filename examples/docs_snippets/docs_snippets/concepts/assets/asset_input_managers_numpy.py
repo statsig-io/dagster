@@ -3,7 +3,14 @@ import os
 import numpy as np
 import pandas as pd
 
-import dagster as dg
+from dagster import (
+    AssetIn,
+    ConfigurableIOManager,
+    Definitions,
+    IOManager,
+    asset,
+    io_manager,
+)
 
 from .asset_input_managers import (
     load_numpy_array,
@@ -14,8 +21,8 @@ from .asset_input_managers import (
 # start_numpy_example
 
 
-class PandasAssetIOManager(dg.ConfigurableIOManager):
-    def handle_output(self, context: dg.OutputContext, obj):
+class PandasAssetIOManager(ConfigurableIOManager):
+    def handle_output(self, context, obj):
         file_path = self._get_path(context)
         store_pandas_dataframe(name=file_path, table=obj)
 
@@ -25,30 +32,30 @@ class PandasAssetIOManager(dg.ConfigurableIOManager):
             f"{context.asset_key.path[-1]}.csv",
         )
 
-    def load_input(self, context: dg.InputContext) -> pd.DataFrame:
+    def load_input(self, context) -> pd.DataFrame:
         file_path = self._get_path(context)
         return load_pandas_dataframe(name=file_path)
 
 
 class NumpyAssetIOManager(PandasAssetIOManager):
-    def load_input(self, context: dg.InputContext) -> np.ndarray:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def load_input(self, context) -> np.ndarray:
         file_path = self._get_path(context)
         return load_numpy_array(name=file_path)
 
 
-@dg.asset(io_manager_key="pandas_manager")
+@asset(io_manager_key="pandas_manager")
 def upstream_asset() -> pd.DataFrame:
     return pd.DataFrame([1, 2, 3])
 
 
-@dg.asset(
-    ins={"upstream": dg.AssetIn(key_prefix="public", input_manager_key="numpy_manager")}
+@asset(
+    ins={"upstream": AssetIn(key_prefix="public", input_manager_key="numpy_manager")}
 )
 def downstream_asset(upstream: np.ndarray) -> tuple:
     return upstream.shape
 
 
-defs = dg.Definitions(
+defs = Definitions(
     assets=[upstream_asset, downstream_asset],
     resources={
         "pandas_manager": PandasAssetIOManager(),

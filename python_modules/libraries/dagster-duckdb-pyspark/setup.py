@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: dict[str, str] = {}
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_duckdb_pyspark/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -23,6 +24,7 @@ setup(
     description="Package for storing PySpark DataFrames in DuckDB.",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-duckb-pyspark",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: Apache Software License",
@@ -30,12 +32,13 @@ setup(
     ],
     packages=find_packages(exclude=["dagster_duckdb_pyspark_tests*"]),
     include_package_data=True,
-    python_requires=">=3.9,<3.14",
     install_requires=[
-        f"dagster{pin}",
-        f"dagster-duckdb{pin}",
-        "pyspark>=3,<4",
-        "pandas",
+        "dagster==1.4.16",
+        "dagster-duckdb==0.20.16",
+        "pyspark>=3",
+        # Pinned pending duckdb removal of broken pandas import. Pin can be
+        # removed as soon as it produces a working build.
+        "pandas<2.1",
         "pyarrow",
     ],
     zip_safe=False,

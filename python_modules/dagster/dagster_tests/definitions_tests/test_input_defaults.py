@@ -1,12 +1,20 @@
 from typing import Optional
 
-import dagster as dg
 import pytest
-from dagster import DagsterEventType
+from dagster import (
+    DagsterEventType,
+    DagsterInvalidDefinitionError,
+    GraphIn,
+    In,
+    Nothing,
+    graph,
+    job,
+    op,
+)
 
 
 def execute_in_graph(an_op, raise_on_error=True, run_config=None):
-    @dg.graph
+    @graph
     def my_graph():
         an_op()
 
@@ -15,7 +23,7 @@ def execute_in_graph(an_op, raise_on_error=True, run_config=None):
 
 
 def test_none():
-    @dg.op(ins={"x": dg.In(Optional[int], default_value=None)})
+    @op(ins={"x": In(Optional[int], default_value=None)})
     def none_x(x):
         return x
 
@@ -24,7 +32,7 @@ def test_none():
 
 
 def test_none_infer():
-    @dg.op
+    @op
     def none_x(x=None):
         return x
 
@@ -33,7 +41,7 @@ def test_none_infer():
 
 
 def test_int():
-    @dg.op(ins={"x": dg.In(Optional[int], default_value=1337)})
+    @op(ins={"x": In(Optional[int], default_value=1337)})
     def int_x(x):
         return x
 
@@ -42,7 +50,7 @@ def test_int():
 
 
 def test_int_infer():
-    @dg.op
+    @op
     def int_x(x=1337):
         return x
 
@@ -52,27 +60,27 @@ def test_int_infer():
 
 def test_early_fail():
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="Type check failed for the default_value of InputDefinition x of type Int",
     ):
 
-        @dg.op(ins={"x": dg.In(int, default_value="foo")})
+        @op(ins={"x": In(int, default_value="foo")})
         def _int_x(x):
             return x
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="Type check failed for the default_value of InputDefinition x of type String",
     ):
 
-        @dg.op(ins={"x": dg.In(str, default_value=1337)})
+        @op(ins={"x": In(str, default_value=1337)})
         def _int_x(x):
             return x
 
 
 # we can't catch bad default_values except for scalars until runtime since the type_check function depends on
 # a context that has access to resources etc.
-@dg.op(ins={"x": dg.In(Optional[int], default_value="number")})
+@op(ins={"x": In(Optional[int], default_value="number")})
 def bad_default(x):
     return x
 
@@ -97,11 +105,11 @@ def test_env_precedence():
 
 
 def test_input_precedence():
-    @dg.op
+    @op
     def emit_one():
         return 1
 
-    @dg.job
+    @job
     def the_job():
         bad_default(emit_one())
 
@@ -111,19 +119,19 @@ def test_input_precedence():
 
 
 def test_nothing():
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
+    with pytest.raises(DagsterInvalidDefinitionError):
 
-        @dg.op(ins={"x": dg.In(dg.Nothing, default_value=None)})
+        @op(ins={"x": In(Nothing, default_value=None)})
         def _nothing():
             pass
 
 
 def test_composite_inner_default():
-    @dg.op(ins={"x": dg.In(Optional[int], default_value=1337)})
+    @op(ins={"x": In(Optional[int], default_value=1337)})
     def int_x(x):
         return x
 
-    @dg.graph(ins={"y": dg.GraphIn()})
+    @graph(ins={"y": GraphIn()})
     def wrap(y):
         return int_x(y)
 
@@ -136,11 +144,11 @@ def test_custom_type_default():
     class CustomType:
         pass
 
-    @dg.op
+    @op
     def test_op(_inp: Optional[CustomType] = None):
         return 1
 
-    @dg.job
+    @job
     def test_job():
         test_op()
 

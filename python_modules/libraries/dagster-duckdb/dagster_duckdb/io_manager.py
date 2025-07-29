@@ -1,12 +1,13 @@
 from abc import abstractmethod
-from collections.abc import Sequence
 from contextlib import contextmanager
-from typing import Any, Optional, cast
+from typing import Optional, Sequence, Type, cast
 
 import duckdb
 from dagster import IOManagerDefinition, OutputContext, io_manager
-from dagster._config.pythonic_config import ConfigurableIOManagerFactory
-from dagster._core.definitions.partitions.utils import TimeWindow
+from dagster._config.pythonic_config import (
+    ConfigurableIOManagerFactory,
+)
+from dagster._core.definitions.time_window_partitions import TimeWindow
 from dagster._core.storage.db_io_manager import (
     DbClient,
     DbIOManager,
@@ -16,21 +17,20 @@ from dagster._core.storage.db_io_manager import (
 )
 from dagster._core.storage.io_manager import dagster_maintained_io_manager
 from dagster._utils.backoff import backoff
-from packaging.version import Version
 from pydantic import Field
 
 DUCKDB_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def build_duckdb_io_manager(
-    type_handlers: Sequence[DbTypeHandler], default_load_type: Optional[type] = None
+    type_handlers: Sequence[DbTypeHandler], default_load_type: Optional[Type] = None
 ) -> IOManagerDefinition:
     """Builds an IO manager definition that reads inputs from and writes outputs to DuckDB.
 
     Args:
         type_handlers (Sequence[DbTypeHandler]): Each handler defines how to translate between
             DuckDB tables and an in-memory type - e.g. a Pandas DataFrame. If only
-            one DbTypeHandler is provided, it will be used as the default_load_type.
+            one DbTypeHandler is provided, it will be used as teh default_load_type.
         default_load_type (Type): When an input has no type annotation, load it as this type.
 
     Returns:
@@ -50,43 +50,17 @@ def build_duckdb_io_manager(
 
             duckdb_io_manager = build_duckdb_io_manager([DuckDBPandasTypeHandler()])
 
-            Definitions(
-                assets=[my_table]
-                resources={"io_manager" duckdb_io_manager.configured({"database": "my_db.duckdb"})}
-            )
+            @repository
+            def my_repo():
+                return with_resources(
+                    [my_table],
+                    {"io_manager": duckdb_io_manager.configured({"database": "my_db.duckdb"})}
+                )
 
-    You can set a default schema to store the assets using the ``schema`` configuration value of the DuckDB I/O
-    Manager. This schema will be used if no other schema is specified directly on an asset or op.
-
-    .. code-block:: python
-
-        Definitions(
-            assets=[my_table]
-            resources={"io_manager" duckdb_io_manager.configured(
-                {"database": "my_db.duckdb", "schema": "my_schema"} # will be used as the schema
-            )}
-        )
-
-
-    On individual assets, you an also specify the schema where they should be stored using metadata or
-    by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-    take precedence.
-
-    .. code-block:: python
-
-        @asset(
-            key_prefix=["my_schema"]  # will be used as the schema in duckdb
-        )
-        def my_table() -> pd.DataFrame:
-            ...
-
-        @asset(
-            metadata={"schema": "my_schema"}  # will be used as the schema in duckdb
-        )
-        def my_other_table() -> pd.DataFrame:
-            ...
-
-    For ops, the schema can be specified by including a "schema" entry in output metadata.
+    If you do not provide a schema, Dagster will determine a schema based on the assets and ops using
+    the IO Manager. For assets, the schema will be determined from the asset key. For ops, the schema can be
+    specified by including a "schema" entry in output metadata. If none of these is provided, the schema will
+    default to "public".
 
     .. code-block:: python
 
@@ -95,8 +69,6 @@ def build_duckdb_io_manager(
         )
         def make_my_table() -> pd.DataFrame:
             ...
-
-    If none of these is provided, the schema will default to "public".
 
     To only use specific columns of a table as input to a downstream op or asset, add the metadata "columns" to the
     In or AssetIn.
@@ -154,40 +126,15 @@ class DuckDBIOManager(ConfigurableIOManagerFactory):
             def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
                 ...
 
-            Definitions(
+            defs = Definitions(
                 assets=[my_table],
                 resources={"io_manager": MyDuckDBIOManager(database="my_db.duckdb")}
             )
 
-    You can set a default schema to store the assets using the ``schema`` configuration value of the DuckDB I/O
-    Manager. This schema will be used if no other schema is specified directly on an asset or op.
-
-    .. code-block:: python
-
-        Definitions(
-            assets=[my_table],
-            resources={"io_manager": MyDuckDBIOManager(database="my_db.duckdb", schema="my_schema")}
-        )
-
-    On individual assets, you an also specify the schema where they should be stored using metadata or
-    by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-    take precedence.
-
-    .. code-block:: python
-
-        @asset(
-            key_prefix=["my_schema"]  # will be used as the schema in duckdb
-        )
-        def my_table() -> pd.DataFrame:
-            ...
-
-        @asset(
-            metadata={"schema": "my_schema"}  # will be used as the schema in duckdb
-        )
-        def my_other_table() -> pd.DataFrame:
-            ...
-
-    For ops, the schema can be specified by including a "schema" entry in output metadata.
+    If you do not provide a schema, Dagster will determine a schema based on the assets and ops using
+    the IO Manager. For assets, the schema will be determined from the asset key, as in the above example.
+    For ops, the schema can be specified by including a "schema" entry in output metadata. If none
+    of these is provided, the schema will default to "public".
 
     .. code-block:: python
 
@@ -196,8 +143,6 @@ class DuckDBIOManager(ConfigurableIOManagerFactory):
         )
         def make_my_table() -> pd.DataFrame:
             ...
-
-    If none of these is provided, the schema will default to "public".
 
     To only use specific columns of a table as input to a downstream op or asset, add the metadata "columns" to the
     In or AssetIn.
@@ -211,27 +156,9 @@ class DuckDBIOManager(ConfigurableIOManagerFactory):
             # my_table will just contain the data from column "a"
             ...
 
-    Set DuckDB configuration options using the connection_config field. See
-    https://duckdb.org/docs/sql/configuration.html for all available settings.
-
-    .. code-block:: python
-
-        Definitions(
-            assets=[my_table],
-            resources={"io_manager": MyDuckDBIOManager(database="my_db.duckdb",
-                                                       connection_config={"arrow_large_buffer_size": True})}
-        )
-
     """
 
     database: str = Field(description="Path to the DuckDB database.")
-    connection_config: dict[str, Any] = Field(
-        description=(
-            "DuckDB connection configuration options. See"
-            " https://duckdb.org/docs/sql/configuration.html"
-        ),
-        default={},
-    )
     schema_: Optional[str] = Field(
         default=None, alias="schema", description="Name of the schema to use."
     )  # schema is a reserved word for pydantic
@@ -241,7 +168,7 @@ class DuckDBIOManager(ConfigurableIOManagerFactory):
     def type_handlers() -> Sequence[DbTypeHandler]: ...
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> Optional[Type]:
         return None
 
     def create_io_manager(self, context) -> DbIOManager:
@@ -272,7 +199,7 @@ class DuckDbClient(DbClient):
     def get_select_statement(table_slice: TableSlice) -> str:
         col_str = ", ".join(table_slice.columns) if table_slice.columns else "*"
 
-        if table_slice.partition_dimensions:
+        if table_slice.partition_dimensions and len(table_slice.partition_dimensions) > 0:
             query = f"SELECT {col_str} FROM {table_slice.schema}.{table_slice.table} WHERE\n"
             return query + _partition_where_clause(table_slice.partition_dimensions)
         else:
@@ -280,25 +207,11 @@ class DuckDbClient(DbClient):
 
     @staticmethod
     @contextmanager
-    def connect(context, _):  # pyright: ignore[reportIncompatibleMethodOverride]
-        config = context.resource_config["connection_config"]
-
-        # support for `custom_user_agent` was added in v1.0.0
-        # https://github.com/duckdb/duckdb/commit/0c66b6007b736ed2197bca54d20c9ad9a5eeef46
-        if Version(duckdb.__version__) >= Version("1.0.0"):
-            config = {
-                "custom_user_agent": "dagster",
-                **config,
-            }
-
+    def connect(context, _):
         conn = backoff(
             fn=duckdb.connect,
             retry_on=(RuntimeError, duckdb.IOException),
-            kwargs={
-                "database": context.resource_config["database"],
-                "read_only": False,
-                "config": config,
-            },
+            kwargs={"database": context.resource_config["database"], "read_only": False},
             max_retries=10,
         )
 
@@ -311,7 +224,7 @@ def _get_cleanup_statement(table_slice: TableSlice) -> str:
     """Returns a SQL statement that deletes data in the given table to make way for the output data
     being written.
     """
-    if table_slice.partition_dimensions:
+    if table_slice.partition_dimensions and len(table_slice.partition_dimensions) > 0:
         query = f"DELETE FROM {table_slice.schema}.{table_slice.table} WHERE\n"
         return query + _partition_where_clause(table_slice.partition_dimensions)
     else:
@@ -330,7 +243,7 @@ def _partition_where_clause(partition_dimensions: Sequence[TablePartitionDimensi
 
 
 def _time_window_where_clause(table_partition: TablePartitionDimension) -> str:
-    partition = cast("TimeWindow", table_partition.partitions)
+    partition = cast(TimeWindow, table_partition.partitions)
     start_dt, end_dt = partition
     start_dt_str = start_dt.strftime(DUCKDB_DATETIME_FORMAT)
     end_dt_str = end_dt.strftime(DUCKDB_DATETIME_FORMAT)

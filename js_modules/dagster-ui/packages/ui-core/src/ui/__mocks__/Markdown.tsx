@@ -2,7 +2,7 @@ import * as React from 'react';
 
 import {Markdown} from '../Markdown';
 
-export const MarkdownMock = (props: React.ComponentProps<typeof Markdown>) => {
+export const MarkdownMock: React.FC<React.ComponentProps<typeof Markdown>> = (props) => {
   return <>{props.children}</>;
 };
 

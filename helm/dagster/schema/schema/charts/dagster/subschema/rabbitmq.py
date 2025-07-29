@@ -1,8 +1,6 @@
-from typing import Literal
+from pydantic import BaseModel, Field
 
-from pydantic import BaseModel
-
-from schema.charts.utils.kubernetes import ExternalImage
+from ...utils.kubernetes import ExternalImage
 
 
 class RabbitMQConfiguration(BaseModel):
@@ -15,7 +13,7 @@ class Service(BaseModel):
 
 
 class VolumePermissions(BaseModel):
-    enabled: Literal[True] = True
+    enabled: bool = Field(default=True, const=True)
     image: ExternalImage
 
 

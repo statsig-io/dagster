@@ -1,7 +1,20 @@
 import pickle
 
-import dagster as dg
 import pytest
+from dagster import (
+    Any,
+    Bool,
+    DagsterInvalidConfigError,
+    Float,
+    GraphDefinition,
+    In,
+    Int,
+    List,
+    Optional,
+    Out,
+    String,
+    op,
+)
 from dagster._utils.test import get_temp_file_name
 
 
@@ -10,55 +23,55 @@ def _execute_job_with_subset(job_def, run_config, op_selection):
 
 
 def define_test_all_scalars_job():
-    @dg.op(ins={"num": dg.In(dg.Int)})
+    @op(ins={"num": In(Int)})
     def take_int(num):
         return num
 
-    @dg.op(out=dg.Out(dg.Int))
+    @op(out=Out(Int))
     def produce_int():
         return 2
 
-    @dg.op(ins={"string": dg.In(dg.String)})
+    @op(ins={"string": In(String)})
     def take_string(string):
         return string
 
-    @dg.op(out=dg.Out(dg.String))
+    @op(out=Out(String))
     def produce_string():
         return "foo"
 
-    @dg.op(ins={"float_number": dg.In(dg.Float)})
+    @op(ins={"float_number": In(Float)})
     def take_float(float_number):
         return float_number
 
-    @dg.op(out=dg.Out(dg.Float))
+    @op(out=Out(Float))
     def produce_float():
         return 3.14
 
-    @dg.op(ins={"bool_value": dg.In(dg.Bool)})
+    @op(ins={"bool_value": In(Bool)})
     def take_bool(bool_value):
         return bool_value
 
-    @dg.op(out=dg.Out(dg.Bool))
+    @op(out=Out(Bool))
     def produce_bool():
         return True
 
-    @dg.op(ins={"any_value": dg.In(dg.Any)})  # pyright: ignore[reportArgumentType]
+    @op(ins={"any_value": In(Any)})
     def take_any(any_value):
         return any_value
 
-    @dg.op(out=dg.Out(dg.Any))  # pyright: ignore[reportArgumentType]
+    @op(out=Out(Any))
     def produce_any():
         return True
 
-    @dg.op(ins={"string_list": dg.In(dg.List[dg.String])})
+    @op(ins={"string_list": In(List[String])})
     def take_string_list(string_list):
         return string_list
 
-    @dg.op(ins={"nullable_string": dg.In(dg.Optional[dg.String])})
+    @op(ins={"nullable_string": In(Optional[String])})
     def take_nullable_string(nullable_string):
         return nullable_string
 
-    return dg.GraphDefinition(
+    return GraphDefinition(
         name="test_all_scalars_job",
         node_defs=[
             produce_any,
@@ -105,8 +118,7 @@ def test_int_input_schema_raw_value():
 
 def test_int_input_schema_failure_wrong_value_type():
     with pytest.raises(
-        dg.DagsterInvalidConfigError,
-        match="Invalid scalar at path root:ops:take_int:inputs:num:value",
+        DagsterInvalidConfigError, match="Invalid scalar at path root:ops:take_int:inputs:num:value"
     ):
         _execute_job_with_subset(
             define_test_all_scalars_job(),
@@ -116,7 +128,7 @@ def test_int_input_schema_failure_wrong_value_type():
 
 
 def test_int_input_schema_failure_wrong_key():
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         _execute_job_with_subset(
             define_test_all_scalars_job(),
             run_config=single_input_env("take_int", "num", {"wrong_key": "dkjdfkdj"}),
@@ -129,7 +141,7 @@ def test_int_input_schema_failure_wrong_key():
 
 
 def test_int_input_schema_failure_raw_string():
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         _execute_job_with_subset(
             define_test_all_scalars_job(),
             run_config=single_input_env("take_int", "num", "dkjdfkdj"),
@@ -182,7 +194,7 @@ def test_string_input_schema_value():
 
 
 def test_string_input_schema_failure():
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         _execute_job_with_subset(
             define_test_all_scalars_job(),
             run_config=single_input_env("take_string", "string", {"value": 3343}),
@@ -204,7 +216,7 @@ def test_float_input_schema_value():
 
 
 def test_float_input_schema_failure():
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         _execute_job_with_subset(
             define_test_all_scalars_job(),
             run_config=single_input_env("take_float", "float_number", {"value": "3343"}),
@@ -228,7 +240,7 @@ def test_bool_input_schema_value():
 
 
 def test_bool_input_schema_failure():
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         _execute_job_with_subset(
             define_test_all_scalars_job(),
             run_config=single_input_env("take_bool", "bool_value", {"value": "3343"}),
@@ -261,7 +273,7 @@ def test_any_input_schema_value():
 
 
 def test_none_string_input_schema_failure():
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         _execute_job_with_subset(
             define_test_all_scalars_job(),
             run_config=single_input_env("take_string", "string", None),
@@ -276,7 +288,7 @@ def test_none_string_input_schema_failure():
 
 
 def test_value_none_string_input_schema_failure():
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         _execute_job_with_subset(
             define_test_all_scalars_job(),
             run_config=single_input_env("take_string", "string", {"value": None}),
@@ -343,7 +355,7 @@ def test_nullable_string_input_with_value():
 def test_nullable_string_input_with_none_value():
     # Perhaps a confusing test case. Optional makes the entire enclosing structure nullable,
     # rather than the "value" value embedded within it
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         _execute_job_with_subset(
             define_test_all_scalars_job(),
             run_config=single_input_env("take_nullable_string", "nullable_string", {"value": None}),

@@ -1,22 +1,24 @@
-from collections.abc import Mapping
-from typing import NamedTuple, Optional
+from typing import Mapping, NamedTuple, Optional
 
 import dagster._check as check
-from dagster._core.definitions import AssetMaterialization, NodeHandle
-from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
-from dagster._core.definitions.assets.definition.asset_spec import AssetExecutionType
+from dagster._core.definitions import (
+    AssetMaterialization,
+    NodeHandle,
+)
+from dagster._core.definitions.asset_check_spec import AssetCheckHandle
 from dagster._core.definitions.events import AssetKey
 from dagster._core.definitions.metadata import (
     MetadataFieldSerializer,
     MetadataValue,
     normalize_metadata,
 )
-from dagster._core.execution.plan.handle import UnresolvedStepHandle
-from dagster._core.execution.plan.objects import TypeCheckData
 from dagster._serdes import whitelist_for_serdes
 
+from .handle import UnresolvedStepHandle
+from .objects import TypeCheckData
 
-@whitelist_for_serdes(storage_field_names={"should_materialize_DEPRECATED": "should_materialize"})
+
+@whitelist_for_serdes
 class StepOutputProperties(
     NamedTuple(
         "_StepOutputProperties",
@@ -24,11 +26,10 @@ class StepOutputProperties(
             ("is_required", bool),
             ("is_dynamic", bool),
             ("is_asset", bool),
-            ("should_materialize_DEPRECATED", bool),
+            ("should_materialize", bool),
             ("asset_key", Optional[AssetKey]),
             ("is_asset_partitioned", bool),
-            ("asset_check_key", Optional[AssetCheckKey]),
-            ("asset_execution_type", Optional[AssetExecutionType]),
+            ("asset_check_handle", Optional[AssetCheckHandle]),
         ],
     )
 ):
@@ -37,22 +38,20 @@ class StepOutputProperties(
         is_required: bool,
         is_dynamic: bool,
         is_asset: bool,
-        should_materialize_DEPRECATED: bool,
+        should_materialize: bool,
         asset_key: Optional[AssetKey] = None,
         is_asset_partitioned: bool = False,
-        asset_check_key: Optional[AssetCheckKey] = None,
-        asset_execution_type: Optional[AssetExecutionType] = None,
+        asset_check_handle: Optional[AssetCheckHandle] = None,
     ):
-        return super().__new__(
+        return super(StepOutputProperties, cls).__new__(
             cls,
             check.bool_param(is_required, "is_required"),
             check.bool_param(is_dynamic, "is_dynamic"),
             check.bool_param(is_asset, "is_asset"),
-            check.bool_param(should_materialize_DEPRECATED, "should_materialize_DEPRECATED"),
+            check.bool_param(should_materialize, "should_materialize"),
             check.opt_inst_param(asset_key, "asset_key", AssetKey),
             check.bool_param(is_asset_partitioned, "is_asset_partitioned"),
-            check.opt_inst_param(asset_check_key, "asset_check_key", AssetCheckKey),
-            check.opt_inst_param(asset_execution_type, "asset_execution_type", AssetExecutionType),
+            check.opt_inst_param(asset_check_handle, "asset_check_handle", AssetCheckHandle),
         )
 
 
@@ -77,7 +76,7 @@ class StepOutput(
         dagster_type_key: str,
         properties: StepOutputProperties,
     ):
-        return super().__new__(
+        return super(StepOutput, cls).__new__(
             cls,
             node_handle=check.inst_param(node_handle, "node_handle", NodeHandle),
             name=check.str_param(name, "name"),
@@ -96,6 +95,10 @@ class StepOutput(
     @property
     def is_asset(self) -> bool:
         return self.properties.is_asset
+
+    @property
+    def should_materialize(self) -> bool:
+        return self.properties.should_materialize
 
     @property
     def asset_key(self) -> Optional[AssetKey]:
@@ -130,7 +133,7 @@ class StepOutputData(
         # graveyard
         intermediate_materialization: Optional[AssetMaterialization] = None,
     ):
-        return super().__new__(
+        return super(StepOutputData, cls).__new__(
             cls,
             step_output_handle=check.inst_param(
                 step_output_handle, "step_output_handle", StepOutputHandle
@@ -161,7 +164,7 @@ class StepOutputHandle(
     """A reference to a specific output that has or will occur within the scope of an execution."""
 
     def __new__(cls, step_key: str, output_name: str = "result", mapping_key: Optional[str] = None):
-        return super().__new__(
+        return super(StepOutputHandle, cls).__new__(
             cls,
             step_key=check.str_param(step_key, "step_key"),
             output_name=check.str_param(output_name, "output_name"),
@@ -192,7 +195,7 @@ class UnresolvedStepOutputHandle(
         resolved_by_step_key: str,
         resolved_by_output_name: str,
     ):
-        return super().__new__(
+        return super(UnresolvedStepOutputHandle, cls).__new__(
             cls,
             unresolved_step_handle=check.inst_param(
                 unresolved_step_handle, "unresolved_step_handle", UnresolvedStepHandle

@@ -32,12 +32,8 @@ export const batchRunsForTimeline = <R extends RunWithTime>(config: Config<R>) =
   const rangeLength = end - start;
 
   const now = Date.now();
+  const nowLeft = ((now - start) / (end - start)) * width;
 
-  // Give a pixel of breathing room for the "now" position.
-  const nowLeft = ((now - start) / (end - start)) * width + 1;
-
-  // Sort all runs by start time (via `left` value), ascending. Then iterate through
-  // them, batching them together.
   const batches: RunBatch<R>[] = runs
     .map((run) => {
       const startTime = run.startTime;
@@ -59,7 +55,7 @@ export const batchRunsForTimeline = <R extends RunWithTime>(config: Config<R>) =
         width: runWidth,
       };
     })
-    .sort((a, b) => a.left - b.left);
+    .sort((a, b) => b.left - a.left);
 
   const consolidated = [];
 

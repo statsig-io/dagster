@@ -1,11 +1,11 @@
 // eslint-disable-next-line no-restricted-imports
 import {Placement} from '@blueprintjs/popover2';
-import * as React from 'react';
+import React from 'react';
 import styled, {CSSProperties} from 'styled-components';
 
 import {Box} from './Box';
 import {Button} from './Button';
-import {Colors} from './Color';
+import {Colors} from './Colors';
 import {Popover} from './Popover';
 import {Subheading} from './Text';
 
@@ -28,18 +28,15 @@ type Props = {
   children: React.ReactNode;
   title: React.ReactNode;
   description?: React.ReactNode;
-  canShow?: boolean;
   actions?: {
-    custom?: React.ReactNode;
     next?: () => void;
     dismiss?: () => void;
   };
   position: ProductTourPosition;
   width?: CSSProperties['width'];
-  modifiers?: React.ComponentProps<typeof Popover>['modifiers'];
 } & ObjectType;
 
-export const ProductTour = ({
+export const ProductTour: React.FC<Props> = ({
   title,
   description,
   actions,
@@ -48,10 +45,8 @@ export const ProductTour = ({
   img,
   video,
   object,
-  modifiers = {},
   width = '260px',
-  canShow = true,
-}: Props) => {
+}) => {
   const media = React.useMemo(() => {
     if (img) {
       return <img src={img} style={{borderRadius: '6px'}} />;
@@ -65,30 +60,23 @@ export const ProductTour = ({
   const actionsJsx = React.useMemo(() => {
     return (
       <ActionsContainer flex={{gap: 6, direction: 'row'}} margin={{top: 8}}>
-        {actions?.custom}
         {actions?.next ? <Button onClick={actions.next}>Next</Button> : null}
         {actions?.dismiss ? <Button onClick={actions.dismiss}>Dismiss</Button> : null}
       </ActionsContainer>
     );
-  }, [actions?.custom, actions?.next, actions?.dismiss]);
+  }, [actions?.next, actions?.dismiss]);
 
   return (
     <Popover
-      popoverClassName="bp5-dark"
-      isOpen={canShow}
+      isOpen={true}
       placement={position as Placement}
       modifiers={{
         arrow: {enabled: true},
         preventOverflow: {enabled: true},
-        ...modifiers,
       }}
       minimal={false}
       content={
-        <div
-          onClick={(ev) => {
-            ev.stopPropagation();
-          }}
-        >
+        <>
           <div />
           <ProductTourContainer flex={{direction: 'column', gap: 4}} padding={16} style={{width}}>
             <Box flex={{direction: 'column', gap: 8}}>
@@ -99,7 +87,7 @@ export const ProductTour = ({
             {actionsJsx}
           </ProductTourContainer>
           <div />
-        </div>
+        </>
       }
     >
       {children}
@@ -109,17 +97,17 @@ export const ProductTour = ({
 
 const ProductTourContainer = styled(Box)`
   pointer-events: all;
-  background: ${Colors.tooltipBackground()};
+  background: ${Colors.Gray900};
   border-radius: 4px;
   padding: 16px;
-  box-shadow: 0px 2px 12px ${Colors.shadowDefault()};
+  box-shadow: 0px 2px 12px rgba(0, 0, 0, 0.12);
 
   &,
   button {
     &,
     &:hover,
     &:focus {
-      color: ${Colors.tooltipText()};
+      color: ${Colors.White};
     }
   }
 `;

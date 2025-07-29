@@ -4,8 +4,8 @@ from dagster import ConfigurableResource, IAttachDifferentObjectToOpContext, res
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
 from pydantic import Field
 
-from dagster_aws.s3.file_manager import S3FileManager
-from dagster_aws.s3.utils import construct_s3_client
+from .file_manager import S3FileManager
+from .utils import construct_s3_client
 
 T = TypeVar("T")
 
@@ -33,10 +33,12 @@ class ResourceWithS3Configuration(ConfigurableResource):
     use_ssl: bool = Field(
         default=True, description="Whether or not to use SSL. By default, SSL is used."
     )
-    verify: Optional[bool] = Field(
+    verify: Optional[str] = Field(
         default=None,
         description=(
             "Whether or not to verify SSL certificates. By default SSL certificates are verified."
+            " You can also specify this argument if you want to use a different CA cert bundle than"
+            " the one used by botocore."
         ),
     )
     aws_access_key_id: Optional[str] = Field(
@@ -45,7 +47,7 @@ class ResourceWithS3Configuration(ConfigurableResource):
     aws_secret_access_key: Optional[str] = Field(
         default=None, description="AWS secret access key to use when creating the boto3 session."
     )
-    aws_session_token: Optional[str] = Field(
+    aws_session_token: str = Field(
         default=None, description="AWS session token to use when creating the boto3 session."
     )
 
@@ -74,7 +76,7 @@ class S3Resource(ResourceWithS3Configuration, IAttachDifferentObjectToOpContext)
             def example_job():
                 example_s3_op()
 
-            Definitions(
+            defs = Definitions(
                 jobs=[example_job],
                 resources={'s3': S3Resource(region_name='us-west-1')}
             )

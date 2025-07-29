@@ -1,4 +1,3 @@
-# serializer version: 1
 # name: TestExpectations.test_basic_expectations_within_compute_step_events[0]
   list([
     dict({

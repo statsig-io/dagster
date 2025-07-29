@@ -1,6 +1,8 @@
+# mypy: ignore-errors
+
+
 import zlib
-from collections.abc import Mapping
-from typing import ContextManager, Optional  # noqa: UP035
+from typing import ContextManager, Mapping, Optional
 
 import dagster._check as check
 import sqlalchemy as db
@@ -25,17 +27,16 @@ from dagster._core.storage.sql import (
 )
 from dagster._daemon.types import DaemonHeartbeat
 from dagster._serdes import ConfigurableClass, ConfigurableClassData, serialize_value
-from dagster._time import datetime_from_timestamp
-from sqlalchemy import event
+from dagster._utils import utc_datetime_from_timestamp
 from sqlalchemy.engine import Connection
 
-from dagster_postgres.utils import (
+from ..utils import (
     create_pg_connection,
     pg_alembic_config,
+    pg_statement_timeout,
     pg_url_from_config,
     retry_pg_connection_fn,
     retry_pg_creation_fn,
-    set_pg_statement_timeout,
 )
 
 
@@ -80,10 +81,13 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
         )
 
         # Default to not holding any connections open to prevent accumulating connections per DagsterInstance
+        timeout_option = pg_statement_timeout(600000)
         self._engine = create_engine(
             self.postgres_url,
             isolation_level="AUTOCOMMIT",
-            poolclass=db_pool.NullPool,
+            pool_size=1,
+            connect_args={"options": timeout_option},
+            pool_recycle=3600,
         )
 
         self._index_migration_cache = {}
@@ -108,24 +112,20 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
                 # This revision may be shared by any other dagster storage classes using the same DB
                 stamp_alembic_rev(pg_alembic_config(__file__), conn)
 
-    def optimize_for_webserver(
-        self, statement_timeout: int, pool_recycle: int, max_overflow: int
-    ) -> None:
-        # When running in dagster-webserver, hold an open connection and set statement_timeout
-        kwargs = {
-            "isolation_level": "AUTOCOMMIT",
-            "pool_size": 1,
-            "pool_recycle": pool_recycle,
-            "max_overflow": max_overflow,
-        }
+    def optimize_for_webserver(self, statement_timeout: int, pool_recycle: int) -> None:
+        # When running in dagster-webserver, hold 1 open connection and set statement_timeout
         existing_options = self._engine.url.query.get("options")
+        timeout_option = pg_statement_timeout(statement_timeout)
         if existing_options:
-            kwargs["connect_args"] = {"options": existing_options}
-        self._engine = create_engine(self.postgres_url, **kwargs)
-        event.listen(
-            self._engine,
-            "connect",
-            lambda connection, _: set_pg_statement_timeout(connection, statement_timeout),
+            options = f"{timeout_option} {existing_options}"
+        else:
+            options = timeout_option
+        self._engine = create_engine(
+            self.postgres_url,
+            isolation_level="AUTOCOMMIT",
+            pool_size=1,
+            connect_args={"options": options},
+            pool_recycle=pool_recycle,
         )
 
     @property
@@ -137,7 +137,7 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
         return pg_config()
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_config_value(
         cls, inst_data: Optional[ConfigurableClassData], config_value: PostgresStorageConfig
     ):
         return PostgresRunStorage(
@@ -150,9 +150,15 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
     def create_clean_storage(
         postgres_url: str, should_autocreate_tables: bool = True
     ) -> "PostgresRunStorage":
+        timeout_option = pg_statement_timeout(600000)
         engine = create_engine(
-            postgres_url, isolation_level="AUTOCOMMIT", poolclass=db_pool.NullPool
+            postgres_url,
+            isolation_level="AUTOCOMMIT",
+            pool_size=1,
+            connect_args={"options": timeout_option},
+            pool_recycle=3600,
         )
+
         try:
             RunStorageSqlMetadata.drop_all(engine)
         finally:
@@ -168,11 +174,13 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
 
     def has_built_index(self, migration_name: str) -> bool:
         if migration_name not in self._index_migration_cache:
-            self._index_migration_cache[migration_name] = super().has_built_index(migration_name)
+            self._index_migration_cache[migration_name] = super(
+                PostgresRunStorage, self
+            ).has_built_index(migration_name)
         return self._index_migration_cache[migration_name]
 
     def mark_index_built(self, migration_name: str) -> None:
-        super().mark_index_built(migration_name)
+        super(PostgresRunStorage, self).mark_index_built(migration_name)
         if migration_name in self._index_migration_cache:
             del self._index_migration_cache[migration_name]
 
@@ -182,7 +190,7 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
             conn.execute(
                 db_dialects.postgresql.insert(DaemonHeartbeatsTable)
                 .values(
-                    timestamp=datetime_from_timestamp(daemon_heartbeat.timestamp),
+                    timestamp=utc_datetime_from_timestamp(daemon_heartbeat.timestamp),
                     daemon_type=daemon_heartbeat.daemon_type,
                     daemon_id=daemon_heartbeat.daemon_id,
                     body=serialize_value(daemon_heartbeat),
@@ -190,7 +198,7 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
                 .on_conflict_do_update(
                     index_elements=[DaemonHeartbeatsTable.c.daemon_type],
                     set_={
-                        "timestamp": datetime_from_timestamp(daemon_heartbeat.timestamp),
+                        "timestamp": utc_datetime_from_timestamp(daemon_heartbeat.timestamp),
                         "daemon_id": daemon_heartbeat.daemon_id,
                         "body": serialize_value(daemon_heartbeat),
                     },
@@ -205,7 +213,7 @@ class PostgresRunStorage(SqlRunStorage, ConfigurableClass):
     def set_cursor_values(self, pairs: Mapping[str, str]) -> None:
         check.mapping_param(pairs, "pairs", key_type=str, value_type=str)
 
-        # pg specific on_conflict_do_update
+        # pg speciic on_conflict_do_update
         insert_stmt = db_dialects.postgresql.insert(KeyValueStoreTable).values(
             [{"key": k, "value": v} for k, v in pairs.items()]
         )

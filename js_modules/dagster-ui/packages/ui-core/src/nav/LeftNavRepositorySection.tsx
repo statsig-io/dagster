@@ -1,27 +1,24 @@
 import {Body, Box, Colors} from '@dagster-io/ui-components';
-import {memo, useContext} from 'react';
+import * as React from 'react';
 import styled from 'styled-components';
 
-import {RepoNavItem} from './RepoNavItem';
 import {SectionedLeftNav} from '../ui/SectionedLeftNav';
-import {WorkspaceContext} from '../workspace/WorkspaceContext/WorkspaceContext';
-import {DagsterRepoOption, SetVisibleOrHiddenFn} from '../workspace/WorkspaceContext/util';
+import {DagsterRepoOption, WorkspaceContext} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
 
-const LoadedRepositorySection = ({
-  allRepos,
-  visibleRepos,
-  toggleVisible,
-}: {
+import {RepoNavItem} from './RepoNavItem';
+import {RepositoryLocationStateObserver} from './RepositoryLocationStateObserver';
+
+const LoadedRepositorySection: React.FC<{
   allRepos: DagsterRepoOption[];
   visibleRepos: DagsterRepoOption[];
   toggleVisible: (repoAddresses: RepoAddress[]) => void;
-}) => {
+}> = ({allRepos, visibleRepos, toggleVisible}) => {
   const listContent = () => {
     if (visibleRepos.length) {
       return (
         <div style={{overflow: 'hidden'}}>
-          <SectionedLeftNav visibleRepos={visibleRepos} />
+          <SectionedLeftNav />
         </div>
       );
     }
@@ -50,13 +47,14 @@ const LoadedRepositorySection = ({
   return (
     <Container>
       <ListContainer>{listContent()}</ListContainer>
+      <RepositoryLocationStateObserver />
       <RepoNavItem allRepos={allRepos} selected={visibleRepos} onToggle={toggleVisible} />
     </Container>
   );
 };
 
 const Container = styled.div`
-  background: ${Colors.backgroundLight()};
+  background: ${Colors.Gray100};
   display: flex;
   flex: 1;
   overflow: none;
@@ -72,35 +70,18 @@ const ListContainer = styled.div`
 `;
 
 const EmptyState = styled.div`
-  color: ${Colors.textLighter()};
+  color: ${Colors.Gray400};
   line-height: 20px;
   padding: 6px 24px 0;
 `;
 
-export const LeftNavRepositorySection = memo(() => {
-  const {allRepos, loadingNonAssets, visibleRepos, toggleVisible} = useContext(WorkspaceContext);
-  if (loadingNonAssets) {
+export const LeftNavRepositorySection = React.memo(() => {
+  const {allRepos, loading, visibleRepos, toggleVisible} = React.useContext(WorkspaceContext);
+
+  if (loading) {
     return <div style={{flex: 1}} />;
   }
 
-  return (
-    <LeftNavRepositorySectionInner
-      allRepos={allRepos}
-      visibleRepos={visibleRepos}
-      toggleVisible={toggleVisible}
-    />
-  );
-});
-
-export const LeftNavRepositorySectionInner = ({
-  allRepos,
-  visibleRepos,
-  toggleVisible,
-}: {
-  allRepos: DagsterRepoOption[];
-  visibleRepos: DagsterRepoOption[];
-  toggleVisible: SetVisibleOrHiddenFn;
-}) => {
   return (
     <LoadedRepositorySection
       allRepos={allRepos}
@@ -108,4 +89,4 @@ export const LeftNavRepositorySectionInner = ({
       toggleVisible={toggleVisible}
     />
   );
-};
+});

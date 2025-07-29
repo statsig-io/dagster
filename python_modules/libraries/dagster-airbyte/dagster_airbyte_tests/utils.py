@@ -1,8 +1,8 @@
 from dagster._utils.merger import deep_merge_dicts
-from dagster_airbyte import AirbyteJobStatusType
+from dagster_airbyte import AirbyteState
 
 
-def get_sample_connection_json(stream_prefix="", **kwargs):
+def get_sample_connection_json(**kwargs):
     return deep_merge_dicts(
         {
             "name": "xyz",
@@ -10,7 +10,7 @@ def get_sample_connection_json(stream_prefix="", **kwargs):
                 "streams": [
                     {
                         "stream": {
-                            "name": stream_prefix + "foo",
+                            "name": "foo",
                             "jsonSchema": {
                                 "properties": {"a": {"type": "str"}, "b": {"type": "int"}}
                             },
@@ -19,7 +19,7 @@ def get_sample_connection_json(stream_prefix="", **kwargs):
                     },
                     {
                         "stream": {
-                            "name": stream_prefix + "bar",
+                            "name": "bar",
                             "jsonSchema": {
                                 "properties": {
                                     "c": {"type": "str"},
@@ -30,7 +30,7 @@ def get_sample_connection_json(stream_prefix="", **kwargs):
                     },
                     {
                         "stream": {
-                            "name": stream_prefix + "baz",
+                            "name": "baz",
                             "jsonSchema": {
                                 "properties": {
                                     "d": {"type": "str"},
@@ -41,7 +41,7 @@ def get_sample_connection_json(stream_prefix="", **kwargs):
                     },
                     {
                         "stream": {
-                            "name": stream_prefix + "qux",
+                            "name": "qux",
                             "jsonSchema": {
                                 "properties": {
                                     "e": {"type": "str"},
@@ -59,7 +59,7 @@ def get_sample_connection_json(stream_prefix="", **kwargs):
 
 def get_sample_job_json(schema_prefix=""):
     return {
-        "job": {"id": 1, "status": AirbyteJobStatusType.SUCCEEDED},
+        "job": {"id": 1, "status": AirbyteState.SUCCEEDED},
         "attempts": [
             {
                 "attempt": {
@@ -89,7 +89,7 @@ def get_sample_job_list_json(schema_prefix=""):
     return {
         "jobs": [
             {
-                "job": {"id": 1, "status": AirbyteJobStatusType.SUCCEEDED},
+                "job": {"id": 1, "status": AirbyteState.SUCCEEDED},
                 "attempts": [
                     {
                         "streamStats": [
@@ -371,7 +371,7 @@ def get_project_connection_json(**kwargs):
 
 def get_project_job_json():
     return {
-        "job": {"id": 1, "status": AirbyteJobStatusType.SUCCEEDED},
+        "job": {"id": 1, "status": AirbyteState.SUCCEEDED},
         "attempts": [
             {
                 "attempt": {
@@ -700,17 +700,3 @@ def get_instance_operations_json():
             }
         ]
     }
-
-
-def get_destination_with_database_and_schema_json():
-    return {
-        "destinationId": "028fc82d-3a27-4fef-94a6-a22fbd45bac4",
-        "configuration": {
-            "database": "test_database",
-            "schema": "test_schema",
-        },
-    }
-
-
-def get_destination_without_database_and_schema_json():
-    return {"destinationId": "028fc82d-3a27-4fef-94a6-a22fbd45bac4", "configuration": {}}

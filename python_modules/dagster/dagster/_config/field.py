@@ -1,17 +1,17 @@
 from typing import Any, Optional, Union, cast, overload
 
-from dagster_shared.seven import is_subclass
-
 import dagster._check as check
 from dagster._annotations import public
 from dagster._builtins import BuiltinEnum
 from dagster._config import UserConfigSchema
-from dagster._config.config_type import Array, ConfigAnyInstance, ConfigType, ConfigTypeKind
-from dagster._config.field_utils import FIELD_NO_DEFAULT_PROVIDED, Map, all_optional_type
 from dagster._core.errors import DagsterInvalidConfigError, DagsterInvalidDefinitionError
 from dagster._serdes import serialize_value
+from dagster._seven import is_subclass
 from dagster._utils import is_enum_value
 from dagster._utils.typing_api import is_closed_python_optional_type, is_typing_type
+
+from .config_type import Array, ConfigAnyInstance, ConfigType, ConfigTypeKind
+from .field_utils import FIELD_NO_DEFAULT_PROVIDED, Map, all_optional_type
 
 
 def _is_config_type_class(obj) -> bool:
@@ -48,7 +48,7 @@ def resolve_to_config_type(obj: object) -> Union[ConfigType, bool]:
 
 
 def resolve_to_config_type(obj: object) -> Union[ConfigType, bool]:
-    from dagster._config.field_utils import convert_fields_to_dict_type
+    from .field_utils import convert_fields_to_dict_type
 
     # Short circuit if it's already a Config Type
     if isinstance(obj, ConfigType):
@@ -95,7 +95,7 @@ def resolve_to_config_type(obj: object) -> Union[ConfigType, bool]:
     if BuiltinEnum.contains(obj):
         return ConfigType.from_builtin_enum(obj)
 
-    from dagster._config.primitive_mapping import (
+    from .primitive_mapping import (
         is_supported_config_python_builtin,
         remap_python_builtin_for_config,
     )
@@ -268,8 +268,8 @@ class Field:
         is_required: Optional[bool] = None,
         description: Optional[str] = None,
     ):
-        from dagster._config.post_process import resolve_defaults
-        from dagster._config.validate import validate_config
+        from .post_process import resolve_defaults
+        from .validate import validate_config
 
         self.config_type = check.inst(self._resolve_config_arg(config), ConfigType)
 
@@ -289,21 +289,20 @@ class Field:
                 "required arguments should not specify default values",
             )
 
-        from dagster._config.field_utils import env_var_to_config_dict, is_dagster_env_var
-
-        if is_dagster_env_var(default_value):
-            default_value = env_var_to_config_dict(default_value)
-
         self._default_value = default_value
 
         # check explicit default value
         if self.default_provided:
             if self.config_type.kind == ConfigTypeKind.ENUM and is_enum_value(default_value):
                 raise DagsterInvalidDefinitionError(
-                    "You have passed into a python enum value as the default value "
-                    f"into of a config enum type {self.config_type.given_name}. You must pass in the underlying "
-                    "string represention as the default value. "
-                    f"One of {[ev.config_value for ev in self.config_type.enum_values]}."  # type: ignore
+                    (
+                        "You have passed into a python enum value as the default value "
+                        "into of a config enum type {name}. You must pass in the underlying "
+                        "string represention as the default value. One of {value_set}."
+                    ).format(
+                        value_set=[ev.config_value for ev in self.config_type.enum_values],
+                        name=self.config_type.given_name,
+                    )
                 )
 
             evr = validate_config(self.config_type, default_value)
@@ -382,4 +381,4 @@ class Field:
 
 
 def check_opt_field_param(obj: object, param_name: str) -> Optional[Field]:
-    return check.opt_inst_param(cast("Optional[Field]", obj), param_name, Field)
+    return check.opt_inst_param(cast(Optional[Field], obj), param_name, Field)

@@ -1,29 +1,40 @@
-import {Redirect, Switch} from 'react-router-dom';
+import * as React from 'react';
+import {Redirect, Route, Switch} from 'react-router-dom';
+
+import {InstanceBackfills} from '../instance/InstanceBackfills';
+import {BackfillPage} from '../instance/backfill/BackfillPage';
 
 import {OverviewActivityRoot} from './OverviewActivityRoot';
+import {OverviewJobsRoot} from './OverviewJobsRoot';
 import {OverviewResourcesRoot} from './OverviewResourcesRoot';
-import {Route} from '../app/Route';
-import {AutomaterializationRoot} from '../assets/auto-materialization/AutomaterializationRoot';
+import {OverviewSchedulesRoot} from './OverviewSchedulesRoot';
+import {OverviewSensorsRoot} from './OverviewSensorsRoot';
 
 export const OverviewRoot = () => {
   return (
     <Switch>
-      <Route path="/overview/activity" isNestingRoute>
+      <Route path="/overview/activity">
         <OverviewActivityRoot />
       </Route>
-      <Route path="/overview/jobs" render={() => <Redirect to="/jobs" />} />
-      <Route path="/overview/schedules" render={() => <Redirect to="/automation" />} />
-      <Route path="/overview/sensors" render={() => <Redirect to="/automation" />} />
-      <Route path="/overview/automation" render={() => <AutomaterializationRoot />} />
-      <Route
-        path="/overview/backfills"
-        exact
-        render={() => <Redirect to="/runs?view=backfills" />}
-      />
+      <Route path="/overview/jobs">
+        <OverviewJobsRoot />
+      </Route>
+      <Route path="/overview/schedules">
+        <OverviewSchedulesRoot />
+      </Route>
+      <Route path="/overview/sensors">
+        <OverviewSensorsRoot />
+      </Route>
+      <Route path="/overview/backfills/:backfillId">
+        <BackfillPage />
+      </Route>
+      <Route path="/overview/backfills" exact>
+        <InstanceBackfills />
+      </Route>
       <Route path="/overview/resources">
         <OverviewResourcesRoot />
       </Route>
-      <Route path="*" isNestingRoute render={() => <Redirect to="/overview/activity" />} />
+      <Route path="*" render={() => <Redirect to="/overview/activity" />} />
     </Switch>
   );
 };

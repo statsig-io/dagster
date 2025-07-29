@@ -4,12 +4,13 @@ from dagster._core.definitions.auto_materialize_policy import (
     AutoMaterializePolicy,
     AutoMaterializePolicyType,
 )
-from dagster._core.definitions.auto_materialize_rule_impls import (
+from dagster._core.definitions.auto_materialize_rule import (
     AutoMaterializeDecisionType,
+    AutoMaterializeRuleSnapshot,
     DiscardOnMaxMaterializationsExceededRule,
 )
 
-from dagster_graphql.schema.util import non_null_list
+from .util import non_null_list
 
 GrapheneAutoMaterializeDecisionType = graphene.Enum.from_enum(AutoMaterializeDecisionType)
 
@@ -22,12 +23,11 @@ class GrapheneAutoMaterializeRule(graphene.ObjectType):
     class Meta:
         name = "AutoMaterializeRule"
 
-    def __init__(self, description: str, decision_type: AutoMaterializeDecisionType):
+    def __init__(self, auto_materialize_rule_snapshot: AutoMaterializeRuleSnapshot):
         super().__init__(
-            decisionType=decision_type,
-            description=description,
-            # the class name just needs to be distinct for each rule, so we use the description
-            className=description,
+            decisionType=auto_materialize_rule_snapshot.decision_type,
+            description=auto_materialize_rule_snapshot.description,
+            className=auto_materialize_rule_snapshot.class_name,
         )
 
 
@@ -46,16 +46,15 @@ class GrapheneAutoMaterializePolicy(graphene.ObjectType):
         # for now, we don't represent the max materializations per minute rule as a proper
         # rule in the serialized AutoMaterializePolicy object, but do so in the GraphQL layer
         rules = [
-            GrapheneAutoMaterializeRule(rule.description, rule.decision_type)
+            GrapheneAutoMaterializeRule(rule.to_snapshot())
             for rule in auto_materialize_policy.rules
         ]
         if auto_materialize_policy.max_materializations_per_minute:
             rules.append(
                 GrapheneAutoMaterializeRule(
-                    description=DiscardOnMaxMaterializationsExceededRule(
+                    DiscardOnMaxMaterializationsExceededRule(
                         limit=auto_materialize_policy.max_materializations_per_minute
-                    ).description,
-                    decision_type=AutoMaterializeDecisionType.DISCARD,
+                    ).to_snapshot()
                 )
             )
         super().__init__(

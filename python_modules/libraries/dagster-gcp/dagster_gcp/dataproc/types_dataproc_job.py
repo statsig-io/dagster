@@ -7,22 +7,8 @@ parse_dataproc_configs.py \
 
 """
 
-from dagster import Enum, EnumValue
 
-State = Enum(
-    name="State",
-    enum_values=[
-        EnumValue("STATE_UNSPECIFIED", description="""Status is unspecified."""),
-        EnumValue("NEW", description="""Status is NEW."""),
-        EnumValue("NEW_SAVING", description="""Status is NEW_SAVING."""),
-        EnumValue("SUBMITTED", description="""Status is SUBMITTED."""),
-        EnumValue("ACCEPTED", description="""Status is ACCEPTED."""),
-        EnumValue("RUNNING", description="""Status is RUNNING."""),
-        EnumValue("FINISHED", description="""Status is FINISHED."""),
-        EnumValue("FAILED", description="""Status is FAILED."""),
-        EnumValue("KILLED", description="""Status is KILLED."""),
-    ],
-)
+from dagster import Enum, EnumValue
 
 Substate = Enum(
     name="Substate",
@@ -36,14 +22,29 @@ Substate = Enum(
         EnumValue(
             "QUEUED",
             description="""The Job has been received and is awaiting execution (it
-        might be waiting for a condition to be met). See the "details" field for the reason for the
+        may be waiting for a condition to be met). See the "details" field for the reason for the
         delay.Applies to RUNNING state.""",
         ),
         EnumValue(
             "STALE_STATUS",
-            description="""The agent-reported status is out of date, which can
-        be caused by a loss of communication between the agent and Dataproc. If the agent does not
-        send a timely update, the job will fail.Applies to RUNNING state.""",
+            description="""The agent-reported status is out of date, which may
+        be caused by a loss of communication between the agent and Cloud Dataproc. If the agent does
+        not send a timely update, the job will fail.Applies to RUNNING state.""",
         ),
+    ],
+)
+
+State = Enum(
+    name="State",
+    enum_values=[
+        EnumValue("STATE_UNSPECIFIED", description="""Status is unspecified."""),
+        EnumValue("NEW", description="""Status is NEW."""),
+        EnumValue("NEW_SAVING", description="""Status is NEW_SAVING."""),
+        EnumValue("SUBMITTED", description="""Status is SUBMITTED."""),
+        EnumValue("ACCEPTED", description="""Status is ACCEPTED."""),
+        EnumValue("RUNNING", description="""Status is RUNNING."""),
+        EnumValue("FINISHED", description="""Status is FINISHED."""),
+        EnumValue("FAILED", description="""Status is FAILED."""),
+        EnumValue("KILLED", description="""Status is KILLED."""),
     ],
 )

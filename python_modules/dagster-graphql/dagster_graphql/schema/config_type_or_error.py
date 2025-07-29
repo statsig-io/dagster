@@ -1,11 +1,11 @@
 import graphene
 
-from dagster_graphql.schema.config_types import (
+from .config_types import (
     GrapheneCompositeConfigType,
     GrapheneEnumConfigType,
     GrapheneRegularConfigType,
 )
-from dagster_graphql.schema.errors import (
+from .errors import (
     GrapheneConfigTypeNotFoundError,
     GraphenePipelineNotFoundError,
     GraphenePythonError,

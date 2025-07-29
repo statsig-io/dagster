@@ -1,4 +1,5 @@
 import {Box, Tabs, Tag} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {useRouteMatch} from 'react-router-dom';
 
 import {TabLink} from '../ui/TabLink';
@@ -10,11 +11,11 @@ const titles: {[key: string]: string} = {
   uses: 'Uses',
 };
 
-export const ResourceTabs = (props: {
+export const ResourceTabs: React.FC<{
   repoAddress: RepoAddress;
   resourceName: string;
   numUses: number;
-}) => {
+}> = (props) => {
   const {repoAddress, resourceName, numUses} = props;
 
   const match = useRouteMatch<{tab?: string; selector: string}>([

@@ -1,210 +1,106 @@
 // eslint-disable-next-line no-restricted-imports
-import {Button as BlueprintButton} from '@blueprintjs/core';
+import {AnchorButton as BlueprintAnchorButton, Button as BlueprintButton} from '@blueprintjs/core';
 import * as React from 'react';
 import styled from 'styled-components';
 
-import {BaseButton, BaseButtonProps, CommonButtonProps} from './BaseButton';
-import {Colors} from './Color';
+import {BaseButton} from './BaseButton';
+import {Colors} from './Colors';
 import {Spinner} from './Spinner';
 import {StyledButton, StyledButtonText} from './StyledButton';
 
 type BlueprintIntent = React.ComponentProps<typeof BlueprintButton>['intent'];
 type BlueprintOutlined = React.ComponentProps<typeof BlueprintButton>['outlined'];
 
-// Outlined buttons
-
-export const outlinedIntentToFillColor = () => {
-  return 'transparent';
-};
-
-export const outlinedIntentToFillColorHover = (intent: BlueprintIntent) => {
-  switch (intent) {
-    case 'danger':
-      return Colors.backgroundRed();
-    case 'success':
-      return Colors.backgroundGreen();
-    case 'warning':
-      return Colors.backgroundYellow();
-    case 'primary':
-    case 'none':
-    default:
-      return Colors.backgroundGray();
+export const intentToFillColor = (intent: BlueprintIntent, outlined: BlueprintOutlined) => {
+  if (outlined) {
+    return 'transparent';
   }
-};
-
-export const outlinedIntentToStrokeColor = (intent: BlueprintIntent) => {
   switch (intent) {
+    case 'primary':
+      return Colors.Gray900;
     case 'danger':
-      return Colors.accentRed();
+      return Colors.Red500;
     case 'success':
-      return Colors.accentGreen();
+      return Colors.Green500;
     case 'warning':
-      return Colors.accentYellow();
+      return Colors.Yellow500;
     case 'none':
+      return Colors.White;
+    default:
       return 'transparent';
-    case 'primary':
-    default:
-      return Colors.borderDefault();
   }
 };
 
-export const outlinedIntentToStrokeColorHover = (intent: BlueprintIntent) => {
-  switch (intent) {
-    case 'danger':
-      return Colors.accentRedHover();
-    case 'success':
-      return Colors.accentGreenHover();
-    case 'warning':
-      return Colors.accentYellowHover();
-    case 'none':
-      return 'transparent';
-    case 'primary':
-    default:
-      return Colors.borderHover();
+export const intentToTextColor = (intent: BlueprintIntent, outlined: BlueprintOutlined) => {
+  if (outlined) {
+    switch (intent) {
+      case 'primary':
+        return Colors.Gray900;
+      case 'danger':
+        return Colors.Red500;
+      case 'success':
+        return Colors.Green500;
+      case 'warning':
+        return Colors.Yellow500;
+      case 'none':
+      default:
+        return Colors.Dark;
+    }
   }
+  return !intent || intent === 'none' ? Colors.Dark : Colors.White;
 };
 
-export const outlinedIntentToTextColor = (intent: BlueprintIntent) => {
-  switch (intent) {
-    case 'danger':
-      return Colors.accentRed();
-    case 'success':
-      return Colors.accentGreen();
-    case 'warning':
-      return Colors.accentYellow();
-    case 'primary':
-    case 'none':
-    default:
-      return Colors.accentPrimary();
-  }
-};
-
-export const outlinedIntentToIconColor = (intent: BlueprintIntent) => {
-  switch (intent) {
-    case 'danger':
-      return Colors.accentRed();
-    case 'success':
-      return Colors.accentGreen();
-    case 'warning':
-      return Colors.accentYellow();
-    case 'primary':
-    case 'none':
-    default:
-      return Colors.accentPrimary();
-  }
-};
-
-export const outlinedIntentToSpinnerColor = (intent: BlueprintIntent) => {
-  switch (intent) {
-    case 'primary':
-      return Colors.borderDefault();
-    case 'danger':
-      return Colors.accentRed();
-    case 'success':
-      return Colors.accentGreen();
-    case 'warning':
-      return Colors.accentYellow();
-    case 'primary':
-    case 'none':
-    default:
-      return Colors.accentGray();
-  }
-};
-
-// Filled buttons
-
-export const intentToStrokeColor = (intent: BlueprintIntent) => {
-  if (intent === undefined) {
-    return Colors.borderDefault();
+export const intentToStrokeColor = (intent: BlueprintIntent, outlined: BlueprintOutlined) => {
+  if (!intent || intent === 'none' || outlined) {
+    switch (intent) {
+      case 'primary':
+        return Colors.Gray900;
+      case 'danger':
+        return Colors.Red500;
+      case 'success':
+        return Colors.Green500;
+      case 'warning':
+        return Colors.Yellow500;
+      case 'none':
+      default:
+        return Colors.Gray300;
+    }
   }
   return 'transparent';
 };
 
-export const intentToFillColor = (intent: BlueprintIntent) => {
-  switch (intent) {
-    case 'primary':
-      return Colors.accentPrimary();
-    case 'danger':
-      return Colors.accentRed();
-    case 'success':
-      return Colors.accentGreen();
-    case 'warning':
-      return Colors.accentYellow();
-    case 'none':
-    default:
-      return 'transparent';
+export const intentToSpinnerColor = (intent: BlueprintIntent, outlined: BlueprintOutlined) => {
+  if (outlined) {
+    switch (intent) {
+      case 'primary':
+        return Colors.Gray600;
+      case 'danger':
+        return Colors.Red500;
+      case 'success':
+        return Colors.Green500;
+      case 'warning':
+        return Colors.Yellow500;
+      case 'none':
+      default:
+        return Colors.Gray600;
+    }
   }
-};
-
-export const intentToFillColorHover = (intent: BlueprintIntent) => {
-  switch (intent) {
-    case 'primary':
-      return Colors.accentPrimaryHover();
-    case 'danger':
-      return Colors.accentRedHover();
-    case 'success':
-      return Colors.accentGreenHover();
-    case 'warning':
-      return Colors.accentYellowHover();
-    case 'none':
-    default:
-      return Colors.backgroundLightHover();
-  }
-};
-
-export const intentToTextAndIconColor = (intent: BlueprintIntent) => {
-  if (!intent || intent === 'none') {
-    return Colors.accentPrimary();
-  }
-  if (intent === 'primary') {
-    return Colors.accentReversed();
-  }
-  return Colors.alwaysWhite();
-};
-
-export const buildColorSet = (config: {intent?: BlueprintIntent; outlined: BlueprintOutlined}) => {
-  const {intent, outlined} = config;
-  const fillColor = outlined ? outlinedIntentToFillColor() : intentToFillColor(intent);
-  const fillColorHover = outlined
-    ? outlinedIntentToFillColorHover(intent)
-    : intentToFillColorHover(intent);
-  const textColor = outlined ? outlinedIntentToTextColor(intent) : intentToTextAndIconColor(intent);
-  const iconColor = outlined ? outlinedIntentToIconColor(intent) : intentToTextAndIconColor(intent);
-  const strokeColor = outlined ? outlinedIntentToStrokeColor(intent) : intentToStrokeColor(intent);
-  const strokeColorHover = outlined
-    ? outlinedIntentToStrokeColorHover(intent)
-    : intentToStrokeColor(intent);
-
-  return {
-    fillColor,
-    fillColorHover,
-    textColor,
-    iconColor,
-    strokeColor,
-    strokeColorHover,
-  };
-};
-
-type ButtonProps = BaseButtonProps & {
-  intent?: BlueprintIntent;
-  outlined?: BlueprintOutlined;
+  return !intent || intent === 'none' ? Colors.Gray600 : Colors.White;
 };
 
 export const Button = React.forwardRef(
-  (props: ButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
+  (
+    props: React.ComponentProps<typeof BlueprintButton>,
+    ref: React.ForwardedRef<HTMLButtonElement>,
+  ) => {
     const {children, icon, intent, loading, outlined, rightIcon, ...rest} = props;
 
     let iconOrSpinner = icon;
 
     if (loading) {
-      const spinnerColor = outlined
-        ? outlinedIntentToSpinnerColor(intent)
-        : intentToTextAndIconColor(intent);
+      const spinnerColor = intentToSpinnerColor(intent, outlined);
       iconOrSpinner = <Spinner purpose="body-text" fillColor={spinnerColor} />;
     }
-
-    const {fillColor, fillColorHover, textColor, iconColor, strokeColor, strokeColorHover} =
-      React.useMemo(() => buildColorSet({intent, outlined}), [intent, outlined]);
 
     return (
       <BaseButton
@@ -212,12 +108,9 @@ export const Button = React.forwardRef(
         icon={iconOrSpinner}
         rightIcon={rightIcon}
         loading={loading}
-        fillColor={fillColor}
-        fillColorHover={fillColorHover}
-        textColor={textColor}
-        iconColor={iconColor}
-        strokeColor={strokeColor}
-        strokeColorHover={strokeColorHover}
+        fillColor={intentToFillColor(intent, outlined)}
+        textColor={intentToTextColor(intent, outlined)}
+        strokeColor={intentToStrokeColor(intent, outlined)}
         label={children}
         ref={ref}
       />
@@ -236,45 +129,29 @@ export const JoinedButtons = styled.div`
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
   }
-
   ${StyledButton}:not(:first-child),
   & > *:not(:first-child) ${StyledButton} {
-    margin-left: -1px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
-  }
-
-  ${StyledButton}:focus-visible {
-    z-index: 1;
-    position: relative;
+    margin-left: -1px;
   }
 `;
 
-export type ExternalAnchorButtonProps = CommonButtonProps &
-  React.ComponentPropsWithRef<'a'> & {
-    intent?: BlueprintIntent;
-    outlined?: BlueprintOutlined;
-  };
-
 export const ExternalAnchorButton = React.forwardRef(
-  (props: ExternalAnchorButtonProps, ref: React.ForwardedRef<HTMLAnchorElement>) => {
+  (
+    props: Omit<React.ComponentProps<typeof BlueprintAnchorButton>, 'loading'>,
+    ref: React.ForwardedRef<HTMLAnchorElement>,
+  ) => {
     const {children, icon, intent, outlined, rightIcon, ...rest} = props;
-
-    const {fillColor, fillColorHover, textColor, iconColor, strokeColor, strokeColorHover} =
-      React.useMemo(() => buildColorSet({intent, outlined}), [intent, outlined]);
-
     return (
       <StyledButton
         {...rest}
         as="a"
         target="_blank"
         rel="noreferrer nofollow"
-        $fillColor={fillColor}
-        $fillColorHover={fillColorHover}
-        $strokeColor={strokeColor}
-        $strokeColorHover={strokeColorHover}
-        $textColor={textColor}
-        $iconColor={iconColor}
+        $fillColor={intentToFillColor(intent, outlined)}
+        $strokeColor={intentToStrokeColor(intent, outlined)}
+        $textColor={intentToTextColor(intent, outlined)}
         ref={ref}
       >
         {icon || null}

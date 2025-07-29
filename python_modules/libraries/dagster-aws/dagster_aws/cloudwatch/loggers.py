@@ -1,17 +1,15 @@
 import datetime
 import logging
-from typing import Optional
 
 import boto3
 from dagster import (
     Field,
     StringSource,
     _check as check,
+    _seven,
     logger,
 )
-from dagster._annotations import deprecated
 from dagster._core.utils import coerce_valid_log_level
-from dagster_shared import seven
 
 # The maximum batch size is 1,048,576 bytes, and this size is calculated as the sum of all event
 # messages in UTF-8, plus 26 bytes for each log event.
@@ -30,29 +28,20 @@ def millisecond_timestamp(dt):
     return int(microsecond_timestamp / 1000)
 
 
-@deprecated(breaking_version="0.27", additional_warn_text="Use `PipesCloudWatchLogReader` instead.")
 class CloudwatchLogsHandler(logging.Handler):
     def __init__(
         self,
         log_group_name,
         log_stream_name,
         aws_region=None,
-        aws_access_key_id: Optional[str] = None,
-        aws_secret_access_key: Optional[str] = None,
-        endpoint_url: Optional[str] = None,
-        use_ssl: bool = True,
-        aws_session_token: Optional[str] = None,
-        verify: Optional[bool] = None,
+        aws_secret_access_key=None,
+        aws_access_key_id=None,
     ):
         self.client = boto3.client(
             "logs",
             region_name=aws_region,
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
-            endpoint_url=endpoint_url,
-            use_ssl=use_ssl,
-            aws_session_token=aws_session_token,
-            verify=verify,
         )
         self.log_group_name = check.str_param(log_group_name, "log_group_name")
         # Maybe we should make this optional, and default to the run_id
@@ -64,7 +53,7 @@ class CloudwatchLogsHandler(logging.Handler):
         self.check_log_group()
         self.check_log_stream()
 
-        super().__init__()
+        super(CloudwatchLogsHandler, self).__init__()
 
     def check_log_group(self):
         # Check that log group exists
@@ -122,7 +111,7 @@ class CloudwatchLogsHandler(logging.Handler):
     def log_error(self, record, exc):
         logging.critical("Error while logging!")
         try:
-            logging.error(f"Attempted to log: {seven.json.dumps(record.__dict__)}")
+            logging.error(f"Attempted to log: {_seven.json.dumps(record.__dict__)}")
         except Exception:
             pass
         logging.exception(str(exc))
@@ -134,7 +123,7 @@ class CloudwatchLogsHandler(logging.Handler):
         self._emit(record, retry=True)
 
     def _emit(self, record, retry=False):
-        message = seven.json.dumps(record.__dict__)
+        message = _seven.json.dumps(record.__dict__)
         timestamp = millisecond_timestamp(
             datetime.datetime.strptime(record.dagster_meta["log_timestamp"], "%Y-%m-%dT%H:%M:%S.%f")
         )
@@ -202,7 +191,6 @@ class CloudwatchLogsHandler(logging.Handler):
     },
     description="The default colored console logger.",
 )
-@deprecated(breaking_version="0.27", additional_warn_text="Use `PipesCloudWatchLogReader` instead.")
 def cloudwatch_logger(init_context):
     """This logger provides support for sending Dagster logs to AWS CloudWatch.
 

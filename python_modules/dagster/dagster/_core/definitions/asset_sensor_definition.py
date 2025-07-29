@@ -1,23 +1,22 @@
 import inspect
-from collections.abc import Mapping, Sequence
-from typing import Any, Callable, NamedTuple, Optional
+from typing import Any, Callable, NamedTuple, Optional, Sequence, Set
 
 import dagster._check as check
 from dagster._annotations import public
 from dagster._core.decorator_utils import get_function_params
-from dagster._core.definitions.events import AssetKey
-from dagster._core.definitions.metadata import RawMetadataMapping
 from dagster._core.definitions.resource_annotation import get_resource_args
-from dagster._core.definitions.run_request import RunRequest, SkipReason
-from dagster._core.definitions.sensor_definition import (
+
+from .events import AssetKey
+from .run_request import RunRequest, SkipReason
+from .sensor_definition import (
     DefaultSensorStatus,
+    RawSensorEvaluationFunctionReturn,
     SensorDefinition,
-    SensorReturnTypesUnion,
     SensorType,
     validate_and_get_resource_dict,
 )
-from dagster._core.definitions.target import ExecutableDefinition
-from dagster._core.definitions.utils import check_valid_name
+from .target import ExecutableDefinition
+from .utils import check_valid_name
 
 
 class AssetSensorParamNames(NamedTuple):
@@ -25,7 +24,7 @@ class AssetSensorParamNames(NamedTuple):
     event_log_entry_param_name: Optional[str]
 
 
-def get_asset_sensor_param_names(fn: Callable[..., Any]) -> AssetSensorParamNames:
+def get_asset_sensor_param_names(fn: Callable) -> AssetSensorParamNames:
     """Determines the names of the context and event log entry parameters for an asset sensor function.
     These are assumed to be the first two non-resource params, in order (context param before event log entry).
     """
@@ -66,11 +65,7 @@ class AssetSensorDefinition(SensorDefinition):
         job (Optional[Union[GraphDefinition, JobDefinition, UnresolvedAssetJobDefinition]]): The job
             object to target with this sensor.
         jobs (Optional[Sequence[Union[GraphDefinition, JobDefinition, UnresolvedAssetJobDefinition]]]):
-            A list of jobs to be executed when the sensor fires.
-        tags (Optional[Mapping[str, str]]): A set of key-value tags that annotate the sensor and can
-            be used for searching and filtering in the UI.
-        metadata (Optional[Mapping[str, object]]): A set of metadata entries that annotate the
-            sensor. Values will be normalized to typed `MetadataValue` objects.
+            (experimental) A list of jobs to be executed when the sensor fires.
         default_status (DefaultSensorStatus): Whether the sensor starts as running or not. The default
             status can be overridden from the Dagster UI or via the GraphQL API.
     """
@@ -82,22 +77,21 @@ class AssetSensorDefinition(SensorDefinition):
         job_name: Optional[str],
         asset_materialization_fn: Callable[
             ...,
-            SensorReturnTypesUnion,
+            RawSensorEvaluationFunctionReturn,
         ],
         minimum_interval_seconds: Optional[int] = None,
         description: Optional[str] = None,
         job: Optional[ExecutableDefinition] = None,
         jobs: Optional[Sequence[ExecutableDefinition]] = None,
         default_status: DefaultSensorStatus = DefaultSensorStatus.STOPPED,
-        required_resource_keys: Optional[set[str]] = None,
-        tags: Optional[Mapping[str, str]] = None,
-        metadata: Optional[RawMetadataMapping] = None,
+        required_resource_keys: Optional[Set[str]] = None,
     ):
         self._asset_key = check.inst_param(asset_key, "asset_key", AssetKey)
 
-        from dagster._core.event_api import AssetRecordsFilter
+        from dagster._core.events import DagsterEventType
+        from dagster._core.storage.event_log.base import EventRecordsFilter
 
-        resource_arg_names: set[str] = {
+        resource_arg_names: Set[str] = {
             arg.name for arg in get_resource_args(asset_materialization_fn)
         }
 
@@ -115,14 +109,15 @@ class AssetSensorDefinition(SensorDefinition):
                     except ValueError:
                         after_cursor = None
 
-                event_records = context.instance.fetch_materializations(
-                    AssetRecordsFilter(
+                event_records = context.instance.get_event_records(
+                    EventRecordsFilter(
+                        event_type=DagsterEventType.ASSET_MATERIALIZATION,
                         asset_key=self._asset_key,
-                        after_storage_id=after_cursor,
+                        after_cursor=after_cursor,
                     ),
                     ascending=False,
                     limit=1,
-                ).records
+                )
 
                 if not event_records:
                     yield SkipReason(
@@ -151,14 +146,15 @@ class AssetSensorDefinition(SensorDefinition):
 
                 result = materialization_fn(**args)
                 if inspect.isgenerator(result) or isinstance(result, list):
-                    yield from result
+                    for item in result:
+                        yield item
                 elif isinstance(result, (SkipReason, RunRequest)):
                     yield result
                 context.update_cursor(str(event_record.storage_id))
 
             return _fn
 
-        super().__init__(
+        super(AssetSensorDefinition, self).__init__(
             name=check_valid_name(name),
             job_name=job_name,
             evaluation_fn=_wrap_asset_fn(
@@ -170,8 +166,6 @@ class AssetSensorDefinition(SensorDefinition):
             jobs=jobs,
             default_status=default_status,
             required_resource_keys=combined_required_resource_keys,
-            tags=tags,
-            metadata=metadata,
         )
 
     @public

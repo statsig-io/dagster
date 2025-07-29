@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
-from typing import Optional
+from typing import Mapping, Optional
 
 from dagster._core.instance import MayHaveInstanceWeakref, T_DagsterInstance
 

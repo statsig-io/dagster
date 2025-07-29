@@ -13,7 +13,7 @@ from dagster import (
     resource,
 )
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
-from dagster._core.definitions.step_launcher import StepLauncher, _step_launcher_supersession
+from dagster._core.definitions.step_launcher import StepLauncher
 from dagster._core.errors import DagsterInvariantViolationError, raise_execution_interrupts
 from dagster._core.execution.plan.external_step import (
     PICKLED_EVENTS_FILE_NAME,
@@ -147,7 +147,6 @@ CODE_ZIP_NAME = "code.zip"
         ),
     }
 )
-@_step_launcher_supersession
 def emr_pyspark_step_launcher(context):
     # Resolve legacy arguments
     if context.resource_config.get("local_job_package_path") and context.resource_config.get(
@@ -217,7 +216,6 @@ emr_pyspark_step_launcher.__doc__ = "\n".join(
 )
 
 
-@_step_launcher_supersession
 class EmrPySparkStepLauncher(StepLauncher):
     def __init__(
         self,
@@ -332,7 +330,8 @@ class EmrPySparkStepLauncher(StepLauncher):
     def wait_for_completion_and_log(self, run_id, step_key, emr_step_id, step_context):
         s3 = boto3.resource("s3", region_name=self.region_name)
         try:
-            yield from self.wait_for_completion(step_context, s3, run_id, step_key, emr_step_id)
+            for event in self.wait_for_completion(step_context, s3, run_id, step_key, emr_step_id):
+                yield event
         except EmrError as emr_error:
             if self.wait_for_logs:
                 self._log_logs_from_s3(step_context.log, emr_step_id)
@@ -346,7 +345,7 @@ class EmrPySparkStepLauncher(StepLauncher):
     ):
         """We want to wait for the EMR steps to complete, and while that's happening, we want to
         yield any events that have been written to S3 for us by the remote process.
-        After the EMR steps complete, we want a final chance to fetch events before finishing
+        After the the EMR steps complete, we want a final chance to fetch events before finishing
         the step.
         """
         done = False
@@ -363,13 +362,13 @@ class EmrPySparkStepLauncher(StepLauncher):
 
                 all_events_new = self.read_events(s3, run_id, step_key)
 
-            if len(all_events_new) > len(all_events):  # pyright: ignore[reportArgumentType]
-                for i in range(len(all_events), len(all_events_new)):  # pyright: ignore[reportArgumentType]
-                    event = all_events_new[i]  # pyright: ignore[reportOptionalSubscript,reportArgumentType,reportIndexIssue]
+            if len(all_events_new) > len(all_events):
+                for i in range(len(all_events), len(all_events_new)):
+                    event = all_events_new[i]
                     # write each event from the EMR instance to the local instance
                     step_context.instance.handle_new_event(event)
-                    if event.is_dagster_event:  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-                        yield event.dagster_event  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+                    if event.is_dagster_event:
+                        yield event.dagster_event
                 all_events = all_events_new
 
     def read_events(self, s3, run_id, step_key):
@@ -382,7 +381,7 @@ class EmrPySparkStepLauncher(StepLauncher):
             return deserialize_value(pickle.loads(events_data))
         except ClientError as ex:
             # The file might not be there yet, which is fine
-            if ex.response["Error"]["Code"] == "NoSuchKey":  # pyright: ignore[reportTypedDictNotRequiredAccess]
+            if ex.response["Error"]["Code"] == "NoSuchKey":
                 return []
             else:
                 raise ex
@@ -428,9 +427,10 @@ class EmrPySparkStepLauncher(StepLauncher):
         check.invariant(
             conf.get("spark.master", "yarn") == "yarn",
             desc=(
-                "spark.master is configured as {}; cannot set Spark master on EMR to anything "
+                "spark.master is configured as %s; cannot set Spark master on EMR to anything "
                 'other than "yarn"'
-            ).format(conf.get("spark.master")),
+            )
+            % conf.get("spark.master"),
         )
 
         command = (
@@ -452,7 +452,7 @@ class EmrPySparkStepLauncher(StepLauncher):
         )
 
         return EmrJobRunner.construct_step_dict_for_command(
-            f"Execute Solid/Op {solid_name}", command, action_on_failure=action_on_failure
+            "Execute Solid/Op %s" % solid_name, command, action_on_failure=action_on_failure
         )
 
     def _main_file_name(self):

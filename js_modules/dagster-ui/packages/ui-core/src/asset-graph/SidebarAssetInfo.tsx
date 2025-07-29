@@ -1,78 +1,66 @@
+import {gql, useQuery} from '@apollo/client';
 import {Box, Colors, ConfigTypeSchema, Icon, Spinner} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
-import {AddToFavoritesButton} from 'shared/asset-graph/AddToFavoritesButton.oss';
+import styled from 'styled-components';
 
-import {AutomationConditionEvaluationLink} from './AssetNode2025';
-import {GraphNode, displayNameForAssetKey, nodeDependsOnSelf, stepKeyForAsset} from './Utils';
-import {gql, useQuery} from '../apollo-client';
-import {SidebarAssetQuery, SidebarAssetQueryVariables} from './types/SidebarAssetInfo.types';
 import {COMMON_COLLATOR} from '../app/Util';
-import {useAssetAutomationData} from '../asset-data/AssetAutomationDataProvider';
-import {useAssetLiveData} from '../asset-data/AssetLiveDataProvider';
 import {ASSET_NODE_CONFIG_FRAGMENT} from '../assets/AssetConfig';
 import {AssetDefinedInMultipleReposNotice} from '../assets/AssetDefinedInMultipleReposNotice';
 import {
-  ASSET_NODE_OP_METADATA_FRAGMENT,
   AssetMetadataTable,
+  ASSET_NODE_OP_METADATA_FRAGMENT,
   metadataForAssetNode,
 } from '../assets/AssetMetadata';
 import {AssetSidebarActivitySummary} from '../assets/AssetSidebarActivitySummary';
-import {EvaluationUserLabel} from '../assets/AutoMaterializePolicyPage/EvaluationConditionalLabel';
 import {DependsOnSelfBanner} from '../assets/DependsOnSelfBanner';
 import {PartitionHealthSummary} from '../assets/PartitionHealthSummary';
 import {UnderlyingOpsOrGraph} from '../assets/UnderlyingOpsOrGraph';
 import {Version} from '../assets/Version';
-import {
-  EXECUTE_CHECKS_BUTTON_ASSET_NODE_FRAGMENT,
-  EXECUTE_CHECKS_BUTTON_CHECK_FRAGMENT,
-} from '../assets/asset-checks/ExecuteChecksButton';
+import {EXECUTE_CHECKS_BUTTON_ASSET_NODE_FRAGMENT} from '../assets/asset-checks/ExecuteChecksButton';
 import {assetDetailsPathForKey} from '../assets/assetDetailsPathForKey';
-import {AttributeAndValue} from '../assets/overview/Common';
 import {
   healthRefreshHintFromLiveData,
   usePartitionHealthData,
 } from '../assets/usePartitionHealthData';
-import {useRecentAssetEvents} from '../assets/useRecentAssetEvents';
 import {DagsterTypeSummary} from '../dagstertype/DagsterType';
 import {DagsterTypeFragment} from '../dagstertype/types/DagsterType.types';
-import {AssetEventHistoryEventTypeSelector} from '../graphql/types';
-import {METADATA_ENTRY_FRAGMENT} from '../metadata/MetadataEntryFragment';
-import {TableSchemaAssetContext} from '../metadata/TableSchema';
-import {ScheduleOrSensorTag} from '../nav/ScheduleOrSensorTag';
+import {METADATA_ENTRY_FRAGMENT} from '../metadata/MetadataEntry';
 import {Description} from '../pipelines/Description';
 import {SidebarSection, SidebarTitle} from '../pipelines/SidebarComponents';
 import {ResourceContainer, ResourceHeader} from '../pipelines/SidebarOpHelpers';
 import {pluginForMetadata} from '../plugins';
-import {AnchorButton} from '../ui/AnchorButton';
-import {WorkspaceAssetFragment} from '../workspace/WorkspaceContext/types/WorkspaceQueries.types';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
-export const SidebarAssetInfo = ({graphNode}: {graphNode: GraphNode}) => {
+import {
+  LiveDataForNode,
+  displayNameForAssetKey,
+  GraphNode,
+  nodeDependsOnSelf,
+  stepKeyForAsset,
+} from './Utils';
+import {SidebarAssetQuery, SidebarAssetQueryVariables} from './types/SidebarAssetInfo.types';
+import {AssetNodeForGraphQueryFragment} from './types/useAssetGraphData.types';
+
+export const SidebarAssetInfo: React.FC<{
+  graphNode: GraphNode;
+  liveData?: LiveDataForNode;
+}> = ({graphNode, liveData}) => {
   const {assetKey, definition} = graphNode;
-  const {liveData} = useAssetLiveData(assetKey, 'sidebar');
-  const {liveData: liveAutomationData} = useAssetAutomationData(assetKey, 'sidebar');
   const partitionHealthRefreshHint = healthRefreshHintFromLiveData(liveData);
   const partitionHealthData = usePartitionHealthData(
     [assetKey],
     partitionHealthRefreshHint,
     'background',
   );
-  const queryResult = useQuery<SidebarAssetQuery, SidebarAssetQueryVariables>(SIDEBAR_ASSET_QUERY, {
+  const {data} = useQuery<SidebarAssetQuery, SidebarAssetQueryVariables>(SIDEBAR_ASSET_QUERY, {
     variables: {assetKey: {path: assetKey.path}},
   });
-  const {data} = queryResult;
 
   const {lastMaterialization} = liveData || {};
   const asset = data?.assetNodeOrError.__typename === 'AssetNode' ? data.assetNodeOrError : null;
-
-  const recentEvents = useRecentAssetEvents(asset?.assetKey, 1, [
-    definition.isObservable
-      ? AssetEventHistoryEventTypeSelector.OBSERVATION
-      : AssetEventHistoryEventTypeSelector.MATERIALIZATION,
-  ]);
-
   if (!asset) {
     return (
       <>
@@ -90,15 +78,6 @@ export const SidebarAssetInfo = ({graphNode}: {graphNode: GraphNode}) => {
   const assetConfigSchema = asset.configField?.configType;
 
   const OpMetadataPlugin = asset.op?.metadata && pluginForMetadata(asset.op.metadata);
-  const hasAutomationCondition = !!liveAutomationData?.automationCondition;
-  const sensors = liveAutomationData?.targetingInstigators.filter(
-    (instigator) => instigator.__typename === 'Sensor',
-  );
-  const hasSensors = !!sensors?.length;
-  const schedules = liveAutomationData?.targetingInstigators.filter(
-    (instigator) => instigator.__typename === 'Schedule',
-  );
-  const hasSchedules = !!schedules?.length;
 
   return (
     <>
@@ -126,51 +105,15 @@ export const SidebarAssetInfo = ({graphNode}: {graphNode: GraphNode}) => {
       <AssetSidebarActivitySummary
         asset={asset}
         assetLastMaterializedAt={lastMaterialization?.timestamp}
-        recentEvents={recentEvents}
-        isObservable={definition.isObservable}
+        isSourceAsset={definition.isSource}
         stepKey={stepKeyForAsset(definition)}
         liveData={liveData}
       />
 
-      <div style={{borderBottom: `2px solid ${Colors.borderDefault()}`}} />
+      <div style={{borderBottom: `2px solid ${Colors.Gray300}`}} />
 
-      {nodeDependsOnSelf(graphNode) && (
-        <Box padding={{vertical: 16, left: 24, right: 12}} border="bottom">
-          <DependsOnSelfBanner />
-        </Box>
-      )}
+      {nodeDependsOnSelf(graphNode) && <DependsOnSelfBanner />}
 
-      <SidebarSection title="Automation">
-        <Box padding={{vertical: 16, horizontal: 24}} flex={{gap: 16, direction: 'column'}}>
-          {hasSchedules ? (
-            <AttributeAndValue label="Schedules">
-              <ScheduleOrSensorTag
-                repoAddress={repoAddress}
-                schedules={schedules}
-                showSwitch={false}
-              />
-            </AttributeAndValue>
-          ) : null}
-          {hasSensors ? (
-            <AttributeAndValue label="Sensors">
-              <ScheduleOrSensorTag repoAddress={repoAddress} sensors={sensors} showSwitch={false} />
-            </AttributeAndValue>
-          ) : null}
-          {hasAutomationCondition ? (
-            <AttributeAndValue label="Automation condition">
-              <AutomationConditionEvaluationLink
-                definition={definition}
-                automationData={liveAutomationData}
-              >
-                <EvaluationUserLabel
-                  userLabel={liveAutomationData.automationCondition?.label ?? 'condition'}
-                  expandedLabel={liveAutomationData.automationCondition?.expandedLabel ?? []}
-                />
-              </AutomationConditionEvaluationLink>
-            </AttributeAndValue>
-          ) : null}
-        </Box>
-      </SidebarSection>
       {asset.opVersion && (
         <SidebarSection title="Code Version">
           <Box padding={{vertical: 16, horizontal: 24}}>
@@ -197,7 +140,7 @@ export const SidebarAssetInfo = ({graphNode}: {graphNode: GraphNode}) => {
               .sort((a, b) => COMMON_COLLATOR.compare(a.resourceKey, b.resourceKey))
               .map((resource) => (
                 <ResourceContainer key={resource.resourceKey}>
-                  <Icon name="resource" color={Colors.accentGray()} />
+                  <Icon name="resource" color={Colors.Gray700} />
                   {repoAddress ? (
                     <Link
                       to={workspacePathFromAddress(
@@ -218,32 +161,17 @@ export const SidebarAssetInfo = ({graphNode}: {graphNode: GraphNode}) => {
 
       {assetMetadata.length > 0 && (
         <SidebarSection title="Metadata">
-          <TableSchemaAssetContext.Provider
-            value={{
-              assetKey,
-              materializationMetadataEntries: recentEvents.events[0]?.metadataEntries,
-              definitionMetadataEntries: assetMetadata,
-            }}
-          >
-            <AssetMetadataTable
-              assetMetadata={assetMetadata}
-              repoLocation={repoAddress?.location}
-            />
-          </TableSchemaAssetContext.Provider>
+          <AssetMetadataTable assetMetadata={assetMetadata} repoLocation={repoAddress?.location} />
         </SidebarSection>
       )}
 
       {assetType && <TypeSidebarSection assetType={assetType} />}
 
-      {asset.partitionDefinition && definition.isMaterializable && (
+      {asset.partitionDefinition && !definition.isSource && (
         <SidebarSection title="Partitions">
           <Box padding={{vertical: 16, horizontal: 24}} flex={{direction: 'column', gap: 16}}>
             <p>{asset.partitionDefinition.description}</p>
-            <PartitionHealthSummary
-              assetKey={asset.assetKey}
-              partitionStats={liveData?.partitionStats}
-              data={partitionHealthData}
-            />
+            <PartitionHealthSummary assetKey={asset.assetKey} data={partitionHealthData} />
           </Box>
         </SidebarSection>
       )}
@@ -251,7 +179,9 @@ export const SidebarAssetInfo = ({graphNode}: {graphNode: GraphNode}) => {
   );
 };
 
-const TypeSidebarSection = ({assetType}: {assetType: DagsterTypeFragment}) => {
+const TypeSidebarSection: React.FC<{
+  assetType: DagsterTypeFragment;
+}> = ({assetType}) => {
   return (
     <SidebarSection title="Type">
       <DagsterTypeSummary type={assetType} />
@@ -259,13 +189,11 @@ const TypeSidebarSection = ({assetType}: {assetType: DagsterTypeFragment}) => {
   );
 };
 
-interface HeaderProps {
-  assetNode: WorkspaceAssetFragment;
+const Header: React.FC<{
+  assetNode: AssetNodeForGraphQueryFragment;
   opName?: string;
   repoAddress?: RepoAddress | null;
-}
-
-const Header = ({assetNode, repoAddress}: HeaderProps) => {
+}> = ({assetNode, repoAddress}) => {
   const displayName = displayNameForAssetKey(assetNode.assetKey);
 
   return (
@@ -281,15 +209,11 @@ const Header = ({assetNode, repoAddress}: HeaderProps) => {
         <Box>{displayName}</Box>
       </SidebarTitle>
       <Box flex={{direction: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
-        <Box flex={{direction: 'row', gap: 4}}>
-          <AnchorButton
-            to={assetDetailsPathForKey(assetNode.assetKey)}
-            icon={<Icon name="open_in_new" color={Colors.linkDefault()} />}
-          >
-            {'View in Asset Catalog '}
-          </AnchorButton>
-          <AddToFavoritesButton assetKey={assetNode.assetKey} />
-        </Box>
+        <AssetCatalogLink to={assetDetailsPathForKey(assetNode.assetKey)}>
+          {'View in Asset Catalog '}
+          <Icon name="open_in_new" color={Colors.Link} />
+        </AssetCatalogLink>
+
         {repoAddress && (
           <UnderlyingOpsOrGraph assetNode={assetNode} repoAddress={repoAddress} minimal />
         )}
@@ -297,6 +221,14 @@ const Header = ({assetNode, repoAddress}: HeaderProps) => {
     </Box>
   );
 };
+const AssetCatalogLink = styled(Link)`
+  display: flex;
+  gap: 5px;
+  padding: 6px;
+  margin: -6px;
+  align-items: center;
+  white-space: nowrap;
+`;
 
 const SIDEBAR_ASSET_FRAGMENT = gql`
   fragment SidebarAssetFragment on AssetNode {
@@ -310,16 +242,14 @@ const SIDEBAR_ASSET_FRAGMENT = gql`
       cronSchedule
       cronScheduleTimezone
     }
-    internalFreshnessPolicy {
-      ... on TimeWindowFreshnessPolicy {
-        failWindowSeconds
-        warnWindowSeconds
+    autoMaterializePolicy {
+      policyType
+      rules {
+        className
+        decisionType
+        description
       }
     }
-    backfillPolicy {
-      description
-    }
-    pools
     partitionDefinition {
       description
     }
@@ -347,15 +277,6 @@ const SIDEBAR_ASSET_FRAGMENT = gql`
     requiredResources {
       resourceKey
     }
-    assetChecksOrError {
-      ... on AssetChecks {
-        checks {
-          name
-          ...ExecuteChecksButtonCheckFragment
-        }
-      }
-    }
-    changedReasons
 
     ...AssetNodeConfigFragment
     ...AssetNodeOpMetadataFragment
@@ -366,7 +287,6 @@ const SIDEBAR_ASSET_FRAGMENT = gql`
   ${METADATA_ENTRY_FRAGMENT}
   ${ASSET_NODE_OP_METADATA_FRAGMENT}
   ${EXECUTE_CHECKS_BUTTON_ASSET_NODE_FRAGMENT}
-  ${EXECUTE_CHECKS_BUTTON_CHECK_FRAGMENT}
 `;
 
 export const SIDEBAR_ASSET_QUERY = gql`

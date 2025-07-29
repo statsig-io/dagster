@@ -1,72 +1,60 @@
-import {ASSETS_GRAPH_LIVE_QUERY} from '../../asset-data/AssetBaseDataProvider';
-import {
-  AssetGraphLiveQuery,
-  AssetGraphLiveQueryVariables,
-} from '../../asset-data/types/AssetBaseDataProvider.types';
+import {MockedResponse} from '@apollo/client/testing';
+
 import {MockStaleReasonData} from '../../asset-graph/__fixtures__/AssetNode.fixtures';
+import {AssetGraphLiveQuery} from '../../asset-graph/types/useLiveDataForAssetKeys.types';
+import {ASSETS_GRAPH_LIVE_QUERY} from '../../asset-graph/useLiveDataForAssetKeys';
 import {
-  Asset,
-  RunStatus,
   StaleStatus,
-  buildAsset,
-  buildAssetChecks,
-  buildAssetFreshnessInfo,
-  buildAssetKey,
-  buildAssetLatestInfo,
+  RunStatus,
   buildAssetNode,
-  buildAssetRecord,
-  buildAssetRecordConnection,
-  buildFreshnessPolicy,
-  buildMaterializationEvent,
-  buildObservationEvent,
-  buildPartitionDefinition,
-  buildPartitionStats,
-  buildRepository,
   buildRepositoryLocation,
-  buildRun,
+  buildRepository,
+  buildAssetKey,
+  buildPartitionDefinition,
+  buildFreshnessPolicy,
 } from '../../graphql/types';
-import {buildQueryMock} from '../../testing/mocking';
 import {SINGLE_NON_SDA_ASSET_QUERY} from '../../workspace/VirtualizedAssetRow';
-import {
-  SingleNonSdaAssetQuery,
-  SingleNonSdaAssetQueryVariables,
-} from '../../workspace/types/VirtualizedAssetRow.types';
-import {ASSET_CATALOG_GROUP_TABLE_QUERY} from '../AssetsCatalogTable';
+import {SingleNonSdaAssetQuery} from '../../workspace/types/VirtualizedAssetRow.types';
+import {ASSET_CATALOG_GROUP_TABLE_QUERY, ASSET_CATALOG_TABLE_QUERY} from '../AssetsCatalogTable';
 import {
   AssetCatalogGroupTableQuery,
-  AssetCatalogGroupTableQueryVariables,
+  AssetCatalogTableQuery,
 } from '../types/AssetsCatalogTable.types';
-import {AssetRecordsQuery, AssetRecordsQueryVariables} from '../types/useAllAssets.types';
-import {ASSET_RECORDS_QUERY} from '../useAllAssets';
 
-export const AssetCatalogGroupTableMock = buildQueryMock<
-  AssetCatalogGroupTableQuery,
-  AssetCatalogGroupTableQueryVariables
->({
-  query: ASSET_CATALOG_GROUP_TABLE_QUERY,
-  data: {
-    assetNodes: [],
+export const AssetCatalogGroupTableMock: MockedResponse<AssetCatalogGroupTableQuery> = {
+  request: {
+    query: ASSET_CATALOG_GROUP_TABLE_QUERY,
   },
-});
+  result: {
+    data: {
+      __typename: 'Query',
+      assetNodes: [],
+    },
+  },
+};
 
-export const SingleAssetQueryTrafficDashboard = buildQueryMock<
-  SingleNonSdaAssetQuery,
-  SingleNonSdaAssetQueryVariables
->({
-  query: SINGLE_NON_SDA_ASSET_QUERY,
-  variables: {input: {path: ['dashboards', 'traffic_dashboard']}},
-  data: {
-    assetOrError: buildAsset({
-      id: '["dashboards", "traffic_dashboard"]',
-      assetMaterializations: [
-        buildMaterializationEvent({
-          timestamp: '1674603883946',
-          runId: 'db44ed48-0dca-4942-803b-5edc439c73eb',
-        }),
-      ],
-    }),
+export const SingleAssetQueryTrafficDashboard: MockedResponse<SingleNonSdaAssetQuery> = {
+  request: {
+    query: SINGLE_NON_SDA_ASSET_QUERY,
+    variables: {input: {path: ['dashboards', 'traffic_dashboard']}},
   },
-});
+  result: {
+    data: {
+      __typename: 'Query',
+      assetOrError: {
+        id: '["dashboards", "traffic_dashboard"]',
+        assetMaterializations: [
+          {
+            timestamp: '1674603883946',
+            runId: 'db44ed48-0dca-4942-803b-5edc439c73eb',
+            __typename: 'MaterializationEvent',
+          },
+        ],
+        __typename: 'Asset',
+      },
+    },
+  },
+};
 
 const repository = buildRepository({
   id: 'c22d9677b8089be89b1e014b9de34284962f83a7',
@@ -74,183 +62,212 @@ const repository = buildRepository({
   location: buildRepositoryLocation({
     id: 'test.py',
     name: 'test.py',
+    __typename: 'RepositoryLocation',
   }),
+  __typename: 'Repository',
 });
 
-export const SingleAssetQueryMaterializedWithLatestRun = buildQueryMock<
-  AssetGraphLiveQuery,
-  AssetGraphLiveQueryVariables
->({
-  query: ASSETS_GRAPH_LIVE_QUERY,
-  variables: {assetKeys: [{path: ['good_asset']}]},
-  data: {
-    assetNodes: [
-      buildAssetNode({
-        id: 'test.py.repo.["good_asset"]',
-        opNames: ['good_asset'],
-        repository,
-        partitionStats: null,
-        assetKey: buildAssetKey({
-          path: ['good_asset'],
-        }),
-        assetMaterializations: [
-          buildMaterializationEvent({
-            timestamp: '1674603883946',
-            runId: 'db44ed48-0dca-4942-803b-5edc439c73eb',
-          }),
-        ],
-        assetChecksOrError: buildAssetChecks(),
-        freshnessInfo: null,
-        assetObservations: [
-          buildObservationEvent({
-            timestamp: '1674764717707',
-            runId: 'ae107ad2-8827-44fb-bc62-a4cdacb78438',
-          }),
-        ],
-        staleStatus: StaleStatus.FRESH,
-        staleCauses: [],
-      }),
-    ],
-    assetsLatestInfo: [
-      buildAssetLatestInfo({
-        id: 'test.py.repo.["good_asset"]',
-        assetKey: buildAssetKey({
-          path: ['good_asset'],
-        }),
-        unstartedRunIds: [],
-        inProgressRunIds: [],
-        latestRun: buildRun({
-          id: 'db44ed48-0dca-4942-803b-5edc439c73eb',
-          status: RunStatus.SUCCESS,
-          endTime: 1674603891.34749,
-        }),
-      }),
-    ],
+export const SingleAssetQueryMaterializedWithLatestRun: MockedResponse<AssetGraphLiveQuery> = {
+  request: {
+    query: ASSETS_GRAPH_LIVE_QUERY,
+    variables: {assetKeys: [{path: ['good_asset']}]},
   },
-});
-
-export const SingleAssetQueryMaterializedStaleAndLate = buildQueryMock<
-  AssetGraphLiveQuery,
-  AssetGraphLiveQueryVariables
->({
-  query: ASSETS_GRAPH_LIVE_QUERY,
-  variables: {assetKeys: [{path: ['late_asset']}]},
-  data: {
-    assetNodes: [
-      buildAssetNode({
-        id: 'test.py.repo.["late_asset"]',
-        opNames: ['late_asset'],
-        repository,
-        partitionStats: null,
-        assetKey: {
-          path: ['late_asset'],
-          __typename: 'AssetKey',
+  result: {
+    data: {
+      __typename: 'Query',
+      assetNodes: [
+        {
+          id: 'test.py.repo.["good_asset"]',
+          opNames: ['good_asset'],
+          repository,
+          partitionStats: null,
+          assetKey: {
+            path: ['good_asset'],
+            __typename: 'AssetKey',
+          },
+          assetMaterializations: [
+            {
+              timestamp: '1674603883946',
+              runId: 'db44ed48-0dca-4942-803b-5edc439c73eb',
+              __typename: 'MaterializationEvent',
+            },
+          ],
+          assetChecks: [],
+          freshnessInfo: null,
+          assetObservations: [
+            {
+              timestamp: '1674764717707',
+              runId: 'ae107ad2-8827-44fb-bc62-a4cdacb78438',
+              __typename: 'ObservationEvent',
+            },
+          ],
+          staleStatus: StaleStatus.FRESH,
+          staleCauses: [],
+          __typename: 'AssetNode',
         },
-        assetChecksOrError: buildAssetChecks(),
-        assetMaterializations: [
-          buildMaterializationEvent({
-            timestamp: '1674603891025',
-            runId: 'db44ed48-0dca-4942-803b-5edc439c73eb',
-          }),
-        ],
-        freshnessInfo: buildAssetFreshnessInfo({
-          currentMinutesLate: 21657.2618512,
-        }),
-        assetObservations: [],
-        staleStatus: StaleStatus.STALE,
-        staleCauses: [MockStaleReasonData],
-      }),
-    ],
-    assetsLatestInfo: [
-      buildAssetLatestInfo({
-        id: 'test.py.repo.["late_asset"]',
-        assetKey: buildAssetKey({
-          path: ['late_asset'],
-        }),
-        unstartedRunIds: [],
-        inProgressRunIds: [],
-        latestRun: buildRun({
-          id: 'db44ed48-0dca-4942-803b-5edc439c73eb',
-          status: RunStatus.SUCCESS,
-          endTime: 1674603891.34749,
-        }),
-      }),
-    ],
+      ],
+      assetsLatestInfo: [
+        {
+          assetKey: {
+            path: ['good_asset'],
+            __typename: 'AssetKey',
+          },
+          unstartedRunIds: [],
+          inProgressRunIds: [],
+          latestRun: {
+            id: 'db44ed48-0dca-4942-803b-5edc439c73eb',
+            status: RunStatus.SUCCESS,
+            endTime: 1674603891.34749,
+            __typename: 'Run',
+          },
+          __typename: 'AssetLatestInfo',
+        },
+      ],
+    },
   },
-});
+};
 
-export const SingleAssetQueryLastRunFailed = buildQueryMock<
-  AssetGraphLiveQuery,
-  AssetGraphLiveQueryVariables
->({
-  query: ASSETS_GRAPH_LIVE_QUERY,
-  variables: {assetKeys: [{path: ['run_failing_asset']}]},
-  data: {
-    assetNodes: [
-      buildAssetNode({
-        id: 'test.py.repo.["run_failing_asset"]',
-        opNames: ['run_failing_asset'],
-        repository,
-        partitionStats: buildPartitionStats({
-          numMaterialized: 8,
-          numMaterializing: 0,
-          numPartitions: 11,
-          numFailed: 0,
-        }),
-        assetKey: buildAssetKey({
-          path: ['run_failing_asset'],
-        }),
-        assetChecksOrError: buildAssetChecks(),
-        assetMaterializations: [
-          buildMaterializationEvent({
-            timestamp: '1666373060112',
-            runId: 'e23b2cd2-7a4e-43d2-bdc6-892125375e8f',
-          }),
-        ],
-
-        freshnessInfo: null,
-        assetObservations: [],
-        staleStatus: StaleStatus.MISSING,
-        staleCauses: [],
-      }),
-    ],
-    assetsLatestInfo: [
-      buildAssetLatestInfo({
-        id: 'test.py.repo.["run_failing_asset"]',
-        assetKey: buildAssetKey({
-          path: ['run_failing_asset'],
-        }),
-        unstartedRunIds: [],
-        inProgressRunIds: [],
-        latestRun: buildRun({
-          id: '4678865f-6191-4a35-bb47-2122d57ec9a6',
-          status: RunStatus.FAILURE,
-          endTime: 1669067250.48091,
-        }),
-      }),
-    ],
+export const SingleAssetQueryMaterializedStaleAndLate: MockedResponse<AssetGraphLiveQuery> = {
+  request: {
+    query: ASSETS_GRAPH_LIVE_QUERY,
+    variables: {assetKeys: [{path: ['late_asset']}]},
   },
-});
+  result: {
+    data: {
+      __typename: 'Query',
+      assetNodes: [
+        {
+          id: 'test.py.repo.["late_asset"]',
+          opNames: ['late_asset'],
+          repository,
+          partitionStats: null,
+          assetKey: {
+            path: ['late_asset'],
+            __typename: 'AssetKey',
+          },
+          assetChecks: [],
+          assetMaterializations: [
+            {
+              timestamp: '1674603891025',
+              runId: 'db44ed48-0dca-4942-803b-5edc439c73eb',
+              __typename: 'MaterializationEvent',
+            },
+          ],
+          freshnessInfo: {
+            currentMinutesLate: 21657.2618512,
+            __typename: 'AssetFreshnessInfo',
+          },
+          assetObservations: [],
+          staleStatus: StaleStatus.STALE,
+          staleCauses: [MockStaleReasonData],
+          __typename: 'AssetNode',
+        },
+      ],
+      assetsLatestInfo: [
+        {
+          assetKey: {
+            path: ['late_asset'],
+            __typename: 'AssetKey',
+          },
+          unstartedRunIds: [],
+          inProgressRunIds: [],
+          latestRun: {
+            id: 'db44ed48-0dca-4942-803b-5edc439c73eb',
+            status: RunStatus.SUCCESS,
+            endTime: 1674603891.34749,
+            __typename: 'Run',
+          },
+          __typename: 'AssetLatestInfo',
+        },
+      ],
+    },
+  },
+};
 
-export const AssetCatalogTableMockAssets: Asset[] = [
-  buildAsset({
+export const SingleAssetQueryLastRunFailed: MockedResponse<AssetGraphLiveQuery> = {
+  request: {
+    query: ASSETS_GRAPH_LIVE_QUERY,
+    variables: {assetKeys: [{path: ['run_failing_asset']}]},
+  },
+  result: {
+    data: {
+      __typename: 'Query',
+      assetNodes: [
+        {
+          id: 'test.py.repo.["run_failing_asset"]',
+          opNames: ['run_failing_asset'],
+          repository,
+          partitionStats: {
+            __typename: 'PartitionStats',
+            numMaterialized: 8,
+            numMaterializing: 0,
+            numPartitions: 11,
+            numFailed: 0,
+          },
+          assetKey: {
+            path: ['run_failing_asset'],
+            __typename: 'AssetKey',
+          },
+          assetChecks: [],
+          assetMaterializations: [
+            {
+              timestamp: '1666373060112',
+              runId: 'e23b2cd2-7a4e-43d2-bdc6-892125375e8f',
+              __typename: 'MaterializationEvent',
+            },
+          ],
+
+          freshnessInfo: null,
+          assetObservations: [],
+          staleStatus: StaleStatus.MISSING,
+          staleCauses: [],
+          __typename: 'AssetNode',
+        },
+      ],
+      assetsLatestInfo: [
+        {
+          assetKey: {
+            path: ['run_failing_asset'],
+            __typename: 'AssetKey',
+          },
+          unstartedRunIds: [],
+          inProgressRunIds: [],
+          latestRun: {
+            id: '4678865f-6191-4a35-bb47-2122d57ec9a6',
+            status: RunStatus.FAILURE,
+            endTime: 1669067250.48091,
+            __typename: 'Run',
+          },
+          __typename: 'AssetLatestInfo',
+        },
+      ],
+    },
+  },
+};
+
+export const AssetCatalogTableMockAssets: Extract<
+  AssetCatalogTableQuery['assetsOrError'],
+  {__typename: 'AssetConnection'}
+>['nodes'] = [
+  {
     id: '["dashboards", "cost_dashboard"]',
+    __typename: 'Asset',
     key: buildAssetKey({path: ['dashboards', 'cost_dashboard']}),
     definition: null,
-  }),
-  buildAsset({
+  },
+  {
     id: '["dashboards", "traffic_dashboard"]',
+    __typename: 'Asset',
     key: buildAssetKey({path: ['dashboards', 'traffic_dashboard']}),
     definition: null,
-  }),
-  buildAsset({
+  },
+  {
     id: 'test.py.repo.["good_asset"]',
+    __typename: 'Asset',
     key: buildAssetKey({path: ['good_asset']}),
     definition: buildAssetNode({
       id: 'test.py.repo.["good_asset"]',
-      assetKey: buildAssetKey({path: ['good_asset']}),
       groupName: 'GROUP2',
-      isExecutable: true,
       partitionDefinition: null,
       hasMaterializePermission: true,
       computeKind: 'snowflake',
@@ -258,13 +275,13 @@ export const AssetCatalogTableMockAssets: Asset[] = [
         'This is a super long description that could involve some level of SQL and is just generally very long',
       repository,
     }),
-  }),
-  buildAsset({
+  },
+  {
     id: 'test.py.repo.["late_asset"]',
+    __typename: 'Asset',
     key: buildAssetKey({path: ['late_asset']}),
     definition: buildAssetNode({
       id: 'test.py.repo.["late_asset"]',
-      assetKey: buildAssetKey({path: ['late_asset']}),
       groupName: 'GROUP2',
       partitionDefinition: null,
       freshnessPolicy: buildFreshnessPolicy({
@@ -273,18 +290,17 @@ export const AssetCatalogTableMockAssets: Asset[] = [
         cronScheduleTimezone: null,
       }),
       hasMaterializePermission: true,
-      isExecutable: true,
       computeKind: null,
       description: null,
       repository,
     }),
-  }),
-  buildAsset({
+  },
+  {
     id: 'test.py.repo.["run_failing_asset"]',
+    __typename: 'Asset',
     key: buildAssetKey({path: ['run_failing_asset']}),
     definition: buildAssetNode({
       id: 'test.py.repo.["run_failing_asset"]',
-      assetKey: buildAssetKey({path: ['run_failing_asset']}),
       groupName: 'GROUP4',
       partitionDefinition: buildPartitionDefinition({
         description:
@@ -295,15 +311,13 @@ export const AssetCatalogTableMockAssets: Asset[] = [
       computeKind: 'sql',
       repository,
     }),
-  }),
-  buildAsset({
+  },
+  {
     id: 'test.py.repo.["asset_with_a_very_long_key_that_will_require_truncation"]',
+    __typename: 'Asset',
     key: buildAssetKey({path: ['asset_with_a_very_long_key_that_will_require_truncation']}),
     definition: buildAssetNode({
       id: 'test.py.repo.["asset_with_a_very_long_key_that_will_require_truncation"]',
-      assetKey: buildAssetKey({
-        path: ['asset_with_a_very_long_key_that_will_require_truncation'],
-      }),
       groupName: 'GROUP4',
       partitionDefinition: null,
       description: 'This one should be in a loading state to demo that view',
@@ -311,20 +325,20 @@ export const AssetCatalogTableMockAssets: Asset[] = [
       computeKind: 'ipynb',
       repository,
     }),
-  }),
+  },
 ];
 
-export const AssetCatalogTableMock = buildQueryMock<AssetRecordsQuery, AssetRecordsQueryVariables>({
-  query: ASSET_RECORDS_QUERY,
-  variableMatcher: () => true,
-  data: {
-    assetRecordsOrError: buildAssetRecordConnection({
-      assets: AssetCatalogTableMockAssets.map((asset) =>
-        buildAssetRecord({
-          id: asset.id,
-          key: asset.key,
-        }),
-      ),
-    }),
+export const AssetCatalogTableMock: MockedResponse<AssetCatalogTableQuery> = {
+  request: {
+    query: ASSET_CATALOG_TABLE_QUERY,
   },
-});
+  result: {
+    data: {
+      __typename: 'Query',
+      assetsOrError: {
+        __typename: 'AssetConnection',
+        nodes: AssetCatalogTableMockAssets,
+      },
+    },
+  },
+};

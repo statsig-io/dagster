@@ -1,18 +1,10 @@
 import json
 from abc import ABC
-from collections.abc import Mapping
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import dagster._check as check
-from dagster._annotations import deprecated, public
-from typing_extensions import Self
-
-MANAGED_ELEMENTS_DEPRECATION_MSG = (
-    "Dagster is deprecating support for ingestion-as-code."
-    " We suggest using the Airbyte terraform provider:"
-    " https://reference.airbyte.com/reference/using-the-terraform-provider."
-)
+from dagster._annotations import public
 
 
 class AirbyteSyncMode(ABC):
@@ -25,14 +17,14 @@ class AirbyteSyncMode(ABC):
     def __eq__(self, other: Any) -> bool:
         return isinstance(other, AirbyteSyncMode) and self.to_json() == other.to_json()
 
-    def __init__(self, json_repr: dict[str, Any]):
+    def __init__(self, json_repr: Dict[str, Any]):
         self.json_repr = json_repr
 
-    def to_json(self) -> dict[str, Any]:
+    def to_json(self) -> Dict[str, Any]:
         return self.json_repr
 
     @classmethod
-    def from_json(cls, json_repr: dict[str, Any]) -> "AirbyteSyncMode":
+    def from_json(cls, json_repr: Dict[str, Any]) -> "AirbyteSyncMode":
         return cls(
             {
                 k: v
@@ -87,7 +79,7 @@ class AirbyteSyncMode(ABC):
     def incremental_append_dedup(
         cls,
         cursor_field: Optional[str] = None,
-        primary_key: Optional[Union[str, list[str]]] = None,
+        primary_key: Optional[Union[str, List[str]]] = None,
     ) -> "AirbyteSyncMode":
         """Syncs new records from the source, appending to an append-only history
         table in the destination. Also generates a deduplicated view mirroring the
@@ -95,7 +87,7 @@ class AirbyteSyncMode(ABC):
         which records are new, and the primary key used to determine which records
         are duplicates.
 
-        https://docs.airbyte.com/using-airbyte/core-concepts/sync-modes/incremental-append-deduped
+        https://docs.airbyte.com/understanding-airbyte/connections/incremental-append-dedup/
         """
         cursor_field = check.opt_str_param(cursor_field, "cursor_field")
         if isinstance(primary_key, str):
@@ -118,7 +110,7 @@ class AirbyteSource:
     Args:
         name (str): The display name of the source.
         source_type (str): The type of the source, from Airbyte's list
-            of sources https://docs.airbyte.com/integrations/sources/.
+            of sources https://airbytehq.github.io/category/sources/.
         source_configuration (Mapping[str, Any]): The configuration for the
             source, as defined by Airbyte's API.
     """
@@ -162,7 +154,7 @@ class AirbyteDestination:
     Args:
         name (str): The display name of the destination.
         destination_type (str): The type of the destination, from Airbyte's list
-            of destinations https://docs.airbyte.com/integrations/destinations/.
+            of destinations https://airbytehq.github.io/category/destinations/.
         destination_configuration (Mapping[str, Any]): The configuration for the
             destination, as defined by Airbyte's API.
     """
@@ -214,7 +206,6 @@ class AirbyteDestinationNamespace(Enum):
     DESTINATION_DEFAULT = "destination"
 
 
-@deprecated(breaking_version="2.0", additional_warn_text=MANAGED_ELEMENTS_DEPRECATION_MSG)
 class AirbyteConnection:
     """A user-defined Airbyte connection, pairing an Airbyte source and destination and configuring
     which streams to sync.
@@ -305,7 +296,7 @@ class InitializedAirbyteConnection:
         api_dict: Mapping[str, Any],
         init_sources: Mapping[str, InitializedAirbyteSource],
         init_dests: Mapping[str, InitializedAirbyteDestination],
-    ) -> Self:
+    ):
         source = next(
             (
                 source.source
@@ -350,11 +341,11 @@ class InitializedAirbyteConnection:
         )
 
 
-def _remove_none_values(obj: dict[str, Any]) -> dict[str, Any]:
+def _remove_none_values(obj: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in obj.items() if v is not None}
 
 
-def _dump_class(obj: Any) -> dict[str, Any]:
+def _dump_class(obj: Any) -> Dict[str, Any]:
     return json.loads(json.dumps(obj, default=lambda o: _remove_none_values(o.__dict__)))
 
 

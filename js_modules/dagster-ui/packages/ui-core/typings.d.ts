@@ -21,13 +21,6 @@ declare module 'worker-loader!*' {
   export default WebpackWorker;
 }
 
-declare module '*.graphql' {
-  import {DocumentNode} from 'graphql';
-  const Schema: DocumentNode;
-
-  export = Schema;
-}
-
 declare module 'chartjs-adapter-date-fns';
 
 declare namespace Intl {
@@ -48,11 +41,6 @@ type StaticImageData = {
 };
 
 declare module '*.svg' {
-  const content: StaticImageData;
-  export default content;
-}
-
-declare module '*.png' {
   const content: StaticImageData;
   export default content;
 }

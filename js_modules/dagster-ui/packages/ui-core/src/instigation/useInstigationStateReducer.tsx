@@ -1,4 +1,4 @@
-import {useReducer} from 'react';
+import React from 'react';
 
 export type OpenWithIntent = 'not-open' | 'start' | 'stop';
 
@@ -50,4 +50,4 @@ const reducer = (prevState: DialogState, action: DialogAction): DialogState => {
   }
 };
 
-export const useInstigationStateReducer = () => useReducer(reducer, initialState);
+export const useInstigationStateReducer = () => React.useReducer(reducer, initialState);

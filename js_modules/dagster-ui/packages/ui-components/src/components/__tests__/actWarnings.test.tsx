@@ -1,9 +1,9 @@
 import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {useState} from 'react';
+import * as React from 'react';
 
 const Counter = () => {
-  const [count, setCount] = useState(0);
+  const [count, setCount] = React.useState(0);
   return (
     <>
       <button onClick={() => setCount((current) => current + 1)}>Increment</button>

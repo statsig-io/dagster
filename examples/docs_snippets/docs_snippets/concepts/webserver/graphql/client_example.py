@@ -6,9 +6,7 @@ client = DagsterGraphQLClient("localhost", port_number=3000)
 
 # end_setup_marker
 
-from dagster._core.utils import make_new_run_id
-
-RUN_ID = make_new_run_id()
+RUN_ID = "foo"
 REPO_NAME = "bar"
 JOB_NAME = "baz"
 REPO_NAME = "quux"
@@ -106,7 +104,7 @@ else:
 
 # start_cloud_usage
 url = "yourorg.dagster.cloud/prod"  # Your deployment-scoped url
-user_token = (  # a User Token generated from the Organization Settings page in Dagster+.
+user_token = (  # a User Token generated from the Cloud Settings page in Dagster Cloud.
     "your_token_here"
 )
 client = DagsterGraphQLClient(url, headers={"Dagster-Cloud-Api-Token": user_token})

@@ -23,6 +23,7 @@ setup(
     description="A Dagster integration for MySQL",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-mysql",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: Apache Software License",
@@ -35,7 +36,6 @@ setup(
         ]
     },
     include_package_data=True,
-    python_requires=">=3.9,<3.14",
-    install_requires=[f"dagster{pin}", "mysql-connector-python"],
+    install_requires=["dagster==1.4.16", "mysql-connector-python"],
     zip_safe=False,
 )

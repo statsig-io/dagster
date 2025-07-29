@@ -1,7 +1,6 @@
-from collections.abc import Mapping
-from typing import Any
+from typing import Any, Mapping
 
-from dagster import Output, op
+from dagster import Dict, Output, op
 from dagster._core.definitions.decorators.job_decorator import job
 from dagster._core.definitions.job_definition import JobDefinition
 from dagster._core.definitions.output import Out
@@ -15,8 +14,8 @@ from dask.distributed import Client
 
 @op(
     out={
-        "scheduler_info": Out(dict),
-        "nthreads": Out(dict),
+        "scheduler_info": Out(Dict),
+        "nthreads": Out(Dict),
     },
     required_resource_keys={"dask"},
 )

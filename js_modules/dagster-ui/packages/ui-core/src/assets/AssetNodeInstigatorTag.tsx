@@ -1,36 +1,20 @@
-import {useMemo} from 'react';
+import {gql} from '@apollo/client';
+import flatMap from 'lodash/flatMap';
+import React from 'react';
 
-import {gql} from '../apollo-client';
-import {AssetNodeInstigatorsFragment} from './types/AssetNodeInstigatorTag.types';
 import {ScheduleOrSensorTag} from '../nav/ScheduleOrSensorTag';
-import {SCHEDULE_SWITCH_FRAGMENT} from '../schedules/ScheduleSwitchFragment';
-import {ScheduleSwitchFragment} from '../schedules/types/ScheduleSwitchFragment.types';
-import {SENSOR_SWITCH_FRAGMENT} from '../sensors/SensorSwitchFragment';
-import {SensorSwitchFragment} from '../sensors/types/SensorSwitchFragment.types';
+import {SCHEDULE_SWITCH_FRAGMENT} from '../schedules/ScheduleSwitch';
+import {SENSOR_SWITCH_FRAGMENT} from '../sensors/SensorSwitch';
 import {RepoAddress} from '../workspace/types';
 
-export const insitigatorsByType = (assetNode: AssetNodeInstigatorsFragment | undefined | null) => {
-  const instigators = assetNode?.targetingInstigators;
-  const schedules =
-    instigators?.filter(
-      (instigator): instigator is ScheduleSwitchFragment => instigator.__typename === 'Schedule',
-    ) ?? [];
-  const sensors =
-    instigators?.filter(
-      (instigator): instigator is SensorSwitchFragment => instigator.__typename === 'Sensor',
-    ) ?? [];
+import {AssetNodeInstigatorsFragment} from './types/AssetNodeInstigatorTag.types';
 
-  return {schedules, sensors};
-};
-
-export const AssetNodeInstigatorTag = ({
-  assetNode,
-  repoAddress,
-}: {
+export const AssetNodeInstigatorTag: React.FC<{
   assetNode: AssetNodeInstigatorsFragment;
   repoAddress: RepoAddress;
-}) => {
-  const {schedules, sensors} = useMemo(() => insitigatorsByType(assetNode), [assetNode]);
+}> = ({assetNode, repoAddress}) => {
+  const schedules = flatMap(assetNode.jobs, (j) => j.schedules);
+  const sensors = flatMap(assetNode.jobs, (j) => j.sensors);
 
   return (
     <ScheduleOrSensorTag
@@ -45,15 +29,22 @@ export const AssetNodeInstigatorTag = ({
 export const ASSET_NODE_INSTIGATORS_FRAGMENT = gql`
   fragment AssetNodeInstigatorsFragment on AssetNode {
     id
-    targetingInstigators {
-      ... on Schedule {
+    jobs {
+      id
+      name
+      schedules {
+        id
+
         ...ScheduleSwitchFragment
       }
-      ... on Sensor {
+      sensors {
+        id
+
         ...SensorSwitchFragment
       }
     }
   }
+
   ${SCHEDULE_SWITCH_FRAGMENT}
   ${SENSOR_SWITCH_FRAGMENT}
 `;

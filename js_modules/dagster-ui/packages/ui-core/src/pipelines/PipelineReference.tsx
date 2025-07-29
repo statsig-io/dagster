@@ -1,9 +1,11 @@
-import {Box, Colors, Icon, Tag} from '@dagster-io/ui-components';
+import {Box, Colors, Icon} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 
-import {PipelineSnapshotLink} from './PipelinePathUtils';
 import {RepoAddress} from '../workspace/types';
 import {workspacePipelinePath, workspacePipelinePathGuessRepo} from '../workspace/workspacePath';
+
+import {PipelineSnapshotLink} from './PipelinePathUtils';
 
 export interface Props {
   pipelineName: string;
@@ -18,7 +20,7 @@ export interface Props {
 const DEFAULT_TRUNCATION_THRESHOLD = 40;
 const TRUNCATION_BUFFER = 5;
 
-export const PipelineReference = ({
+export const PipelineReference: React.FC<Props> = ({
   pipelineName,
   pipelineHrefContext,
   isJob,
@@ -26,7 +28,7 @@ export const PipelineReference = ({
   showIcon,
   truncationThreshold = DEFAULT_TRUNCATION_THRESHOLD,
   size = 'normal',
-}: Props) => {
+}) => {
   const truncatedName =
     truncationThreshold > 0 && pipelineName.length > truncationThreshold
       ? `${pipelineName.slice(0, truncationThreshold - TRUNCATION_BUFFER)}…`
@@ -53,8 +55,8 @@ export const PipelineReference = ({
   return (
     <Box flex={{direction: 'row', alignItems: 'center', display: 'inline-flex'}}>
       {showIcon && (
-        <Box margin={{right: 4}}>
-          <Icon color={Colors.accentGray()} name="job" />
+        <Box margin={{right: 8}}>
+          <Icon color={Colors.Gray400} name="job" />
         </Box>
       )}
       <span>
@@ -65,13 +67,5 @@ export const PipelineReference = ({
         )}
       </span>
     </Box>
-  );
-};
-
-export const PipelineTag = (props: Props) => {
-  return (
-    <Tag tooltipText={props.pipelineName} icon="job">
-      <PipelineReference {...props} showIcon={false} />
-    </Tag>
   );
 };

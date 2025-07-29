@@ -1,11 +1,10 @@
-from collections.abc import Iterator, Mapping
-from typing import Callable, NamedTuple, NoReturn, cast
+from typing import Callable, Iterator, Mapping, NamedTuple, NoReturn, cast
 
 from typing_extensions import TypeAlias
 
 import dagster._check as check
 from dagster._config import EvaluateValueResult, process_config
-from dagster._core.definitions.assets.job.asset_layer import AssetLayer
+from dagster._core.definitions.asset_layer import AssetLayer
 from dagster._core.definitions.dependency import GraphNode, Node, NodeHandle, OpNode
 from dagster._core.definitions.graph_definition import GraphDefinition, SubselectedGraphDefinition
 from dagster._core.definitions.job_definition import JobDefinition
@@ -26,7 +25,7 @@ class OpConfigEntry(
     NamedTuple("_SolidConfigEntry", [("handle", NodeHandle), ("solid_config", OpConfig)])
 ):
     def __new__(cls, handle: NodeHandle, op_config: OpConfig):
-        return super().__new__(
+        return super(OpConfigEntry, cls).__new__(
             cls,
             check.inst_param(handle, "handle", NodeHandle),
             check.inst_param(op_config, "solid_config", OpConfig),
@@ -42,7 +41,7 @@ class DescentStack(
     NamedTuple("_DescentStack", [("job_def", JobDefinition), ("handle", NodeHandle)])
 ):
     def __new__(cls, job_def: JobDefinition, handle: NodeHandle):
-        return super().__new__(
+        return super(DescentStack, cls).__new__(
             cls,
             job_def=check.inst_param(job_def, "job_def", JobDefinition),
             handle=check.inst_param(handle, "handle", NodeHandle),
@@ -63,7 +62,7 @@ class DescentStack(
 
     @property
     def current_handle_str(self) -> str:
-        return str(check.not_none(self.handle))
+        return check.not_none(self.handle).to_string()
 
     def descend(self, node: Node) -> "DescentStack":
         parent = self.handle if self.handle != _ROOT_HANDLE else None
@@ -103,7 +102,7 @@ def composite_descent(
         )
 
     return {
-        str(handle): op_config
+        handle.to_string(): op_config
         for handle, op_config in _composite_descent(
             parent_stack=DescentStack(job_def, _ROOT_HANDLE),
             ops_config_dict=ops_config,
@@ -147,8 +146,7 @@ def _composite_descent(
                 )
 
             complete_config_object = merge_dicts(
-                current_op_config,
-                config_mapped_node_config.value,  # type: ignore  # (unknown EVR type)
+                current_op_config, config_mapped_node_config.value  # type: ignore  # (unknown EVR type)
             )
             yield OpConfigEntry(current_handle, OpConfig.from_dict(complete_config_object))
             continue
@@ -175,7 +173,7 @@ def _composite_descent(
                     asset_layer,
                 )
                 if node.definition.has_config_mapping
-                else cast("Mapping[str, RawNodeConfig]", current_op_config.get("ops", {}))
+                else cast(Mapping[str, RawNodeConfig], current_op_config.get("ops", {}))
             )
 
             yield from _composite_descent(
@@ -223,7 +221,7 @@ def _apply_top_level_config_mapping(
             dependency_structure=graph_def.dependency_structure,
             resource_defs=resource_defs,
             asset_layer=job_def.asset_layer,
-            input_assets=graph_def.input_assets,
+            node_input_source_assets=graph_def.node_input_source_assets,
         )
 
         # process against that new type
@@ -291,7 +289,7 @@ def _apply_config_mapping(
         parent_handle=current_stack.handle,
         resource_defs=resource_defs,
         asset_layer=asset_layer,
-        input_assets=graph_def.input_assets,
+        node_input_source_assets=graph_def.node_input_source_assets,
     )
 
     # process against that new type
@@ -317,9 +315,11 @@ def _get_error_lambda(current_stack: DescentStack) -> Callable[[], str]:
 
 
 def _get_top_level_error_lambda(job_def: JobDefinition) -> Callable[[], str]:
-    return lambda: (
-        f"The config mapping function on top-level graph {job_def.graph.name} in job"
-        f" {job_def.name} has thrown an unexpected error during its execution."
+    return (
+        lambda: (
+            f"The config mapping function on top-level graph {job_def.graph.name} in job"
+            f" {job_def.name} has thrown an unexpected error during its execution."
+        )
     )
 
 

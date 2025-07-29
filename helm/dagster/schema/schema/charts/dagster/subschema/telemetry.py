@@ -1,5 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Extra
 
 
-class Telemetry(BaseModel, extra="forbid"):
+class Telemetry(BaseModel):
     enabled: bool
+
+    class Config:
+        extra = Extra.forbid

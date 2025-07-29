@@ -1,5 +1,4 @@
 """Launching in EMR is prohibitively time consuming, so we just verify that the plan compiles."""
-
 import os
 
 from dagster import materialize_to_memory

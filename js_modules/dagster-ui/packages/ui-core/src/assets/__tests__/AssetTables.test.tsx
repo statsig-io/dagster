@@ -1,122 +1,61 @@
 import {MockedProvider} from '@apollo/client/testing';
-import {render, waitFor} from '@testing-library/react';
+import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import React from 'react';
 import {MemoryRouter} from 'react-router';
-import {RecoilRoot} from 'recoil';
 
-import {useAssetSelectionInput} from '../../asset-selection/input/useAssetSelectionInput';
-import {
-  buildRepository,
-  buildRepositoryLocation,
-  buildWorkspaceLocationEntry,
-} from '../../graphql/types';
-import {mockViewportClientRect, restoreViewportClientRect} from '../../testing/mocking';
-import {WorkspaceProvider} from '../../workspace/WorkspaceContext/WorkspaceContext';
-import {buildWorkspaceMocks} from '../../workspace/WorkspaceContext/__fixtures__/Workspace.fixtures';
 import {AssetsCatalogTable} from '../AssetsCatalogTable';
 import {
+  AssetCatalogGroupTableMock,
   AssetCatalogTableMock,
-  AssetCatalogTableMockAssets,
   SingleAssetQueryLastRunFailed,
   SingleAssetQueryMaterializedStaleAndLate,
   SingleAssetQueryMaterializedWithLatestRun,
   SingleAssetQueryTrafficDashboard,
 } from '../__fixtures__/AssetTables.fixtures';
 
-const workspaceMocks = buildWorkspaceMocks([
-  buildWorkspaceLocationEntry({
-    locationOrLoadError: buildRepositoryLocation({
-      repositories: [
-        buildRepository({
-          assetNodes: AssetCatalogTableMockAssets.filter((asset) => asset.definition).map(
-            (asset) => asset.definition!,
-          ),
-        }),
-      ],
-    }),
-  }),
-]);
-
 const MOCKS = [
   AssetCatalogTableMock,
+  AssetCatalogGroupTableMock,
   SingleAssetQueryTrafficDashboard,
   SingleAssetQueryMaterializedWithLatestRun,
   SingleAssetQueryMaterializedStaleAndLate,
   SingleAssetQueryLastRunFailed,
-  ...workspaceMocks,
 ];
 
 // This file must be mocked because Jest can't handle `import.meta.url`.
 jest.mock('../../graph/asyncGraphLayout', () => ({}));
 
-jest.mock('shared/asset-selection/input/useAssetSelectionInput', () => {
-  const mock: typeof useAssetSelectionInput = ({
-    assets,
-    assetsLoading,
-  }: {
-    assets: any;
-    assetsLoading?: boolean;
-  }) => {
-    return {
-      filterInput: <div />,
-      fetchResult: {loading: false},
-      loading: !!assetsLoading,
-      filtered: assets,
-      assetSelection: '',
-      setAssetSelection: () => {},
-    };
-  };
-  return {
-    useAssetSelectionInput: mock,
-  };
-});
-
 describe('AssetTable', () => {
-  beforeAll(() => {
-    mockViewportClientRect();
-  });
-
-  afterAll(() => {
-    restoreViewportClientRect();
-  });
-
   describe('Materialize button', () => {
     it('is enabled when rows are selected', async () => {
-      const user = userEvent.setup();
-      const {findByTestId, findAllByRole} = render(
-        <RecoilRoot>
+      const Test = () => {
+        return (
           <MemoryRouter>
             <MockedProvider mocks={MOCKS}>
-              <WorkspaceProvider>
-                <AssetsCatalogTable prefixPath={[]} setPrefixPath={() => {}} />
-              </WorkspaceProvider>
+              <AssetsCatalogTable prefixPath={['dashboards']} setPrefixPath={() => {}} />
             </MockedProvider>
           </MemoryRouter>
-        </RecoilRoot>,
+        );
+      };
+      render(<Test />);
+
+      expect(await screen.findByTestId('materialize-button')).toBeDisabled();
+      expect(await screen.findByTestId('materialize-button')).toHaveTextContent(
+        'Materialize selected',
       );
 
-      let materializeButton = await findByTestId('materialize-button');
-      expect(materializeButton).toBeDisabled();
-      expect(materializeButton).toHaveTextContent('Materialize selected');
+      const row1 = await screen.findByTestId(`row-dashboards/cost_dashboard`);
+      const checkbox1 = row1.querySelector('input[type=checkbox]') as HTMLInputElement;
+      await userEvent.click(checkbox1);
 
-      await waitFor(async () => {
-        const checkboxes = await findAllByRole('checkbox');
-        const goodAssetCheckbox = await findByTestId('checkbox-good_asset');
-        expect(checkboxes.indexOf(goodAssetCheckbox)).toBe(1);
-      });
+      expect(await screen.findByTestId('materialize-button')).toHaveTextContent('Materialize');
 
-      const goodAssetCheckbox = await findByTestId('checkbox-good_asset');
-      await user.click(goodAssetCheckbox);
+      const row2 = await screen.findByTestId(`row-dashboards/traffic_dashboard`);
+      const checkbox2 = row2.querySelector('input[type=checkbox]') as HTMLInputElement;
+      await userEvent.click(checkbox2);
 
-      materializeButton = await findByTestId('materialize-button');
-      expect(materializeButton).toHaveTextContent('Materialize');
-
-      const lateAssetCheckbox = await findByTestId('checkbox-late_asset');
-      await user.click(lateAssetCheckbox);
-
-      materializeButton = await findByTestId('materialize-button');
-      expect(materializeButton).toBeEnabled();
-      expect(materializeButton).toHaveTextContent('Materialize selected (2)');
+      expect(await screen.findByTestId('materialize-button')).toHaveTextContent('Materialize (2)');
     });
   });
 });

@@ -27,9 +27,7 @@ def test_cli_logs_to_dagit():
     )
     time.sleep(2)  # give time for dagit to start
     process.terminate()
-    try:
-        stdout, _ = process.communicate(timeout=10)
-        assert "The `dagit` CLI command is deprecated" in stdout
-        assert "- dagit -" in stdout
-    except subprocess.TimeoutExpired:
-        process.kill()
+    process.wait()
+    stdout, _ = process.communicate()
+    assert "The `dagit` CLI command is deprecated" in stdout
+    assert "- dagit -" in stdout

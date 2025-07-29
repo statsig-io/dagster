@@ -6,7 +6,6 @@ from schema.charts.dagster.subschema.global_ import Global
 from schema.charts.dagster.subschema.service_account import ServiceAccount
 from schema.charts.dagster.values import DagsterHelmValues
 from schema.charts.dagster_user_deployments.values import DagsterUserDeploymentsHelmValues
-from schema.charts.utils import kubernetes
 from schema.utils.helm_template import HelmTemplate
 
 
@@ -38,19 +37,6 @@ def standalone_subchart_helm_template() -> HelmTemplate:
         output="templates/serviceaccount.yaml",
         model=models.V1ServiceAccount,
     )
-
-
-def test_service_account_automount(template: HelmTemplate):
-    service_account_name = "service-account-name"
-    service_account_values = DagsterHelmValues.construct(
-        serviceAccount=ServiceAccount.construct(name=service_account_name, create=True)
-    )
-
-    service_account_templates = template.render(service_account_values)
-
-    service_account_template = service_account_templates[0]
-
-    assert not service_account_template.automount_service_account_token
 
 
 def test_service_account_name(template: HelmTemplate):
@@ -127,9 +113,7 @@ def test_service_account_annotations(template: HelmTemplate):
     service_account_annotations = {"hello": "world"}
     service_account_values = DagsterHelmValues.construct(
         serviceAccount=ServiceAccount.construct(
-            name=service_account_name,
-            create=True,
-            annotations=kubernetes.Annotations.parse_obj(service_account_annotations),
+            name=service_account_name, create=True, annotations=service_account_annotations
         )
     )
 
@@ -150,9 +134,7 @@ def test_standalone_subchart_service_account_annotations(
     service_account_annotations = {"hello": "world"}
     service_account_values = DagsterUserDeploymentsHelmValues.construct(
         serviceAccount=ServiceAccount.construct(
-            name=service_account_name,
-            create=True,
-            annotations=kubernetes.Annotations.parse_obj(service_account_annotations),
+            name=service_account_name, create=True, annotations=service_account_annotations
         ),
     )
 

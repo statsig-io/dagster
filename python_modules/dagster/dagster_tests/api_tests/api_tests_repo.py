@@ -1,56 +1,69 @@
 import string
 import time
 
-import dagster as dg
-from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
-from dagster._core.definitions.metadata.metadata_value import MetadataValue
-from dagster._core.storage.tags import EXTERNAL_JOB_SOURCE_TAG_KEY
+from dagster import (
+    DynamicPartitionsDefinition,
+    In,
+    Int,
+    Out,
+    ScheduleDefinition,
+    asset,
+    define_asset_job,
+    job,
+    op,
+    repository,
+    schedule,
+    usable_as_dagster_type,
+)
+from dagster._core.definitions.asset_graph import AssetGraph
+from dagster._core.definitions.decorators.sensor_decorator import sensor
+from dagster._core.definitions.partition import (
+    PartitionedConfig,
+    StaticPartitionsDefinition,
+)
+from dagster._core.definitions.sensor_definition import RunRequest
+from dagster._core.errors import DagsterError
 
 
-@dg.op
+@op
 def do_something():
     return 1
 
 
-@dg.op
+@op
 def do_input(x):
     return x
 
 
-@dg.job(name="foo")
+@job(name="foo")
 def foo_job():
     do_input(do_something())
 
 
-@dg.op
+@op
 def forever_op():
     while True:
         time.sleep(10)
 
 
-@dg.job(name="forever")
+@job(name="forever")
 def forever_job():
     forever_op()
 
 
-@dg.op
+@op
 def do_fail():
     raise Exception("I have failed")
 
 
-@dg.job
+@job
 def fail_job():
     do_fail()
 
 
-@dg.job(tags={EXTERNAL_JOB_SOURCE_TAG_KEY: "airflow", "foo": "bar"})
-def job_with_external_tag():
-    pass
+baz_partitions = StaticPartitionsDefinition(list(string.ascii_lowercase))
 
-
-baz_partitions = dg.StaticPartitionsDefinition(list(string.ascii_lowercase))
-
-baz_config = dg.PartitionedConfig(
+baz_config = PartitionedConfig(
     partitions_def=baz_partitions,
     run_config_for_partition_key_fn=lambda key: {
         "ops": {"do_input": {"inputs": {"x": {"value": key}}}}
@@ -59,15 +72,15 @@ baz_config = dg.PartitionedConfig(
 )
 
 
-@dg.job(name="baz", description="Not much tbh", partitions_def=baz_partitions, config=baz_config)
+@job(name="baz", description="Not much tbh", partitions_def=baz_partitions, config=baz_config)
 def baz_job():
     do_input()
 
 
-dynamic_partitions_def = dg.DynamicPartitionsDefinition(name="dynamic_partitions")
+dynamic_partitions_def = DynamicPartitionsDefinition(name="dynamic_partitions")
 
 
-@dg.asset(partitions_def=dynamic_partitions_def)
+@asset(partitions_def=dynamic_partitions_def)
 def dynamic_asset():
     return 1
 
@@ -80,7 +93,7 @@ def define_foo_job():
     return foo_job
 
 
-@dg.job(name="other_foo")
+@job(name="other_foo")
 def other_foo_job():
     do_input(do_something())
 
@@ -89,19 +102,19 @@ def define_other_foo_job():
     return other_foo_job
 
 
-@dg.job(name="bar")
+@job(name="bar")
 def bar_job():
-    @dg.usable_as_dagster_type(name="InputTypeWithoutHydration")
+    @usable_as_dagster_type(name="InputTypeWithoutHydration")
     class InputTypeWithoutHydration(int):
         pass
 
-    @dg.op(out=dg.Out(InputTypeWithoutHydration))
+    @op(out=Out(InputTypeWithoutHydration))
     def one(_):
         return 1
 
-    @dg.op(
-        ins={"some_input": dg.In(InputTypeWithoutHydration)},
-        out=dg.Out(dg.Int),
+    @op(
+        ins={"some_input": In(InputTypeWithoutHydration)},
+        out=Out(Int),
     )
     def fail_subset(_, some_input):
         return some_input
@@ -109,39 +122,27 @@ def bar_job():
     fail_subset(one())
 
 
-@dg.schedule(job_name="baz", cron_schedule="* * * * *")
+@schedule(job_name="baz", cron_schedule="* * * * *")
 def partitioned_run_request_schedule():
-    return dg.RunRequest(partition_key="a")
-
-
-@dg.schedule(job_name="baz", cron_schedule="* * * * *")
-def schedule_times_out():
-    import time
-
-    time.sleep(2)
-
-
-@dg.schedule(job_name="baz", cron_schedule="* * * * *")
-def schedule_error():
-    raise Exception("womp womp")
+    return RunRequest(partition_key="a")
 
 
 def define_bar_schedules():
     return {
-        "foo_schedule": dg.ScheduleDefinition(
+        "foo_schedule": ScheduleDefinition(
             "foo_schedule",
             cron_schedule="* * * * *",
             job_name="foo",
             run_config={"fizz": "buzz"},
         ),
-        "foo_schedule_never_execute": dg.ScheduleDefinition(
+        "foo_schedule_never_execute": ScheduleDefinition(
             "foo_schedule_never_execute",
             cron_schedule="* * * * *",
             job_name="foo",
             run_config={"fizz": "buzz"},
             should_execute=lambda _context: False,
         ),
-        "foo_schedule_echo_time": dg.ScheduleDefinition(
+        "foo_schedule_echo_time": ScheduleDefinition(
             "foo_schedule_echo_time",
             cron_schedule="* * * * *",
             job_name="foo",
@@ -154,67 +155,47 @@ def define_bar_schedules():
             },
         ),
         "partitioned_run_request_schedule": partitioned_run_request_schedule,
-        "schedule_times_out": schedule_times_out,
-        "schedule_error": schedule_error,
     }
 
 
-@dg.sensor(job_name="foo")
+@sensor(job_name="foo")
 def sensor_foo(_):
-    yield dg.RunRequest(run_key=None, run_config={"foo": "FOO"}, tags={"foo": "foo_tag"})
-    yield dg.RunRequest(run_key=None, run_config={"foo": "FOO"})
+    yield RunRequest(run_key=None, run_config={"foo": "FOO"}, tags={"foo": "foo_tag"})
+    yield RunRequest(run_key=None, run_config={"foo": "FOO"})
 
 
-@dg.sensor(job_name="foo")
-def sensor_times_out(_):
-    import time
-
-    time.sleep(2)
-
-
-@dg.sensor(job_name="foo")
+@sensor(job_name="foo")
 def sensor_error(_):
     raise Exception("womp womp")
 
 
-@dg.sensor(job_name="foo")
+@sensor(job_name="foo")
 def sensor_raises_dagster_error(_):
-    raise dg.DagsterError("Dagster error")
+    raise DagsterError("Dagster error")
 
 
-@dg.job(
-    metadata={"pipeline_snapshot": MetadataValue.json({"pipeline_snapshot": "pipeline_snapshot"})}
-)
-def pipeline_snapshot():
-    do_something()
-    do_fail()
-
-
-@dg.repository(metadata={"string": "foo", "integer": 123})
+@repository(metadata={"string": "foo", "integer": 123})
 def bar_repo():
     return {
         "jobs": {
             "bar": lambda: bar_job,
             "baz": lambda: baz_job,
-            "dynamic_job": dg.define_asset_job(
+            "dynamic_job": define_asset_job(
                 "dynamic_job", [dynamic_asset], partitions_def=dynamic_partitions_def
             ).resolve(asset_graph=AssetGraph.from_assets([dynamic_asset])),
-            "fail_job": fail_job,
+            "fail": fail_job,
             "foo": foo_job,
             "forever": forever_job,
-            "pipeline_snapshot": pipeline_snapshot.get_subset(op_selection=["do_something"]),
-            "job_with_external_tag": job_with_external_tag,
         },
         "schedules": define_bar_schedules(),
         "sensors": {
             "sensor_foo": sensor_foo,
-            "sensor_times_out": sensor_times_out,
             "sensor_error": lambda: sensor_error,
             "sensor_raises_dagster_error": lambda: sensor_raises_dagster_error,
         },
     }
 
 
-@dg.repository  # pyright: ignore[reportArgumentType]
+@repository
 def other_repo():
     return {"jobs": {"other_foo": define_other_foo_job}}

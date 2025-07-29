@@ -1,11 +1,11 @@
-import {createContext} from 'react';
+import * as React from 'react';
 
 type InstancePageContextValue = {
   pageTitle: string;
   healthTitle: string;
 };
 
-export const InstancePageContext = createContext<InstancePageContextValue>({
+export const InstancePageContext = React.createContext<InstancePageContextValue>({
   pageTitle: '',
   healthTitle: '',
 });

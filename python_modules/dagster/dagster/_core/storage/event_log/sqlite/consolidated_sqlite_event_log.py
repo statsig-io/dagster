@@ -1,10 +1,8 @@
 import logging
 import os
 from collections import defaultdict
-from collections.abc import Mapping
 from contextlib import contextmanager
-from functools import cached_property
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 import sqlalchemy as db
 from sqlalchemy.pool import NullPool
@@ -16,8 +14,6 @@ import dagster._check as check
 from dagster._config import StringSource
 from dagster._core.storage.dagster_run import DagsterRunStatus
 from dagster._core.storage.event_log.base import EventLogCursor
-from dagster._core.storage.event_log.schema import SqlEventLogStorageMetadata
-from dagster._core.storage.event_log.sql_event_log import SqlDbConnection, SqlEventLogStorage
 from dagster._core.storage.sql import (
     check_alembic_revision,
     create_engine,
@@ -28,6 +24,9 @@ from dagster._core.storage.sql import (
 from dagster._core.storage.sqlite import create_db_conn_string
 from dagster._serdes import ConfigurableClass, ConfigurableClassData
 from dagster._utils import mkdir_p
+
+from ..schema import SqlEventLogStorageMetadata
+from ..sql_event_log import SqlDbConnection, SqlEventLogStorage
 
 SQLITE_EVENT_LOG_FILENAME = "event_log"
 
@@ -78,7 +77,7 @@ class ConsolidatedSqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     def from_config_value(
         cls, inst_data: ConfigurableClassData, config_value: Mapping[str, Any]
     ) -> Self:
-        return cls(inst_data=inst_data, **config_value)
+        return ConsolidatedSqliteEventLogStorage(inst_data=inst_data, **config_value)
 
     def _init_db(self):
         mkdir_p(self._base_dir)
@@ -114,9 +113,7 @@ class ConsolidatedSqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
 
     def has_table(self, table_name: str) -> bool:
         engine = create_engine(self._conn_string, poolclass=NullPool)
-        with engine.connect() as conn:
-            has_table = bool(engine.dialect.has_table(conn, table_name))
-        return has_table
+        return bool(engine.dialect.has_table(engine.connect(), table_name))
 
     def get_db_path(self):
         return os.path.join(self._base_dir, f"{SQLITE_EVENT_LOG_FILENAME}.db")
@@ -128,11 +125,13 @@ class ConsolidatedSqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
 
     def has_secondary_index(self, name):
         if name not in self._secondary_index_cache:
-            self._secondary_index_cache[name] = super().has_secondary_index(name)
+            self._secondary_index_cache[name] = super(
+                ConsolidatedSqliteEventLogStorage, self
+            ).has_secondary_index(name)
         return self._secondary_index_cache[name]
 
     def enable_secondary_index(self, name):
-        super().enable_secondary_index(name)
+        super(ConsolidatedSqliteEventLogStorage, self).enable_secondary_index(name)
         if name in self._secondary_index_cache:
             del self._secondary_index_cache[name]
 
@@ -141,14 +140,14 @@ class ConsolidatedSqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
             self._obs = Observer()
             self._obs.start()
             self._obs.schedule(
-                ConsolidatedSqliteEventLogStorageWatchdog(self), self._base_dir, recursive=True
+                ConsolidatedSqliteEventLogStorageWatchdog(self), self._base_dir, True
             )
 
         self._watchers[run_id][callback] = cursor
 
-    @cached_property
+    @property
     def supports_global_concurrency_limits(self) -> bool:
-        return self.has_table("concurrency_limits")
+        return False
 
     def on_modified(self):
         keys = [
@@ -199,7 +198,9 @@ class ConsolidatedSqliteEventLogStorageWatchdog(PatternMatchingEventHandler):
             event_log_storage, "event_log_storage", ConsolidatedSqliteEventLogStorage
         )
         self._log_path = event_log_storage.get_db_path()
-        super().__init__(patterns=[self._log_path], **kwargs)
+        super(ConsolidatedSqliteEventLogStorageWatchdog, self).__init__(
+            patterns=[self._log_path], **kwargs
+        )
 
     def on_modified(self, event):
         check.invariant(event.src_path == self._log_path)

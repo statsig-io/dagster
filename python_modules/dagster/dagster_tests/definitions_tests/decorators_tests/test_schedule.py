@@ -1,13 +1,21 @@
 import inspect
 import json
 import re
-import warnings
 from datetime import datetime
 
-import dagster as dg
+import pendulum
 import pytest
+from dagster import (
+    DagsterInvalidDefinitionError,
+    RunRequest,
+    ScheduleDefinition,
+    build_schedule_context,
+    job,
+    op,
+    schedule,
+    validate_run_config,
+)
 from dagster._core.errors import ScheduleExecutionError
-from dagster._time import get_current_datetime
 from dagster._utils.merger import merge_dicts
 
 # This file tests a lot of parameter name stuff, so these warnings are spurious
@@ -16,7 +24,7 @@ from dagster._utils.merger import merge_dicts
 def test_scheduler():
     def define_schedules():
         return [
-            dg.ScheduleDefinition(
+            ScheduleDefinition(
                 name="my_schedule",
                 cron_schedule="* * * * *",
                 job_name="test_job",
@@ -24,7 +32,7 @@ def test_scheduler():
             )
         ]
 
-    @dg.schedule(cron_schedule="* * * * *", job_name="foo_job")
+    @schedule(cron_schedule="* * * * *", job_name="foo_job")
     def echo_time_schedule(context):
         return {
             "echo_time": (
@@ -34,7 +42,7 @@ def test_scheduler():
             )
         }
 
-    @dg.schedule(
+    @schedule(
         cron_schedule="* * * * *",
         job_name="foo_job",
         should_execute=lambda x: False,
@@ -42,11 +50,11 @@ def test_scheduler():
     def always_skip_schedule():
         return {}
 
-    context_without_time = dg.build_schedule_context()
+    context_without_time = build_schedule_context()
 
     execution_time = datetime(year=2019, month=2, day=27)
 
-    context_with_time = dg.build_schedule_context(scheduled_execution_time=execution_time)
+    context_with_time = build_schedule_context(scheduled_execution_time=execution_time)
 
     with pytest.raises(ScheduleExecutionError):
         echo_time_schedule.evaluate_tick(context_without_time)
@@ -65,15 +73,15 @@ def test_scheduler():
 
 
 def test_schedule_decorators_sanity():
-    @dg.op
+    @op
     def do_nothing(_):
         pass
 
-    @dg.job
+    @job
     def foo_job():
         do_nothing()
 
-    @dg.schedule(cron_schedule="* * * * *", job_name="foo_job")
+    @schedule(cron_schedule="* * * * *", job_name="foo_job")
     def foo_schedule():
         """Fake doc block."""
         return {}
@@ -83,7 +91,7 @@ def test_schedule_decorators_sanity():
 
     assert not foo_schedule.execution_timezone
 
-    @dg.schedule(
+    @schedule(
         cron_schedule="* * * * *",
         job_name="foo_job",
         execution_timezone="US/Central",
@@ -94,13 +102,13 @@ def test_schedule_decorators_sanity():
     assert foo_schedule_timezone.execution_timezone == "US/Central"
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match=re.escape(
             "Invalid execution timezone MadeUpTimeZone for invalid_timezone_foo_schedule"
         ),
     ):
 
-        @dg.schedule(
+        @schedule(
             cron_schedule="* * * * *",
             job_name="foo_job",
             execution_timezone="MadeUpTimeZone",
@@ -133,29 +141,29 @@ HOURS_UNTIL_FEBRUARY_27 = 24 * (31 + 26)
 
 
 def test_schedule_decorators_bad():
-    @dg.op
+    @op
     def do_nothing(_):
         pass
 
-    @dg.job
+    @job
     def foo_job():
         do_nothing()
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError, match="invalid cron schedule"):
+    with pytest.raises(DagsterInvalidDefinitionError, match="invalid cron schedule"):
 
-        @dg.schedule(cron_schedule="", job_name="foo_job")
+        @schedule(cron_schedule="", job_name="foo_job")
         def bad_cron_string(context):
             return {}
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError, match="invalid cron schedule"):
+    with pytest.raises(DagsterInvalidDefinitionError, match="invalid cron schedule"):
 
-        @dg.schedule(cron_schedule="bad_schedule_two", job_name="foo_job")
+        @schedule(cron_schedule="bad_schedule_two", job_name="foo_job")
         def bad_cron_string_two(context):
             return {}
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError, match="invalid cron schedule"):
+    with pytest.raises(DagsterInvalidDefinitionError, match="invalid cron schedule"):
 
-        @dg.schedule(cron_schedule="* * * * * *", job_name="foo_job")
+        @schedule(cron_schedule="* * * * * *", job_name="foo_job")
         def bad_cron_string_three(context):
             return {}
 
@@ -163,81 +171,62 @@ def test_schedule_decorators_bad():
 def test_schedule_with_nested_tags():
     nested_tags = {"foo": {"bar": "baz"}}
 
-    @dg.schedule(cron_schedule="* * * * *", job_name="foo_job", tags=nested_tags)  # pyright: ignore[reportArgumentType]
+    @schedule(cron_schedule="* * * * *", job_name="foo_job", tags=nested_tags)
     def my_tag_schedule():
         return {}
 
-    assert my_tag_schedule.evaluate_tick(  # pyright: ignore[reportOptionalSubscript]
-        dg.build_schedule_context(scheduled_execution_time=get_current_datetime())
+    assert my_tag_schedule.evaluate_tick(
+        build_schedule_context(scheduled_execution_time=pendulum.now())
     )[0][0].tags == merge_dicts(
         {key: json.dumps(val) for key, val in nested_tags.items()},
         {"dagster/schedule_name": "my_tag_schedule"},
     )
 
 
-def test_invalid_tag_keys():
-    tags = {"my_tag&": "yes", "my_tag#": "yes"}
-
-    # turn off any outer warnings filters, e.g. ignores that are set in pyproject.toml
-    warnings.resetwarnings()
-    with warnings.catch_warnings(record=True) as caught_warnings:
-
-        @dg.schedule(cron_schedule="* * * * *", job_name="foo_job", tags=tags)
-        def my_tag_schedule():
-            return {}
-
-        assert len(caught_warnings) == 2
-        warning = caught_warnings[0]
-        assert "Non-compliant tag keys like ['my_tag&', 'my_tag#'] are deprecated" in str(
-            warning.message
-        )
-        assert warning.filename.endswith("test_schedule.py")
-
-    assert my_tag_schedule.evaluate_tick(  # pyright: ignore[reportOptionalSubscript]
-        dg.build_schedule_context(scheduled_execution_time=get_current_datetime())
-    )[0][0].tags == merge_dicts(tags, {"dagster/schedule_name": "my_tag_schedule"})
-
-
 def test_scheduled_jobs():
-    @dg.op(config_schema={"foo": dg.Field(dg.String)})
+    from dagster import Field, String
+
+    @op(config_schema={"foo": Field(String)})
     def foo_op(context):
         pass
 
     DEFAULT_FOO_CONFIG = {"ops": {"foo_op": {"config": {"foo": "bar"}}}}
 
-    @dg.job(config=DEFAULT_FOO_CONFIG)
+    @job(config=DEFAULT_FOO_CONFIG)
     def foo_job():
         foo_op()
 
-    my_schedule = dg.ScheduleDefinition(name="my_schedule", cron_schedule="* * * * *", job=foo_job)
+    my_schedule = ScheduleDefinition(name="my_schedule", cron_schedule="* * * * *", job=foo_job)
 
-    context_without_time = dg.build_schedule_context()
+    context_without_time = build_schedule_context()
     execution_data = my_schedule.evaluate_tick(context_without_time)
     assert execution_data.run_requests
     assert len(execution_data.run_requests) == 1
 
-    dg.validate_run_config(foo_job, execution_data.run_requests[0].run_config)
+    validate_run_config(foo_job, execution_data.run_requests[0].run_config)
 
 
 def test_request_based_schedule():
-    context_without_time = dg.build_schedule_context()
+    from dagster import Field, String
 
-    @dg.op(config_schema={"foo": dg.Field(dg.String)})
+    context_without_time = build_schedule_context()
+
+    @op(config_schema={"foo": Field(String)})
     def foo_op(context):
         pass
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
     FOO_CONFIG = {"ops": {"foo_op": {"config": {"foo": "bar"}}}}
 
-    @dg.schedule(
+    @schedule(
         cron_schedule="* * * * *",
         job=foo_job,
     )
     def foo_schedule(context):
-        return dg.RunRequest(run_key=None, run_config=FOO_CONFIG, tags={"foo": "FOO"})
+        return RunRequest(run_key=None, run_config=FOO_CONFIG, tags={"foo": "FOO"})
 
     # evaluate tick
     execution_data = foo_schedule.evaluate_tick(context_without_time)
@@ -249,29 +238,31 @@ def test_request_based_schedule():
 
     # test direct invocation
     run_request = foo_schedule(context_without_time)
-    assert run_request.run_config == FOO_CONFIG  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-    assert run_request.tags.get("foo") == "FOO"  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+    assert run_request.run_config == FOO_CONFIG
+    assert run_request.tags.get("foo") == "FOO"
 
 
 def test_request_based_schedule_no_context():
-    context_without_time = dg.build_schedule_context()
+    from dagster import Field, String
 
-    @dg.op(config_schema={"foo": dg.Field(dg.String)})
+    context_without_time = build_schedule_context()
+
+    @op(config_schema={"foo": Field(String)})
     def foo_op(context):
         pass
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
     FOO_CONFIG = {"ops": {"foo_op": {"config": {"foo": "bar"}}}}
 
-    @dg.schedule(
+    @schedule(
         cron_schedule="* * * * *",
         job=foo_job,
     )
     def foo_schedule():
-        return dg.RunRequest(run_key=None, run_config=FOO_CONFIG, tags={"foo": "FOO"})
+        return RunRequest(run_key=None, run_config=FOO_CONFIG, tags={"foo": "FOO"})
 
     # evaluate tick
     execution_data = foo_schedule.evaluate_tick(context_without_time)
@@ -283,24 +274,26 @@ def test_request_based_schedule_no_context():
 
     # test direct invocation
     run_request = foo_schedule()
-    assert run_request.run_config == FOO_CONFIG  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-    assert run_request.tags.get("foo") == "FOO"  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+    assert run_request.run_config == FOO_CONFIG
+    assert run_request.tags.get("foo") == "FOO"
 
 
 def test_config_based_schedule():
-    context_without_time = dg.build_schedule_context()
+    from dagster import Field, String
 
-    @dg.op(config_schema={"foo": dg.Field(dg.String)})
+    context_without_time = build_schedule_context()
+
+    @op(config_schema={"foo": Field(String)})
     def foo_op(context):
         pass
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
     FOO_CONFIG = {"ops": {"foo_op": {"config": {"foo": "bar"}}}}
 
-    @dg.schedule(
+    @schedule(
         cron_schedule="* * * * *",
         job=foo_job,
         tags={"foo": "FOO"},
@@ -322,19 +315,21 @@ def test_config_based_schedule():
 
 
 def test_config_based_schedule_no_context():
-    context_without_time = dg.build_schedule_context()
+    from dagster import Field, String
 
-    @dg.op(config_schema={"foo": dg.Field(dg.String)})
+    context_without_time = build_schedule_context()
+
+    @op(config_schema={"foo": Field(String)})
     def foo_op(context):
         pass
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
     FOO_CONFIG = {"ops": {"foo_op": {"config": {"foo": "bar"}}}}
 
-    @dg.schedule(
+    @schedule(
         cron_schedule="* * * * *",
         job=foo_job,
         tags={"foo": "FOO"},
@@ -356,24 +351,26 @@ def test_config_based_schedule_no_context():
 
 
 def test_request_based_schedule_generator():
-    context_without_time = dg.build_schedule_context()
+    from dagster import Field, String
 
-    @dg.op(config_schema={"foo": dg.Field(dg.String)})
+    context_without_time = build_schedule_context()
+
+    @op(config_schema={"foo": Field(String)})
     def foo_op(context):
         pass
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
     FOO_CONFIG = {"ops": {"foo_op": {"config": {"foo": "bar"}}}}
 
-    @dg.schedule(
+    @schedule(
         cron_schedule="* * * * *",
         job=foo_job,
     )
     def foo_schedule(_context):
-        yield dg.RunRequest(run_key=None, run_config=FOO_CONFIG, tags={"foo": "FOO"})
+        yield RunRequest(run_key=None, run_config=FOO_CONFIG, tags={"foo": "FOO"})
 
     # evaluate tick
     execution_data = foo_schedule.evaluate_tick(context_without_time)
@@ -392,24 +389,26 @@ def test_request_based_schedule_generator():
 
 
 def test_request_based_schedule_generator_no_context():
-    context_without_time = dg.build_schedule_context()
+    from dagster import Field, String
 
-    @dg.op(config_schema={"foo": dg.Field(dg.String)})
+    context_without_time = build_schedule_context()
+
+    @op(config_schema={"foo": Field(String)})
     def foo_op(context):
         pass
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
     FOO_CONFIG = {"ops": {"foo_op": {"config": {"foo": "bar"}}}}
 
-    @dg.schedule(
+    @schedule(
         cron_schedule="* * * * *",
         job=foo_job,
     )
     def foo_schedule():
-        yield dg.RunRequest(run_key=None, run_config=FOO_CONFIG, tags={"foo": "FOO"})
+        yield RunRequest(run_key=None, run_config=FOO_CONFIG, tags={"foo": "FOO"})
 
     # evaluate tick
     execution_data = foo_schedule.evaluate_tick(context_without_time)
@@ -428,19 +427,19 @@ def test_request_based_schedule_generator_no_context():
 
 
 def test_vixie_cronstring_schedule():
-    context_without_time = dg.build_schedule_context()
+    context_without_time = build_schedule_context()
 
-    @dg.op
+    @op
     def foo_op(context):
         pass
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
-    @dg.schedule(cron_schedule="@daily", job=foo_job)
+    @schedule(cron_schedule="@daily", job=foo_job)
     def foo_schedule():
-        yield dg.RunRequest(run_key=None, run_config={}, tags={"foo": "FOO"})
+        yield RunRequest(run_key=None, run_config={}, tags={"foo": "FOO"})
 
     # evaluate tick
     execution_data = foo_schedule.evaluate_tick(context_without_time)

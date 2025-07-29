@@ -1,5 +1,4 @@
-from collections.abc import Mapping, Sequence
-from typing import Any, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 import dagster._check as check
 from dagster._annotations import public
@@ -8,9 +7,10 @@ from dagster._core.definitions.events import AssetKey, CoercibleToAssetKey
 from dagster._core.definitions.utils import DEFAULT_OUTPUT
 from dagster._core.errors import DagsterInvariantViolationError
 from dagster._core.events import DagsterEvent
-from dagster._core.execution.execution_result import ExecutionResult
 from dagster._core.execution.plan.outputs import StepOutputHandle
 from dagster._core.storage.dagster_run import DagsterRun
+
+from .execution_result import ExecutionResult
 
 
 class ExecuteInProcessResult(ExecutionResult):
@@ -117,7 +117,9 @@ class ExecuteInProcessResult(ExecutionResult):
         Returns:
             Any: The value of the retrieved output.
         """
-        return super().output_for_node(node_str, output_name=output_name)
+        return super(ExecuteInProcessResult, self).output_for_node(
+            node_str, output_name=output_name
+        )
 
     @public
     def asset_value(self, asset_key: CoercibleToAssetKey) -> Any:
@@ -129,7 +131,7 @@ class ExecuteInProcessResult(ExecutionResult):
         Returns:
             Any: The value of the retrieved asset.
         """
-        node_output_handle = self._job_def.asset_layer.get_op_output_handle(
+        node_output_handle = self._job_def.asset_layer.node_output_handle_for_asset(
             AssetKey.from_coercible(asset_key)
         )
         return self.output_for_node(
@@ -147,4 +149,4 @@ class ExecuteInProcessResult(ExecutionResult):
         Returns:
             Any: The value of the retrieved output.
         """
-        return super().output_value(output_name=output_name)
+        return super(ExecuteInProcessResult, self).output_value(output_name=output_name)

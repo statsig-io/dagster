@@ -1,21 +1,19 @@
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
 import dagster._check as check
-from dagster._core.definitions.asset_selection import AssetSelection
-from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
+from dagster._core.definitions.assets_job import build_source_asset_observation_job
 from dagster._core.definitions.definitions_class import Definitions
-from dagster._core.definitions.source_asset import SourceAsset
-from dagster._core.definitions.unresolved_asset_job_definition import define_asset_job
-from dagster._core.instance import DagsterInstance
 from dagster._utils.warnings import disable_dagster_warnings
 
+from ..instance import DagsterInstance
+from .source_asset import SourceAsset
+
 if TYPE_CHECKING:
-    from dagster._core.execution.execute_in_process_result import ExecuteInProcessResult
+    from ..execution.execute_in_process_result import ExecuteInProcessResult
 
 
 def observe(
-    assets: Sequence[Union[AssetsDefinition, SourceAsset]],
+    source_assets: Sequence[SourceAsset],
     run_config: Any = None,
     instance: Optional[DagsterInstance] = None,
     resources: Optional[Mapping[str, object]] = None,
@@ -28,8 +26,8 @@ def observe(
     By default, will materialize assets to the local filesystem.
 
     Args:
-        assets (Sequence[Union[AssetsDefinition, SourceAsset]]):
-            The assets to observe.
+        source_assets (Sequence[SourceAsset]):
+            The source assets to materialize.
         resources (Optional[Mapping[str, object]]):
             The resources needed for execution. Can provide resource instances
             directly, or resource definitions. Note that if provided resources
@@ -43,22 +41,22 @@ def observe(
     Returns:
         ExecuteInProcessResult: The result of the execution.
     """
-    assets = check.sequence_param(assets, "assets", of_type=(AssetsDefinition, SourceAsset))
+    source_assets = check.sequence_param(source_assets, "assets", of_type=(SourceAsset))
     instance = check.opt_inst_param(instance, "instance", DagsterInstance)
     partition_key = check.opt_str_param(partition_key, "partition_key")
     resources = check.opt_mapping_param(resources, "resources", key_type=str)
 
     with disable_dagster_warnings():
-        observation_job = define_asset_job(
-            "in_process_observation_job", selection=AssetSelection.all(include_sources=True)
+        observation_job = build_source_asset_observation_job(
+            "in_process_observation_job", source_assets
         )
         defs = Definitions(
-            assets=assets,
+            assets=source_assets,
             jobs=[observation_job],
             resources=resources,
         )
 
-        return defs.resolve_job_def("in_process_observation_job").execute_in_process(
+        return defs.get_job_def("in_process_observation_job").execute_in_process(
             run_config=run_config,
             instance=instance,
             partition_key=partition_key,

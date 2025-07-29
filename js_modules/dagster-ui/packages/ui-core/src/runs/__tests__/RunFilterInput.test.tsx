@@ -1,51 +1,34 @@
-import {MockedProvider, MockedResponse} from '@apollo/client/testing';
+import {MockedResponse, MockedProvider} from '@apollo/client/testing';
 import {act, render, waitFor} from '@testing-library/react';
 import {renderHook} from '@testing-library/react-hooks';
 import userEvent from '@testing-library/user-event';
-import * as React from 'react';
+import React from 'react';
 
 import {
   buildPipeline,
   buildRepository,
   buildRepositoryLocation,
   buildRunTagKeys,
+  buildWorkspace,
   buildWorkspaceLocationEntry,
 } from '../../graphql/types';
-import {mockViewportClientRect, restoreViewportClientRect} from '../../testing/mocking';
-import {calculateTimeRanges} from '../../ui/BaseFilters/useTimeRangeFilter';
-import {WorkspaceProvider} from '../../workspace/WorkspaceContext/WorkspaceContext';
-import {buildWorkspaceMocks} from '../../workspace/WorkspaceContext/__fixtures__/Workspace.fixtures';
+import {calculateTimeRanges} from '../../ui/Filters/useTimeRangeFilter';
+import {WorkspaceProvider} from '../../workspace/WorkspaceContext';
 import {DagsterTag} from '../RunTag';
 import {
-  RUN_TAG_KEYS_QUERY,
-  RunFilterToken,
   RunsFilterInputProps,
+  RUN_TAG_KEYS_QUERY,
   tagSuggestionValueObject,
   tagValueToFilterObject,
   useRunsFilterInput,
+  RunFilterToken,
   useTagDataFilterValues,
 } from '../RunsFilterInput';
-import {buildRunTagValuesQueryMockedResponse} from '../__fixtures__/RunsFilterInput.fixtures';
+import {
+  buildRunTagValuesQueryMockedResponse,
+  buildWorkspaceContextMockedResponse,
+} from '../__fixtures__/RunsFilterInput.fixtures';
 import {RunTagKeysQuery} from '../types/RunsFilterInput.types';
-
-const workspaceMocks = buildWorkspaceMocks([
-  buildWorkspaceLocationEntry({
-    name: 'some_workspace',
-    locationOrLoadError: buildRepositoryLocation({
-      name: 'some_location',
-      repositories: [
-        buildRepository({
-          name: 'some_repo',
-          pipelines: [
-            buildPipeline({
-              name: 'some_job',
-            }),
-          ],
-        }),
-      ],
-    }),
-  }),
-]);
 
 const runTagKeysMock: MockedResponse<RunTagKeysQuery> = {
   request: {
@@ -65,14 +48,6 @@ const backfillRunTagsValuesMock = buildRunTagValuesQueryMockedResponse(DagsterTa
   'value1',
   'value2',
 ]);
-
-beforeAll(() => {
-  mockViewportClientRect();
-});
-
-afterAll(() => {
-  restoreViewportClientRect();
-});
 
 describe('useTagDataFilterValues', () => {
   it('should return the correct filter values based on the tag data', async () => {
@@ -98,7 +73,6 @@ describe('useTagDataFilterValues', () => {
             value: 'value1',
           },
           match: ['value1'],
-          final: true,
         },
         {
           label: 'value2',
@@ -108,7 +82,6 @@ describe('useTagDataFilterValues', () => {
             value: 'value2',
           },
           match: ['value2'],
-          final: true,
         },
       ]);
     });
@@ -157,7 +130,7 @@ function TestRunsFilterInput({
     );
   }
   return (
-    <MockedProvider mocks={mocks?.length ? [...workspaceMocks, ...mocks] : workspaceMocks}>
+    <MockedProvider mocks={mocks}>
       <WorkspaceProvider>
         <RunsFilterInput tokens={tokens} onChange={onChange} enabledFilters={enabledFilters} />
       </WorkspaceProvider>
@@ -175,6 +148,11 @@ describe('<RunFilterInput  />', () => {
       {token: 'created_date_after', value: '1577836800'}, // 1/1/2020
     ];
     const {getByText} = render(<TestRunsFilterInput tokens={tokens} onChange={onChange} />);
+
+    expect(onChange).toHaveBeenCalledWith([
+      {token: 'created_date_before', value: '1609459200'},
+      {token: 'created_date_after', value: '1577836800'},
+    ]);
 
     onChange.mockClear();
 
@@ -203,7 +181,30 @@ describe('<RunFilterInput  />', () => {
         tokens={tokens}
         onChange={onChange}
         enabledFilters={['job']}
-        mocks={workspaceMocks}
+        mocks={[
+          buildWorkspaceContextMockedResponse(
+            buildWorkspace({
+              locationEntries: [
+                buildWorkspaceLocationEntry({
+                  name: 'some_workspace',
+                  locationOrLoadError: buildRepositoryLocation({
+                    name: 'some_location',
+                    repositories: [
+                      buildRepository({
+                        name: 'some_repo',
+                        pipelines: [
+                          buildPipeline({
+                            name: 'some_job',
+                          }),
+                        ],
+                      }),
+                    ],
+                  }),
+                }),
+              ],
+            }),
+          ),
+        ]}
       />,
     );
 
@@ -252,7 +253,7 @@ describe('<RunFilterInput  />', () => {
         onChange={onChange}
         mocks={[
           runTagKeysMock,
-          buildRunTagValuesQueryMockedResponse(DagsterTag.PartitionSet, ['set1', 'set2']),
+          buildRunTagValuesQueryMockedResponse(DagsterTag.Partition, ['partition1', 'partition2']),
         ]}
       />,
     );
@@ -263,15 +264,15 @@ describe('<RunFilterInput  />', () => {
     await userEvent.click(getByText('Tag'));
 
     await waitFor(async () => {
-      await userEvent.click(getByText(DagsterTag.PartitionSet));
+      await userEvent.click(getByText(DagsterTag.Partition));
     });
 
     await waitFor(async () => {
-      await userEvent.click(getByText('set1'));
+      await userEvent.click(getByText('partition1'));
     });
 
     expect(onChange).toHaveBeenCalledWith([
-      {token: 'tag', value: `${DagsterTag.PartitionSet}=set1`},
+      {token: 'tag', value: `${DagsterTag.Partition}=partition1`},
     ]);
   });
 });

@@ -1,19 +1,20 @@
 import {Tag, Tooltip} from '@dagster-io/ui-components';
 import {useVirtualizer} from '@tanstack/react-virtual';
-import {useMemo, useRef} from 'react';
+import * as React from 'react';
 
-import {OVERVIEW_COLLAPSED_KEY} from './OverviewExpansionKey';
 import {
   VirtualizedResourceHeader,
   VirtualizedResourceRow,
 } from '../resources/VirtualizedResourceRow';
-import {ResourceEntryFragment} from '../resources/types/WorkspaceResourcesQuery.types';
+import {ResourceEntryFragment} from '../resources/types/WorkspaceResourcesRoot.types';
 import {Container, Inner} from '../ui/VirtualizedTable';
 import {findDuplicateRepoNames} from '../ui/findDuplicateRepoNames';
 import {useRepoExpansionState} from '../ui/useRepoExpansionState';
 import {RepoRow} from '../workspace/VirtualizedWorkspaceTable';
 import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
 import {RepoAddress} from '../workspace/types';
+
+import {OVERVIEW_COLLAPSED_KEY} from './OverviewExpansionKey';
 
 type Repository = {
   repoAddress: RepoAddress;
@@ -31,9 +32,9 @@ interface Resource extends ResourceEntryFragment {
 
 type RowType = {type: 'header'; repoAddress: RepoAddress; resourceCount: number} | Resource;
 
-export const OverviewResourcesTable = ({repos}: Props) => {
-  const parentRef = useRef<HTMLDivElement | null>(null);
-  const allKeys = useMemo(
+export const OverviewResourcesTable: React.FC<Props> = ({repos}) => {
+  const parentRef = React.useRef<HTMLDivElement | null>(null);
+  const allKeys = React.useMemo(
     () => repos.map(({repoAddress}) => repoAddressAsHumanString(repoAddress)),
     [repos],
   );
@@ -43,7 +44,7 @@ export const OverviewResourcesTable = ({repos}: Props) => {
     allKeys,
   );
 
-  const flattened: RowType[] = useMemo(() => {
+  const flattened: RowType[] = React.useMemo(() => {
     const flat: RowType[] = [];
     repos.forEach(({repoAddress, resources}) => {
       flat.push({type: 'header', repoAddress, resourceCount: resources.length});
@@ -73,40 +74,42 @@ export const OverviewResourcesTable = ({repos}: Props) => {
   const items = rowVirtualizer.getVirtualItems();
 
   return (
-    <div style={{overflow: 'hidden'}}>
-      <Container ref={parentRef}>
-        <VirtualizedResourceHeader />
-        <Inner $totalHeight={totalHeight}>
-          {items.map(({index, key, size, start}) => {
-            const row: RowType = flattened[index]!;
-            const type = row!.type;
-            return type === 'header' ? (
-              <RepoRow
-                repoAddress={row.repoAddress}
-                key={key}
-                height={size}
-                start={start}
-                onToggle={onToggle}
-                onToggleAll={onToggleAll}
-                expanded={expandedKeys.includes(repoAddressAsHumanString(row.repoAddress))}
-                showLocation={duplicateRepoNames.has(row.repoAddress.name)}
-                rightElement={
-                  <Tooltip
-                    content={
-                      row.resourceCount === 1 ? '1 resource' : `${row.resourceCount} resources`
-                    }
-                    placement="top"
-                  >
-                    <Tag>{row.resourceCount}</Tag>
-                  </Tooltip>
-                }
-              />
-            ) : (
-              <VirtualizedResourceRow key={key} height={size} start={start} {...row} />
-            );
-          })}
-        </Inner>
-      </Container>
-    </div>
+    <>
+      <VirtualizedResourceHeader />
+      <div style={{overflow: 'hidden'}}>
+        <Container ref={parentRef}>
+          <Inner $totalHeight={totalHeight}>
+            {items.map(({index, key, size, start}) => {
+              const row: RowType = flattened[index]!;
+              const type = row!.type;
+              return type === 'header' ? (
+                <RepoRow
+                  repoAddress={row.repoAddress}
+                  key={key}
+                  height={size}
+                  start={start}
+                  onToggle={onToggle}
+                  onToggleAll={onToggleAll}
+                  expanded={expandedKeys.includes(repoAddressAsHumanString(row.repoAddress))}
+                  showLocation={duplicateRepoNames.has(row.repoAddress.name)}
+                  rightElement={
+                    <Tooltip
+                      content={
+                        row.resourceCount === 1 ? '1 resource' : `${row.resourceCount} resources`
+                      }
+                      placement="top"
+                    >
+                      <Tag>{row.resourceCount}</Tag>
+                    </Tooltip>
+                  }
+                />
+              ) : (
+                <VirtualizedResourceRow key={key} height={size} start={start} {...row} />
+              );
+            })}
+          </Inner>
+        </Container>
+      </div>
+    </>
   );
 };

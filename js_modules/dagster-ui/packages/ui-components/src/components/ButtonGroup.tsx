@@ -1,9 +1,9 @@
 import * as React from 'react';
 
 import {BaseButton} from './BaseButton';
-import {JoinedButtons, buildColorSet} from './Button';
-import {Colors} from './Color';
-import {Icon, IconName} from './Icon';
+import {JoinedButtons} from './Button';
+import {Colors} from './Colors';
+import {IconName, Icon} from './Icon';
 import {Tooltip} from './Tooltip';
 
 export type ButtonGroupItem<T> = {
@@ -11,7 +11,6 @@ export type ButtonGroupItem<T> = {
   label?: React.ReactNode;
   icon?: IconName;
   tooltip?: string;
-  disabled?: boolean;
 };
 
 interface Props<T> {
@@ -25,26 +24,18 @@ export const ButtonGroup = <T extends string | number>(props: Props<T>) => {
   return (
     <JoinedButtons>
       {buttons.map((button) => {
-        const {id, icon, label, tooltip, disabled} = button;
+        const {id, icon, label, tooltip} = button;
         const isActive = activeItems?.has(id);
-        const {fillColor, fillColorHover, iconColor, strokeColor, strokeColorHover} = buildColorSet(
-          {intent: undefined, outlined: false},
-        );
-
         const buttonElement = (
           <BaseButton
             key={id}
-            aria-selected={isActive}
-            fillColor={isActive ? Colors.backgroundLighterHover() : fillColor}
-            fillColorHover={isActive ? Colors.backgroundLighterHover() : fillColorHover}
-            textColor={isActive ? Colors.textDefault() : Colors.textLight()}
-            iconColor={iconColor}
-            strokeColor={isActive ? strokeColorHover : strokeColor}
-            strokeColorHover={strokeColorHover}
-            icon={icon ? <Icon name={icon} /> : null}
+            fillColor={isActive ? Colors.Gray200 : Colors.White}
+            textColor={isActive ? Colors.Gray900 : Colors.Gray700}
+            icon={
+              icon ? <Icon name={icon} color={isActive ? Colors.Gray900 : Colors.Gray700} /> : null
+            }
             label={label}
             onClick={(e) => onClick(id, e)}
-            disabled={disabled}
           />
         );
 

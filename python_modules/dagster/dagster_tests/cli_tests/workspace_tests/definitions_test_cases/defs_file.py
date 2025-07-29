@@ -1,12 +1,12 @@
-import dagster as dg
+from dagster import Definitions, asset
 
 
 def _make_defs():
-    @dg.asset
+    @asset
     def an_asset():
         pass
 
-    return dg.Definitions(assets=[an_asset])
+    return Definitions(assets=[an_asset])
 
 
 defs = _make_defs()

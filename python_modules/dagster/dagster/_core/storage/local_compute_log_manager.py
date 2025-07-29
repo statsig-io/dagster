@@ -1,13 +1,12 @@
+import hashlib
 import os
 import shutil
 import sys
 from collections import defaultdict
-from collections.abc import Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from pathlib import Path
-from typing import IO, Final, Optional
+from typing import IO, TYPE_CHECKING, Generator, Iterator, Mapping, Optional, Sequence, Tuple
 
-from dagster_shared.seven import json
+from typing_extensions import Final
 from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers.polling import PollingObserver
 
@@ -19,17 +18,28 @@ from dagster import (
 )
 from dagster._config.config_schema import UserConfigSchema
 from dagster._core.execution.compute_logs import mirror_stream_to_file
-from dagster._core.storage.compute_log_manager import (
+from dagster._core.storage.dagster_run import DagsterRun
+from dagster._serdes import ConfigurableClass, ConfigurableClassData
+from dagster._seven import json
+from dagster._utils import ensure_dir, ensure_file, touch_file
+
+from .captured_log_manager import (
     CapturedLogContext,
     CapturedLogData,
+    CapturedLogManager,
     CapturedLogMetadata,
     CapturedLogSubscription,
-    ComputeIOType,
-    ComputeLogManager,
 )
-from dagster._serdes import ConfigurableClass, ConfigurableClassData
-from dagster._utils import ensure_dir, ensure_file, touch_file
-from dagster._utils.security import non_secure_md5_hash_str
+from .compute_log_manager import (
+    MAX_BYTES_FILE_READ,
+    ComputeIOType,
+    ComputeLogFileData,
+    ComputeLogManager,
+    ComputeLogSubscription,
+)
+
+if TYPE_CHECKING:
+    from dagster._core.storage.cloud_storage_compute_log_manager import LogSubscription
 
 DEFAULT_WATCHDOG_POLLING_TIMEOUT: Final = 2.5
 
@@ -41,7 +51,7 @@ IO_TYPE_EXTENSION: Final[Mapping[ComputeIOType, str]] = {
 MAX_FILENAME_LENGTH: Final = 255
 
 
-class LocalComputeLogManager(ComputeLogManager, ConfigurableClass):
+class LocalComputeLogManager(CapturedLogManager, ComputeLogManager, ConfigurableClass):
     """Stores copies of stdout & stderr for each compute step locally on disk."""
 
     def __init__(
@@ -104,10 +114,10 @@ class LocalComputeLogManager(ComputeLogManager, ConfigurableClass):
         self, log_key: Sequence[str], cursor: Optional[str] = None, max_bytes: Optional[int] = None
     ) -> CapturedLogData:
         stdout_cursor, stderr_cursor = self.parse_cursor(cursor)
-        stdout, stdout_offset = self.get_log_data_for_type(
+        stdout, stdout_offset = self._read_bytes(
             log_key, ComputeIOType.STDOUT, offset=stdout_cursor, max_bytes=max_bytes
         )
-        stderr, stderr_offset = self.get_log_data_for_type(
+        stderr, stderr_offset = self._read_bytes(
             log_key, ComputeIOType.STDERR, offset=stderr_cursor, max_bytes=max_bytes
         )
         return CapturedLogData(
@@ -155,7 +165,7 @@ class LocalComputeLogManager(ComputeLogManager, ConfigurableClass):
         else:
             check.failed("Must pass in either `log_key` or `prefix` argument to delete_logs")
 
-    def get_log_data_for_type(
+    def _read_bytes(
         self,
         log_key: Sequence[str],
         io_type: ComputeIOType,
@@ -164,6 +174,21 @@ class LocalComputeLogManager(ComputeLogManager, ConfigurableClass):
     ):
         path = self.get_captured_local_path(log_key, IO_TYPE_EXTENSION[io_type])
         return self.read_path(path, offset or 0, max_bytes)
+
+    def parse_cursor(self, cursor: Optional[str] = None) -> Tuple[int, int]:
+        # Translates a string cursor into a set of byte offsets for stdout, stderr
+        if not cursor:
+            return 0, 0
+
+        parts = cursor.split(":")
+        if not parts or len(parts) != 2:
+            return 0, 0
+
+        stdout, stderr = [int(_) for _ in parts]
+        return stdout, stderr
+
+    def build_cursor(self, stdout_offset: int, stderr_offset: int) -> str:
+        return f"{stdout_offset}:{stderr_offset}"
 
     def complete_artifact_path(self, log_key):
         return self.get_captured_local_path(log_key, "complete")
@@ -200,40 +225,99 @@ class LocalComputeLogManager(ComputeLogManager, ConfigurableClass):
         if partial:
             filename = f"{filename}.partial"
         if len(filename) > MAX_FILENAME_LENGTH:
-            filename = "{}.{}".format(non_secure_md5_hash_str(filebase.encode("utf-8")), extension)
-        base_dir_path = Path(self._base_dir).resolve()
-        log_path = base_dir_path.joinpath(*namespace, filename).resolve()
-        if base_dir_path not in log_path.parents:
-            raise ValueError("Invalid path")
-        return str(log_path)
+            filename = "{}.{}".format(hashlib.md5(filebase.encode("utf-8")).hexdigest(), extension)
+        return os.path.join(self._base_dir, *namespace, filename)
 
     def subscribe(
         self, log_key: Sequence[str], cursor: Optional[str] = None
     ) -> CapturedLogSubscription:
         subscription = CapturedLogSubscription(self, log_key, cursor)
-        self._subscription_manager.add_subscription(subscription)
+        self.on_subscribe(subscription)
         return subscription
 
     def unsubscribe(self, subscription):
+        self.on_unsubscribe(subscription)
+
+    ###############################################
+    #
+    # Methods for the ComputeLogManager interface
+    #
+    ###############################################
+    @contextmanager
+    def _watch_logs(
+        self, dagster_run: DagsterRun, step_key: Optional[str] = None
+    ) -> Iterator[None]:
+        check.inst_param(dagster_run, "dagster_run", DagsterRun)
+        check.opt_str_param(step_key, "step_key")
+
+        log_key = self.build_log_key_for_run(dagster_run.run_id, step_key or dagster_run.job_name)
+        with self.capture_logs(log_key):
+            yield
+
+    def get_local_path(self, run_id: str, key: str, io_type: ComputeIOType) -> str:
+        """Legacy adapter from compute log manager to more generic captured log manager API."""
+        check.inst_param(io_type, "io_type", ComputeIOType)
+        log_key = self.build_log_key_for_run(run_id, key)
+        return self.get_captured_local_path(log_key, IO_TYPE_EXTENSION[io_type])
+
+    def read_logs_file(
+        self,
+        run_id: str,
+        key: str,
+        io_type: ComputeIOType,
+        cursor: int = 0,
+        max_bytes: int = MAX_BYTES_FILE_READ,
+    ) -> ComputeLogFileData:
+        path = self.get_local_path(run_id, key, io_type)
+
+        if not os.path.exists(path) or not os.path.isfile(path):
+            return ComputeLogFileData(path=path, data=None, cursor=0, size=0, download_url=None)
+
+        # See: https://docs.python.org/2/library/stdtypes.html#file.tell for Windows behavior
+        with open(path, "rb") as f:
+            f.seek(cursor, os.SEEK_SET)
+            data = f.read(max_bytes)
+            cursor = f.tell()
+            stats = os.fstat(f.fileno())
+
+        # local download path
+        download_url = self.download_url(run_id, key, io_type)
+        return ComputeLogFileData(
+            path=path,
+            data=data.decode("utf-8"),
+            cursor=cursor,
+            size=stats.st_size,
+            download_url=download_url,
+        )
+
+    def get_key(self, dagster_run: DagsterRun, step_key: Optional[str]):
+        check.inst_param(dagster_run, "dagster_run", DagsterRun)
+        check.opt_str_param(step_key, "step_key")
+        return step_key or dagster_run.job_name
+
+    def is_watch_completed(self, run_id: str, key: str) -> bool:
+        log_key = self.build_log_key_for_run(run_id, key)
+        return self.is_capture_complete(log_key)
+
+    def on_watch_start(self, dagster_run: DagsterRun, step_key: Optional[str]):
+        pass
+
+    def on_watch_finish(self, dagster_run: DagsterRun, step_key: Optional[str] = None):
+        check.inst_param(dagster_run, "dagster_run", DagsterRun)
+        check.opt_str_param(step_key, "step_key")
+        log_key = self.build_log_key_for_run(dagster_run.run_id, step_key or dagster_run.job_name)
+        touchpath = self.complete_artifact_path(log_key)
+        touch_file(touchpath)
+
+    def download_url(self, run_id: str, key: str, io_type: ComputeIOType):
+        check.inst_param(io_type, "io_type", ComputeIOType)
+        return f"/download/{run_id}/{key}/{io_type.value}"
+
+    def on_subscribe(self, subscription: "LogSubscription") -> None:
+        self._subscription_manager.add_subscription(subscription)
+
+    def on_unsubscribe(self, subscription: "LogSubscription") -> None:
         self._subscription_manager.remove_subscription(subscription)
-
-    def get_log_keys_for_log_key_prefix(
-        self, log_key_prefix: Sequence[str], io_type: ComputeIOType
-    ) -> Sequence[Sequence[str]]:
-        """Returns the logs keys for a given log key prefix. This is determined by looking at the
-        directory defined by the log key prefix and creating a log_key for each file in the directory.
-        """
-        base_dir_path = Path(self._base_dir).resolve()
-        directory = base_dir_path.joinpath(*log_key_prefix)
-        objects = directory.iterdir()
-        results = []
-        list_key_prefix = list(log_key_prefix)
-
-        for obj in objects:
-            if obj.is_file() and obj.suffix == "." + IO_TYPE_EXTENSION[io_type]:
-                results.append(list_key_prefix + [obj.stem])
-
-        return results
 
     def dispose(self) -> None:
         self._subscription_manager.dispose()
@@ -246,8 +330,10 @@ class LocalComputeLogSubscriptionManager:
         self._watchers = {}
         self._observer = None
 
-    def add_subscription(self, subscription: CapturedLogSubscription) -> None:
-        check.inst_param(subscription, "subscription", CapturedLogSubscription)
+    def add_subscription(self, subscription: "LogSubscription") -> None:
+        check.inst_param(
+            subscription, "subscription", (ComputeLogSubscription, CapturedLogSubscription)
+        )
 
         if self.is_complete(subscription):
             subscription.fetch()
@@ -258,22 +344,32 @@ class LocalComputeLogSubscriptionManager:
             self._subscriptions[watch_key].append(subscription)
             self.watch(subscription)
 
-    def is_complete(self, subscription: CapturedLogSubscription) -> bool:
-        check.inst_param(subscription, "subscription", CapturedLogSubscription)
+    def is_complete(self, subscription: "LogSubscription") -> bool:
+        check.inst_param(
+            subscription, "subscription", (ComputeLogSubscription, CapturedLogSubscription)
+        )
 
+        if isinstance(subscription, ComputeLogSubscription):
+            return self._manager.is_watch_completed(subscription.run_id, subscription.key)
         return self._manager.is_capture_complete(subscription.log_key)
 
-    def remove_subscription(self, subscription: CapturedLogSubscription) -> None:
-        check.inst_param(subscription, "subscription", CapturedLogSubscription)
+    def remove_subscription(self, subscription: "LogSubscription") -> None:
+        check.inst_param(
+            subscription, "subscription", (ComputeLogSubscription, CapturedLogSubscription)
+        )
         log_key = self._log_key(subscription)
         watch_key = self._watch_key(log_key)
         if subscription in self._subscriptions[watch_key]:
             self._subscriptions[watch_key].remove(subscription)
             subscription.complete()
 
-    def _log_key(self, subscription: CapturedLogSubscription) -> Sequence[str]:
-        check.inst_param(subscription, "subscription", CapturedLogSubscription)
+    def _log_key(self, subscription: "LogSubscription") -> Sequence[str]:
+        check.inst_param(
+            subscription, "subscription", (ComputeLogSubscription, CapturedLogSubscription)
+        )
 
+        if isinstance(subscription, ComputeLogSubscription):
+            return self._manager.build_log_key_for_run(subscription.run_id, subscription.key)
         return subscription.log_key
 
     def _watch_key(self, log_key: Sequence[str]) -> str:
@@ -284,7 +380,7 @@ class LocalComputeLogSubscriptionManager:
         for subscription in self._subscriptions.pop(watch_key, []):
             subscription.complete()
 
-    def watch(self, subscription: CapturedLogSubscription) -> None:
+    def watch(self, subscription: "LogSubscription") -> None:
         log_key = self._log_key(subscription)
         watch_key = self._watch_key(log_key)
         if watch_key in self._watchers:
@@ -306,7 +402,7 @@ class LocalComputeLogSubscriptionManager:
         )
 
         if not self._observer:
-            self._observer = PollingObserver(timeout=self._manager.polling_timeout)
+            self._observer = PollingObserver(self._manager.polling_timeout)
             self._observer.start()
 
         ensure_dir(directory)
@@ -340,7 +436,7 @@ class LocalComputeLogFilesystemEventHandler(PatternMatchingEventHandler):
         self.update_paths = update_paths
         self.complete_paths = complete_paths
         patterns = update_paths + complete_paths
-        super().__init__(patterns=patterns)
+        super(LocalComputeLogFilesystemEventHandler, self).__init__(patterns=patterns)
 
     def on_created(self, event):
         if event.src_path in self.complete_paths:

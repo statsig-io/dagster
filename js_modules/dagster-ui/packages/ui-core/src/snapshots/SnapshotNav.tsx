@@ -1,12 +1,14 @@
-import {FontFamily, PageHeader, Subtitle1, Tabs, Tag} from '@dagster-io/ui-components';
+import {gql, useQuery} from '@apollo/client';
+import {PageHeader, Tabs, Tag, Heading, FontFamily} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 
-import {gql, useQuery} from '../apollo-client';
-import {SnapshotQuery, SnapshotQueryVariables} from './types/SnapshotNav.types';
-import {ExplorerPath, explorerPathToString} from '../pipelines/PipelinePathUtils';
+import {explorerPathToString, ExplorerPath} from '../pipelines/PipelinePathUtils';
 import {TabLink} from '../ui/TabLink';
-import {useActivePipelineForName} from '../workspace/WorkspaceContext/util';
+import {useActivePipelineForName} from '../workspace/WorkspaceContext';
 import {workspacePipelinePathGuessRepo} from '../workspace/workspacePath';
+
+import {SnapshotQuery, SnapshotQueryVariables} from './types/SnapshotNav.types';
 
 const SNAPSHOT_PARENT_QUERY = gql`
   query SnapshotQuery($snapshotId: String!) {
@@ -35,11 +37,9 @@ export const SnapshotNav = (props: SnapshotNavProps) => {
   const currentPipelineState = useActivePipelineForName(pipelineName);
   const currentSnapshotID = currentPipelineState?.pipelineSnapshotId;
 
-  const queryResult = useQuery<SnapshotQuery, SnapshotQueryVariables>(SNAPSHOT_PARENT_QUERY, {
+  const {data, loading} = useQuery<SnapshotQuery, SnapshotQueryVariables>(SNAPSHOT_PARENT_QUERY, {
     variables: {snapshotId},
   });
-
-  const {data, loading} = queryResult;
 
   const tag = () => {
     if (loading) {
@@ -86,9 +86,9 @@ export const SnapshotNav = (props: SnapshotNavProps) => {
   return (
     <PageHeader
       title={
-        <Subtitle1 style={{fontFamily: FontFamily.monospace, fontSize: '16px'}}>
+        <Heading style={{fontFamily: FontFamily.monospace, fontSize: '20px'}}>
           {explorerPath.snapshotId?.slice(0, 8)}
-        </Subtitle1>
+        </Heading>
       }
       tags={
         <>

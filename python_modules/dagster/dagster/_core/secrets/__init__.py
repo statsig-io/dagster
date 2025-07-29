@@ -1,1 +1,1 @@
-from dagster._core.secrets.loader import SecretsLoader as SecretsLoader
+from .loader import SecretsLoader as SecretsLoader

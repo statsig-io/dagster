@@ -1,16 +1,16 @@
-import dagster as dg
+from dagster import job, op, repository
 
 
-@dg.op
+@op
 def do_something():
     return 1
 
 
-@dg.job
+@job
 def extra_job():
     do_something()
 
 
-@dg.repository  # pyright: ignore[reportArgumentType]
+@repository
 def extra():
     return {"jobs": {"extra_job": extra_job}}

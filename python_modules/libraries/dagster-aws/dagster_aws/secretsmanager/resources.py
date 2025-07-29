@@ -1,30 +1,24 @@
-from collections.abc import Generator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Dict, Generator, List, Optional, cast
 
 from dagster import (
     Field as LegacyDagsterField,
     resource,
 )
-from dagster._annotations import beta
+from dagster._config.field_utils import Shape
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
 from dagster._core.test_utils import environ
 from dagster._utils.merger import merge_dicts
 from pydantic import Field
 
-from dagster_aws.secretsmanager.secrets import (
-    construct_secretsmanager_client,
-    get_secrets_from_arns,
-    get_tagged_secrets,
-)
 from dagster_aws.utils import ResourceWithBoto3Configuration
+
+from .secrets import construct_secretsmanager_client, get_secrets_from_arns, get_tagged_secrets
 
 if TYPE_CHECKING:
     import botocore
-    from dagster._config.field_utils import Shape
 
 
-@beta
 class SecretsManagerResource(ResourceWithBoto3Configuration):
     """Resource that gives access to AWS SecretsManager.
 
@@ -48,7 +42,7 @@ class SecretsManagerResource(ResourceWithBoto3Configuration):
             def example_job():
                 example_secretsmanager_op()
 
-            Definitions(
+            defs = Definitions(
                 jobs=[example_job],
                 resources={
                     'secretsmanager': SecretsManagerResource(
@@ -62,24 +56,17 @@ class SecretsManagerResource(ResourceWithBoto3Configuration):
     def _is_dagster_maintained(cls) -> bool:
         return True
 
-    def get_client(self) -> "botocore.client.SecretsManager":  # pyright: ignore (reportAttributeAccessIssue)
+    def get_client(self) -> "botocore.client.SecretsManager":
         return construct_secretsmanager_client(
             max_attempts=self.max_attempts,
             region_name=self.region_name,
             profile_name=self.profile_name,
-            endpoint_url=self.endpoint_url,
-            use_ssl=self.use_ssl,
-            verify=self.verify,
-            aws_access_key_id=self.aws_access_key_id,
-            aws_secret_access_key=self.aws_secret_access_key,
-            aws_session_token=self.aws_session_token,
         )
 
 
-@beta
 @dagster_maintained_resource
 @resource(SecretsManagerResource.to_config_schema())
-def secretsmanager_resource(context) -> "botocore.client.SecretsManager":  # pyright: ignore (reportAttributeAccessIssue)
+def secretsmanager_resource(context) -> "botocore.client.SecretsManager":
     """Resource that gives access to AWS SecretsManager.
 
     The underlying SecretsManager session is created by calling
@@ -132,7 +119,6 @@ def secretsmanager_resource(context) -> "botocore.client.SecretsManager":  # pyr
     return SecretsManagerResource.from_resource_context(context).get_client()
 
 
-@beta
 class SecretsManagerSecretsResource(ResourceWithBoto3Configuration):
     """Resource that provides a dict which maps selected SecretsManager secrets to
     their string values. Also optionally sets chosen secrets as environment variables.
@@ -158,7 +144,7 @@ class SecretsManagerSecretsResource(ResourceWithBoto3Configuration):
                 example_secretsmanager_secrets_op()
                 example_secretsmanager_secrets_op_2()
 
-            Definitions(
+            defs = Definitions(
                 jobs=[example_job],
                 resources={
                     'secrets': SecretsManagerSecretsResource(
@@ -173,7 +159,7 @@ class SecretsManagerSecretsResource(ResourceWithBoto3Configuration):
     for the execution of their compute functions.
     """
 
-    secrets: list[str] = Field(
+    secrets: List[str] = Field(
         default=[], description="An array of AWS Secrets Manager secrets arns to fetch."
     )
     secrets_tag: Optional[str] = Field(
@@ -188,9 +174,9 @@ class SecretsManagerSecretsResource(ResourceWithBoto3Configuration):
     @contextmanager
     def secrets_in_environment(
         self,
-        secrets: Optional[list[str]] = None,
+        secrets: Optional[List[str]] = None,
         secrets_tag: Optional[str] = None,
-    ) -> Generator[dict[str, str], None, None]:
+    ) -> Generator[Dict[str, str], None, None]:
         """Yields a dict which maps selected SecretsManager secrets to their string values. Also
         sets chosen secrets as environment variables.
 
@@ -228,9 +214,9 @@ class SecretsManagerSecretsResource(ResourceWithBoto3Configuration):
 
     def fetch_secrets(
         self,
-        secrets: Optional[list[str]] = None,
+        secrets: Optional[List[str]] = None,
         secrets_tag: Optional[str] = None,
-    ) -> dict[str, str]:
+    ) -> Dict[str, str]:
         """Fetches secrets from AWS Secrets Manager and returns them as a dict.
 
         Args:
@@ -245,7 +231,7 @@ class SecretsManagerSecretsResource(ResourceWithBoto3Configuration):
 
 
 LEGACY_SECRETSMANAGER_SECRETS_SCHEMA = {
-    **cast("Shape", SecretsManagerSecretsResource.to_config_schema().as_field().config_type).fields,
+    **cast(Shape, SecretsManagerSecretsResource.to_config_schema().as_field().config_type).fields,
     "add_to_environment": LegacyDagsterField(
         bool,
         default_value=False,
@@ -254,7 +240,6 @@ LEGACY_SECRETSMANAGER_SECRETS_SCHEMA = {
 }
 
 
-@beta
 @dagster_maintained_resource
 @resource(config_schema=LEGACY_SECRETSMANAGER_SECRETS_SCHEMA)
 @contextmanager

@@ -3,7 +3,7 @@
 import * as Types from '../../graphql/types';
 
 export type SnapshotQueryVariables = Types.Exact<{
-  snapshotId: Types.Scalars['String']['input'];
+  snapshotId: Types.Scalars['String'];
 }>;
 
 export type SnapshotQuery = {
@@ -14,5 +14,3 @@ export type SnapshotQuery = {
     | {__typename: 'PipelineSnapshotNotFoundError'}
     | {__typename: 'PythonError'};
 };
-
-export const SnapshotQueryVersion = '6ada4abd4592a558d98b2557ec511e87c9420bab5cbc155ec8473c55bd820a7a';

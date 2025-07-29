@@ -1,4 +1,5 @@
 import {render, screen} from '@testing-library/react';
+import * as React from 'react';
 
 import {Button} from '../Button';
 import {Tooltip} from '../Tooltip';
@@ -11,7 +12,7 @@ describe('Tooltip', () => {
       </Tooltip>,
     );
 
-    const wrapper = document.getElementsByClassName('bp5-popover-target');
+    const wrapper = document.getElementsByClassName('bp4-popover2-target');
     expect(wrapper.length).toBe(1);
     const button = screen.queryByRole('button', {name: /lorem/i});
     expect(wrapper[0]!.contains(button)).toBe(true);
@@ -24,7 +25,7 @@ describe('Tooltip', () => {
       </Tooltip>,
     );
 
-    const wrapper = document.getElementsByClassName('bp5-popover-target');
+    const wrapper = document.getElementsByClassName('bp4-popover2-target');
     expect(wrapper.length).toBe(0);
     const button = screen.queryByRole('button', {name: /lorem/i});
     expect(button).toBeVisible();

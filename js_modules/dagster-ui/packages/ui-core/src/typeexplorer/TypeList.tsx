@@ -1,10 +1,12 @@
+import {gql} from '@apollo/client';
 import {Box, Colors} from '@dagster-io/ui-components';
+import * as React from 'react';
 import styled from 'styled-components';
 
-import {DAGSTER_TYPE_WITH_TOOLTIP_FRAGMENT, TypeWithTooltip} from './TypeWithTooltip';
-import {gql} from '../apollo-client';
-import {TypeListFragment} from './types/TypeList.types';
 import {SidebarSection, SidebarSubhead, SidebarTitle} from '../pipelines/SidebarComponents';
+
+import {DAGSTER_TYPE_WITH_TOOLTIP_FRAGMENT, TypeWithTooltip} from './TypeWithTooltip';
+import {TypeListFragment} from './types/TypeList.types';
 
 interface ITypeListProps {
   isGraph: boolean;
@@ -26,7 +28,7 @@ function groupTypes(types: TypeListFragment[]): {[key: string]: TypeListFragment
   return groups;
 }
 
-export const TypeList = (props: ITypeListProps) => {
+export const TypeList: React.FC<ITypeListProps> = (props) => {
   const groups = groupTypes(props.types);
   return (
     <>
@@ -48,7 +50,7 @@ export const TypeList = (props: ITypeListProps) => {
                   ))}
                 </StyledUL>
               ) : (
-                <div style={{color: Colors.textLight(), fontSize: '12px'}}>None</div>
+                <div style={{color: Colors.Gray500, fontSize: '12px'}}>None</div>
               )}
             </Box>
           </SidebarSection>

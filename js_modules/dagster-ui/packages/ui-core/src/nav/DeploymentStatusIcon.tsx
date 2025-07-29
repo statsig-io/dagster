@@ -1,20 +1,21 @@
 import {Box, Colors, Icon, Spinner, Tooltip} from '@dagster-io/ui-components';
-import {memo, useContext} from 'react';
+import * as React from 'react';
 
-import {WarningTooltip} from './WarningTooltip';
 import {DeploymentStatusContext} from '../instance/DeploymentStatusProvider';
 
-export const DeploymentStatusIcon = memo(() => {
+import {WarningTooltip} from './WarningTooltip';
+
+export const DeploymentStatusIcon = React.memo(() => {
   return <CombinedStatusIcon />;
 });
 
-const CombinedStatusIcon = memo(() => {
-  const {codeLocations, daemons} = useContext(DeploymentStatusContext);
+const CombinedStatusIcon = React.memo(() => {
+  const {codeLocations, daemons} = React.useContext(DeploymentStatusContext);
 
   if (codeLocations?.type === 'spinner') {
     return (
       <Tooltip content={codeLocations.content} placement="bottom">
-        <Spinner purpose="body-text" fillColor={Colors.accentGray()} />
+        <Spinner purpose="body-text" fillColor={Colors.Gray300} />
       </Tooltip>
     );
   }
@@ -33,10 +34,10 @@ const CombinedStatusIcon = memo(() => {
         position="bottom"
         modifiers={{offset: {enabled: true, options: {offset: [0, 28]}}}}
       >
-        <Icon name="warning" color={Colors.accentYellow()} />
+        <Icon name="warning" color={Colors.Yellow500} />
       </WarningTooltip>
     );
   }
 
-  return <div style={{display: 'none'}}>No errors</div>;
+  return null;
 });

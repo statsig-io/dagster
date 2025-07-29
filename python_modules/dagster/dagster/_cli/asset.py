@@ -1,35 +1,26 @@
-from typing import Optional
+from typing import Mapping
 
 import click
-from dagster_shared.cli import python_pointer_options
 
 import dagster._check as check
-from dagster._cli.job import get_run_config_from_cli_opts
-from dagster._cli.utils import (
-    assert_no_remaining_opts,
-    get_instance_for_cli,
-    get_possibly_temporary_instance_for_cli,
-)
 from dagster._cli.workspace.cli_target import (
-    PythonPointerOpts,
-    get_repository_python_origin_from_cli_opts,
-    run_config_option,
+    get_repository_python_origin_from_kwargs,
+    python_origin_target_argument,
 )
-from dagster._core.definitions.asset_selection import AssetSelection
-from dagster._core.definitions.backfill_policy import BackfillPolicyType
 from dagster._core.definitions.events import AssetKey
-from dagster._core.definitions.partitions.context import partition_loading_context
-from dagster._core.errors import DagsterInvalidSubsetError, DagsterUnknownPartitionError
+from dagster._core.errors import DagsterInvalidSubsetError
 from dagster._core.execution.api import execute_job
 from dagster._core.instance import DagsterInstance
 from dagster._core.origin import JobPythonOrigin
-from dagster._core.storage.tags import (
-    ASSET_PARTITION_RANGE_END_TAG,
-    ASSET_PARTITION_RANGE_START_TAG,
-)
+from dagster._core.selector.subset_selector import parse_asset_selection
 from dagster._core.telemetry import telemetry_wrapper
-from dagster._utils.hosted_user_process import recon_job_from_origin, recon_repository_from_origin
+from dagster._utils.hosted_user_process import (
+    recon_job_from_origin,
+    recon_repository_from_origin,
+)
 from dagster._utils.interrupts import capture_interrupts
+
+from .utils import get_instance_for_cli, get_possibly_temporary_instance_for_cli
 
 
 @click.group(name="asset")
@@ -38,78 +29,29 @@ def asset_cli():
 
 
 @asset_cli.command(name="materialize", help="Execute a run to materialize a selection of assets")
-@click.option("--select", help="Comma-separated Asset selection to target", required=True)
+@python_origin_target_argument
+@click.option("--select", help="Asset selection to target", required=True)
 @click.option("--partition", help="Asset partition to target", required=False)
-@click.option(
-    "--partition-range",
-    help="Asset partition range to target i.e. <start>...<end>",
-    required=False,
-)
-@click.option(
-    "--config-json",
-    type=click.STRING,
-    help="JSON string of run config to use for this job run. Cannot be used with -c / --config.",
-)
-@run_config_option(name="config", command_name="materialize")
-@python_pointer_options
-def asset_materialize_command(
-    select: str,
-    partition: Optional[str],
-    partition_range: Optional[str],
-    config: tuple[str, ...],
-    config_json: Optional[str],
-    **other_opts: object,
-) -> None:
-    asset_materialize_command_impl(
-        select, partition, partition_range, config, config_json, **other_opts
-    )
-
-
-def asset_materialize_command_impl(
-    select: str,
-    partition: Optional[str],
-    partition_range: Optional[str],
-    config: tuple[str, ...],
-    config_json: Optional[str],
-    **other_opts: object,
-) -> None:
-    python_pointer_opts = PythonPointerOpts.extract_from_cli_options(other_opts)
-    assert_no_remaining_opts(other_opts)
-
+def asset_materialize_command(**kwargs):
     with capture_interrupts():
         with get_possibly_temporary_instance_for_cli(
             "``dagster asset materialize``",
         ) as instance:
-            execute_materialize_command(
-                instance=instance,
-                select=select,
-                partition=partition,
-                partition_range=partition_range,
-                config=config,
-                config_json=config_json,
-                python_pointer_opts=python_pointer_opts,
-            )
+            execute_materialize_command(instance, kwargs)
 
 
 @telemetry_wrapper
-def execute_materialize_command(
-    *,
-    instance: DagsterInstance,
-    select: str,
-    partition: Optional[str],
-    partition_range: Optional[str],
-    config: tuple[str, ...],
-    config_json: Optional[str],
-    python_pointer_opts: PythonPointerOpts,
-) -> None:
-    run_config = get_run_config_from_cli_opts(config, config_json)
-    repository_origin = get_repository_python_origin_from_cli_opts(python_pointer_opts)
+def execute_materialize_command(instance: DagsterInstance, kwargs: Mapping[str, str]) -> None:
+    repository_origin = get_repository_python_origin_from_kwargs(kwargs)
 
     recon_repo = recon_repository_from_origin(repository_origin)
     repo_def = recon_repo.get_definition()
 
-    asset_selection = AssetSelection.from_coercible(select.split(","))
-    asset_keys = asset_selection.resolve(repo_def.asset_graph)
+    asset_keys = parse_asset_selection(
+        assets_defs=list(repo_def.assets_defs_by_key.values()),
+        source_assets=list(repo_def.source_assets_by_key.values()),
+        asset_selection=kwargs["select"].split(","),
+    )
 
     implicit_job_def = repo_def.get_implicit_job_def_for_assets(asset_keys)
     # If we can't find an implicit job with all the given assets, it's because they couldn't be
@@ -123,99 +65,46 @@ def execute_materialize_command(
     reconstructable_job = recon_job_from_origin(
         JobPythonOrigin(implicit_job_def.name, repository_origin=repository_origin)
     )
-
-    with partition_loading_context(dynamic_partitions_store=instance) as ctx:
-        context = ctx
-
-    if partition and partition_range:
-        check.failed("Cannot specify both --partition and --partition-range options. Use only one.")
-
+    partition = kwargs.get("partition")
     if partition:
-        if all(
-            implicit_job_def.asset_layer.get(asset_key).partitions_def is None
+        partitions_def = implicit_job_def.partitions_def
+        if partitions_def is None or all(
+            implicit_job_def.asset_layer.partitions_def_for_asset(asset_key) is None
             for asset_key in asset_keys
         ):
             check.failed("Provided '--partition' option, but none of the assets are partitioned")
 
-        try:
-            implicit_job_def.validate_partition_key(
-                partition, selected_asset_keys=asset_keys, context=context
-            )
-            tags = implicit_job_def.get_tags_for_partition_key(
-                partition, selected_asset_keys=asset_keys
-            )
-        except DagsterUnknownPartitionError:
-            raise DagsterInvalidSubsetError(
-                "All selected assets must have a PartitionsDefinition containing the passed"
-                f" partition key `{partition}` or have no PartitionsDefinition."
-            )
-    elif partition_range:
-        if len(partition_range.split("...")) != 2:
-            check.failed("Invalid partition range format. Expected <start>...<end>.")
-
-        partition_range_start, partition_range_end = partition_range.split("...")
-
-        for asset_key in asset_keys:
-            backfill_policy = implicit_job_def.asset_layer.get(asset_key).backfill_policy
-            if (
-                backfill_policy is not None
-                and backfill_policy.policy_type != BackfillPolicyType.SINGLE_RUN
-            ):
-                check.failed(
-                    "Provided partition range, but not all assets have a single-run backfill policy."
-                )
-        try:
-            implicit_job_def.validate_partition_key(
-                partition_range_start, selected_asset_keys=asset_keys, context=context
-            )
-            implicit_job_def.validate_partition_key(
-                check.not_none(partition_range_end), selected_asset_keys=asset_keys, context=context
-            )
-        except DagsterUnknownPartitionError:
-            raise DagsterInvalidSubsetError(
-                "All selected assets must have a PartitionsDefinition containing the passed"
-                f" partition key `{partition_range_start}` or have no PartitionsDefinition."
-            )
-        tags = {
-            ASSET_PARTITION_RANGE_START_TAG: partition_range_start,
-            ASSET_PARTITION_RANGE_END_TAG: partition_range_end,
-        }
+        tags = partitions_def.get_tags_for_partition_key(partition)
     else:
-        if any(
-            implicit_job_def.asset_layer.get(asset_key).partitions_def is not None
-            for asset_key in asset_keys
-        ):
-            check.failed("Asset has partitions, but no '--partition' option was provided")
         tags = {}
 
-    result = execute_job(
-        job=reconstructable_job,
-        asset_selection=list(asset_keys),
-        instance=instance,
-        tags=tags,
-        run_config=run_config,
+    execute_job(
+        job=reconstructable_job, asset_selection=list(asset_keys), instance=instance, tags=tags
     )
-    if not result.success:
-        raise click.ClickException("Materialization failed.")
 
 
 @asset_cli.command(name="list", help="List assets")
+@python_origin_target_argument
 @click.option("--select", help="Asset selection to target", required=False)
-@python_pointer_options
-def asset_list_command(select: Optional[str], **other_opts):
-    python_pointer_opts = PythonPointerOpts.extract_from_cli_options(other_opts)
-    assert_no_remaining_opts(other_opts)
-
-    repository_origin = get_repository_python_origin_from_cli_opts(python_pointer_opts)
+def asset_list_command(**kwargs):
+    repository_origin = get_repository_python_origin_from_kwargs(kwargs)
     recon_repo = recon_repository_from_origin(repository_origin)
     repo_def = recon_repo.get_definition()
 
+    select = kwargs.get("select")
     if select is not None:
-        asset_selection = AssetSelection.from_coercible(select.split(","))
+        asset_keys = parse_asset_selection(
+            assets_defs=list(repo_def.assets_defs_by_key.values()),
+            source_assets=list(repo_def.source_assets_by_key.values()),
+            asset_selection=select.split(","),
+            raise_on_clause_has_no_matches=False,
+        )
     else:
-        asset_selection = AssetSelection.all()
-
-    asset_keys = asset_selection.resolve(repo_def.asset_graph, allow_missing=True)
+        asset_keys = [
+            asset_key
+            for assets_def in repo_def.assets_defs_by_key.values()
+            for asset_key in assets_def.keys
+        ]
 
     for asset_key in sorted(asset_keys):
         print(asset_key.to_user_string())  # noqa: T201
@@ -266,7 +155,7 @@ def asset_wipe_command(key, **cli_args):
             confirmation = click.prompt(prompt)
 
         if confirmation == "DELETE":
-            instance.wipe_assets(asset_keys)  # pyright: ignore[reportArgumentType]
+            instance.wipe_assets(asset_keys)
             click.echo("Removed asset indexes from event logs")
         else:
             click.echo("Exiting without removing asset indexes")
@@ -299,7 +188,7 @@ def asset_wipe_cache_command(key, **cli_args):
     noprompt = cli_args.get("noprompt")
 
     with get_instance_for_cli() as instance:
-        if instance.can_read_asset_status_cache() is False:
+        if instance.can_cache_asset_status_data() is False:
             raise click.UsageError(
                 "Error, the instance does not support caching asset status. Wiping the cache is not"
                 " supported."
@@ -324,7 +213,7 @@ def asset_wipe_cache_command(key, **cli_args):
             confirmation = click.prompt(prompt)
 
         if confirmation == "DELETE":
-            instance.wipe_asset_cached_status(asset_keys)  # pyright: ignore[reportArgumentType]
+            instance.wipe_asset_cached_status(asset_keys)
             click.echo("Cleared the partitions status cache")
         else:
             click.echo("Exiting without wiping the partitions status cache")

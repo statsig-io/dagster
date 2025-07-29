@@ -1,9 +1,12 @@
 import sys
-from collections.abc import Iterator
+from typing import Iterator
 
-import dagster as dg
 import pytest
+from dagster import file_relative_path, job, op, repository
+from dagster._core.definitions.job_definition import JobDefinition
+from dagster._core.definitions.repository_definition import RepositoryData
 from dagster._core.instance import DagsterInstance
+from dagster._core.test_utils import instance_for_test
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._core.workspace.context import WorkspaceProcessContext
 from dagster._core.workspace.load_target import GrpcServerTarget
@@ -11,29 +14,29 @@ from dagster._grpc.server import GrpcServerProcess
 
 
 def define_do_something(num_calls):
-    @dg.op(name="do_something_" + str(num_calls))
+    @op(name="do_something_" + str(num_calls))
     def do_something():
         return num_calls
 
     return do_something
 
 
-@dg.op
+@op
 def do_input(x):
     return x
 
 
-def define_foo_job(num_calls: int) -> dg.JobDefinition:
+def define_foo_job(num_calls: int) -> JobDefinition:
     do_something = define_do_something(num_calls)
 
-    @dg.job(name="foo_" + str(num_calls))
+    @job(name="foo_" + str(num_calls))
     def foo_job():
         do_input(do_something())
 
     return foo_job
 
 
-class TestDynamicRepositoryData(dg.RepositoryData):
+class TestDynamicRepositoryData(RepositoryData):
     def __init__(self):
         self._num_calls = 0
 
@@ -48,15 +51,18 @@ class TestDynamicRepositoryData(dg.RepositoryData):
     def get_env_vars_by_top_level_resource(self):
         return {}
 
+    def get_resource_key_mapping(self):
+        return {}
 
-@dg.repository  # pyright: ignore[reportArgumentType]
+
+@repository
 def bar_repo():
     return TestDynamicRepositoryData()
 
 
 @pytest.fixture(name="instance")
-def instance_fixture() -> Iterator[dg.DagsterInstance]:
-    with dg.instance_for_test() as instance:
+def instance_fixture() -> Iterator[DagsterInstance]:
+    with instance_for_test() as instance:
         yield instance
 
 
@@ -66,7 +72,7 @@ def workspace_process_context_fixture(
 ) -> Iterator[WorkspaceProcessContext]:
     loadable_target_origin = LoadableTargetOrigin(
         executable_path=sys.executable,
-        python_file=dg.file_relative_path(__file__, "test_custom_repository_data.py"),
+        python_file=file_relative_path(__file__, "test_custom_repository_data.py"),
     )
     with GrpcServerProcess(
         instance_ref=instance.get_ref(),
@@ -93,11 +99,11 @@ def test_repository_data_can_reload_without_restarting(
     repo = code_location.get_repository("bar_repo")
     # get_all_jobs called on server init, then on repository load, so starts at 2
     # this is a janky test
-    assert repo.has_job("foo_2")
-    assert not repo.has_job("foo_1")
+    assert repo.has_external_job("foo_2")
+    assert not repo.has_external_job("foo_1")
 
-    remote_job = repo.get_full_job("foo_2")
-    assert remote_job.has_node_invocation("do_something_2")
+    external_job = repo.get_full_external_job("foo_2")
+    assert external_job.has_node_invocation("do_something_2")
 
     # Reloading the location changes the pipeline without needing
     # to restart the server process
@@ -105,12 +111,8 @@ def test_repository_data_can_reload_without_restarting(
     request_context = workspace_process_context.create_request_context()
     code_location = request_context.get_code_location("test")
     repo = code_location.get_repository("bar_repo")
+    assert repo.has_external_job("foo_4")
+    assert not repo.has_external_job("foo_3")
 
-    # get_all_jobs is called 4 times on reload, so now at 6
-    assert repo.has_job("foo_6")
-    assert not repo.has_job("foo_5")
-    assert not repo.has_job("foo_4")
-    assert not repo.has_job("foo_3")
-
-    remote_job = repo.get_full_job("foo_6")
-    assert remote_job.has_node_invocation("do_something_6")
+    external_job = repo.get_full_external_job("foo_4")
+    assert external_job.has_node_invocation("do_something_4")

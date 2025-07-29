@@ -1,21 +1,21 @@
-import datetime
 import os
 import sys
-import time
 
+import pendulum
 import pytest
-from dagster._core.remote_representation import InProcessCodeLocationOrigin, RemoteRepositoryOrigin
-from dagster._core.remote_representation.external import CompoundID
+from dagster._core.host_representation import (
+    ExternalRepositoryOrigin,
+    InProcessCodeLocationOrigin,
+)
 from dagster._core.scheduler.instigation import (
     InstigatorState,
     InstigatorStatus,
     InstigatorType,
     ScheduleInstigatorData,
 )
-from dagster._core.test_utils import freeze_time
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
-from dagster._core.workspace.context import WorkspaceRequestContext
-from dagster._time import create_datetime, get_timezone
+from dagster._seven import get_current_datetime_in_utc, get_timestamp_from_utc_datetime
+from dagster._seven.compat.pendulum import create_pendulum_time
 from dagster._utils import Counter, traced_counter
 from dagster_graphql.implementation.utils import UserFacingGraphQLError
 from dagster_graphql.test.utils import (
@@ -26,10 +26,7 @@ from dagster_graphql.test.utils import (
     main_repo_name,
 )
 
-from dagster_graphql_tests.graphql.graphql_context_test_suite import (
-    ExecutingGraphQLContextTestMatrix,
-    ReadonlyGraphQLContextTestMatrix,
-)
+from .graphql_context_test_suite import ReadonlyGraphQLContextTestMatrix
 
 GET_SCHEDULES_QUERY = """
 query SchedulesQuery($repositorySelector: RepositorySelector!) {
@@ -112,6 +109,7 @@ query getSchedule($scheduleSelector: ScheduleSelector!, $ticksAfter: Float) {
       potentialTickTimestamps(startTimestamp: $ticksAfter, upperLimit: 3, lowerLimit: 3)
       scheduleState {
         id
+        selectorId
         ticks {
           id
           timestamp
@@ -119,44 +117,6 @@ query getSchedule($scheduleSelector: ScheduleSelector!, $ticksAfter: Float) {
         typeSpecificData {
           ... on ScheduleData {
             cronSchedule
-          }
-        }
-      }
-      tags {
-        key
-        value
-      }
-      metadataEntries {
-        label
-        ... on TextMetadataEntry {
-          text
-        }
-      }
-      assetSelection {
-        assetSelectionString
-        assetKeys {
-          path
-        }
-        assets {
-          key {
-            path
-          }
-          definition {
-            assetKey {
-              path
-            }
-          }
-        }
-        assetsOrError {
-          ... on AssetConnection {
-            nodes {
-              key {
-                path
-              }
-            }
-          }
-          ... on PythonError {
-            message
           }
         }
       }
@@ -170,10 +130,9 @@ query getScheduleState($scheduleSelector: ScheduleSelector!) {
   scheduleOrError(scheduleSelector: $scheduleSelector) {
     __typename
     ... on Schedule {
-      defaultStatus
-      canReset
       scheduleState {
         id
+        selectorId
         status
         hasStartPermission
         hasStopPermission
@@ -182,6 +141,25 @@ query getScheduleState($scheduleSelector: ScheduleSelector!) {
   }
 }
 """
+
+GET_UNLOADABLE_QUERY = """
+query getUnloadableSchedules {
+  unloadableInstigationStatesOrError(instigationType: SCHEDULE) {
+    ... on InstigationStates {
+      results {
+        id
+        name
+        status
+      }
+    }
+    ... on PythonError {
+      message
+      stack
+    }
+  }
+}
+"""
+
 
 START_SCHEDULES_QUERY = """
 mutation(
@@ -210,37 +188,12 @@ mutation(
 
 STOP_SCHEDULES_QUERY = """
 mutation(
-  $id: String
-  $scheduleOriginId: String
-  $scheduleSelectorId: String
+  $scheduleOriginId: String!
+  $scheduleSelectorId: String!
 ) {
   stopRunningSchedule(
-    id: $id
     scheduleOriginId: $scheduleOriginId,
     scheduleSelectorId: $scheduleSelectorId
-  ) {
-    __typename
-    ... on PythonError {
-      message
-      className
-      stack
-    }
-    ... on ScheduleStateResult {
-      scheduleState {
-        id
-        status
-      }
-    }
-  }
-}
-"""
-
-RESET_SCHEDULES_QUERY = """
-mutation(
-  $scheduleSelector: ScheduleSelector!
-) {
-  resetSchedule(
-    scheduleSelector: $scheduleSelector,
   ) {
     __typename
     ... on PythonError {
@@ -363,27 +316,21 @@ def _get_unloadable_schedule_origin(name):
         python_file=__file__,
         working_directory=working_directory,
     )
-    return RemoteRepositoryOrigin(
+    return ExternalRepositoryOrigin(
         InProcessCodeLocationOrigin(loadable_target_origin), "fake_repository"
     ).get_instigator_origin(name)
 
 
 @pytest.mark.parametrize("starting_case", ["on_tick_time", "offset_tick_time"])
 def test_get_potential_ticks_starting_at_tick_time(graphql_context, starting_case):
-    schedule_selector = infer_schedule_selector(
-        graphql_context, "timezone_schedule_with_tags_and_metadata"
-    )
+    schedule_selector = infer_schedule_selector(graphql_context, "timezone_schedule")
 
     if starting_case == "on_tick_time":
         # Starting timestamp falls exactly on the timestamp of a tick
-        start_timestamp = datetime.datetime(
-            2019, 2, 27, tzinfo=get_timezone("US/Central")
-        ).timestamp()
+        start_timestamp = create_pendulum_time(2019, 2, 27, tz="US/Central").timestamp()
     else:
         # Starting timestamp is offset from tick times
-        start_timestamp = datetime.datetime(
-            2019, 2, 26, hour=1, tzinfo=get_timezone("US/Central")
-        ).timestamp()
+        start_timestamp = create_pendulum_time(2019, 2, 26, hour=1, tz="US/Central").timestamp()
 
     result = execute_dagster_graphql(
         graphql_context,
@@ -396,44 +343,14 @@ def test_get_potential_ticks_starting_at_tick_time(graphql_context, starting_cas
         },
     )
     assert result.data["scheduleOrError"]["__typename"] == "Schedule"
-    assert result.data["scheduleOrError"]["name"] == "timezone_schedule_with_tags_and_metadata"
+    assert result.data["scheduleOrError"]["name"] == "timezone_schedule"
     assert len(result.data["scheduleOrError"]["potentialTickTimestamps"]) == 5
     assert result.data["scheduleOrError"]["potentialTickTimestamps"] == [
-        datetime.datetime(2019, 2, 25, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 2, 26, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 2, 27, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 2, 28, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 3, 1, tzinfo=get_timezone("US/Central")).timestamp(),
-    ]
-
-
-def test_jobless_asset_selection(graphql_context):
-    schedule_name = "jobless_schedule"
-    schedule_selector = infer_schedule_selector(graphql_context, schedule_name)
-
-    result = execute_dagster_graphql(
-        graphql_context, GET_SCHEDULE_QUERY, variables={"scheduleSelector": schedule_selector}
-    )
-
-    assert result.data
-    assert result.data["scheduleOrError"]["__typename"] == "Schedule"
-    assert (
-        result.data["scheduleOrError"]["assetSelection"]["assetSelectionString"]
-        == 'key:"asset_one" and code_location:"test_location"'
-    )
-    assert result.data["scheduleOrError"]["assetSelection"]["assetKeys"] == [
-        {"path": ["asset_one"]}
-    ]
-    assert result.data["scheduleOrError"]["assetSelection"]["assets"] == [
-        {
-            "key": {"path": ["asset_one"]},
-            "definition": {"assetKey": {"path": ["asset_one"]}},
-        }
-    ]
-    assert result.data["scheduleOrError"]["assetSelection"]["assetsOrError"]["nodes"] == [
-        {
-            "key": {"path": ["asset_one"]},
-        }
+        create_pendulum_time(2019, 2, 25, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 2, 26, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 2, 27, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 2, 28, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 3, 1, tz="US/Central").timestamp(),
     ]
 
 
@@ -442,7 +359,7 @@ def test_schedule_dry_run(graphql_context):
 
     schedule_selector = infer_schedule_selector(context, "provide_config_schedule")
 
-    timestamp = time.time()
+    timestamp = get_timestamp_from_utc_datetime(get_current_datetime_in_utc())
     result = execute_dagster_graphql(
         context,
         SCHEDULE_DRY_RUN_MUTATION,
@@ -466,7 +383,7 @@ def test_schedule_dry_run_errors(graphql_context):
 
     schedule_selector = infer_schedule_selector(context, "always_error")
 
-    timestamp = time.time()
+    timestamp = get_timestamp_from_utc_datetime(get_current_datetime_in_utc())
     result = execute_dagster_graphql(
         context,
         SCHEDULE_DRY_RUN_MUTATION,
@@ -492,7 +409,7 @@ def test_dry_run_nonexistent_schedule(graphql_context):
 
     unknown_instigator_selector = infer_schedule_selector(context, "schedule_doesnt_exist")
 
-    timestamp = time.time()
+    timestamp = get_timestamp_from_utc_datetime(get_current_datetime_in_utc())
     with pytest.raises(UserFacingGraphQLError, match="GrapheneScheduleNotFoundError"):
         execute_dagster_graphql(
             context,
@@ -538,15 +455,15 @@ def test_get_schedule_definitions_for_repository(graphql_context):
     assert result.data["schedulesOrError"]
     assert result.data["schedulesOrError"]["__typename"] == "Schedules"
 
-    remote_repository = graphql_context.get_code_location(main_repo_location_name()).get_repository(
-        main_repo_name()
-    )
+    external_repository = graphql_context.get_code_location(
+        main_repo_location_name()
+    ).get_repository(main_repo_name())
 
     results = result.data["schedulesOrError"]["results"]
-    assert len(results) == len(remote_repository.get_schedules())
+    assert len(results) == len(external_repository.get_external_schedules())
 
     for schedule in results:
-        if schedule["name"] == "timezone_schedule_with_tags_and_metadata":
+        if schedule["name"] == "timezone_schedule":
             assert schedule["executionTimezone"] == "US/Central"
 
 
@@ -582,6 +499,38 @@ def test_get_filtered_schedule_definitions(graphql_context):
     }
 
 
+def test_start_and_stop_schedule(graphql_context):
+    schedule_selector = infer_schedule_selector(graphql_context, "no_config_job_hourly_schedule")
+
+    # Start a single schedule
+    start_result = execute_dagster_graphql(
+        graphql_context,
+        START_SCHEDULES_QUERY,
+        variables={"scheduleSelector": schedule_selector},
+    )
+    assert (
+        start_result.data["startSchedule"]["scheduleState"]["status"]
+        == InstigatorStatus.RUNNING.value
+    )
+
+    schedule_origin_id = start_result.data["startSchedule"]["scheduleState"]["id"]
+    schedule_selector_id = start_result.data["startSchedule"]["scheduleState"]["selectorId"]
+
+    # Stop a single schedule
+    stop_result = execute_dagster_graphql(
+        graphql_context,
+        STOP_SCHEDULES_QUERY,
+        variables={
+            "scheduleOriginId": schedule_origin_id,
+            "scheduleSelectorId": schedule_selector_id,
+        },
+    )
+    assert (
+        stop_result.data["stopRunningSchedule"]["scheduleState"]["status"]
+        == InstigatorStatus.STOPPED.value
+    )
+
+
 def test_get_single_schedule_definition(graphql_context):
     context = graphql_context
 
@@ -607,11 +556,9 @@ def test_get_single_schedule_definition(graphql_context):
     assert future_ticks
     assert len(future_ticks["results"]) == 3
 
-    schedule_selector = infer_schedule_selector(context, "timezone_schedule_with_tags_and_metadata")
+    schedule_selector = infer_schedule_selector(context, "timezone_schedule")
 
-    future_ticks_start_time = datetime.datetime(
-        2019, 2, 27, tzinfo=get_timezone("US/Central")
-    ).timestamp()
+    future_ticks_start_time = create_pendulum_time(2019, 2, 27, tz="US/Central").timestamp()
 
     result = execute_dagster_graphql(
         context,
@@ -622,12 +569,6 @@ def test_get_single_schedule_definition(graphql_context):
     assert result.data
     assert result.data["scheduleOrError"]["__typename"] == "Schedule"
     assert result.data["scheduleOrError"]["executionTimezone"] == "US/Central"
-    assert result.data["scheduleOrError"]["tags"] == [
-        {"key": "foo", "value": "bar"},
-    ]
-    assert result.data["scheduleOrError"]["metadataEntries"] == [
-        {"label": "foo", "text": "bar"},
-    ]
 
     future_ticks = result.data["scheduleOrError"]["futureTicks"]
     assert future_ticks
@@ -635,15 +576,15 @@ def test_get_single_schedule_definition(graphql_context):
     timestamps = [future_tick["timestamp"] for future_tick in future_ticks["results"]]
 
     assert timestamps == [
-        datetime.datetime(2019, 2, 27, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 2, 28, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 3, 1, tzinfo=get_timezone("US/Central")).timestamp(),
+        create_pendulum_time(2019, 2, 27, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 2, 28, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 3, 1, tz="US/Central").timestamp(),
     ]
 
     cursor = future_ticks["cursor"]
 
     assert future_ticks["cursor"] == (
-        datetime.datetime(2019, 3, 1, tzinfo=get_timezone("US/Central")).timestamp() + 1
+        create_pendulum_time(2019, 3, 1, tz="US/Central").timestamp() + 1
     )
 
     result = execute_dagster_graphql(
@@ -659,9 +600,9 @@ def test_get_single_schedule_definition(graphql_context):
     timestamps = [future_tick["timestamp"] for future_tick in future_ticks["results"]]
 
     assert timestamps == [
-        datetime.datetime(2019, 3, 2, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 3, 3, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 3, 4, tzinfo=get_timezone("US/Central")).timestamp(),
+        create_pendulum_time(2019, 3, 2, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 3, 3, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 3, 4, tz="US/Central").timestamp(),
     ]
 
 
@@ -710,7 +651,7 @@ def test_ticks_from_timestamp(graphql_context):
     schedule_selector = infer_schedule_selector(graphql_context, "past_tick_schedule")
 
     # get schedule past ticks
-    cur_timestamp = time.time()
+    cur_timestamp = get_timestamp_from_utc_datetime(get_current_datetime_in_utc())
     result = execute_dagster_graphql(
         graphql_context,
         GET_SCHEDULE_QUERY,
@@ -755,7 +696,7 @@ def test_next_tick_bad_schedule(graphql_context):
 
 def test_unloadable_schedule(graphql_context):
     instance = graphql_context.instance
-    initial_datetime = create_datetime(
+    initial_datetime = create_pendulum_time(
         year=2019,
         month=2,
         day=27,
@@ -771,13 +712,13 @@ def test_unloadable_schedule(graphql_context):
         InstigatorStatus.RUNNING,
         ScheduleInstigatorData(
             "0 0 * * *",
-            time.time(),
+            pendulum.now("UTC").timestamp(),
         ),
     )
 
     stopped_origin = _get_unloadable_schedule_origin("unloadable_stopped")
 
-    with freeze_time(initial_datetime):
+    with pendulum.test(initial_datetime):
         instance.add_instigator_state(running_instigator_state)
 
         instance.add_instigator_state(
@@ -787,10 +728,17 @@ def test_unloadable_schedule(graphql_context):
                 InstigatorStatus.STOPPED,
                 ScheduleInstigatorData(
                     "0 0 * * *",
-                    time.time(),
+                    pendulum.now("UTC").timestamp(),
                 ),
             )
         )
+
+    result = execute_dagster_graphql(graphql_context, GET_UNLOADABLE_QUERY)
+    assert len(result.data["unloadableInstigationStatesOrError"]["results"]) == 1
+    assert (
+        result.data["unloadableInstigationStatesOrError"]["results"][0]["name"]
+        == "unloadable_running"
+    )
 
     # Verify that we can stop the unloadable schedule
     stop_result = execute_dagster_graphql(
@@ -808,13 +756,9 @@ def test_unloadable_schedule(graphql_context):
 
 
 def test_future_ticks_until(graphql_context):
-    schedule_selector = infer_schedule_selector(
-        graphql_context, "timezone_schedule_with_tags_and_metadata"
-    )
+    schedule_selector = infer_schedule_selector(graphql_context, "timezone_schedule")
 
-    future_ticks_start_time = datetime.datetime(
-        2019, 2, 27, tzinfo=get_timezone("US/Central")
-    ).timestamp()
+    future_ticks_start_time = create_pendulum_time(2019, 2, 27, tz="US/Central").timestamp()
 
     # Start a single schedule, future tick run requests only available for running schedules
     start_result = execute_dagster_graphql(
@@ -827,12 +771,8 @@ def test_future_ticks_until(graphql_context):
         == InstigatorStatus.RUNNING.value
     )
 
-    future_ticks_start_time = datetime.datetime(
-        2019, 2, 27, tzinfo=get_timezone("US/Central")
-    ).timestamp()
-    future_ticks_end_time = datetime.datetime(
-        2019, 3, 2, tzinfo=get_timezone("US/Central")
-    ).timestamp()
+    future_ticks_start_time = create_pendulum_time(2019, 2, 27, tz="US/Central").timestamp()
+    future_ticks_end_time = create_pendulum_time(2019, 3, 2, tz="US/Central").timestamp()
 
     result = execute_dagster_graphql(
         graphql_context,
@@ -852,9 +792,9 @@ def test_future_ticks_until(graphql_context):
     timestamps = [future_tick["timestamp"] for future_tick in future_ticks["results"]]
 
     assert timestamps == [
-        datetime.datetime(2019, 2, 27, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 2, 28, tzinfo=get_timezone("US/Central")).timestamp(),
-        datetime.datetime(2019, 3, 1, tzinfo=get_timezone("US/Central")).timestamp(),
+        create_pendulum_time(2019, 2, 27, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 2, 28, tz="US/Central").timestamp(),
+        create_pendulum_time(2019, 3, 1, tz="US/Central").timestamp(),
     ]
 
 
@@ -874,7 +814,7 @@ def test_repository_batching(graphql_context):
     assert "repositoryOrError" in result.data
     assert "schedules" in result.data["repositoryOrError"]
     counter = traced_counter.get()
-    counts = counter.counts()  # pyright: ignore[reportOptionalMemberAccess]
+    counts = counter.counts()
     assert counts
     assert len(counts) == 3
 
@@ -886,201 +826,60 @@ def test_repository_batching(graphql_context):
     assert counts.get("DagsterInstance.all_instigator_state") == 1
 
 
-class TestScheduleMutations(ExecutingGraphQLContextTestMatrix):
-    def test_start_and_stop_schedule(self, graphql_context: WorkspaceRequestContext):
-        schedule_selector = infer_schedule_selector(
-            graphql_context, "no_config_job_hourly_schedule"
-        )
+def test_start_schedule_with_default_status(graphql_context):
+    schedule_selector = infer_schedule_selector(graphql_context, "running_in_code_schedule")
 
-        result = execute_dagster_graphql(
-            graphql_context,
-            GET_SCHEDULE_STATE_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
+    result = execute_dagster_graphql(
+        graphql_context,
+        GET_SCHEDULE_STATE_QUERY,
+        variables={"scheduleSelector": schedule_selector},
+    )
 
-        assert result.data["scheduleOrError"]["defaultStatus"] == "STOPPED"
+    schedule_origin_id = result.data["scheduleOrError"]["scheduleState"]["id"]
+    schedule_selector_id = result.data["scheduleOrError"]["scheduleState"]["selectorId"]
 
-        # Start a single schedule
-        start_result = execute_dagster_graphql(
-            graphql_context,
-            START_SCHEDULES_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-        assert (
-            start_result.data["startSchedule"]["scheduleState"]["status"]
-            == InstigatorStatus.RUNNING.value
-        )
+    assert result.data["scheduleOrError"]["scheduleState"]["status"] == "RUNNING"
 
-        schedule_id = start_result.data["startSchedule"]["scheduleState"]["id"]
+    assert result.data["scheduleOrError"]["scheduleState"]["hasStartPermission"] is True
+    assert result.data["scheduleOrError"]["scheduleState"]["hasStopPermission"] is True
 
-        # Stop a single schedule
-        stop_result = execute_dagster_graphql(
-            graphql_context,
-            STOP_SCHEDULES_QUERY,
-            variables={
-                "id": schedule_id,
-            },
-        )
-        assert (
-            stop_result.data["stopRunningSchedule"]["scheduleState"]["status"]
-            == InstigatorStatus.STOPPED.value
-        )
+    # Start a single schedule
+    start_result = execute_dagster_graphql(
+        graphql_context,
+        START_SCHEDULES_QUERY,
+        variables={"scheduleSelector": schedule_selector},
+    )
 
-    def test_start_and_reset_schedule(self, graphql_context: WorkspaceRequestContext):
-        schedule_selector = infer_schedule_selector(
-            graphql_context, "no_config_job_hourly_schedule"
-        )
+    assert (
+        start_result.data["startSchedule"]["scheduleState"]["status"]
+        == InstigatorStatus.RUNNING.value
+    )
 
-        result = execute_dagster_graphql(
-            graphql_context,
-            GET_SCHEDULE_STATE_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
+    # Stop a single schedule
+    stop_result = execute_dagster_graphql(
+        graphql_context,
+        STOP_SCHEDULES_QUERY,
+        variables={
+            "scheduleOriginId": schedule_origin_id,
+            "scheduleSelectorId": schedule_selector_id,
+        },
+    )
+    assert (
+        stop_result.data["stopRunningSchedule"]["scheduleState"]["status"]
+        == InstigatorStatus.STOPPED.value
+    )
 
-        assert result.data["scheduleOrError"]["defaultStatus"] == "STOPPED"
-        assert result.data["scheduleOrError"]["canReset"] is False
+    # Start a single schedule
+    start_result = execute_dagster_graphql(
+        graphql_context,
+        START_SCHEDULES_QUERY,
+        variables={"scheduleSelector": schedule_selector},
+    )
 
-        # Start a single schedule
-        start_result = execute_dagster_graphql(
-            graphql_context,
-            START_SCHEDULES_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-
-        schedule_id = start_result.data["startSchedule"]["scheduleState"]["id"]
-        cid = CompoundID.from_string(schedule_id)
-        instigator_state = graphql_context.instance.get_instigator_state(
-            cid.remote_origin_id, cid.selector_id
-        )
-
-        assert instigator_state
-        assert instigator_state.status == InstigatorStatus.RUNNING
-        assert (
-            start_result.data["startSchedule"]["scheduleState"]["status"]
-            == InstigatorStatus.RUNNING.value
-        )
-
-        result = execute_dagster_graphql(
-            graphql_context,
-            GET_SCHEDULE_STATE_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-
-        assert result.data["scheduleOrError"]["canReset"] is True
-
-        # Reset a single schedule
-        stop_result = execute_dagster_graphql(
-            graphql_context,
-            RESET_SCHEDULES_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-        reset_instigator_state = graphql_context.instance.get_instigator_state(
-            cid.remote_origin_id, cid.selector_id
-        )
-
-        assert reset_instigator_state
-        assert reset_instigator_state.status == InstigatorStatus.DECLARED_IN_CODE
-        assert (
-            stop_result.data["resetSchedule"]["scheduleState"]["status"]
-            == InstigatorStatus.STOPPED.value
-        )
-
-        result = execute_dagster_graphql(
-            graphql_context,
-            GET_SCHEDULE_STATE_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-
-        assert result.data["scheduleOrError"]["canReset"] is False
-
-    def test_start_schedule_with_default_status(self, graphql_context: WorkspaceRequestContext):
-        schedule_selector = infer_schedule_selector(graphql_context, "running_in_code_schedule")
-
-        result = execute_dagster_graphql(
-            graphql_context,
-            GET_SCHEDULE_STATE_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-
-        schedule_id = result.data["scheduleOrError"]["scheduleState"]["id"]
-
-        assert result.data["scheduleOrError"]["defaultStatus"] == "RUNNING"
-        assert result.data["scheduleOrError"]["canReset"] is False
-        assert result.data["scheduleOrError"]["scheduleState"]["status"] == "RUNNING"
-
-        assert result.data["scheduleOrError"]["scheduleState"]["hasStartPermission"] is True
-        assert result.data["scheduleOrError"]["scheduleState"]["hasStopPermission"] is True
-
-        # Start a single schedule
-        start_result = execute_dagster_graphql(
-            graphql_context,
-            START_SCHEDULES_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-
-        assert (
-            start_result.data["startSchedule"]["scheduleState"]["status"]
-            == InstigatorStatus.RUNNING.value
-        )
-
-        # Stop a single schedule
-        stop_result = execute_dagster_graphql(
-            graphql_context,
-            STOP_SCHEDULES_QUERY,
-            variables={
-                "id": schedule_id,
-            },
-        )
-        assert (
-            stop_result.data["stopRunningSchedule"]["scheduleState"]["status"]
-            == InstigatorStatus.STOPPED.value
-        )
-
-        result = execute_dagster_graphql(
-            graphql_context,
-            GET_SCHEDULE_STATE_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-
-        assert result.data["scheduleOrError"]["canReset"] is True
-
-        # Start a single schedule
-        start_result = execute_dagster_graphql(
-            graphql_context,
-            START_SCHEDULES_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-
-        assert (
-            start_result.data["startSchedule"]["scheduleState"]["status"]
-            == InstigatorStatus.RUNNING.value
-        )
-
-        # Reset a single schedule
-        reset_result = execute_dagster_graphql(
-            graphql_context,
-            RESET_SCHEDULES_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-        cid = CompoundID.from_string(schedule_id)
-        reset_instigator_state = graphql_context.instance.get_instigator_state(
-            cid.remote_origin_id, cid.selector_id
-        )
-
-        assert reset_instigator_state
-        assert reset_instigator_state.status == InstigatorStatus.DECLARED_IN_CODE
-        assert (
-            reset_result.data["resetSchedule"]["scheduleState"]["status"]
-            == InstigatorStatus.RUNNING.value
-        )
-
-        result = execute_dagster_graphql(
-            graphql_context,
-            GET_SCHEDULE_STATE_QUERY,
-            variables={"scheduleSelector": schedule_selector},
-        )
-
-        assert result.data["scheduleOrError"]["canReset"] is False
+    assert (
+        start_result.data["startSchedule"]["scheduleState"]["status"]
+        == InstigatorStatus.RUNNING.value
+    )
 
 
 class TestSchedulePermissions(ReadonlyGraphQLContextTestMatrix):
@@ -1115,13 +914,15 @@ class TestSchedulePermissions(ReadonlyGraphQLContextTestMatrix):
         assert result.data["scheduleOrError"]["scheduleState"]["hasStartPermission"] is False
         assert result.data["scheduleOrError"]["scheduleState"]["hasStopPermission"] is False
 
-        schedule_id = result.data["scheduleOrError"]["scheduleState"]["id"]
+        schedule_origin_id = result.data["scheduleOrError"]["scheduleState"]["id"]
+        schedule_selector_id = result.data["scheduleOrError"]["scheduleState"]["selectorId"]
 
         stop_result = execute_dagster_graphql(
             graphql_context,
             STOP_SCHEDULES_QUERY,
             variables={
-                "id": schedule_id,
+                "scheduleOriginId": schedule_origin_id,
+                "scheduleSelectorId": schedule_selector_id,
             },
         )
         assert stop_result.data["stopRunningSchedule"]["__typename"] == "UnauthorizedError"

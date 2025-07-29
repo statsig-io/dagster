@@ -1,12 +1,12 @@
 import os
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Optional, Sequence, Type
 
 import yaml
 
 import dagster._check as check
-from dagster._core.instance.config import DAGSTER_CONFIG_YAML_FILENAME, dagster_instance_config
 from dagster._serdes import ConfigurableClassData, class_from_code_pointer, whitelist_for_serdes
+
+from .config import DAGSTER_CONFIG_YAML_FILENAME, dagster_instance_config
 
 if TYPE_CHECKING:
     from dagster._core.instance import DagsterInstance, DagsterInstanceOverrides
@@ -305,9 +305,7 @@ class InstanceRef(
                 yaml.dump({}),
             ),
             "run_coordinator": ConfigurableClassData(
-                "dagster.core.run_coordinator",
-                "QueuedRunCoordinator",
-                yaml.dump({}),
+                "dagster._core.run_coordinator", "DefaultRunCoordinator", yaml.dump({})
             ),
             "run_launcher": ConfigurableClassData(
                 "dagster",
@@ -413,8 +411,7 @@ class InstanceRef(
                 event_storage_data,
                 schedule_storage_data,
             ] = configurable_storage_data(
-                config_value.get("storage"),  # type: ignore  # (possible none)
-                defaults,
+                config_value.get("storage"), defaults  # type: ignore  # (possible none)
             )
 
         scheduler_data = configurable_class_data_or_default(
@@ -443,8 +440,7 @@ class InstanceRef(
         )
 
         secrets_loader_data = configurable_secrets_loader_data(
-            config_value.get("secrets"),  # type: ignore  # (possible none)
-            defaults["secrets"],
+            config_value.get("secrets"), defaults["secrets"]  # type: ignore  # (possible none)
         )
 
         settings_keys = {
@@ -454,13 +450,10 @@ class InstanceRef(
             "run_retries",
             "code_servers",
             "retention",
-            "backfills",
             "sensors",
             "schedules",
             "nux",
             "auto_materialize",
-            "concurrency",
-            "freshness",
         }
         settings = {key: config_value.get(key) for key in settings_keys if config_value.get(key)}
 
@@ -488,7 +481,7 @@ class InstanceRef(
                 return v
             return ConfigurableClassData(*v)
 
-        return InstanceRef(**{k: value_for_ref_item(k, v) for k, v in instance_ref_dict.items()})  # pyright: ignore[reportArgumentType]
+        return InstanceRef(**{k: value_for_ref_item(k, v) for k, v in instance_ref_dict.items()})
 
     @property
     def local_artifact_storage(self) -> "LocalArtifactStorage":
@@ -564,21 +557,19 @@ class InstanceRef(
 
     @property
     def secrets_loader(self) -> Optional["SecretsLoader"]:
-        from dagster._core.secrets.env_file import PerProjectEnvFileLoader
         from dagster._core.secrets.loader import SecretsLoader
 
-        # Default PerProjectEnvFileLoader is injected here, rather than
-        # in config_defaults, to avoid back-compat issues when loading the
-        # config on older versions where PerProjectEnvFileLoader was not
-        # defined.
+        # Defining a default here rather than in stored config to avoid
+        # back-compat issues when loading the config on older versions where
+        # EnvFileLoader was not defined
         return (
             self.secrets_loader_data.rehydrate(as_type=SecretsLoader)
             if self.secrets_loader_data
-            else PerProjectEnvFileLoader()
+            else None
         )
 
     @property
-    def custom_instance_class(self) -> type["DagsterInstance"]:
+    def custom_instance_class(self) -> Type["DagsterInstance"]:
         return (  # type: ignore  # (ambiguous return type)
             class_from_code_pointer(
                 self.custom_instance_class_data.module_name,

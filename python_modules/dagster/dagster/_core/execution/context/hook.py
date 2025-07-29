@@ -1,19 +1,20 @@
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, AbstractSet, Any, Optional, Union  # noqa: UP035
+import warnings
+from typing import TYPE_CHECKING, AbstractSet, Any, Dict, Mapping, Optional, Set, Union
 
 import dagster._check as check
 from dagster._annotations import public
-from dagster._core.definitions.composition import PendingNodeInvocation
-from dagster._core.definitions.decorators.graph_decorator import graph
-from dagster._core.definitions.dependency import Node
-from dagster._core.definitions.hook_definition import HookDefinition
-from dagster._core.definitions.op_definition import OpDefinition
-from dagster._core.definitions.resource_definition import IContainsGenerator, Resources
-from dagster._core.errors import DagsterInvalidPropertyError, DagsterInvariantViolationError
-from dagster._core.execution.context.system import StepExecutionContext
-from dagster._core.execution.plan.step import ExecutionStep
-from dagster._core.execution.plan.utils import RetryRequestedFromPolicy
-from dagster._core.log_manager import DagsterLogManager
+
+from ...definitions.composition import PendingNodeInvocation
+from ...definitions.decorators.graph_decorator import graph
+from ...definitions.dependency import Node
+from ...definitions.hook_definition import HookDefinition
+from ...definitions.op_definition import OpDefinition
+from ...definitions.resource_definition import IContainsGenerator, Resources
+from ...errors import DagsterInvalidPropertyError, DagsterInvariantViolationError
+from ...log_manager import DagsterLogManager
+from ..plan.step import ExecutionStep
+from ..plan.utils import RetryRequestedFromPolicy
+from .system import StepExecutionContext
 
 if TYPE_CHECKING:
     from dagster._core.instance import DagsterInstance
@@ -38,7 +39,7 @@ def _check_property_on_test_context(
             f"Attribute '{user_facing_name}' was not provided when "
             f"constructing context. Provide a value for the '{param_on_builder}' parameter on "
             "'build_hook_context'. To learn more, check out the testing hooks section of Dagster's "
-            "concepts docs: https://legacy-docs.dagster.io/concepts/ops-jobs-graphs/op-hooks#testing-hooks"
+            "concepts docs: https://docs.dagster.io/concepts/ops-jobs-graphs/op-hooks#testing-hooks"
         )
     else:
         return value
@@ -88,6 +89,14 @@ class HookContext:
         """The op instance associated with the hook."""
         return self._step_execution_context.op
 
+    @property
+    def step(self) -> ExecutionStep:
+        warnings.warn(
+            "The step property of HookContext has been deprecated, and will be removed "
+            "in a future release."
+        )
+        return self._step_execution_context.step
+
     @public
     @property
     def step_key(self) -> str:
@@ -106,14 +115,18 @@ class HookContext:
         """Resources available in the hook context."""
         return self._resources
 
+    @property
+    def solid_config(self) -> Any:
+        solid_config = self._step_execution_context.resolved_run_config.ops.get(
+            str(self._step_execution_context.step.node_handle)
+        )
+        return solid_config.config if solid_config else None
+
     @public
     @property
     def op_config(self) -> Any:
         """The parsed config specific to this op."""
-        op_config = self._step_execution_context.resolved_run_config.ops.get(
-            str(self._step_execution_context.step.node_handle)
-        )
-        return op_config.config if op_config else None
+        return self.solid_config
 
     # Because of the fact that we directly use the log manager of the step, if a user calls
     # hook_context.log.with_tags, then they will end up mutating the step's logging tags as well.
@@ -123,6 +136,15 @@ class HookContext:
     def log(self) -> DagsterLogManager:
         """Centralized log dispatch from user code."""
         return self._step_execution_context.log
+
+    @property
+    def solid_exception(self) -> Optional[BaseException]:
+        """The thrown exception in a failed solid.
+
+        Returns:
+            Optional[BaseException]: the exception object, None if the solid execution succeeds.
+        """
+        return self.op_exception
 
     @public
     @property
@@ -135,16 +157,15 @@ class HookContext:
 
         return exc
 
-    @public
     @property
-    def op_output_values(self) -> Mapping[str, Union[Any, Mapping[str, Any]]]:
+    def solid_output_values(self) -> Mapping[str, Union[Any, Mapping[str, Any]]]:
         """The computed output values.
 
         Returns a dictionary where keys are output names and the values are:
             * the output values in the normal case
             * a dictionary from mapping key to corresponding value in the mapped case
         """
-        results: dict[str, Union[Any, dict[str, Any]]] = {}
+        results: Dict[str, Union[Any, Dict[str, Any]]] = {}
         captured = self._step_execution_context.step_output_capture
 
         if captured is None:
@@ -166,34 +187,9 @@ class HookContext:
 
     @public
     @property
-    def op_output_metadata(self) -> Mapping[str, Union[Any, Mapping[str, Any]]]:
-        """The applied output metadata.
-
-        Returns a dictionary where keys are output names and the values are:
-            * the applied output metadata in the normal case
-            * a dictionary from mapping key to corresponding metadata in the mapped case
-        """
-        results: dict[str, Union[Any, dict[str, Any]]] = {}
-        captured = self._step_execution_context.step_output_metadata_capture
-
-        if captured is None:
-            check.failed("Outputs were unexpectedly not captured for hook")
-
-        # make the returned values more user-friendly
-        for step_output_handle, metadata in captured.items():
-            if step_output_handle.mapping_key:
-                if results.get(step_output_handle.output_name) is None:
-                    results[step_output_handle.output_name] = {
-                        step_output_handle.mapping_key: metadata
-                    }
-                else:
-                    results[step_output_handle.output_name][step_output_handle.mapping_key] = (
-                        metadata
-                    )
-            else:
-                results[step_output_handle.output_name] = metadata
-
-        return results
+    def op_output_values(self):
+        """Computed output values in an op."""
+        return self.solid_output_values
 
 
 class UnboundHookContext(HookContext):
@@ -206,11 +202,8 @@ class UnboundHookContext(HookContext):
         op_exception: Optional[Exception],
         instance: Optional["DagsterInstance"],
     ):
-        from dagster._core.execution.build_resources import (
-            build_resources,
-            wrap_resources_for_execution,
-        )
-        from dagster._core.execution.context_creation_job import initialize_console_manager
+        from ..build_resources import build_resources, wrap_resources_for_execution
+        from ..context_creation_job import initialize_console_manager
 
         self._op = None
         if op is not None:
@@ -249,9 +242,7 @@ class UnboundHookContext(HookContext):
 
     @property
     def job_name(self) -> str:
-        return _check_property_on_test_context(
-            self, attr_str="_job_name", user_facing_name="job_name", param_on_builder="job_name"
-        )
+        return self.job_name
 
     @property
     def run_id(self) -> str:
@@ -278,7 +269,7 @@ class UnboundHookContext(HookContext):
         raise DagsterInvalidPropertyError(_property_msg("step_key", "property"))
 
     @property
-    def required_resource_keys(self) -> set[str]:
+    def required_resource_keys(self) -> Set[str]:
         raise DagsterInvalidPropertyError(_property_msg("hook_def", "property"))
 
     @property
@@ -292,8 +283,8 @@ class UnboundHookContext(HookContext):
         return self._resources
 
     @property
-    def op_config(self) -> Any:
-        raise DagsterInvalidPropertyError(_property_msg("op_config", "property"))
+    def solid_config(self) -> Any:
+        raise DagsterInvalidPropertyError(_property_msg("solid_config", "property"))
 
     @property
     def log(self) -> DagsterLogManager:
@@ -304,24 +295,14 @@ class UnboundHookContext(HookContext):
         return self._op_exception
 
     @property
-    def op_output_values(self) -> Mapping[str, Union[Any, Mapping[str, Any]]]:
+    def solid_output_values(self) -> Mapping[str, Union[Any, Mapping[str, Any]]]:
         """The computed output values.
 
         Returns a dictionary where keys are output names and the values are:
             * the output values in the normal case
             * a dictionary from mapping key to corresponding value in the mapped case
         """
-        raise DagsterInvalidPropertyError(_property_msg("op_output_values", "method"))
-
-    @property
-    def op_output_metadata(self) -> Mapping[str, Union[Any, Mapping[str, Any]]]:
-        """The applied output metadata.
-
-        Returns a dictionary where keys are output names and the values are:
-            * the applied output metadata in the normal case
-            * a dictionary from mapping key to corresponding metadata in the mapped case
-        """
-        raise DagsterInvalidPropertyError(_property_msg("op_output_metadata", "method"))
+        raise DagsterInvalidPropertyError(_property_msg("solid_output_values", "method"))
 
     @property
     def instance(self) -> "DagsterInstance":
@@ -394,8 +375,8 @@ class BoundHookContext(HookContext):
         return self._resources
 
     @property
-    def op_config(self) -> Any:
-        raise DagsterInvalidPropertyError(_property_msg("op_config", "property"))
+    def solid_config(self) -> Any:
+        raise DagsterInvalidPropertyError(_property_msg("solid_config", "property"))
 
     @property
     def log(self) -> DagsterLogManager:
@@ -406,24 +387,14 @@ class BoundHookContext(HookContext):
         return self._op_exception
 
     @property
-    def op_output_values(self) -> Mapping[str, Union[Any, Mapping[str, Any]]]:
+    def solid_output_values(self) -> Mapping[str, Union[Any, Mapping[str, Any]]]:
         """The computed output values.
 
         Returns a dictionary where keys are output names and the values are:
             * the output values in the normal case
             * a dictionary from mapping key to corresponding value in the mapped case
         """
-        raise DagsterInvalidPropertyError(_property_msg("op_output_values", "method"))
-
-    @property
-    def op_output_metadata(self) -> Mapping[str, Union[Any, Mapping[str, Any]]]:
-        """The applied output metadata.
-
-        Returns a dictionary where keys are output names and the values are:
-            * the applied output metadata in the normal case
-            * a dictionary from mapping key to corresponding metadata in the mapped case
-        """
-        raise DagsterInvalidPropertyError(_property_msg("op_output_metadata", "method"))
+        raise DagsterInvalidPropertyError(_property_msg("solid_output_values", "method"))
 
     @property
     def instance(self) -> "DagsterInstance":

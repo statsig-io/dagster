@@ -1,32 +1,33 @@
 from abc import abstractmethod
-from collections.abc import Generator, Sequence
 from contextlib import contextmanager
-from typing import Optional, cast
+from typing import Generator, Optional, Sequence, Type, cast
 
 from dagster import IOManagerDefinition, OutputContext, io_manager
-from dagster._annotations import beta
-from dagster._config.pythonic_config import ConfigurableIOManagerFactory
-from dagster._core.definitions.partitions.utils import TimeWindow
+from dagster._annotations import experimental
+from dagster._config.pythonic_config import (
+    ConfigurableIOManagerFactory,
+)
 from dagster._core.storage.db_io_manager import (
     DbClient,
     DbIOManager,
     DbTypeHandler,
     TablePartitionDimension,
     TableSlice,
+    TimeWindow,
 )
 from dagster._core.storage.io_manager import dagster_maintained_io_manager
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 from pydantic import Field
 
-from dagster_gcp.bigquery.utils import setup_gcp_creds
+from .utils import setup_gcp_creds
 
 BIGQUERY_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-@beta
+@experimental
 def build_bigquery_io_manager(
-    type_handlers: Sequence[DbTypeHandler], default_load_type: Optional[type] = None
+    type_handlers: Sequence[DbTypeHandler], default_load_type: Optional[Type] = None
 ) -> IOManagerDefinition:
     """Builds an I/O manager definition that reads inputs from and writes outputs to BigQuery.
 
@@ -47,22 +48,15 @@ def build_bigquery_io_manager(
             from dagster import Definitions
 
             @asset(
-                key_prefix=["my_prefix"],
-                metadata={"schema": "my_dataset"} # will be used as the dataset in BigQuery
+                key_prefix=["my_dataset"]  # my_dataset will be used as the dataset in BigQuery
             )
             def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
                 ...
 
-            @asset(
-                key_prefix=["my_dataset"]  # my_dataset will be used as the dataset in BigQuery
-            )
-            def my_second_table() -> pd.DataFrame:  # the name of the asset will be the table name
-                ...
-
             bigquery_io_manager = build_bigquery_io_manager([BigQueryPandasTypeHandler()])
 
-            Definitions(
-                assets=[my_table, my_second_table],
+            defs = Definitions(
+                assets=[my_table],
                 resources={
                     "io_manager": bigquery_io_manager.configured({
                         "project" : {"env": "GCP_PROJECT"}
@@ -70,51 +64,22 @@ def build_bigquery_io_manager(
                 }
             )
 
-        You can set a default dataset to store the assets using the ``dataset`` configuration value of the BigQuery I/O
-        Manager. This dataset will be used if no other dataset is specified directly on an asset or op.
-
-        .. code-block:: python
-
-            Definitions(
-                assets=[my_table],
-                resources={
-                        "io_manager": bigquery_io_manager.configured({
-                            "project" : {"env": "GCP_PROJECT"}
-                            "dataset": "my_dataset"
-                        })
-                    }
-            )
-
-        On individual assets, you an also specify the dataset where they should be stored using metadata or
-        by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-        take precedence.
-
-        .. code-block:: python
-
-            @asset(
-                key_prefix=["my_dataset"]  # will be used as the dataset in BigQuery
-            )
-            def my_table() -> pd.DataFrame:
-                ...
-
-            @asset(
-                # note that the key needs to be "schema"
-                metadata={"schema": "my_dataset"}  # will be used as the dataset in BigQuery
-            )
-            def my_other_table() -> pd.DataFrame:
-                ...
-
-        For ops, the dataset can be specified by including a "schema" entry in output metadata.
+        You can tell Dagster in which dataset to create tables by setting the ``dataset`` configuration value.
+        If you do not provide a dataset as configuration to the I/O manager, Dagster will determine a dataset based
+        on the assets and ops using the I/O Manager. For assets, the dataset will be determined from the asset key,
+        as shown in the above example. The final prefix before the asset name will be used as the dataset. For example,
+        if the asset ``my_table`` had the key prefix ``["gcp", "bigquery", "my_dataset"]``, the dataset ``my_dataset`` will be
+        used. For ops, the dataset can be specified by including a `schema` entry in output metadata. If ``schema`` is
+        not provided via config or on the asset/op, ``public`` will be used for the dataset.
 
         .. code-block:: python
 
             @op(
-                out={"my_table": Out(metadata={"schema": "my_schema"})}
+                out={"my_table": Out(metadata={"schema": "my_dataset"})}
             )
             def make_my_table() -> pd.DataFrame:
+                # the returned value will be stored at my_dataset.my_table
                 ...
-
-        If none of these is provided, the dataset will default to "public".
 
         To only use specific columns of a table as input to a downstream op or asset, add the metadata ``columns`` to the
         :py:class:`~dagster.In` or :py:class:`~dagster.AssetIn`.
@@ -138,7 +103,7 @@ def build_bigquery_io_manager(
     """
 
     @dagster_maintained_io_manager
-    @io_manager(config_schema=BigQueryIOManager.to_config_schema())  # pyright: ignore[reportArgumentType]
+    @io_manager(config_schema=BigQueryIOManager.to_config_schema())
     def bigquery_io_manager(init_context):
         """I/O Manager for storing outputs in a BigQuery database.
 
@@ -198,48 +163,22 @@ class BigQueryIOManager(ConfigurableIOManagerFactory):
                 }
             )
 
-        You can set a default dataset to store the assets using the ``dataset`` configuration value of the BigQuery I/O
-        Manager. This dataset will be used if no other dataset is specified directly on an asset or op.
-
-        .. code-block:: python
-
-            defs = Definitions(
-                assets=[my_table],
-                resources={
-                        "io_manager": MyBigQueryIOManager(project=EnvVar("GCP_PROJECT"), dataset="my_dataset")
-                    }
-            )
-
-        On individual assets, you an also specify the dataset where they should be stored using metadata or
-        by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-        take precedence.
-
-        .. code-block:: python
-
-            @asset(
-                key_prefix=["my_dataset"]  # will be used as the dataset in BigQuery
-            )
-            def my_table() -> pd.DataFrame:
-                ...
-
-            @asset(
-                # note that the key needs to be "schema"
-                metadata={"schema": "my_dataset"}  # will be used as the dataset in BigQuery
-            )
-            def my_other_table() -> pd.DataFrame:
-                ...
-
-        For ops, the dataset can be specified by including a "schema" entry in output metadata.
+        You can tell Dagster in which dataset to create tables by setting the ``dataset`` configuration value.
+        If you do not provide a dataset as configuration to the I/O manager, Dagster will determine a dataset based
+        on the assets and ops using the I/O Manager. For assets, the dataset will be determined from the asset key,
+        as shown in the above example. The final prefix before the asset name will be used as the dataset. For example,
+        if the asset ``my_table`` had the key prefix ``["gcp", "bigquery", "my_dataset"]``, the dataset ``my_dataset`` will be
+        used. For ops, the dataset can be specified by including a ``schema`` entry in output metadata. If ``schema`` is
+        not provided via config or on the asset/op, ``public`` will be used for the dataset.
 
         .. code-block:: python
 
             @op(
-                out={"my_table": Out(metadata={"schema": "my_schema"})}
+                out={"my_table": Out(metadata={"schema": "my_dataset"})}
             )
             def make_my_table() -> pd.DataFrame:
+                # the returned value will be stored at my_dataset.my_table
                 ...
-
-        If none of these is provided, the dataset will default to "public".
 
         To only use specific columns of a table as input to a downstream op or asset, add the metadata ``columns`` to the
         :py:class:`~dagster.In` or :py:class:`~dagster.AssetIn`.
@@ -308,7 +247,7 @@ class BigQueryIOManager(ConfigurableIOManagerFactory):
     def type_handlers() -> Sequence[DbTypeHandler]: ...
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> Optional[Type]:
         return None
 
     def create_io_manager(self, context) -> Generator:
@@ -340,7 +279,7 @@ class BigQueryClient(DbClient):
     def get_select_statement(table_slice: TableSlice) -> str:
         col_str = ", ".join(table_slice.columns) if table_slice.columns else "*"
 
-        if table_slice.partition_dimensions:
+        if table_slice.partition_dimensions and len(table_slice.partition_dimensions) > 0:
             query = (
                 f"SELECT {col_str} FROM"
                 f" `{table_slice.database}.{table_slice.schema}.{table_slice.table}` WHERE\n"
@@ -355,7 +294,7 @@ class BigQueryClient(DbClient):
 
     @staticmethod
     @contextmanager
-    def connect(context, _):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def connect(context, _):
         conn = bigquery.Client(
             project=context.resource_config.get("project"),
             location=context.resource_config.get("location"),
@@ -368,7 +307,7 @@ def _get_cleanup_statement(table_slice: TableSlice) -> str:
     """Returns a SQL statement that deletes data in the given table to make way for the output data
     being written.
     """
-    if table_slice.partition_dimensions:
+    if table_slice.partition_dimensions and len(table_slice.partition_dimensions) > 0:
         query = (
             f"DELETE FROM `{table_slice.database}.{table_slice.schema}.{table_slice.table}` WHERE\n"
         )
@@ -389,7 +328,7 @@ def _partition_where_clause(partition_dimensions: Sequence[TablePartitionDimensi
 
 
 def _time_window_where_clause(table_partition: TablePartitionDimension) -> str:
-    partition = cast("TimeWindow", table_partition.partitions)
+    partition = cast(TimeWindow, table_partition.partitions)
     start_dt, end_dt = partition
     start_dt_str = start_dt.strftime(BIGQUERY_DATETIME_FORMAT)
     end_dt_str = end_dt.strftime(BIGQUERY_DATETIME_FORMAT)

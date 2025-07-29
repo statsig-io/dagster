@@ -1,46 +1,43 @@
+import {gql, useMutation} from '@apollo/client';
 import {
-  Button,
   ButtonLink,
+  Button,
   Colors,
-  Dialog,
   DialogBody,
   DialogFooter,
+  Dialog,
   Group,
   TextArea,
 } from '@dagster-io/ui-components';
-import {useState} from 'react';
+import * as React from 'react';
 
 import 'chartjs-adapter-date-fns';
 
-import {gql, useMutation} from '../apollo-client';
-import {
-  SetSensorCursorMutation,
-  SetSensorCursorMutationVariables,
-} from './types/EditCursorDialog.types';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {showSharedToaster} from '../app/DomUtils';
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
 import {SensorSelector} from '../graphql/types';
 
-export const EditCursorDialog = ({
-  isOpen,
-  sensorSelector,
-  cursor,
-  onClose,
-}: {
+import {
+  SetSensorCursorMutation,
+  SetSensorCursorMutationVariables,
+} from './types/EditCursorDialog.types';
+
+export const EditCursorDialog: React.FC<{
   isOpen: boolean;
   cursor: string;
   sensorSelector: SensorSelector;
   onClose: () => void;
-}) => {
-  const [cursorValue, setCursorValue] = useState(cursor);
-  const [requestSet, {loading: isSaving}] = useMutation<
-    SetSensorCursorMutation,
-    SetSensorCursorMutationVariables
-  >(SET_CURSOR_MUTATION);
+}> = ({isOpen, sensorSelector, cursor, onClose}) => {
+  const [cursorValue, setCursorValue] = React.useState(cursor);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [requestSet] = useMutation<SetSensorCursorMutation, SetSensorCursorMutationVariables>(
+    SET_CURSOR_MUTATION,
+  );
 
   const onSave = async () => {
+    setIsSaving(true);
     const {data} = await requestSet({
       variables: {sensorSelector, cursor: cursorValue},
     });
@@ -54,7 +51,7 @@ export const EditCursorDialog = ({
           <Group direction="row" spacing={8}>
             <div>Could not set cursor value.</div>
             <ButtonLink
-              color={Colors.accentReversed()}
+              color={Colors.White}
               underline="always"
               onClick={() => {
                 showCustomAlert({

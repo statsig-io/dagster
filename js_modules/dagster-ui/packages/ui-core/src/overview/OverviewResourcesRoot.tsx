@@ -1,40 +1,43 @@
-import {Box, Colors, NonIdealState, Spinner, TextInput} from '@dagster-io/ui-components';
-import {useContext, useMemo} from 'react';
-
-import {OverviewPageHeader} from './OverviewPageHeader';
-import {OverviewResourcesTable} from './OverviewResourcesTable';
-import {sortRepoBuckets} from './sortRepoBuckets';
+import {gql, useQuery} from '@apollo/client';
 import {
-  OverviewResourcesQuery,
-  OverviewResourcesQueryVariables,
-} from './types/OverviewResourcesRoot.types';
-import {visibleRepoKeys} from './visibleRepoKeys';
-import {gql, useQuery} from '../apollo-client';
+  Box,
+  Colors,
+  Heading,
+  NonIdealState,
+  PageHeader,
+  Spinner,
+  TextInput,
+} from '@dagster-io/ui-components';
+import * as React from 'react';
+
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
 import {FIFTEEN_SECONDS, useQueryRefreshAtInterval} from '../app/QueryRefresh';
 import {useTrackPageView} from '../app/analytics';
 import {useDocumentTitle} from '../hooks/useDocumentTitle';
 import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
 import {RepoFilterButton} from '../instance/RepoFilterButton';
-import {RESOURCE_ENTRY_FRAGMENT} from '../resources/WorkspaceResourcesQuery';
-import {ResourceEntryFragment} from '../resources/types/WorkspaceResourcesQuery.types';
+import {RESOURCE_ENTRY_FRAGMENT} from '../resources/WorkspaceResourcesRoot';
+import {ResourceEntryFragment} from '../resources/types/WorkspaceResourcesRoot.types';
 import {SearchInputSpinner} from '../ui/SearchInputSpinner';
-import {WorkspaceContext} from '../workspace/WorkspaceContext/WorkspaceContext';
-import {WorkspaceLocationNodeFragment} from '../workspace/WorkspaceContext/types/WorkspaceQueries.types';
+import {WorkspaceContext} from '../workspace/WorkspaceContext';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
 import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
 import {RepoAddress} from '../workspace/types';
+
+import {OverviewResourcesTable} from './OverviewResourcesTable';
+import {OverviewTabs} from './OverviewTabs';
+import {sortRepoBuckets} from './sortRepoBuckets';
+import {
+  OverviewResourcesQuery,
+  OverviewResourcesQueryVariables,
+} from './types/OverviewResourcesRoot.types';
+import {visibleRepoKeys} from './visibleRepoKeys';
 
 export const OverviewResourcesRoot = () => {
   useTrackPageView();
   useDocumentTitle('Overview | Resources');
 
-  const {
-    allRepos,
-    visibleRepos,
-    loadingNonAssets: workspaceLoading,
-    data: cachedData,
-  } = useContext(WorkspaceContext);
+  const {allRepos, visibleRepos, loading: workspaceLoading} = React.useContext(WorkspaceContext);
   const [searchValue, setSearchValue] = useQueryPersistedState<string>({
     queryKey: 'search',
     defaults: {search: ''},
@@ -49,32 +52,22 @@ export const OverviewResourcesRoot = () => {
       notifyOnNetworkStatusChange: true,
     },
   );
-  const {data, loading: queryLoading} = queryResultOverview;
+  const {data, loading} = queryResultOverview;
+
   const refreshState = useQueryRefreshAtInterval(queryResultOverview, FIFTEEN_SECONDS);
 
   // Batch up the data and bucket by repo.
-  const repoBuckets = useMemo(() => {
+  const repoBuckets = React.useMemo(() => {
     const visibleKeys = visibleRepoKeys(visibleRepos);
-    const cachedEntries = Object.values(cachedData).filter(
-      (location): location is Extract<typeof location, {__typename: 'WorkspaceLocationEntry'}> =>
-        location.__typename === 'WorkspaceLocationEntry',
-    );
-    const workspaceOrError = data?.workspaceOrError;
-    const entries =
-      workspaceOrError?.__typename === 'Workspace'
-        ? workspaceOrError.locationEntries
-        : cachedEntries;
-    return buildBuckets(entries).filter(({repoAddress}) =>
+    return buildBuckets(data).filter(({repoAddress}) =>
       visibleKeys.has(repoAddressAsHumanString(repoAddress)),
     );
-  }, [cachedData, data, visibleRepos]);
-
-  const loading = !data && queryLoading && workspaceLoading;
+  }, [data, visibleRepos]);
 
   const sanitizedSearch = searchValue.trim().toLocaleLowerCase();
   const anySearch = sanitizedSearch.length > 0;
 
-  const filteredBySearch = useMemo(() => {
+  const filteredBySearch = React.useMemo(() => {
     const searchToLower = sanitizedSearch.toLocaleLowerCase();
     return repoBuckets
       .map(({repoAddress, resources}) => ({
@@ -85,12 +78,12 @@ export const OverviewResourcesRoot = () => {
   }, [repoBuckets, sanitizedSearch]);
 
   const content = () => {
-    if (loading) {
+    if (loading && !data) {
       return (
         <Box flex={{direction: 'row', justifyContent: 'center'}} style={{paddingTop: '100px'}}>
           <Box flex={{direction: 'row', alignItems: 'center', gap: 16}}>
             <Spinner purpose="body-text" />
-            <div style={{color: Colors.textLight()}}>Loading resources…</div>
+            <div style={{color: Colors.Gray600}}>Loading resources…</div>
           </Box>
         </Box>
       );
@@ -141,11 +134,14 @@ export const OverviewResourcesRoot = () => {
     return <OverviewResourcesTable repos={filteredBySearch} />;
   };
 
-  const showSearchSpinner = queryLoading && !data;
+  const showSearchSpinner = (workspaceLoading && !repoCount) || (loading && !data);
 
   return (
     <Box flex={{direction: 'column'}} style={{height: '100%', overflow: 'hidden'}}>
-      <OverviewPageHeader tab="resources" refreshState={refreshState} />
+      <PageHeader
+        title={<Heading>Overview</Heading>}
+        tabs={<OverviewTabs tab="resources" refreshState={refreshState} />}
+      />
       <Box
         padding={{horizontal: 24, vertical: 16}}
         flex={{direction: 'row', alignItems: 'center', gap: 12, grow: 0}}
@@ -180,15 +176,12 @@ type RepoBucket = {
   resources: ResourceEntryFragment[];
 };
 
-const buildBuckets = (
-  locationEntries:
-    | Extract<
-        OverviewResourcesQuery['workspaceOrError'],
-        {__typename: 'Workspace'}
-      >['locationEntries']
-    | Extract<WorkspaceLocationNodeFragment, {__typename: 'WorkspaceLocationEntry'}>[],
-): RepoBucket[] => {
-  const entries = locationEntries.map((entry) => entry.locationOrLoadError);
+const buildBuckets = (data?: OverviewResourcesQuery): RepoBucket[] => {
+  if (data?.workspaceOrError.__typename !== 'Workspace') {
+    return [];
+  }
+
+  const entries = data.workspaceOrError.locationEntries.map((entry) => entry.locationOrLoadError);
   const buckets = [];
 
   for (const entry of entries) {
@@ -227,7 +220,6 @@ const OVERVIEW_RESOURCES_QUERY = gql`
                 id
                 name
                 allTopLevelResourceDetails {
-                  id
                   ...ResourceEntryFragment
                 }
               }

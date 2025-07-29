@@ -60,13 +60,12 @@ class GCSFileManager(FileManager):
             temp_name = temp_file_obj.name
             bucket_obj = self._client.bucket(file_handle.gcs_bucket)
             bucket_obj.blob(file_handle.gcs_key).download_to_file(temp_file_obj)
-            temp_file_obj.flush()
             self._local_handle_cache[file_handle.gcs_path] = temp_name
 
         return file_handle
 
     @contextmanager
-    def read(self, file_handle, mode="rb"):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def read(self, file_handle, mode="rb"):
         check.inst_param(file_handle, "file_handle", GCSFileHandle)
         check.str_param(mode, "mode")
         check.param_invariant(mode in {"r", "rb"}, "mode")

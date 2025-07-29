@@ -1,10 +1,10 @@
-import {useRef, useState} from 'react';
+import * as React from 'react';
 import {createGlobalStyle} from 'styled-components';
 
 import {Box} from './Box';
-import {ConfigEditorHandle, ConfigSchema, NewConfigEditor} from './NewConfigEditor';
+import {ConfigSchema, ConfigEditorHandle, NewConfigEditor} from './NewConfigEditor';
 import {Spinner} from './Spinner';
-import {SplitPanelContainer, SplitPanelContainerHandle} from './SplitPanelContainer';
+import {SplitPanelContainer} from './SplitPanelContainer';
 import {ConfigEditorHelp} from './configeditor/ConfigEditorHelp';
 import {isHelpContextEqual} from './configeditor/isHelpContextEqual';
 import {ConfigEditorHelpContext} from './configeditor/types/ConfigEditorHelpContext';
@@ -25,16 +25,18 @@ export const CodeMirrorInDialogStyle = createGlobalStyle`
   }
 `;
 
-export const ConfigEditorWithSchema = ({
+export const ConfigEditorWithSchema: React.FC<Props> = ({
   isLoading,
   identifier,
   config,
   onConfigChange,
   configSchema,
-}: Props) => {
-  const editorSplitPanelContainer = useRef<SplitPanelContainerHandle | null>(null);
-  const [editorHelpContext, setEditorHelpContext] = useState<ConfigEditorHelpContext | null>(null);
-  const editor = useRef<ConfigEditorHandle | null>(null);
+}) => {
+  const editorSplitPanelContainer = React.useRef<SplitPanelContainer | null>(null);
+  const [editorHelpContext, setEditorHelpContext] = React.useState<ConfigEditorHelpContext | null>(
+    null,
+  );
+  const editor = React.useRef<ConfigEditorHandle | null>(null);
 
   return (
     <>

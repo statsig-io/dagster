@@ -1,12 +1,13 @@
-import dagster as dg
 import pytest
+from dagster import InitResourceContext, build_init_resource_context, resource
+from dagster._core.errors import DagsterInvariantViolationError
 
 
 def test_build_no_args():
-    context = dg.build_init_resource_context()
-    assert isinstance(context, dg.InitResourceContext)
+    context = build_init_resource_context()
+    assert isinstance(context, InitResourceContext)
 
-    @dg.resource
+    @resource
     def basic(_):
         return "foo"
 
@@ -14,15 +15,15 @@ def test_build_no_args():
 
 
 def test_build_with_resources():
-    @dg.resource
+    @resource
     def foo(_):
         return "foo"
 
-    context = dg.build_init_resource_context(resources={"foo": foo, "bar": "bar"})
+    context = build_init_resource_context(resources={"foo": foo, "bar": "bar"})
     assert context.resources.foo == "foo"
     assert context.resources.bar == "bar"
 
-    @dg.resource(required_resource_keys={"foo", "bar"})
+    @resource(required_resource_keys={"foo", "bar"})
     def reqs_resources(context):
         return context.resources.foo + context.resources.bar
 
@@ -32,25 +33,25 @@ def test_build_with_resources():
 def test_build_with_cm_resource():
     entered = []
 
-    @dg.resource
+    @resource
     def foo(_):
         try:
             yield "foo"
         finally:
             entered.append("true")
 
-    @dg.resource(required_resource_keys={"foo"})
+    @resource(required_resource_keys={"foo"})
     def reqs_cm_resource(context):
         return context.resources.foo + "bar"
 
-    context = dg.build_init_resource_context(resources={"foo": foo})
-    with pytest.raises(dg.DagsterInvariantViolationError):
+    context = build_init_resource_context(resources={"foo": foo})
+    with pytest.raises(DagsterInvariantViolationError):
         context.resources  # noqa: B018
 
     del context
     assert entered == ["true"]
 
-    with dg.build_init_resource_context(resources={"foo": foo}) as context:  # pyright: ignore[reportGeneralTypeIssues]
+    with build_init_resource_context(resources={"foo": foo}) as context:
         assert context.resources.foo == "foo"
         assert reqs_cm_resource(context) == "foobar"
 

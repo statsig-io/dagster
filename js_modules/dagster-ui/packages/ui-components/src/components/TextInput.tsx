@@ -1,12 +1,11 @@
 import * as React from 'react';
 import styled, {css} from 'styled-components';
 
-import {Colors} from './Color';
-import {Icon, IconName, IconWrapper} from './Icon';
+import {Colors} from './Colors';
+import {IconName, Icon, IconWrapper} from './Icon';
 import {FontFamily} from './styles';
 
 interface Props extends Omit<React.ComponentPropsWithRef<'input'>, 'onChange'> {
-  fill?: boolean;
   icon?: IconName;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   strokeColor?: string;
@@ -16,22 +15,18 @@ interface Props extends Omit<React.ComponentPropsWithRef<'input'>, 'onChange'> {
 export const TextInput = React.forwardRef(
   (props: Props, ref: React.ForwardedRef<HTMLInputElement>) => {
     const {
-      fill,
       icon,
       disabled,
-      strokeColor = Colors.borderDefault(),
+      strokeColor = Colors.Gray300,
       rightElement,
       type = 'text',
       ...rest
     } = props;
 
     return (
-      <TextInputContainer $disabled={!!disabled} style={fill ? {width: '100%', flex: 1} : {}}>
-        {icon ? (
-          <Icon name={icon} color={disabled ? Colors.accentGray() : Colors.accentPrimary()} />
-        ) : null}
+      <TextInputContainer $disabled={!!disabled}>
+        {icon ? <Icon name={icon} color={Colors.Gray900} /> : null}
         <StyledInput
-          data-lpignore="true"
           {...rest}
           $strokeColor={strokeColor}
           disabled={disabled}
@@ -50,7 +45,7 @@ TextInput.displayName = 'TextInput';
 
 export const TextInputContainerStyles = css`
   align-items: center;
-  color: ${Colors.textLight()};
+  color: ${Colors.Gray600};
   display: inline-flex;
   flex-direction: row;
   flex: 1;
@@ -71,7 +66,7 @@ export const TextInputContainer = styled.div<{$disabled?: boolean}>`
     ${({$disabled}) =>
       $disabled
         ? css`
-            background-color: ${Colors.backgroundDisabled()};
+            background-color: ${Colors.Gray400};
           `
         : null};
   }
@@ -88,12 +83,11 @@ const RightContainer = styled.div`
 `;
 
 export const TextInputStyles = css`
-  background-color: ${Colors.backgroundDefault()};
   border: none;
-  box-shadow: ${Colors.borderDefault()} inset 0px 0px 0px 1px;
-  outline: none;
   border-radius: 8px;
-  color: ${Colors.textDefault()};
+  box-shadow:
+    ${Colors.Gray300} inset 0px 0px 0px 1px,
+    ${Colors.KeylineGray} inset 2px 2px 1.5px;
   flex-grow: 1;
   font-size: 14px;
   line-height: 20px;
@@ -101,27 +95,23 @@ export const TextInputStyles = css`
   margin: 0;
   transition: box-shadow 150ms;
 
-  ::placeholder {
-    color: ${Colors.textLighter()};
-  }
-
   :disabled {
     box-shadow:
-      ${Colors.borderDisabled()} inset 0px 0px 0px 1px,
-      ${Colors.keylineDefault()} inset 2px 2px 1.5px;
-    background-color: ${Colors.backgroundDisabled()};
-    color: ${Colors.textDisabled()};
+      ${Colors.Gray200} inset 0px 0px 0px 1px,
+      ${Colors.KeylineGray} inset 2px 2px 1.5px;
+    background-color: ${Colors.Gray50};
+    color: ${Colors.Gray400};
   }
 
   :disabled::placeholder {
-    color: ${Colors.textDisabled()};
+    color: ${Colors.Gray400};
   }
 
   :focus {
     box-shadow:
-      ${Colors.borderDefault()} inset 0px 0px 0px 1px,
-      ${Colors.keylineDefault()} inset 2px 2px 1.5px,
-      ${Colors.focusRing()} 0 0 0 2px;
+      ${Colors.Gray300} inset 0px 0px 0px 1px,
+      ${Colors.KeylineGray} inset 2px 2px 1.5px,
+      rgba(58, 151, 212, 0.6) 0 0 0 3px;
     outline: none;
   }
 `;
@@ -144,21 +134,15 @@ const StyledInput = styled.input<StyledInputProps>`
         `
       : null}
 
-  box-shadow: ${({$strokeColor}) => $strokeColor || Colors.borderDefault()} inset 0px 0px 0px 1px;
+  box-shadow: ${({$strokeColor}) => $strokeColor} inset 0px 0px 0px 1px,
+    ${Colors.KeylineGray} inset 2px 2px 1.5px;
   padding: ${({$hasIcon}) => ($hasIcon ? '6px 6px 6px 28px' : '6px 6px 6px 12px')};
 
-  :hover:not(:disabled) {
-    box-shadow: ${({$strokeColor}) =>
-        $strokeColor === Colors.borderDefault() ? Colors.borderHover() : $strokeColor}
-      inset 0px 0px 0px 1px;
-  }
-
-  :focus,
-  :hover:focus:not(:disabled) {
+  :focus {
     box-shadow:
-      ${({$strokeColor}) => $strokeColor || Colors.borderHover()} inset 0px 0px 0px 1px,
-      ${Colors.focusRing()} 0 0 0 2px;
-    background-color: ${Colors.backgroundDefaultHover()};
+      ${({$strokeColor}) => $strokeColor} inset 0px 0px 0px 1px,
+      ${Colors.KeylineGray} inset 2px 2px 1.5px,
+      rgba(58, 151, 212, 0.6) 0 0 0 3px;
   }
 `;
 
@@ -170,17 +154,14 @@ interface TextAreaProps {
 export const TextArea = styled.textarea<TextAreaProps>`
   ${TextInputStyles}
 
-  box-shadow: ${({$strokeColor}) => $strokeColor || Colors.borderDefault()} inset 0px 0px 0px 1px;
-
-  :hover {
-    box-shadow: ${({$strokeColor}) => $strokeColor || Colors.borderHover()} inset 0px 0px 0px 1px;
-  }
+  box-shadow: ${({$strokeColor}) => $strokeColor || Colors.Gray300} inset 0px 0px 0px 1px,
+    ${Colors.KeylineGray} inset 2px 2px 1.5px;
 
   :focus {
     box-shadow:
-      ${({$strokeColor}) => $strokeColor || Colors.borderHover()} inset 0px 0px 0px 1px,
-      ${Colors.focusRing()} 0px 0px 0px 2px;
-    background-color: ${Colors.backgroundDefaultHover()};
+      ${({$strokeColor}) => $strokeColor || Colors.Gray300} inset 0px 0px 0px 1px,
+      ${Colors.KeylineGray} inset 2px 2px 1.5px,
+      rgba(58, 151, 212, 0.6) 0 0 0 3px;
   }
 
   ${({$resize}) => ($resize ? `resize: ${$resize};` : null)}

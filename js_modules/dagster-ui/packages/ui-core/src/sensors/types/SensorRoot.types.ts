@@ -22,12 +22,11 @@ export type SensorRootQuery = {
     | {
         __typename: 'Sensor';
         id: string;
+        jobOriginId: string;
         name: string;
         description: string | null;
         minIntervalSeconds: number;
         sensorType: Types.SensorType;
-        defaultStatus: Types.InstigationStatus;
-        canReset: boolean;
         nextTick: {__typename: 'DryRunInstigationTick'; timestamp: number | null} | null;
         sensorState: {
           __typename: 'InstigationState';
@@ -49,7 +48,6 @@ export type SensorRootQuery = {
             __typename: 'Run';
             id: string;
             status: Types.RunStatus;
-            creationTime: number;
             startTime: number | null;
             endTime: number | null;
             updateTime: number | null;
@@ -95,18 +93,7 @@ export type SensorRootQuery = {
     daemonHealth: {
       __typename: 'DaemonHealth';
       id: string;
-      sensorDaemonStatus: {
-        __typename: 'DaemonStatus';
-        id: string;
-        healthy: boolean | null;
-        required: boolean;
-      };
-      ampDaemonStatus: {
-        __typename: 'DaemonStatus';
-        id: string;
-        healthy: boolean | null;
-        required: boolean;
-      };
+      daemonStatus: {__typename: 'DaemonStatus'; id: string; healthy: boolean | null};
       allDaemonStatuses: Array<{
         __typename: 'DaemonStatus';
         id: string;
@@ -128,65 +115,3 @@ export type SensorRootQuery = {
     };
   };
 };
-
-export type SensorAssetSelectionQueryVariables = Types.Exact<{
-  sensorSelector: Types.SensorSelector;
-}>;
-
-export type SensorAssetSelectionQuery = {
-  __typename: 'Query';
-  sensorOrError:
-    | {
-        __typename: 'PythonError';
-        message: string;
-        stack: Array<string>;
-        errorChain: Array<{
-          __typename: 'ErrorChainLink';
-          isExplicitLink: boolean;
-          error: {__typename: 'PythonError'; message: string; stack: Array<string>};
-        }>;
-      }
-    | {
-        __typename: 'Sensor';
-        id: string;
-        assetSelection: {
-          __typename: 'AssetSelection';
-          assetSelectionString: string | null;
-          assetChecks: Array<{
-            __typename: 'AssetCheckhandle';
-            name: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-          assetsOrError:
-            | {
-                __typename: 'AssetConnection';
-                nodes: Array<{
-                  __typename: 'Asset';
-                  id: string;
-                  key: {__typename: 'AssetKey'; path: Array<string>};
-                  definition: {
-                    __typename: 'AssetNode';
-                    id: string;
-                    automationCondition: {__typename: 'AutomationCondition'} | null;
-                  } | null;
-                }>;
-              }
-            | {
-                __typename: 'PythonError';
-                message: string;
-                stack: Array<string>;
-                errorChain: Array<{
-                  __typename: 'ErrorChainLink';
-                  isExplicitLink: boolean;
-                  error: {__typename: 'PythonError'; message: string; stack: Array<string>};
-                }>;
-              };
-        } | null;
-      }
-    | {__typename: 'SensorNotFoundError'}
-    | {__typename: 'UnauthorizedError'};
-};
-
-export const SensorRootQueryVersion = 'fd32c8557a75c273133137c289091357635f3be0af17b9a57b052087f8e9d023';
-
-export const SensorAssetSelectionQueryVersion = '2fb6c2c612ee7ab4a7ad1f59cfd7677a6a3d14319200f8c49b43850de8b3b0f3';

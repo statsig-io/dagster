@@ -2,13 +2,13 @@
 import contextlib
 import os
 import shutil
-from collections.abc import Iterator
-from typing import Callable, Optional
+from typing import Callable, Dict, Iterator, List, Optional
 
 import dagster._check as check
 
-from automation.docker.dagster_docker import DagsterDockerImage, default_images_path
 from automation.git import git_repo_root
+
+from .dagster_docker import DagsterDockerImage, default_images_path
 
 
 def get_dagster_repo() -> str:
@@ -17,7 +17,7 @@ def get_dagster_repo() -> str:
 
 @contextlib.contextmanager
 def copy_directories(
-    paths: list[str], cwd: str, destination: str = "build_cache"
+    paths: List[str], cwd: str, destination: str = "build_cache"
 ) -> Iterator[None]:
     check.invariant(os.path.exists(cwd), "Image directory does not exist")
     build_cache_dir = os.path.join(cwd, destination)
@@ -60,7 +60,7 @@ def k8s_example_cm(cwd: str) -> Iterator[None]:
         yield
 
 
-def get_core_celery_k8s_dirs() -> list[str]:
+def get_core_celery_k8s_dirs() -> List[str]:
     return [
         "python_modules/dagster",
         "python_modules/libraries/dagster-postgres",
@@ -70,7 +70,7 @@ def get_core_celery_k8s_dirs() -> list[str]:
     ]
 
 
-def get_core_k8s_dirs() -> list[str]:
+def get_core_k8s_dirs() -> List[str]:
     return [
         "python_modules/dagster",
         "python_modules/libraries/dagster-postgres",
@@ -140,7 +140,7 @@ def k8s_celery_worker_editable_cm(cwd: str) -> Iterator[None]:
 def user_code_example_cm(cwd: str) -> Iterator[None]:
     with copy_directories(
         [
-            "examples/deploy_k8s/iris_analysis",
+            "examples/deploy_k8s/example_project",
         ],
         cwd,
     ):
@@ -196,7 +196,7 @@ def dagster_celery_k8s_editable_cm(cwd: str) -> Iterator[None]:
 
 
 # Some images have custom build context manager functions, listed here
-CUSTOM_BUILD_CONTEXTMANAGERS: dict[str, Callable] = {
+CUSTOM_BUILD_CONTEXTMANAGERS: Dict[str, Callable] = {
     "user-code-example": user_code_example_cm,
     "user-code-example-editable": user_code_example_editable_cm,
     "dagster-k8s-editable": dagster_k8s_editable_cm,
@@ -204,7 +204,7 @@ CUSTOM_BUILD_CONTEXTMANAGERS: dict[str, Callable] = {
 }
 
 
-def list_images(images_path: Optional[str] = None) -> list[DagsterDockerImage]:
+def list_images(images_path: Optional[str] = None) -> List[DagsterDockerImage]:
     """List all images that we manage.
 
     Returns:

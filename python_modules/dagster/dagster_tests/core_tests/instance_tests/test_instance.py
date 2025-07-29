@@ -1,30 +1,49 @@
-import json
 import os
 import re
 import tempfile
-from collections.abc import Mapping
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 from unittest.mock import MagicMock, patch
 
-import dagster as dg
 import pytest
 import yaml
 from dagster import (
+    AssetKey,
+    DailyPartitionsDefinition,
     _check as check,
-    seven,
+    _seven,
+    asset,
+    execute_job,
+    job,
+    op,
+    reconstructable,
 )
 from dagster._check import CheckError
 from dagster._cli.utils import get_instance_for_cli
-from dagster._core.errors import DagsterHomeNotSetError
+from dagster._config import Field
+from dagster._core.definitions import build_assets_job
+from dagster._core.definitions.asset_check_evaluation import AssetCheckEvaluation
+from dagster._core.definitions.events import AssetMaterialization, AssetObservation
+from dagster._core.errors import (
+    DagsterHomeNotSetError,
+    DagsterInvalidConfigError,
+    DagsterInvariantViolationError,
+)
+from dagster._core.event_api import EventRecordsFilter
+from dagster._core.events import DagsterEventType
 from dagster._core.execution.api import create_execution_plan
 from dagster._core.instance import DagsterInstance, InstanceRef
 from dagster._core.instance.config import DEFAULT_LOCAL_CODE_SERVER_STARTUP_TIMEOUT
 from dagster._core.launcher import LaunchRunContext, RunLauncher
-from dagster._core.secrets.env_file import PerProjectEnvFileLoader
-from dagster._core.snap import create_execution_plan_snapshot_id, snapshot_from_execution_plan
-from dagster._core.storage.asset_check_execution_record import AssetCheckExecutionRecordStatus
-from dagster._core.storage.partition_status_cache import AssetPartitionStatus, AssetStatusCacheValue
+from dagster._core.run_coordinator.queued_run_coordinator import QueuedRunCoordinator
+from dagster._core.snap import (
+    create_execution_plan_snapshot_id,
+    create_job_snapshot_id,
+    snapshot_from_execution_plan,
+)
+from dagster._core.storage.partition_status_cache import (
+    AssetPartitionStatus,
+    AssetStatusCacheValue,
+)
 from dagster._core.storage.sqlite_storage import (
     _event_logs_directory,
     _runs_directory,
@@ -34,9 +53,14 @@ from dagster._core.storage.tags import (
     ASSET_PARTITION_RANGE_END_TAG,
     ASSET_PARTITION_RANGE_START_TAG,
 )
-from dagster._core.test_utils import TestSecretsLoader, create_run_for_test, environ, new_cwd
+from dagster._core.test_utils import (
+    TestSecretsLoader,
+    create_run_for_test,
+    environ,
+    instance_for_test,
+    new_cwd,
+)
 from dagster._daemon.asset_daemon import AssetDaemon
-from dagster._daemon.controller import create_daemons_from_instance
 from dagster._serdes import ConfigurableClass
 from dagster._serdes.config_class import ConfigurableClassData
 from typing_extensions import Self
@@ -48,7 +72,7 @@ def test_get_run_by_id():
     instance = DagsterInstance.ephemeral()
 
     assert instance.get_runs() == []
-    run = create_run_for_test(instance, job_name="foo_job")
+    run = create_run_for_test(instance, job_name="foo_job", run_id="new_run")
 
     assert instance.get_runs() == [run]
 
@@ -56,13 +80,15 @@ def test_get_run_by_id():
 
 
 def do_test_single_write_read(instance):
-    @dg.job
+    run_id = "some_run_id"
+
+    @job
     def job_def():
         pass
 
-    run = instance.create_run_for_job(job_def=job_def)
-    stored_run = instance.get_run_by_id(run.run_id)
-    assert run.run_id == stored_run.run_id
+    instance.create_run_for_job(job_def=job_def, run_id=run_id)
+    run = instance.get_run_by_id(run_id)
+    assert run.run_id == run_id
     assert run.job_name == "job_def"
     assert list(instance.get_runs()) == [run]
     instance.wipe()
@@ -70,12 +96,12 @@ def do_test_single_write_read(instance):
 
 
 def test_filesystem_persist_one_run(tmpdir):
-    with dg.instance_for_test(temp_dir=str(tmpdir)) as instance:
+    with instance_for_test(temp_dir=str(tmpdir)) as instance:
         do_test_single_write_read(instance)
 
 
 def test_partial_storage(tmpdir):
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "run_storage": {
                 "module": "dagster._core.storage.runs",
@@ -90,7 +116,7 @@ def test_partial_storage(tmpdir):
 
 
 def test_unified_storage(tmpdir):
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "storage": {
                 "sqlite": {
@@ -102,10 +128,10 @@ def test_unified_storage(tmpdir):
         pass
 
 
-@pytest.mark.skipif(seven.IS_WINDOWS, reason="Windows paths formatted differently")
+@pytest.mark.skipif(_seven.IS_WINDOWS, reason="Windows paths formatted differently")
 def test_unified_storage_env_var(tmpdir):
     with environ({"SQLITE_STORAGE_BASE_DIR": str(tmpdir)}):
-        with dg.instance_for_test(
+        with instance_for_test(
             overrides={
                 "storage": {
                     "sqlite": {
@@ -114,54 +140,22 @@ def test_unified_storage_env_var(tmpdir):
                 }
             }
         ) as instance:
-            assert _runs_directory(str(tmpdir)) in instance.run_storage._conn_string  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]
+            assert _runs_directory(str(tmpdir)) in instance.run_storage._conn_string  # noqa: SLF001
             assert (
-                _event_logs_directory(str(tmpdir)) == instance.event_log_storage._base_dir + "/"  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]
+                _event_logs_directory(str(tmpdir))
+                == instance.event_log_storage._base_dir + "/"  # noqa: SLF001
             )
             assert (
-                _schedule_directory(str(tmpdir)) in instance.schedule_storage._conn_string  # noqa: SLF001  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+                _schedule_directory(str(tmpdir))
+                in instance.schedule_storage._conn_string  # noqa: SLF001
             )
-
-
-def test_implicit_secrets_manager():
-    with (
-        dg.instance_for_test() as instance,
-        tempfile.TemporaryDirectory() as temp_dir,
-        environ({"DAGSTER_PROJECT_ENV_FILE_PATHS": json.dumps({"test_location": temp_dir})}),
-    ):
-        assert isinstance(instance._secrets_loader, PerProjectEnvFileLoader)  # noqa: SLF001
-        (Path(temp_dir) / ".env").write_text("FOO=BAR")
-        assert instance._secrets_loader.get_secrets_for_environment("test_location") == {  # noqa: SLF001
-            "FOO": "BAR"
-        }
-        assert instance._secrets_loader.get_secrets_for_environment("other_location") == {}  # noqa: SLF001
-
-
-def test_custom_per_project_secrets_manager():
-    with (
-        tempfile.TemporaryDirectory() as temp_dir,
-        dg.instance_for_test(
-            overrides={
-                "secrets": {
-                    "custom": {
-                        "module": "dagster._core.secrets.env_file",
-                        "class": "PerProjectEnvFileLoader",
-                        "config": {"location_paths": {"test_location": str(temp_dir)}},
-                    }
-                }
-            }
-        ) as instance,
-    ):
-        assert isinstance(instance._secrets_loader, PerProjectEnvFileLoader)  # noqa: SLF001
-        (Path(temp_dir) / ".env").write_text("FOO=BAR")
-        assert instance._secrets_loader.get_secrets_for_environment("test_location") == {  # noqa: SLF001
-            "FOO": "BAR"
-        }
-        assert instance._secrets_loader.get_secrets_for_environment("other_location") == {}  # noqa: SLF001
 
 
 def test_custom_secrets_manager():
-    with dg.instance_for_test(
+    with instance_for_test() as instance:
+        assert instance._secrets_loader is None  # noqa: SLF001
+
+    with instance_for_test(
         overrides={
             "secrets": {
                 "custom": {
@@ -187,14 +181,13 @@ def test_run_queue_key():
 
     config = {"max_concurrent_runs": 50, "tag_concurrency_limits": tag_rules}
 
-    with dg.instance_for_test(overrides={"run_queue": config}) as instance:
-        assert isinstance(instance.run_coordinator, dg.QueuedRunCoordinator)
-        run_queue_config = instance.get_concurrency_config().run_queue_config
-        assert run_queue_config
+    with instance_for_test(overrides={"run_queue": config}) as instance:
+        assert isinstance(instance.run_coordinator, QueuedRunCoordinator)
+        run_queue_config = instance.run_coordinator.get_run_queue_config()
         assert run_queue_config.max_concurrent_runs == 50
         assert run_queue_config.tag_concurrency_limits == tag_rules
 
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "run_coordinator": {
                 "module": "dagster.core.run_coordinator",
@@ -203,21 +196,20 @@ def test_run_queue_key():
             }
         }
     ) as instance:
-        assert isinstance(instance.run_coordinator, dg.QueuedRunCoordinator)
-        run_queue_config = instance.get_concurrency_config().run_queue_config
-        assert run_queue_config
+        assert isinstance(instance.run_coordinator, QueuedRunCoordinator)
+        run_queue_config = instance.run_coordinator.get_run_queue_config()
         assert run_queue_config.max_concurrent_runs == 50
         assert run_queue_config.tag_concurrency_limits == tag_rules
 
     # Can't combine them though
     with pytest.raises(
-        dg.DagsterInvalidConfigError,
+        DagsterInvalidConfigError,
         match=(
             "Found config for `run_queue` which is incompatible with `run_coordinator` config"
             " entry."
         ),
     ):
-        with dg.instance_for_test(
+        with instance_for_test(
             overrides={
                 "run_queue": config,
                 "run_coordinator": {
@@ -239,12 +231,11 @@ def test_run_coordinator_key():
         }
     ]
 
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={"run_queue": {"max_concurrent_runs": 50, "tag_concurrency_limits": tag_rules}}
     ) as instance:
-        assert isinstance(instance.run_coordinator, dg.QueuedRunCoordinator)
-        run_queue_config = instance.get_concurrency_config().run_queue_config
-        assert run_queue_config
+        assert isinstance(instance.run_coordinator, QueuedRunCoordinator)
+        run_queue_config = instance.run_coordinator.get_run_queue_config()
         assert run_queue_config.max_concurrent_runs == 50
         assert run_queue_config.tag_concurrency_limits == tag_rules
 
@@ -254,54 +245,52 @@ def test_in_memory_persist_one_run():
         do_test_single_write_read(instance)
 
 
-@dg.op
+@op
 def noop_op(_):
     pass
 
 
-@dg.job
+@job
 def noop_job():
     noop_op()
 
 
-@dg.asset(partitions_def=dg.StaticPartitionsDefinition(["bar", "baz", "foo"]))
+@asset
 def noop_asset():
     pass
 
 
-noop_asset_job = dg.Definitions(
-    assets=[noop_asset], jobs=[dg.define_asset_job("noop_asset_job", [noop_asset])]
-).resolve_job_def("noop_asset_job")
+noop_asset_job = build_assets_job(assets=[noop_asset], name="noop_asset_job")
 
 
 def test_create_job_snapshot():
-    with dg.instance_for_test() as instance:
-        result = dg.execute_job(dg.reconstructable(noop_job), instance=instance)
+    with instance_for_test() as instance:
+        result = execute_job(reconstructable(noop_job), instance=instance)
         assert result.success
 
         run = instance.get_run_by_id(result.run_id)
 
-        assert run.job_snapshot_id == noop_job.get_job_snapshot().snapshot_id  # pyright: ignore[reportOptionalMemberAccess]
+        assert run.job_snapshot_id == create_job_snapshot_id(noop_job.get_job_snapshot())
 
 
 def test_create_execution_plan_snapshot():
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         execution_plan = create_execution_plan(noop_job)
 
         ep_snapshot = snapshot_from_execution_plan(execution_plan, noop_job.get_job_snapshot_id())
         ep_snapshot_id = create_execution_plan_snapshot_id(ep_snapshot)
 
-        result = dg.execute_job(dg.reconstructable(noop_job), instance=instance)
+        result = execute_job(reconstructable(noop_job), instance=instance)
         assert result.success
 
         run = instance.get_run_by_id(result.run_id)
 
-        assert run.execution_plan_snapshot_id == ep_snapshot_id  # pyright: ignore[reportOptionalMemberAccess]
-        assert run.execution_plan_snapshot_id == create_execution_plan_snapshot_id(ep_snapshot)  # pyright: ignore[reportOptionalMemberAccess]
+        assert run.execution_plan_snapshot_id == ep_snapshot_id
+        assert run.execution_plan_snapshot_id == create_execution_plan_snapshot_id(ep_snapshot)
 
 
 def test_submit_run():
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "run_coordinator": {
                 "module": "dagster._core.test_utils",
@@ -310,27 +299,28 @@ def test_submit_run():
         }
     ) as instance:
         with get_bar_workspace(instance) as workspace:
-            remote_job = (
+            external_job = (
                 workspace.get_code_location("bar_code_location")
                 .get_repository("bar_repo")
-                .get_full_job("foo")
+                .get_full_external_job("foo")
             )
 
             run = create_run_for_test(
                 instance=instance,
-                job_name=remote_job.name,
-                remote_job_origin=remote_job.get_remote_origin(),
-                job_code_origin=remote_job.get_python_origin(),
+                job_name=external_job.name,
+                run_id="foo-bar",
+                external_job_origin=external_job.get_external_origin(),
+                job_code_origin=external_job.get_python_origin(),
             )
 
             instance.submit_run(run.run_id, workspace)
 
-            assert len(instance.run_coordinator.queue()) == 1  # pyright: ignore[reportAttributeAccessIssue]
-            assert instance.run_coordinator.queue()[0].run_id == run.run_id  # pyright: ignore[reportAttributeAccessIssue]
+            assert len(instance.run_coordinator.queue()) == 1
+            assert instance.run_coordinator.queue()[0].run_id == "foo-bar"
 
 
 def test_create_run_with_asset_partitions():
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         execution_plan = create_execution_plan(noop_asset_job)
 
         ep_snapshot = snapshot_from_execution_plan(
@@ -350,7 +340,6 @@ def test_create_run_with_asset_partitions():
                 execution_plan_snapshot=ep_snapshot,
                 job_snapshot=noop_asset_job.get_job_snapshot(),
                 tags={ASSET_PARTITION_RANGE_START_TAG: "partition_0"},
-                asset_graph=noop_asset_job.asset_layer.asset_graph,
             )
 
         with pytest.raises(
@@ -366,7 +355,6 @@ def test_create_run_with_asset_partitions():
                 execution_plan_snapshot=ep_snapshot,
                 job_snapshot=noop_asset_job.get_job_snapshot(),
                 tags={ASSET_PARTITION_RANGE_END_TAG: "partition_0"},
-                asset_graph=noop_asset_job.asset_layer.asset_graph,
             )
 
         create_run_for_test(
@@ -375,7 +363,6 @@ def test_create_run_with_asset_partitions():
             execution_plan_snapshot=ep_snapshot,
             job_snapshot=noop_asset_job.get_job_snapshot(),
             tags={ASSET_PARTITION_RANGE_START_TAG: "bar", ASSET_PARTITION_RANGE_END_TAG: "foo"},
-            asset_graph=noop_asset_job.asset_layer.asset_graph,
         )
 
 
@@ -386,49 +373,41 @@ def test_get_required_daemon_types():
         SchedulerDaemon,
         SensorDaemon,
     )
-    from dagster._daemon.freshness import FreshnessDaemon
-    from dagster._daemon.run_coordinator import QueuedRunCoordinatorDaemon
 
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         assert instance.get_required_daemon_types() == [
             SensorDaemon.daemon_type(),
             BackfillDaemon.daemon_type(),
             SchedulerDaemon.daemon_type(),
-            QueuedRunCoordinatorDaemon.daemon_type(),
             AssetDaemon.daemon_type(),
         ]
 
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "run_launcher": {
                 "module": "dagster_tests.daemon_tests.test_monitoring_daemon",
                 "class": "TestRunLauncher",
             },
             "run_monitoring": {"enabled": True},
-            "freshness": {"enabled": True},
         }
     ) as instance:
         assert instance.get_required_daemon_types() == [
             SensorDaemon.daemon_type(),
             BackfillDaemon.daemon_type(),
             SchedulerDaemon.daemon_type(),
-            QueuedRunCoordinatorDaemon.daemon_type(),
             MonitoringDaemon.daemon_type(),
             AssetDaemon.daemon_type(),
-            FreshnessDaemon.daemon_type(),
         ]
-        assert len(create_daemons_from_instance(instance)) == 7
 
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
-            "auto_materialize": {"enabled": False, "use_sensors": False},
+            "auto_materialize": {"enabled": False},
         }
     ) as instance:
         assert instance.get_required_daemon_types() == [
             SensorDaemon.daemon_type(),
             BackfillDaemon.daemon_type(),
             SchedulerDaemon.daemon_type(),
-            QueuedRunCoordinatorDaemon.daemon_type(),
         ]
 
 
@@ -449,7 +428,7 @@ class TestNonResumeRunLauncher(RunLauncher, ConfigurableClass):
     def from_config_value(
         cls, inst_data: ConfigurableClassData, config_value: Mapping[str, Any]
     ) -> Self:
-        return cls(inst_data=inst_data)
+        return TestNonResumeRunLauncher(inst_data=inst_data)
 
     def launch_run(self, context):
         raise NotImplementedError()
@@ -466,7 +445,7 @@ class TestNonResumeRunLauncher(RunLauncher, ConfigurableClass):
 
 
 def test_grpc_default_settings():
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         assert (
             instance.code_server_process_startup_timeout
             == DEFAULT_LOCAL_CODE_SERVER_STARTUP_TIMEOUT
@@ -474,14 +453,12 @@ def test_grpc_default_settings():
 
 
 def test_grpc_override_settings():
-    with dg.instance_for_test(
-        overrides={"code_servers": {"local_startup_timeout": 60}}
-    ) as instance:
+    with instance_for_test(overrides={"code_servers": {"local_startup_timeout": 60}}) as instance:
         assert instance.code_server_process_startup_timeout == 60
 
 
 def test_run_monitoring(capsys):
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "run_monitoring": {"enabled": True},
         }
@@ -489,7 +466,7 @@ def test_run_monitoring(capsys):
         assert instance.run_monitoring_enabled
 
     settings = {"enabled": True}
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "run_launcher": {
                 "module": "dagster_tests.daemon_tests.test_monitoring_daemon",
@@ -503,7 +480,7 @@ def test_run_monitoring(capsys):
         assert instance.run_monitoring_max_resume_run_attempts == 0
 
     settings = {"enabled": True, "max_resume_run_attempts": 5}
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "run_launcher": {
                 "module": "dagster_tests.daemon_tests.test_monitoring_daemon",
@@ -517,7 +494,7 @@ def test_run_monitoring(capsys):
         assert instance.run_monitoring_max_resume_run_attempts == 5
 
     with pytest.raises(CheckError):
-        with dg.instance_for_test(
+        with instance_for_test(
             overrides={
                 "run_launcher": {
                     "module": "dagster_tests.core_tests.instance_tests.test_instance",
@@ -530,14 +507,14 @@ def test_run_monitoring(capsys):
 
 
 def test_cancellation_thread():
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "run_monitoring": {"cancellation_thread_poll_interval_seconds": 300},
         }
     ) as instance:
         assert instance.cancellation_thread_poll_interval_seconds == 300
 
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         assert instance.cancellation_thread_poll_interval_seconds == 10
 
 
@@ -558,7 +535,7 @@ def test_invalid_configurable_class():
             "load the configurable class dagster.MadeUpRunLauncher"
         ),
     ):
-        with dg.instance_for_test(
+        with instance_for_test(
             overrides={"run_launcher": {"module": "dagster", "class": "MadeUpRunLauncher"}}
         ) as instance:
             print(instance.run_launcher)  # noqa: T201
@@ -572,7 +549,7 @@ def test_invalid_configurable_module():
             "the configurable class made_up_module.MadeUpRunLauncher",
         ),
     ):
-        with dg.instance_for_test(
+        with instance_for_test(
             overrides={
                 "run_launcher": {
                     "module": "made_up_module",
@@ -587,7 +564,7 @@ def test_invalid_configurable_module():
 def test_dagster_home_not_abspath(dirname):
     with environ({"DAGSTER_HOME": dirname}):
         with pytest.raises(
-            dg.DagsterInvariantViolationError,
+            DagsterInvariantViolationError,
             match=re.escape(f'$DAGSTER_HOME "{dirname}" must be an absolute path.'),
         ):
             DagsterInstance.get()
@@ -598,18 +575,15 @@ def test_dagster_home_not_dir():
 
     with environ({"DAGSTER_HOME": dirname}):
         with pytest.raises(
-            dg.DagsterInvariantViolationError,
+            DagsterInvariantViolationError,
             match=re.escape(f'$DAGSTER_HOME "{dirname}" is not a directory or does not exist.'),
         ):
             DagsterInstance.get()
 
 
-@pytest.mark.skipif(seven.IS_WINDOWS, reason="Windows paths formatted differently")
+@pytest.mark.skipif(_seven.IS_WINDOWS, reason="Windows paths formatted differently")
 def test_dagster_env_vars_from_dotenv_file():
-    with (
-        tempfile.TemporaryDirectory() as working_dir,
-        tempfile.TemporaryDirectory() as dagster_home,
-    ):
+    with tempfile.TemporaryDirectory() as working_dir, tempfile.TemporaryDirectory() as dagster_home:
         # Create a dagster.yaml file in the dagster_home folder that requires SQLITE_STORAGE_BASE_DIR to be set
         # (and DAGSTER_HOME to be set in order to find the dagster.yaml file)
         with open(os.path.join(dagster_home, "dagster.yaml"), "w", encoding="utf8") as fd:
@@ -626,7 +600,7 @@ def test_dagster_env_vars_from_dotenv_file():
             )
 
         with new_cwd(working_dir):
-            with environ({"DAGSTER_HOME": None}):  # pyright: ignore[reportArgumentType]
+            with environ({"DAGSTER_HOME": None}):
                 # without .env file with a DAGSTER_HOME, loading fails
                 with pytest.raises(DagsterHomeNotSetError):
                     with get_instance_for_cli():
@@ -640,11 +614,12 @@ def test_dagster_env_vars_from_dotenv_file():
 
                 with get_instance_for_cli() as instance:
                     assert (
-                        _runs_directory(str(storage_dir)) in instance.run_storage._conn_string  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]
+                        _runs_directory(str(storage_dir))
+                        in instance.run_storage._conn_string  # noqa: SLF001
                     )
 
 
-class TestInstanceSubclass(dg.DagsterInstance):
+class TestInstanceSubclass(DagsterInstance):
     def __init__(self, *args, foo=None, baz=None, **kwargs):
         self._foo = foo
         self._baz = baz
@@ -660,14 +635,14 @@ class TestInstanceSubclass(dg.DagsterInstance):
     @classmethod
     def config_schema(cls):
         return {
-            "foo": dg.Field(str, is_required=True),
-            "baz": dg.Field(str, is_required=False),
+            "foo": Field(str, is_required=True),
+            "baz": Field(str, is_required=False),
         }
 
     @staticmethod
     def config_defaults(base_dir):
         defaults = InstanceRef.config_defaults(base_dir)
-        defaults["run_coordinator"] = ConfigurableClassData(  # pyright: ignore[reportIndexIssue]
+        defaults["run_coordinator"] = ConfigurableClassData(
             "dagster._core.run_coordinator.queued_run_coordinator",
             "QueuedRunCoordinator",
             yaml.dump({}),
@@ -676,7 +651,7 @@ class TestInstanceSubclass(dg.DagsterInstance):
 
 
 def test_instance_subclass():
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "instance_class": {
                 "module": "dagster_tests.core_tests.instance_tests.test_instance",
@@ -685,18 +660,18 @@ def test_instance_subclass():
             "foo": "bar",
         }
     ) as subclass_instance:
-        assert isinstance(subclass_instance, dg.DagsterInstance)
+        assert isinstance(subclass_instance, DagsterInstance)
 
         # isinstance(subclass_instance, TestInstanceSubclass) does not pass
         # Likely because the imported/dynamically loaded class is different from the local one
 
         assert subclass_instance.__class__.__name__ == "TestInstanceSubclass"
-        assert subclass_instance.foo() == "bar"  # pyright: ignore[reportAttributeAccessIssue]
-        assert subclass_instance.baz is None  # pyright: ignore[reportAttributeAccessIssue]
+        assert subclass_instance.foo() == "bar"
+        assert subclass_instance.baz is None
 
-        assert isinstance(subclass_instance.run_coordinator, dg.QueuedRunCoordinator)
+        assert isinstance(subclass_instance.run_coordinator, QueuedRunCoordinator)
 
-    with dg.instance_for_test(
+    with instance_for_test(
         overrides={
             "instance_class": {
                 "module": "dagster_tests.core_tests.instance_tests.test_instance",
@@ -706,16 +681,16 @@ def test_instance_subclass():
             "baz": "quux",
         }
     ) as subclass_instance:
-        assert isinstance(subclass_instance, dg.DagsterInstance)
+        assert isinstance(subclass_instance, DagsterInstance)
 
         assert subclass_instance.__class__.__name__ == "TestInstanceSubclass"
-        assert subclass_instance.foo() == "bar"  # pyright: ignore[reportAttributeAccessIssue]
-        assert subclass_instance.baz == "quux"  # pyright: ignore[reportAttributeAccessIssue]
+        assert subclass_instance.foo() == "bar"
+        assert subclass_instance.baz == "quux"
 
     # omitting foo leads to a config schema validation error
 
-    with pytest.raises(dg.DagsterInvalidConfigError):
-        with dg.instance_for_test(
+    with pytest.raises(DagsterInvalidConfigError):
+        with instance_for_test(
             overrides={
                 "instance_class": {
                     "module": "dagster_tests.core_tests.instance_tests.test_instance",
@@ -732,7 +707,7 @@ class InvalidRunLauncher(RunLauncher, ConfigurableClass):
     def launch_run(self, context: LaunchRunContext) -> None:
         pass
 
-    def terminate(self, run_id):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def terminate(self, run_id):
         pass
 
 
@@ -741,7 +716,7 @@ def test_configurable_class_missing_methods():
         NotImplementedError,
         match="InvalidRunLauncher must implement the config_type classmethod",
     ):
-        with dg.instance_for_test(
+        with instance_for_test(
             overrides={
                 "run_launcher": {
                     "module": "dagster_tests.core_tests.instance_tests.test_instance",
@@ -762,63 +737,45 @@ def test_get_status_by_partition(mock_get_and_update):
     mock_cached_value.deserialize_failed_partition_subsets.return_value = ["2023-06-15"]
     mock_cached_value.deserialize_in_progress_partition_subsets.return_value = ["2023-07-01"]
     mock_get_and_update.return_value = mock_cached_value
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         partition_status = instance.get_status_by_partition(
-            dg.AssetKey("test-asset"),
+            AssetKey("test-asset"),
             ["2023-07-01"],
-            dg.DailyPartitionsDefinition(start_date="2023-06-01"),
+            DailyPartitionsDefinition(start_date="2023-06-01"),
         )
         assert partition_status == {"2023-07-01": AssetPartitionStatus.IN_PROGRESS}
 
 
-def test_report_runless_asset_event() -> None:
-    with dg.instance_for_test() as instance:
-        my_asset_key = dg.AssetKey("my_asset")
+def test_report_runless_asset_event():
+    with instance_for_test() as instance:
+        my_asset_key = AssetKey("my_asset")
 
-        instance.report_runless_asset_event(dg.AssetMaterialization(my_asset_key))
+        instance.report_runless_asset_event(AssetMaterialization(my_asset_key))
         mats = instance.get_latest_materialization_events([my_asset_key])
         assert mats[my_asset_key]
 
-        instance.report_runless_asset_event(dg.AssetObservation(my_asset_key))
-        records = instance.fetch_observations(my_asset_key, limit=1).records
+        instance.report_runless_asset_event(AssetObservation(my_asset_key))
+        records = instance.get_event_records(
+            EventRecordsFilter(
+                event_type=DagsterEventType.ASSET_OBSERVATION,
+                asset_key=my_asset_key,
+            ),
+            limit=1,
+        )
         assert len(records) == 1
 
         my_check = "my_check"
         instance.report_runless_asset_event(
-            dg.AssetCheckEvaluation(
+            AssetCheckEvaluation(
                 asset_key=my_asset_key,
                 check_name=my_check,
-                passed=True,
+                success=True,
                 metadata={},
             )
         )
-        records = instance.event_log_storage.get_asset_check_execution_history(
-            check_key=dg.AssetCheckKey(asset_key=my_asset_key, name=my_check),
+        records = instance.event_log_storage.get_asset_check_executions(
+            asset_key=my_asset_key,
+            check_name=my_check,
             limit=1,
         )
         assert len(records) == 1
-        assert records[0].status == AssetCheckExecutionRecordStatus.SUCCEEDED
-
-        instance.report_runless_asset_event(
-            dg.AssetCheckEvaluation(
-                asset_key=my_asset_key,
-                check_name=my_check,
-                passed=False,
-                metadata={},
-            )
-        )
-        records = instance.event_log_storage.get_asset_check_execution_history(
-            check_key=dg.AssetCheckKey(asset_key=my_asset_key, name=my_check),
-            limit=1,
-        )
-        assert len(records) == 1
-        assert records[0].status == AssetCheckExecutionRecordStatus.FAILED
-
-
-def test_invalid_run_id():
-    with dg.instance_for_test() as instance:
-        with pytest.raises(
-            CheckError,
-            match="run_id must be a valid UUID. Got invalid_run_id",
-        ):
-            create_run_for_test(instance, job_name="foo_job", run_id="invalid_run_id")

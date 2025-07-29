@@ -1,4 +1,3 @@
-# serializer version: 1
 # name: test_mode_fetch_resources[0]
   dict({
     'pipelineOrError': dict({
@@ -26,29 +25,6 @@
               'name': 'io_manager',
             }),
           ]),
-        }),
-      ]),
-    }),
-    'resourcesOrError': dict({
-      '__typename': 'ResourceConnection',
-      'resources': list([
-        dict({
-          'configField': dict({
-            'configType': dict({
-              'key': 'Int',
-            }),
-          }),
-          'description': None,
-          'name': 'R1',
-        }),
-        dict({
-          'configField': dict({
-            'configType': dict({
-              'key': 'Any',
-            }),
-          }),
-          'description': 'Built-in filesystem IO manager that stores and retrieves values using pickling.',
-          'name': 'io_manager',
         }),
       ]),
     }),

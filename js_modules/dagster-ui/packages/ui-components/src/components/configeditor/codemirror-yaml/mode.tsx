@@ -7,8 +7,8 @@ import 'codemirror/addon/dialog/dialog.css';
 import * as yaml from 'yaml';
 
 import {
-  ConfigSchema_allConfigTypes_CompositeConfigType as CompositeConfigType,
   ConfigSchema,
+  ConfigSchema_allConfigTypes_CompositeConfigType as CompositeConfigType,
   ConfigSchema_allConfigTypes_MapConfigType as MapConfigType,
 } from '../types/ConfigSchema';
 
@@ -277,8 +277,8 @@ const defineYamlMode = () => {
                 parentContainer === ContainerType.List
                   ? stream.match(/^[^,\]]+/)
                   : parentContainer === ContainerType.Dict
-                    ? stream.match(/^[^,\}]+/)
-                    : stream.match(/^.+$/);
+                  ? stream.match(/^[^,\}]+/)
+                  : stream.match(/^.+$/);
             }
             const value = match ? match[0]! : '';
             if (value.match(RegExps.VARIABLE)) {

@@ -2,15 +2,13 @@ import logging
 import os
 from unittest import mock
 
-import pytest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from dagster import Field
 from dagster._core.definitions.decorators import op
-from dagster._core.execution.context.init import build_init_resource_context
+from dagster._seven import get_system_temp_directory
 from dagster._utils.test import wrap_op_in_graph_and_execute
-from dagster_shared.seven import get_system_temp_directory
 from dagster_ssh.resources import (
     SSHResource,
     key_from_str,
@@ -24,14 +22,14 @@ def generate_ssh_key():
 
     # get private key in PEM container format
     return key.private_bytes(
-        encoding=serialization.Encoding.PEM,  # pyright: ignore[reportArgumentType]
-        format=serialization.PrivateFormat.TraditionalOpenSSL,  # pyright: ignore[reportArgumentType]
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode("utf-8")
 
 
 @mock.patch("paramiko.SSHClient")
-def test_ssh_connection_with_password(ssh_mock) -> None:
+def test_ssh_connection_with_password(ssh_mock):
     ssh_resource = SSHResource(
         remote_host="remote_host",
         remote_port=12345,
@@ -43,9 +41,8 @@ def test_ssh_connection_with_password(ssh_mock) -> None:
         compress=True,
         no_host_key_check=False,
         allow_host_key_change=False,
+        logger=logging.root.getChild("test_resources"),
     )
-    ssh_resource.setup_for_execution(build_init_resource_context())
-    ssh_resource.set_logger(logging.root.getChild("test_resources"))
 
     with ssh_resource.get_connection():
         ssh_mock.return_value.connect.assert_called_once_with(
@@ -63,7 +60,7 @@ def test_ssh_connection_with_password(ssh_mock) -> None:
 
 
 @mock.patch("paramiko.SSHClient")
-def test_ssh_connection_without_password(ssh_mock) -> None:
+def test_ssh_connection_without_password(ssh_mock):
     ssh_resource = SSHResource(
         remote_host="remote_host",
         remote_port=12345,
@@ -75,10 +72,8 @@ def test_ssh_connection_without_password(ssh_mock) -> None:
         compress=True,
         no_host_key_check=False,
         allow_host_key_change=False,
+        logger=logging.root.getChild("test_resources"),
     )
-
-    ssh_resource.setup_for_execution(build_init_resource_context())
-    ssh_resource.set_logger(logging.root.getChild("test_resources"))
 
     with ssh_resource.get_connection():
         ssh_mock.return_value.connect.assert_called_once_with(
@@ -94,7 +89,7 @@ def test_ssh_connection_without_password(ssh_mock) -> None:
 
 
 @mock.patch("paramiko.SSHClient")
-def test_ssh_connection_with_key_string(ssh_mock) -> None:
+def test_ssh_connection_with_key_string(ssh_mock):
     ssh_key = generate_ssh_key()
 
     ssh_resource = SSHResource(
@@ -108,9 +103,8 @@ def test_ssh_connection_with_key_string(ssh_mock) -> None:
         compress=True,
         no_host_key_check=False,
         allow_host_key_change=False,
+        logger=logging.root.getChild("test_resources"),
     )
-    ssh_resource.setup_for_execution(build_init_resource_context())
-    ssh_resource.set_logger(logging.root.getChild("test_resources"))
 
     with ssh_resource.get_connection():
         ssh_mock.return_value.connect.assert_called_once_with(
@@ -126,7 +120,7 @@ def test_ssh_connection_with_key_string(ssh_mock) -> None:
 
 
 @mock.patch("dagster_ssh.resources.SSHTunnelForwarder")
-def test_tunnel_with_password(ssh_mock) -> None:
+def test_tunnel_with_password(ssh_mock):
     ssh_resource = SSHResource(
         remote_host="remote_host",
         remote_port=12345,
@@ -138,9 +132,8 @@ def test_tunnel_with_password(ssh_mock) -> None:
         compress=True,
         no_host_key_check=False,
         allow_host_key_change=False,
+        logger=logging.root.getChild("test_resources"),
     )
-    ssh_resource.setup_for_execution(build_init_resource_context())
-    ssh_resource.set_logger(logging.root.getChild("test_resources"))
 
     with ssh_resource.get_tunnel(1234):
         ssh_mock.assert_called_once_with(
@@ -157,7 +150,7 @@ def test_tunnel_with_password(ssh_mock) -> None:
 
 
 @mock.patch("dagster_ssh.resources.SSHTunnelForwarder")
-def test_tunnel_without_password(ssh_mock) -> None:
+def test_tunnel_without_password(ssh_mock):
     ssh_resource = SSHResource(
         remote_host="remote_host",
         remote_port=12345,
@@ -169,9 +162,8 @@ def test_tunnel_without_password(ssh_mock) -> None:
         compress=True,
         no_host_key_check=False,
         allow_host_key_change=False,
+        logger=logging.root.getChild("test_resources"),
     )
-    ssh_resource.setup_for_execution(build_init_resource_context())
-    ssh_resource.set_logger(logging.root.getChild("test_resources"))
 
     with ssh_resource.get_tunnel(1234):
         ssh_mock.assert_called_once_with(
@@ -188,7 +180,7 @@ def test_tunnel_without_password(ssh_mock) -> None:
 
 
 @mock.patch("dagster_ssh.resources.SSHTunnelForwarder")
-def test_tunnel_with_string_key(ssh_mock) -> None:
+def test_tunnel_with_string_key(ssh_mock):
     ssh_key = generate_ssh_key()
 
     ssh_resource = SSHResource(
@@ -202,9 +194,8 @@ def test_tunnel_with_string_key(ssh_mock) -> None:
         compress=True,
         no_host_key_check=False,
         allow_host_key_change=False,
+        logger=logging.root.getChild("test_resources"),
     )
-    ssh_resource.setup_for_execution(build_init_resource_context())
-    ssh_resource.set_logger(logging.root.getChild("test_resources"))
 
     with ssh_resource.get_tunnel(1234):
         ssh_mock.assert_called_once_with(
@@ -220,8 +211,7 @@ def test_tunnel_with_string_key(ssh_mock) -> None:
         )
 
 
-@pytest.mark.parametrize("ssh_resource_obj", [sshresource, SSHResource.configure_at_launch()])
-def test_ssh_sftp(sftpserver, ssh_resource_obj) -> None:
+def test_ssh_sftp(sftpserver):
     tmp_path = get_system_temp_directory()
     readme_file = os.path.join(tmp_path, "readme.txt")
 
@@ -240,7 +230,7 @@ def test_ssh_sftp(sftpserver, ssh_resource_obj) -> None:
     with sftpserver.serve_content({"a_dir": {"readme.txt": "hello, world"}}):
         result = wrap_op_in_graph_and_execute(
             sftp_solid_get,
-            resources={"ssh_resource": ssh_resource_obj},
+            resources={"ssh_resource": sshresource},
             run_config={
                 "ops": {
                     "sftp_solid_get": {

@@ -1,18 +1,18 @@
 # start_marker
-import dagster as dg
+from dagster import graph, op
 
 
-@dg.op
-def return_one(context: dg.OpExecutionContext) -> int:
+@op
+def return_one(context) -> int:
     return 1
 
 
-@dg.op
-def add_one(context: dg.OpExecutionContext, number: int) -> int:
+@op
+def add_one(context, number: int) -> int:
     return number + 1
 
 
-@dg.graph
+@graph
 def linear():
     add_one(add_one(add_one(return_one())))
 

@@ -1,29 +1,36 @@
-import dagster as dg
-from dagster import _check as check
+from dagster import (
+    Field,
+    Out,
+    Output,
+    String,
+    _check as check,
+    job,
+    op,
+)
 
 
 def define_pass_value_op(name, description=None):
     check.str_param(name, "name")
     check.opt_str_param(description, "description")
 
-    @dg.op(
+    @op(
         name=name,
         description=description,
-        out=dg.Out(dg.String),
-        config_schema={"value": dg.Field(dg.String)},
+        out=Out(String),
+        config_schema={"value": Field(String)},
     )
     def pass_value_op(context):
-        yield dg.Output(context.op_config["value"])
+        yield Output(context.op_config["value"])
 
     return pass_value_op
 
 
 def test_execute_op_with_input_same_name():
-    @dg.op
+    @op
     def a_thing(_, a_thing):
         return a_thing + a_thing
 
-    @dg.job
+    @job
     def pipe():
         pass_value = define_pass_value_op("pass_value")
         a_thing(pass_value())
@@ -36,15 +43,15 @@ def test_execute_op_with_input_same_name():
 
 
 def test_execute_two_ops_with_same_input_name():
-    @dg.op
+    @op
     def op_one(_, a_thing):
         return a_thing + a_thing
 
-    @dg.op
+    @op
     def op_two(_, a_thing):
         return a_thing + a_thing
 
-    @dg.job
+    @job
     def pipe():
         op_one(define_pass_value_op("pass_to_one")())
         op_two(define_pass_value_op("pass_to_two")())
@@ -66,15 +73,15 @@ def test_execute_two_ops_with_same_input_name():
 def test_execute_dep_op_different_input_name():
     pass_to_first = define_pass_value_op("pass_to_first")
 
-    @dg.op
+    @op
     def first_op(_, a_thing):
         return a_thing + a_thing
 
-    @dg.op
+    @op
     def second_op(_, an_input):
         return an_input + an_input
 
-    @dg.job
+    @job
     def foo_job():
         second_op(first_op(pass_to_first()))
 

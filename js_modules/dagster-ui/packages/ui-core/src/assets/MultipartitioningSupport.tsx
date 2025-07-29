@@ -1,15 +1,16 @@
 import isEqual from 'lodash/isEqual';
 import uniq from 'lodash/uniq';
 
+import {PartitionDefinitionType} from '../graphql/types';
+
 import {AssetPartitionStatus, emptyAssetPartitionStatusCounts} from './AssetPartitionStatus';
 import {
-  PartitionDimensionSelection,
   PartitionHealthData,
-  PartitionHealthDataMerged,
   PartitionHealthDimension,
+  PartitionDimensionSelection,
   Range,
+  PartitionHealthDataMerged,
 } from './usePartitionHealthData';
-import {PartitionDefinitionType} from '../graphql/types';
 
 export function isTimeseriesDimension(dimension: PartitionHealthDimension) {
   return isTimeseriesPartition(dimension.partitionKeys[0]);
@@ -49,6 +50,18 @@ export function mergedAssetHealth(assetHealth: PartitionHealthData[]): Partition
 
   if (!assetHealth.every((h) => h.dimensions.length === dimensions.length)) {
     throw new Error('Attempting to show unified asset health for assets with different dimensions');
+  }
+
+  if (
+    !assetHealth.every((h) =>
+      h.dimensions.every(
+        (dim, idx) => dim.partitionKeys.length === dimensions[idx]!.partitionKeys.length,
+      ),
+    )
+  ) {
+    throw new Error(
+      'Attempting to show unified asset health for assets with dimension of different lengths',
+    );
   }
 
   return {
@@ -167,15 +180,9 @@ export function assembleRangesFromTransitions(
 
     if (!isEqual(last?.value, value)) {
       if (last) {
-        const clippedLastEndIdx = Math.min(idx - 1, allKeys.length - 1);
-        last.end = {idx: clippedLastEndIdx, key: allKeys[clippedLastEndIdx]!};
+        last.end = {idx: idx - 1, key: allKeys[idx - 1]!};
       }
-      const clippedEndIdx = Math.min(idx, allKeys.length - 1);
-      result.push({
-        start: {idx, key: allKeys[idx]!},
-        end: {idx: clippedEndIdx, key: allKeys[clippedEndIdx]!},
-        value,
-      });
+      result.push({start: {idx, key: allKeys[idx]!}, end: {idx, key: allKeys[idx]!}, value});
     }
   }
   return result.filter(
@@ -202,56 +209,33 @@ export function explodePartitionKeysInSelectionMatching(
     return [];
   }
 
-  /** When you create a new dynamic partition, there's a brief moment where `selections` references
-   * the new key, but it is not yet present in the asset health data. Clicking "Launch Run" during
-   * this time period sends "null" to the server because this code is unable to find the key at
-   * the specified index.
-   *
-   * To prevent this, we return [] which disables the button until the UI is consistent.
-   */
   const results: string[] = [];
-  let keyNotFound = false;
 
   if (selections.length === 1) {
     for (const range of selections[0]!.selectedRanges) {
       for (let idx = range.start.idx; idx <= range.end.idx; idx++) {
         if (shouldIncludeKey([idx])) {
-          const value = selections[0]!.dimension.partitionKeys[idx];
-          if (value === undefined) {
-            keyNotFound = true;
-            break;
-          }
-          results.push(value);
+          results.push(selections[0]!.dimension.partitionKeys[idx]!);
         }
       }
     }
-    return keyNotFound ? [] : results;
+    return results;
   }
-
   if (selections.length === 2) {
     for (const range1 of selections[0]!.selectedRanges) {
       for (let idx1 = range1.start.idx; idx1 <= range1.end.idx; idx1++) {
-        const key1 = selections[0]!.dimension.partitionKeys[idx1];
-        if (key1 === undefined) {
-          keyNotFound = true;
-          break;
-        }
         for (const range2 of selections[1]!.selectedRanges) {
           for (let idx2 = range2.start.idx; idx2 <= range2.end.idx; idx2++) {
             if (shouldIncludeKey([idx1, idx2])) {
-              const key2 = selections[1]!.dimension.partitionKeys[idx2];
-              if (key2 === undefined) {
-                keyNotFound = true;
-                break;
-              }
+              const key1 = selections[0]?.dimension.partitionKeys[idx1];
+              const key2 = selections[1]?.dimension.partitionKeys[idx2];
               results.push(`${key1}|${key2}`);
             }
           }
         }
       }
     }
-
-    return keyNotFound ? [] : results;
+    return results;
   }
 
   throw new Error('Unsupported >2 partitions defined');

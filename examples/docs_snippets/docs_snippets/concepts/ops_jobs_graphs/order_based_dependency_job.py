@@ -8,22 +8,22 @@ def get_database_connection():
 
 
 # start_marker
-import dagster as dg
+from dagster import In, Nothing, job, op
 
 
-@dg.op
+@op
 def create_table_1():
     get_database_connection().execute(
         "create table_1 as select * from some_source_table"
     )
 
 
-@dg.op(ins={"start": dg.In(dg.Nothing)})
+@op(ins={"start": In(Nothing)})
 def create_table_2():
     get_database_connection().execute("create table_2 as select * from table_1")
 
 
-@dg.job
+@job
 def nothing_dependency():
     create_table_2(start=create_table_1())
 

@@ -1,34 +1,14 @@
 import datetime
-from typing import Optional
 
 import boto3
 from botocore.stub import Stubber
 from dagster import ConfigurableResource, resource
-from dagster._annotations import beta
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
 
 
 class ECRPublicClient:
-    def __init__(
-        self,
-        region_name: Optional[str] = None,
-        endpoint_url: Optional[str] = None,
-        use_ssl: bool = True,
-        aws_access_key_id: Optional[str] = None,
-        aws_secret_access_key: Optional[str] = None,
-        aws_session_token: Optional[str] = None,
-        verify: Optional[bool] = None,
-    ):
-        self.client = boto3.client(
-            "ecr-public",
-            region_name=region_name,
-            use_ssl=use_ssl,
-            verify=verify,
-            endpoint_url=endpoint_url,
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            aws_session_token=aws_session_token,
-        )
+    def __init__(self):
+        self.client = boto3.client("ecr-public")
 
     def get_login_password(self):
         return self.client.get_authorization_token()["authorizationData"]["authorizationToken"]
@@ -54,7 +34,6 @@ class FakeECRPublicClient(ECRPublicClient):
         return result
 
 
-@beta
 class ECRPublicResource(ConfigurableResource):
     """This resource enables connecting to AWS Public and getting a login password from it.
     Similar to the AWS CLI's `aws ecr-public get-login-password` command.
@@ -68,7 +47,6 @@ class ECRPublicResource(ConfigurableResource):
         return ECRPublicClient()
 
 
-@beta
 class FakeECRPublicResource(ConfigurableResource):
     """This resource behaves like ecr_public_resource except it stubs out the real AWS API
     requests and always returns `'token'` as its login password.
@@ -82,7 +60,6 @@ class FakeECRPublicResource(ConfigurableResource):
         return FakeECRPublicClient()
 
 
-@beta
 @dagster_maintained_resource
 @resource(
     description=(
@@ -94,7 +71,6 @@ def ecr_public_resource(context) -> ECRPublicClient:
     return ECRPublicResource.from_resource_context(context).get_client()
 
 
-@beta
 @dagster_maintained_resource
 @resource(
     description=(

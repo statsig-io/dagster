@@ -1,48 +1,45 @@
 import 'codemirror/addon/search/searchcursor';
 
+import {gql, useQuery} from '@apollo/client';
 import {
   Box,
-  Code,
   Colors,
   PageHeader,
   Spinner,
+  Code,
+  Heading,
+  StyledRawCodeMirror,
   Subheading,
-  Subtitle1,
 } from '@dagster-io/ui-components';
-import {StyledRawCodeMirror} from '@dagster-io/ui-components/editor';
 import CodeMirror from 'codemirror';
-import {memo, useContext, useMemo} from 'react';
+import * as React from 'react';
 import {createGlobalStyle} from 'styled-components';
 
-import {InstancePageContext} from './InstancePageContext';
-import {InstanceTabs} from './InstanceTabs';
-import {gql, useQuery} from '../apollo-client';
-import {InstanceConfigQuery, InstanceConfigQueryVariables} from './types/InstanceConfig.types';
-import {
-  FIFTEEN_SECONDS,
-  QueryRefreshCountdown,
-  useQueryRefreshAtInterval,
-} from '../app/QueryRefresh';
+import {useQueryRefreshAtInterval, FIFTEEN_SECONDS} from '../app/QueryRefresh';
 import {useTrackPageView} from '../app/analytics';
 import {useDocumentTitle} from '../hooks/useDocumentTitle';
 
-const InstanceConfigStyle = createGlobalStyle`
-  .CodeMirror.cm-s-instance-config.cm-s-instance-config {
-    background-color: ${Colors.backgroundDefault()};
-    box-shadow: 0 1px 0 ${Colors.keylineDefault()};
-    color: ${Colors.textDefault()};
-    height: 100%;
+import {InstancePageContext} from './InstancePageContext';
+import {InstanceTabs} from './InstanceTabs';
+import {InstanceConfigQuery, InstanceConfigQueryVariables} from './types/InstanceConfig.types';
 
-    .config-highlight.config-highlight {
-      background-color: ${Colors.backgroundLimeHover()};
-    }
+const InstanceConfigStyle = createGlobalStyle`
+  .CodeMirror.cm-s-instance-config {
+    box-shadow: 0 1px 0 ${Colors.KeylineGray};
+    height: 100%;
   }
+
+  .CodeMirror.cm-s-instance-config {
+    .config-highlight {
+      background-color: ${Colors.Yellow200};
+    }
 `;
 
-export const InstanceConfigContent = memo(() => {
+export const InstanceConfig = React.memo(() => {
   useTrackPageView();
   useDocumentTitle('Configuration');
 
+  const {pageTitle} = React.useContext(InstancePageContext);
   const queryResult = useQuery<InstanceConfigQuery, InstanceConfigQueryVariables>(
     INSTANCE_CONFIG_QUERY,
     {
@@ -54,7 +51,7 @@ export const InstanceConfigContent = memo(() => {
   const {data} = queryResult;
   const config = data?.instance.info;
 
-  const handlers = useMemo(() => {
+  const handlers = React.useMemo(() => {
     return {
       onReady: (editor: CodeMirror.Editor) => {
         const documentHash = document.location.hash;
@@ -82,42 +79,28 @@ export const InstanceConfigContent = memo(() => {
   return (
     <>
       <InstanceConfigStyle />
-      <Box
-        padding={{vertical: 16, horizontal: 24}}
-        border="bottom"
-        flex={{direction: 'row', alignItems: 'center', justifyContent: 'space-between'}}
-      >
+      <PageHeader
+        title={<Heading>{pageTitle}</Heading>}
+        tabs={<InstanceTabs tab="config" refreshState={refreshState} />}
+      />
+      <Box padding={{vertical: 16, horizontal: 24}} border="bottom">
         <Subheading>
           Dagster version: <Code style={{fontSize: '16px'}}>{data.version}</Code>
         </Subheading>
-        <QueryRefreshCountdown refreshState={refreshState} />
       </Box>
-      {/* Div wrapper on CodeMirror to allow entire page to scroll */}
-      <div style={{flex: 1, overflow: 'hidden'}}>
-        <StyledRawCodeMirror
-          value={config || ''}
-          options={{readOnly: true, lineNumbers: true, mode: 'yaml'}}
-          handlers={handlers}
-          theme={['instance-config']}
-        />
-      </div>
+      <StyledRawCodeMirror
+        value={config || ''}
+        options={{readOnly: true, lineNumbers: true, mode: 'yaml'}}
+        handlers={handlers}
+        theme={['instance-config']}
+      />
     </>
   );
 });
 
-export const InstanceConfigRoot = () => {
-  const {pageTitle} = useContext(InstancePageContext);
-  return (
-    <>
-      <PageHeader title={<Subtitle1>{pageTitle}</Subtitle1>} tabs={<InstanceTabs tab="config" />} />
-      <InstanceConfigContent />
-    </>
-  );
-};
-
 // Imported via React.lazy, which requires a default export.
 // eslint-disable-next-line import/no-default-export
-export default InstanceConfigRoot;
+export default InstanceConfig;
 
 export const INSTANCE_CONFIG_QUERY = gql`
   query InstanceConfigQuery {

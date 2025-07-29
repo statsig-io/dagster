@@ -1,6 +1,6 @@
 import json
 import subprocess
-from typing import Any, Optional, Union
+from typing import List, Union
 
 import pytest
 from dagster_k8s.models import k8s_model_from_dict, k8s_snake_case_dict
@@ -18,7 +18,7 @@ from schema.charts.dagster_user_deployments.values import DagsterUserDeployments
 from schema.charts.utils import kubernetes
 from schema.utils.helm_template import HelmTemplate
 
-from schema_tests.utils import create_complex_user_deployment, create_simple_user_deployment
+from .utils import create_complex_user_deployment, create_simple_user_deployment
 
 
 @pytest.fixture(name="template")
@@ -60,7 +60,7 @@ def user_deployment_configmap_template() -> HelmTemplate:
 
 
 def assert_user_deployment_template(
-    t: HelmTemplate, templates: list[models.V1Deployment], values: DagsterHelmValues
+    t: HelmTemplate, templates: List[models.V1Deployment], values: DagsterHelmValues
 ):
     assert len(templates) == len(values.dagsterUserDeployments.deployments)
 
@@ -659,11 +659,6 @@ def test_user_deployment_include_config_in_launched_runs(template: HelmTemplate)
             "env_config_maps": ["release-name-dagster-user-deployments-foo-user-env"],
             "namespace": "default",
             "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-            "run_k8s_config": {
-                "pod_spec_config": {
-                    "automount_service_account_token": True,
-                }
-            },
         }
     }
 
@@ -756,11 +751,6 @@ def test_user_deployment_volumes(template: HelmTemplate, include_config_in_launc
                 "volumes": volumes,
                 "namespace": "default",
                 "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-                "run_k8s_config": {
-                    "pod_spec_config": {
-                        "automount_service_account_token": True,
-                    }
-                },
             }
         }
     else:
@@ -817,11 +807,6 @@ def test_user_deployment_secrets_and_configmaps(
                 ],
                 "namespace": "default",
                 "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-                "run_k8s_config": {
-                    "pod_spec_config": {
-                        "automount_service_account_token": True,
-                    }
-                },
             }
         }
     else:
@@ -869,65 +854,6 @@ def test_user_deployment_labels(template: HelmTemplate, include_config_in_launch
                 "labels": labels,
                 "namespace": "default",
                 "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-                "run_k8s_config": {
-                    "pod_spec_config": {
-                        "automount_service_account_token": True,
-                    }
-                },
-            }
-        }
-    else:
-        _assert_no_container_context(user_deployments[0])
-
-
-@pytest.mark.parametrize("include_config_in_launched_runs", [False, True])
-def test_annotations(template: HelmTemplate, include_config_in_launched_runs: bool):
-    name = "foo"
-
-    annotations = kubernetes.Annotations.parse_obj({"my-annotation-key": "my-annotation-val"})
-
-    deployment = UserDeployment.construct(
-        name=name,
-        image=kubernetes.Image(repository=f"repo/{name}", tag="tag1", pullPolicy="Always"),
-        dagsterApiGrpcArgs=["-m", name],
-        port=3030,
-        annotations=annotations,
-        includeConfigInLaunchedRuns=UserDeploymentIncludeConfigInLaunchedRuns(
-            enabled=include_config_in_launched_runs
-        ),
-    )
-
-    helm_values = DagsterHelmValues.construct(
-        dagsterUserDeployments=UserDeployments.construct(
-            enabled=True,
-            enableSubchart=True,
-            deployments=[deployment],
-        )
-    )
-
-    user_deployments = template.render(helm_values)
-
-    assert len(user_deployments) == 1
-
-    if include_config_in_launched_runs:
-        container_context = user_deployments[0].spec.template.spec.containers[0].env[2]
-        assert container_context.name == "DAGSTER_CLI_API_GRPC_CONTAINER_CONTEXT"
-        assert json.loads(container_context.value) == {
-            "k8s": {
-                "image_pull_policy": "Always",
-                "env_config_maps": [
-                    "release-name-dagster-user-deployments-foo-user-env",
-                ],
-                "namespace": "default",
-                "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-                "run_k8s_config": {
-                    "pod_spec_config": {
-                        "automount_service_account_token": True,
-                    },
-                    "pod_template_spec_metadata": {
-                        "annotations": annotations.model_dump(),
-                    },
-                },
             }
         }
     else:
@@ -938,12 +864,10 @@ def test_annotations(template: HelmTemplate, include_config_in_launched_runs: bo
 def test_user_deployment_resources(template: HelmTemplate, include_config_in_launched_runs: bool):
     name = "foo"
 
-    resources = kubernetes.Resources.parse_obj(
-        {
-            "requests": {"memory": "64Mi", "cpu": "250m"},
-            "limits": {"memory": "128Mi", "cpu": "500m"},
-        }
-    )
+    resources = {
+        "requests": {"memory": "64Mi", "cpu": "250m"},
+        "limits": {"memory": "128Mi", "cpu": "500m"},
+    }
 
     deployment = UserDeployment.construct(
         name=name,
@@ -975,97 +899,9 @@ def test_user_deployment_resources(template: HelmTemplate, include_config_in_lau
                 "env_config_maps": [
                     "release-name-dagster-user-deployments-foo-user-env",
                 ],
-                "resources": resources.model_dump(),
+                "resources": resources,
                 "namespace": "default",
                 "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-                "run_k8s_config": {
-                    "pod_spec_config": {
-                        "automount_service_account_token": True,
-                    }
-                },
-            }
-        }
-    else:
-        _assert_no_container_context(user_deployments[0])
-
-
-@pytest.mark.parametrize("include_config_in_launched_runs", [False, True])
-def test_user_deployment_sidecar(template: HelmTemplate, include_config_in_launched_runs: bool):
-    name = "foo"
-
-    init_containers = [
-        {"name": "my-init-container", "image": "my-init-image"},
-    ]
-
-    sidecars = [
-        {"name": "my-sidecar", "image": "my-sidecar-image"},
-    ]
-
-    deployment = UserDeployment.construct(
-        name=name,
-        image=kubernetes.Image(repository=f"repo/{name}", tag="tag1", pullPolicy="Always"),
-        dagsterApiGrpcArgs=["-m", name],
-        port=3030,
-        initContainers=[
-            kubernetes.Container.construct(None, **container) for container in init_containers
-        ],
-        sidecarContainers=[kubernetes.Container.construct(None, **sidecar) for sidecar in sidecars],
-        includeConfigInLaunchedRuns=UserDeploymentIncludeConfigInLaunchedRuns(
-            enabled=include_config_in_launched_runs
-        ),
-    )
-
-    helm_values = DagsterHelmValues.construct(
-        dagsterUserDeployments=UserDeployments.construct(
-            enabled=True,
-            enableSubchart=True,
-            deployments=[deployment],
-        )
-    )
-
-    user_deployments = template.render(helm_values)
-
-    assert len(user_deployments) == 1
-
-    image = user_deployments[0].spec.template.spec.containers[0].image
-    image_name, image_tag = image.split(":")
-
-    deployed_sidecars = user_deployments[0].spec.template.spec.containers[1:]
-    assert deployed_sidecars == [
-        k8s_model_from_dict(
-            k8s_client.models.V1Container,
-            k8s_snake_case_dict(k8s_client.models.V1Container, sidecar),
-        )
-        for sidecar in sidecars
-    ]
-
-    deployed_init_containers = user_deployments[0].spec.template.spec.init_containers
-    assert deployed_init_containers == [
-        k8s_model_from_dict(
-            k8s_client.models.V1Container,
-            k8s_snake_case_dict(k8s_client.models.V1Container, container),
-        )
-        for container in init_containers
-    ]
-
-    if include_config_in_launched_runs:
-        container_context = user_deployments[0].spec.template.spec.containers[0].env[2]
-        assert container_context.name == "DAGSTER_CLI_API_GRPC_CONTAINER_CONTEXT"
-        assert json.loads(container_context.value) == {
-            "k8s": {
-                "env_config_maps": [
-                    "release-name-dagster-user-deployments-foo-user-env",
-                ],
-                "image_pull_policy": "Always",
-                "namespace": "default",
-                "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-                "run_k8s_config": {
-                    "pod_spec_config": {
-                        "init_containers": init_containers,
-                        "containers": sidecars,
-                        "automount_service_account_token": True,
-                    },
-                },
             }
         }
     else:
@@ -1107,11 +943,6 @@ def test_subchart_image_pull_secrets(
                 "image_pull_secrets": image_pull_secrets,
                 "namespace": "default",
                 "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-                "run_k8s_config": {
-                    "pod_spec_config": {
-                        "automount_service_account_token": True,
-                    }
-                },
             }
         }
     else:
@@ -1217,14 +1048,6 @@ def test_scheduler_name(template: HelmTemplate):
     assert dagster_user_deployment.spec.template.spec.scheduler_name == "myscheduler"
 
 
-def test_automount_svc_acct_token(template: HelmTemplate):
-    helm_values = UserDeployment.construct()
-
-    [daemon_deployment] = template.render(helm_values)
-
-    assert daemon_deployment.spec.template.spec.automount_service_account_token
-
-
 def test_env(template: HelmTemplate, user_deployment_configmap_template):
     # new env: list. Gets written to container
     deployment = UserDeployment.construct(
@@ -1246,47 +1069,6 @@ def test_env(template: HelmTemplate, user_deployment_configmap_template):
     assert len(dagster_user_deployment.spec.template.spec.containers[0].env) == 4
     assert dagster_user_deployment.spec.template.spec.containers[0].env[3].name == "test_env"
     assert dagster_user_deployment.spec.template.spec.containers[0].env[3].value == "test_value"
-
-
-def test_namespace(template: HelmTemplate, user_deployment_configmap_template):
-    # add a deployment namespace
-    deployment = UserDeployment.construct(
-        name="foo",
-        image=kubernetes.Image(repository="repo/foo", tag="tag1", pullPolicy="Always"),
-        dagsterApiGrpcArgs=["-m", "foo"],
-        deploymentNamespace="applesauce",
-        port=3030,
-        includeConfigInLaunchedRuns=UserDeploymentIncludeConfigInLaunchedRuns(enabled=True),
-        env=[{"name": "test_env", "value": "test_value"}],
-    )
-    helm_values = DagsterHelmValues.construct(
-        dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
-    )
-
-    [cm] = user_deployment_configmap_template.render(helm_values)
-    assert not cm.data
-
-    [dagster_user_deployment] = template.render(helm_values)
-    assert len(dagster_user_deployment.spec.template.spec.containers[0].env) == 4
-    assert dagster_user_deployment.spec.template.spec.containers[0].env[3].name == "test_env"
-    assert dagster_user_deployment.spec.template.spec.containers[0].env[3].value == "test_value"
-
-    container_context = dagster_user_deployment.spec.template.spec.containers[0].env[2]
-    assert container_context.name == "DAGSTER_CLI_API_GRPC_CONTAINER_CONTEXT"
-    assert json.loads(container_context.value) == {
-        "k8s": {
-            "image_pull_policy": "Always",
-            "env_config_maps": ["release-name-dagster-user-deployments-foo-user-env"],
-            "namespace": "applesauce",
-            "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-            "env": [{"name": "test_env", "value": "test_value"}],
-            "run_k8s_config": {
-                "pod_spec_config": {
-                    "automount_service_account_token": True,
-                }
-            },
-        }
-    }
 
 
 def test_code_server_cli(template: HelmTemplate, user_deployment_configmap_template):
@@ -1324,11 +1106,6 @@ def test_code_server_cli(template: HelmTemplate, user_deployment_configmap_templ
             "env_config_maps": ["release-name-dagster-user-deployments-foo-user-env"],
             "namespace": "default",
             "service_account_name": "release-name-dagster-user-deployments-user-deployments",
-            "run_k8s_config": {
-                "pod_spec_config": {
-                    "automount_service_account_token": True,
-                },
-            },
         }
     }
 
@@ -1364,11 +1141,6 @@ def test_env_container_context(template: HelmTemplate, user_deployment_configmap
             "namespace": "default",
             "service_account_name": "release-name-dagster-user-deployments-user-deployments",
             "env": [{"name": "test_env", "value": "test_value"}],
-            "run_k8s_config": {
-                "pod_spec_config": {
-                    "automount_service_account_token": True,
-                }
-            },
         }
     }
 
@@ -1392,41 +1164,3 @@ def test_old_env(template: HelmTemplate, user_deployment_configmap_template):
 
     [cm] = user_deployment_configmap_template.render(helm_values)
     assert cm.data["test_env"] == "test_value"
-
-
-@pytest.mark.parametrize(
-    "strategy,expected",
-    [
-        (None, None),
-        ({}, None),
-        (
-            {
-                "type": "RollingUpdate",
-                "rollingUpdate": {"maxSurge": 10, "maxUnavailable": 1},
-            },
-            {
-                "type": "RollingUpdate",
-                "rolling_update": {"max_surge": 10, "max_unavailable": 1},
-            },
-        ),
-        (
-            {"type": "Recreate"},
-            {"type": "Recreate", "rolling_update": None},
-        ),
-    ],
-)
-def test_deployment_strategy(
-    template: HelmTemplate,
-    strategy: Optional[dict[str, Any]],
-    expected: Optional[dict[str, Any]],
-):
-    deployment = create_simple_user_deployment("foo")
-    if strategy:
-        deployment.deploymentStrategy = kubernetes.DeploymentStrategy.model_construct(**strategy)
-    helm_values = DagsterHelmValues.construct(
-        dagsterUserDeployments=UserDeployments.model_construct(deployments=[deployment])
-    )
-
-    dagster_user_deployment = template.render(helm_values)
-    assert len(dagster_user_deployment) == 1
-    assert dagster_user_deployment[0].to_dict()["spec"]["strategy"] == expected

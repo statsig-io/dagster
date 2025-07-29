@@ -1,6 +1,16 @@
-import dagster as dg
-from dagster import AssetsDefinition, DagsterInstance, MetadataValue
-from dagster._core.definitions.assets.definition.cacheable_assets_definition import (
+from dagster import (
+    AssetKey,
+    AssetsDefinition,
+    DagsterInstance,
+    In,
+    MetadataValue,
+    Nothing,
+    asset,
+    define_asset_job,
+    op,
+    repository,
+)
+from dagster._core.definitions.cacheable_assets import (
     AssetsDefinitionCacheableData,
     CacheableAssetsDefinition,
 )
@@ -18,9 +28,9 @@ class MyAssets(CacheableAssetsDefinition):
 
         return [
             AssetsDefinitionCacheableData(
-                keys_by_input_name={"inp": dg.AssetKey(f"upstream_{self.unique_id}")},
-                keys_by_output_name={"result": dg.AssetKey(f"foo_{self.unique_id}")},
-                internal_asset_deps={"result": {dg.AssetKey(f"upstream_{self.unique_id}")}},
+                keys_by_input_name={"inp": AssetKey(f"upstream_{self.unique_id}")},
+                keys_by_output_name={"result": AssetKey(f"foo_{self.unique_id}")},
+                internal_asset_deps={"result": {AssetKey(f"upstream_{self.unique_id}")}},
                 group_name="some_group",
                 metadata_by_output_name={
                     "result": {
@@ -45,7 +55,7 @@ class MyAssets(CacheableAssetsDefinition):
         )
         instance.run_storage.set_cursor_values({kvs_key: str(get_definitions_called + 1)})
 
-        @dg.op(name=f"my_op_{self.unique_id}", ins={"inp": dg.In(dg.Nothing)})
+        @op(name=f"my_op_{self.unique_id}", ins={"inp": In(Nothing)})
         def my_op():
             return 1
 
@@ -62,11 +72,11 @@ class MyAssets(CacheableAssetsDefinition):
         ]
 
 
-@dg.asset
+@asset
 def c(foo_a, foo_b):
     return foo_a + foo_b + 1
 
 
-@dg.repository
+@repository
 def pending():
-    return [MyAssets("a"), MyAssets("b"), c, dg.define_asset_job("my_cool_asset_job")]
+    return [MyAssets("a"), MyAssets("b"), c, define_asset_job("my_cool_asset_job")]

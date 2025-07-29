@@ -1,11 +1,12 @@
-import {Box, Icon, Mono, Table, Tooltip, UnstyledButton} from '@dagster-io/ui-components';
+import {gql, useQuery, useSubscription} from '@apollo/client';
+import {Box, Colors, Icon} from '@dagster-io/ui-components';
 import * as React from 'react';
-import {useMemo} from 'react';
-import styled from 'styled-components';
+
+import {AppContext} from '../app/AppContext';
+import {WebSocketContext} from '../app/WebSocketProvider';
 
 import {RawLogContent} from './RawLogContent';
 import {ILogCaptureInfo} from './RunMetadataProvider';
-import {gql, useQuery, useSubscription} from '../apollo-client';
 import {
   CapturedLogFragment,
   CapturedLogsMetadataQuery,
@@ -15,10 +16,6 @@ import {
   CapturedLogsSubscription,
   CapturedLogsSubscriptionVariables,
 } from './types/CapturedLogPanel.types';
-import {AppContext} from '../app/AppContext';
-import {showSharedToaster} from '../app/DomUtils';
-import {WebSocketContext} from '../app/WebSocketProvider';
-import {useCopyToClipboard} from '../app/browser';
 
 interface CapturedLogProps {
   logKey: string[];
@@ -30,77 +27,36 @@ interface CapturedOrExternalLogPanelProps extends CapturedLogProps {
   logCaptureInfo?: ILogCaptureInfo;
 }
 
-const CapturedLogDataTable = styled(Table)`
-  & tr td:first-child {
-    white-space: nowrap;
-  }
-`;
-
-const ClickToCopyButton = styled(UnstyledButton)`
-  white-space: normal;
-`;
-
-export const CapturedOrExternalLogPanel = React.memo(
-  ({logCaptureInfo, ...props}: CapturedOrExternalLogPanelProps) => {
-    const ioType = props.visibleIOType;
+export const CapturedOrExternalLogPanel: React.FC<CapturedOrExternalLogPanelProps> = React.memo(
+  ({logCaptureInfo, ...props}) => {
     const externalUrl =
       logCaptureInfo &&
-      (ioType === 'stdout' ? logCaptureInfo.externalStdoutUrl : logCaptureInfo.externalStderrUrl);
-
-    const shellCmd = logCaptureInfo?.shellCmd;
-    const shellCommand = useMemo(() => {
-      if (shellCmd) {
-        return ioType === 'stdout' ? shellCmd.stdout : shellCmd.stderr;
-      }
-      return '';
-    }, [ioType, shellCmd]);
-
-    const copy = useCopyToClipboard();
-    const onClickFn = async (key: string, value: string) => {
-      if (!value) {
-        return;
-      }
-      copy(value);
-      await showSharedToaster({
-        intent: 'success',
-        icon: 'done',
-        message: `${key} copied!`,
-      });
-    };
-    const onClickShellCmd = async () => onClickFn('Shell command', shellCommand ?? '');
-
-    if (externalUrl || shellCmd) {
+      (props.visibleIOType === 'stdout'
+        ? logCaptureInfo.externalStdoutUrl
+        : logCaptureInfo.externalStderrUrl);
+    if (externalUrl) {
       return (
-        <CapturedLogDataTable>
-          <tbody>
-            {externalUrl ? (
-              <tr>
-                <td>View logs</td>
-                <td>
-                  <a href={externalUrl} target="_blank" rel="noreferrer">
-                    <Box flex={{direction: 'row', alignItems: 'center', gap: 8}}>
-                      <span>{externalUrl}</span>
-                      <Icon name="open_in_new" />
-                    </Box>
-                  </a>
-                </td>
-              </tr>
-            ) : undefined}
-
-            {shellCmd ? (
-              <tr>
-                <td>Shell command</td>
-                <td>
-                  <Tooltip content="Click to copy this shell command" placement="top">
-                    <ClickToCopyButton onClick={onClickShellCmd}>
-                      <Mono>{shellCommand}</Mono>
-                    </ClickToCopyButton>
-                  </Tooltip>
-                </td>
-              </tr>
-            ) : undefined}
-          </tbody>
-        </CapturedLogDataTable>
+        <Box
+          flex={{direction: 'row', alignItems: 'center', justifyContent: 'center', gap: 1}}
+          background={Colors.Gray900}
+          style={{color: Colors.White, flex: 1, minHeight: 0}}
+        >
+          View logs at
+          <a
+            href={externalUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              color: Colors.White,
+              textDecoration: 'underline',
+              marginLeft: 4,
+              marginRight: 4,
+            }}
+          >
+            {externalUrl}
+          </a>
+          <Icon name="open_in_new" color={Colors.White} size={20} style={{marginTop: 2}} />
+        </Box>
       );
     }
     return props.logKey.length ? <CapturedLogPanel {...props} /> : null;
@@ -169,13 +125,10 @@ const initialState: State = {
   isLoading: true,
 };
 
-interface CapturedLogSubscriptionProps {
+const CapturedLogSubscription: React.FC<{
   logKey: string[];
   onLogData: (logData: CapturedLogFragment) => void;
-}
-
-const CapturedLogSubscription = React.memo((props: CapturedLogSubscriptionProps) => {
-  const {logKey, onLogData} = props;
+}> = React.memo(({logKey, onLogData}) => {
   useSubscription<CapturedLogsSubscription, CapturedLogsSubscriptionVariables>(
     CAPTURED_LOGS_SUBSCRIPTION,
     {
@@ -216,7 +169,7 @@ const CAPTURED_LOGS_METADATA_QUERY = gql`
   }
 `;
 
-const QUERY_LOG_LIMIT = 1048576; // 1MB
+const QUERY_LOG_LIMIT = 100000;
 const POLL_INTERVAL = 5000;
 
 const CapturedLogsSubscriptionProvider = ({
@@ -285,8 +238,8 @@ const CAPTURED_LOGS_QUERY = gql`
   }
 `;
 
-const CapturedLogPanel = React.memo(
-  ({logKey, visibleIOType, onSetDownloadUrl}: CapturedLogProps) => {
+const CapturedLogPanel: React.FC<CapturedLogProps> = React.memo(
+  ({logKey, visibleIOType, onSetDownloadUrl}) => {
     const {rootServerURI} = React.useContext(AppContext);
     const {availability, disabled} = React.useContext(WebSocketContext);
     const queryResult = useQuery<CapturedLogsMetadataQuery, CapturedLogsMetadataQueryVariables>(
@@ -317,9 +270,6 @@ const CapturedLogPanel = React.memo(
 
     const stdoutLocation = queryResult.data?.capturedLogsMetadata.stdoutLocation || undefined;
     const stderrLocation = queryResult.data?.capturedLogsMetadata.stderrLocation || undefined;
-    const stdoutDownloadUrl = queryResult.data?.capturedLogsMetadata.stdoutDownloadUrl;
-    const stderrDownloadUrl = queryResult.data?.capturedLogsMetadata.stderrDownloadUrl;
-
     const websocketsUnavailabile = availability === 'unavailable' || disabled;
     const Component = websocketsUnavailabile
       ? CapturedLogsQueryProvider
@@ -334,14 +284,12 @@ const CapturedLogPanel = React.memo(
                 isLoading={_state.isLoading}
                 location={stdoutLocation}
                 isVisible={visibleIOType === 'stdout'}
-                downloadUrl={stdoutDownloadUrl}
               />
               <RawLogContent
                 logData={_state.stderr}
                 isLoading={_state.isLoading}
                 location={stderrLocation}
                 isVisible={visibleIOType === 'stderr'}
-                downloadUrl={stderrDownloadUrl}
               />
             </>
           )}

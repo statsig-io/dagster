@@ -2,7 +2,7 @@
 
 import * as Types from '../../graphql/types';
 
-export type DagsterTypeFragment_ListDagsterType = {
+export type DagsterTypeFragment_ListDagsterType_ = {
   __typename: 'ListDagsterType';
   key: string;
   name: string | null;
@@ -37,20 +37,6 @@ export type DagsterTypeFragment_ListDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -60,14 +46,6 @@ export type DagsterTypeFragment_ListDagsterType = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -103,31 +81,11 @@ export type DagsterTypeFragment_ListDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -143,7 +101,6 @@ export type DagsterTypeFragment_ListDagsterType = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -166,7 +123,6 @@ export type DagsterTypeFragment_ListDagsterType = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -180,12 +136,6 @@ export type DagsterTypeFragment_ListDagsterType = {
           | {
               __typename: 'TextMetadataEntry';
               text: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
               label: string;
               description: string | null;
             }
@@ -1320,20 +1270,6 @@ export type DagsterTypeFragment_ListDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -1343,14 +1279,6 @@ export type DagsterTypeFragment_ListDagsterType = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -1386,31 +1314,11 @@ export type DagsterTypeFragment_ListDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -1426,7 +1334,6 @@ export type DagsterTypeFragment_ListDagsterType = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -1449,7 +1356,6 @@ export type DagsterTypeFragment_ListDagsterType = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -1463,12 +1369,6 @@ export type DagsterTypeFragment_ListDagsterType = {
           | {
               __typename: 'TextMetadataEntry';
               text: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
               label: string;
               description: string | null;
             }
@@ -2603,20 +2503,6 @@ export type DagsterTypeFragment_ListDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -2626,14 +2512,6 @@ export type DagsterTypeFragment_ListDagsterType = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -2669,31 +2547,11 @@ export type DagsterTypeFragment_ListDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -2709,7 +2567,6 @@ export type DagsterTypeFragment_ListDagsterType = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -2732,7 +2589,6 @@ export type DagsterTypeFragment_ListDagsterType = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -2746,12 +2602,6 @@ export type DagsterTypeFragment_ListDagsterType = {
           | {
               __typename: 'TextMetadataEntry';
               text: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
               label: string;
               description: string | null;
             }
@@ -3877,20 +3727,6 @@ export type DagsterTypeFragment_ListDagsterType = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -3900,14 +3736,6 @@ export type DagsterTypeFragment_ListDagsterType = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -3932,27 +3760,12 @@ export type DagsterTypeFragment_ListDagsterType = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -3968,7 +3781,6 @@ export type DagsterTypeFragment_ListDagsterType = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -3991,7 +3803,6 @@ export type DagsterTypeFragment_ListDagsterType = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -4003,12 +3814,6 @@ export type DagsterTypeFragment_ListDagsterType = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   inputSchemaType:
@@ -5109,7 +4914,7 @@ export type DagsterTypeFragment_ListDagsterType = {
     | null;
 };
 
-export type DagsterTypeFragment_NullableDagsterType = {
+export type DagsterTypeFragment_NullableDagsterType_ = {
   __typename: 'NullableDagsterType';
   key: string;
   name: string | null;
@@ -5144,20 +4949,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -5167,14 +4958,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -5210,31 +4993,11 @@ export type DagsterTypeFragment_NullableDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -5250,7 +5013,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -5273,7 +5035,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -5287,12 +5048,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
           | {
               __typename: 'TextMetadataEntry';
               text: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
               label: string;
               description: string | null;
             }
@@ -6427,20 +6182,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -6450,14 +6191,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -6493,31 +6226,11 @@ export type DagsterTypeFragment_NullableDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -6533,7 +6246,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -6556,7 +6268,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -6570,12 +6281,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
           | {
               __typename: 'TextMetadataEntry';
               text: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
               label: string;
               description: string | null;
             }
@@ -7710,20 +7415,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -7733,14 +7424,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -7776,31 +7459,11 @@ export type DagsterTypeFragment_NullableDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -7816,7 +7479,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -7839,7 +7501,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -7853,12 +7514,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
           | {
               __typename: 'TextMetadataEntry';
               text: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
               label: string;
               description: string | null;
             }
@@ -8984,20 +8639,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -9007,14 +8648,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -9039,27 +8672,12 @@ export type DagsterTypeFragment_NullableDagsterType = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -9075,7 +8693,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -9098,7 +8715,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -9110,12 +8726,6 @@ export type DagsterTypeFragment_NullableDagsterType = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   inputSchemaType:
@@ -10216,7 +9826,7 @@ export type DagsterTypeFragment_NullableDagsterType = {
     | null;
 };
 
-export type DagsterTypeFragment_RegularDagsterType = {
+export type DagsterTypeFragment_RegularDagsterType_ = {
   __typename: 'RegularDagsterType';
   key: string;
   name: string | null;
@@ -10251,20 +9861,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -10274,14 +9870,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -10317,31 +9905,11 @@ export type DagsterTypeFragment_RegularDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -10357,7 +9925,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -10380,7 +9947,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -10394,12 +9960,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
           | {
               __typename: 'TextMetadataEntry';
               text: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
               label: string;
               description: string | null;
             }
@@ -11534,20 +11094,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -11557,14 +11103,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -11600,31 +11138,11 @@ export type DagsterTypeFragment_RegularDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -11640,7 +11158,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -11663,7 +11180,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -11677,12 +11193,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
           | {
               __typename: 'TextMetadataEntry';
               text: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
               label: string;
               description: string | null;
             }
@@ -12817,20 +12327,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -12840,14 +12336,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -12883,31 +12371,11 @@ export type DagsterTypeFragment_RegularDagsterType = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -12923,7 +12391,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -12946,7 +12413,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -12960,12 +12426,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
           | {
               __typename: 'TextMetadataEntry';
               text: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
               label: string;
               description: string | null;
             }
@@ -14091,20 +13551,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -14114,14 +13560,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -14146,27 +13584,12 @@ export type DagsterTypeFragment_RegularDagsterType = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -14182,7 +13605,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -14205,7 +13627,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -14217,12 +13638,6 @@ export type DagsterTypeFragment_RegularDagsterType = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   inputSchemaType:
@@ -15324,11 +14739,11 @@ export type DagsterTypeFragment_RegularDagsterType = {
 };
 
 export type DagsterTypeFragment =
-  | DagsterTypeFragment_ListDagsterType
-  | DagsterTypeFragment_NullableDagsterType
-  | DagsterTypeFragment_RegularDagsterType;
+  | DagsterTypeFragment_ListDagsterType_
+  | DagsterTypeFragment_NullableDagsterType_
+  | DagsterTypeFragment_RegularDagsterType_;
 
-export type InnerDagsterTypeFragment_ListDagsterType = {
+export type InnerDagsterTypeFragment_ListDagsterType_ = {
   __typename: 'ListDagsterType';
   key: string;
   name: string | null;
@@ -15352,20 +14767,6 @@ export type InnerDagsterTypeFragment_ListDagsterType = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -15375,14 +14776,6 @@ export type InnerDagsterTypeFragment_ListDagsterType = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -15407,27 +14800,12 @@ export type InnerDagsterTypeFragment_ListDagsterType = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -15443,7 +14821,6 @@ export type InnerDagsterTypeFragment_ListDagsterType = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -15466,7 +14843,6 @@ export type InnerDagsterTypeFragment_ListDagsterType = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -15478,12 +14854,6 @@ export type InnerDagsterTypeFragment_ListDagsterType = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   inputSchemaType:
@@ -16584,7 +15954,7 @@ export type InnerDagsterTypeFragment_ListDagsterType = {
     | null;
 };
 
-export type InnerDagsterTypeFragment_NullableDagsterType = {
+export type InnerDagsterTypeFragment_NullableDagsterType_ = {
   __typename: 'NullableDagsterType';
   key: string;
   name: string | null;
@@ -16608,20 +15978,6 @@ export type InnerDagsterTypeFragment_NullableDagsterType = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -16631,14 +15987,6 @@ export type InnerDagsterTypeFragment_NullableDagsterType = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -16663,27 +16011,12 @@ export type InnerDagsterTypeFragment_NullableDagsterType = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -16699,7 +16032,6 @@ export type InnerDagsterTypeFragment_NullableDagsterType = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -16722,7 +16054,6 @@ export type InnerDagsterTypeFragment_NullableDagsterType = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -16734,12 +16065,6 @@ export type InnerDagsterTypeFragment_NullableDagsterType = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   inputSchemaType:
@@ -17840,7 +17165,7 @@ export type InnerDagsterTypeFragment_NullableDagsterType = {
     | null;
 };
 
-export type InnerDagsterTypeFragment_RegularDagsterType = {
+export type InnerDagsterTypeFragment_RegularDagsterType_ = {
   __typename: 'RegularDagsterType';
   key: string;
   name: string | null;
@@ -17864,20 +17189,6 @@ export type InnerDagsterTypeFragment_RegularDagsterType = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -17887,14 +17198,6 @@ export type InnerDagsterTypeFragment_RegularDagsterType = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -17919,27 +17222,12 @@ export type InnerDagsterTypeFragment_RegularDagsterType = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -17955,7 +17243,6 @@ export type InnerDagsterTypeFragment_RegularDagsterType = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -17978,7 +17265,6 @@ export type InnerDagsterTypeFragment_RegularDagsterType = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -17990,12 +17276,6 @@ export type InnerDagsterTypeFragment_RegularDagsterType = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   inputSchemaType:
@@ -19097,6 +18377,6 @@ export type InnerDagsterTypeFragment_RegularDagsterType = {
 };
 
 export type InnerDagsterTypeFragment =
-  | InnerDagsterTypeFragment_ListDagsterType
-  | InnerDagsterTypeFragment_NullableDagsterType
-  | InnerDagsterTypeFragment_RegularDagsterType;
+  | InnerDagsterTypeFragment_ListDagsterType_
+  | InnerDagsterTypeFragment_NullableDagsterType_
+  | InnerDagsterTypeFragment_RegularDagsterType_;

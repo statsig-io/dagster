@@ -1,6 +1,5 @@
 # Contains mode, resources, loggers
-from collections.abc import Sequence
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, Sequence
 
 import dagster._check as check
 from dagster._config import ConfigFieldSnap, snap_from_field
@@ -10,7 +9,7 @@ from dagster._serdes import whitelist_for_serdes
 
 
 def build_mode_def_snap(job_def: JobDefinition) -> "ModeDefSnap":
-    from dagster._core.remote_representation.external_data import DEFAULT_MODE_NAME
+    from dagster._core.host_representation.external_data import DEFAULT_MODE_NAME
 
     check.inst_param(job_def, "job_def", JobDefinition)
 
@@ -51,7 +50,7 @@ class ModeDefSnap(
         logger_def_snaps: Sequence["LoggerDefSnap"],
         root_config_key: Optional[str] = None,
     ):
-        return super().__new__(
+        return super(ModeDefSnap, cls).__new__(
             cls,
             name=check.str_param(name, "name"),
             description=check.opt_str_param(description, "description"),
@@ -93,7 +92,7 @@ class ResourceDefSnap(
     def __new__(
         cls, name: str, description: Optional[str], config_field_snap: Optional[ConfigFieldSnap]
     ):
-        return super().__new__(
+        return super(ResourceDefSnap, cls).__new__(
             cls,
             name=check.str_param(name, "name"),
             description=check.opt_str_param(description, "description"),
@@ -131,7 +130,7 @@ class LoggerDefSnap(
     def __new__(
         cls, name: str, description: Optional[str], config_field_snap: Optional[ConfigFieldSnap]
     ):
-        return super().__new__(
+        return super(LoggerDefSnap, cls).__new__(
             cls,
             name=check.str_param(name, "name"),
             description=check.opt_str_param(description, "description"),

@@ -3,7 +3,7 @@ import {HTMLTable, HTMLTableProps} from '@blueprintjs/core';
 import styled from 'styled-components';
 
 import {StyledTag} from './BaseTag';
-import {Colors} from './Color';
+import {Colors} from './Colors';
 import {FontFamily} from './styles';
 
 export interface TableProps extends HTMLTableProps {
@@ -16,18 +16,17 @@ export const Table = styled(HTMLTable)<TableProps>`
 
   & tr th,
   & tr td {
-    border: none;
     box-shadow:
-      inset 0 1px 0 ${Colors.keylineDefault()},
-      inset 1px 0 0 ${Colors.keylineDefault()} !important;
+      inset 0 1px 0 ${Colors.KeylineGray},
+      inset 1px 0 0 ${Colors.KeylineGray} !important;
   }
 
   & tr th {
-    color: ${Colors.textLight()};
+    color: ${Colors.Gray500};
     font-family: ${FontFamily.default};
     font-size: 12px;
     font-weight: 400;
-    padding: ${({$compact}) => ($compact ? '4px 8px' : ' 8px 12px')};
+    padding: ${({$compact}) => ($compact ? '0 8px' : ' 8px 12px')};
     min-height: 32px;
     white-space: nowrap;
     vertical-align: bottom;
@@ -38,7 +37,7 @@ export const Table = styled(HTMLTable)<TableProps>`
   }
 
   & tr td {
-    color: ${Colors.textDefault()};
+    color: ${Colors.Gray900};
     font-family: ${FontFamily.default};
     font-size: 14px;
     line-height: 20px;
@@ -51,9 +50,9 @@ export const Table = styled(HTMLTable)<TableProps>`
 
   & tr:last-child td {
     box-shadow:
-      inset 0 1px 0 ${Colors.keylineDefault()},
-      inset 1px 0 0 ${Colors.keylineDefault()},
-      inset 0 -1px 0 ${Colors.keylineDefault()} !important;
+      inset 0 1px 0 ${Colors.KeylineGray},
+      inset 1px 0 0 ${Colors.KeylineGray},
+      inset 0 -1px 0 ${Colors.KeylineGray} !important;
   }
 
   & tr td ${StyledTag} {

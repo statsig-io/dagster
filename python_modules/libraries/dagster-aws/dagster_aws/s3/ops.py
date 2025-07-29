@@ -1,5 +1,4 @@
-from collections.abc import Generator, Mapping
-from typing import Any
+from typing import Any, Generator, Mapping
 
 from dagster import (
     AssetMaterialization,
@@ -16,7 +15,7 @@ from dagster import (
 )
 from dagster._core.types.dagster_type import PythonObjectDagsterType
 
-from dagster_aws.s3.file_manager import S3FileHandle
+from .file_manager import S3FileHandle
 
 
 def dict_with_fields(name: str, fields: Mapping[str, object]):
@@ -32,7 +31,7 @@ def dict_with_fields(name: str, fields: Mapping[str, object]):
 
     class _DictWithSchema(PythonObjectDagsterType):
         def __init__(self):
-            super().__init__(python_type=dict, name=name, loader=_input_schema)
+            super(_DictWithSchema, self).__init__(python_type=dict, name=name, loader=_input_schema)
 
     return _DictWithSchema()
 

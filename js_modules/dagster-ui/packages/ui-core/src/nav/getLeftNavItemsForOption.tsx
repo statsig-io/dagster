@@ -2,12 +2,13 @@ import {Colors} from '@dagster-io/ui-components';
 import * as React from 'react';
 import styled from 'styled-components';
 
-import {LeftNavItemType} from './LeftNavItemType';
 import {isHiddenAssetGroupJob} from '../asset-graph/Utils';
 import {LegacyPipelineTag} from '../pipelines/LegacyPipelineTag';
-import {DagsterRepoOption} from '../workspace/WorkspaceContext/util';
+import {DagsterRepoOption} from '../workspace/WorkspaceContext';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
+
+import {LeftNavItemType} from './LeftNavItemType';
 
 export const getAssetGroupItemsForOption = (option: DagsterRepoOption) => {
   const items: LeftNavItemType[] = [];
@@ -79,17 +80,16 @@ export const getJobItemsForOption = (option: DagsterRepoOption) => {
       continue;
     }
 
-    const {isJob, name, externalJobSource} = pipeline;
+    const {isJob, name} = pipeline;
     const schedulesForJob = schedules.filter((schedule) => schedule.pipelineName === name);
-    const sensorsForJob = sensors.filter((sensor) =>
-      sensor.targets?.map((target) => target.pipelineName).includes(name),
+    const sensorsForJob = sensors.filter(
+      (sensor) => sensor.targets?.map((target) => target.pipelineName).includes(name),
     );
-    const isAirflowJob = externalJobSource === 'airflow';
 
     items.push({
       name,
       isJob,
-      leftIcon: isAirflowJob ? 'airflow' : 'job',
+      leftIcon: 'job',
       label: (
         <Label $hasIcon={someInRepoHasIcon}>
           <TruncatedTextWithFullTextOnHover text={name} />
@@ -120,9 +120,9 @@ const Label = styled.div<{$hasIcon: boolean}>`
 `;
 
 export const LabelTooltipStyles = JSON.stringify({
-  background: Colors.backgroundLight(),
+  background: Colors.Gray100,
   filter: `brightness(97%)`,
-  color: Colors.textDefault(),
+  color: Colors.Gray900,
   border: 'none',
   borderRadius: 7,
   overflow: 'hidden',

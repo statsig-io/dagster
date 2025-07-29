@@ -1,27 +1,25 @@
+import {gql, useQuery} from '@apollo/client';
 import {Box, Colors, StyledTable, Tag, Tooltip} from '@dagster-io/ui-components';
-import {useMemo} from 'react';
+import React from 'react';
 import {Link} from 'react-router-dom';
 
-import {gql, useQuery} from '../apollo-client';
-import {LatestRunTagQuery, LatestRunTagQueryVariables} from './types/LatestRunTag.types';
-import {FIFTEEN_SECONDS, useQueryRefreshAtInterval} from '../app/QueryRefresh';
+import {useQueryRefreshAtInterval, FIFTEEN_SECONDS} from '../app/QueryRefresh';
 import {RunStatus} from '../graphql/types';
 import {RunStatusIndicator} from '../runs/RunStatusDots';
 import {DagsterTag} from '../runs/RunTag';
 import {timingStringForStatus} from '../runs/RunTimingDetails';
-import {RUN_TIME_FRAGMENT, RunTime} from '../runs/RunUtils';
+import {RunTime, RUN_TIME_FRAGMENT} from '../runs/RunUtils';
 import {TimestampDisplay} from '../schedules/TimestampDisplay';
 import {repoAddressAsTag} from '../workspace/repoAddressAsString';
 import {RepoAddress} from '../workspace/types';
 
+import {LatestRunTagQuery, LatestRunTagQueryVariables} from './types/LatestRunTag.types';
+
 const TIME_FORMAT = {showSeconds: true, showTimezone: false};
 
-export const LatestRunTag = ({
+export const LatestRunTag: React.FC<{pipelineName: string; repoAddress: RepoAddress}> = ({
   pipelineName,
   repoAddress,
-}: {
-  pipelineName: string;
-  repoAddress: RepoAddress;
 }) => {
   const lastRunQuery = useQuery<LatestRunTagQuery, LatestRunTagQueryVariables>(
     LATEST_RUN_TAG_QUERY,
@@ -43,7 +41,7 @@ export const LatestRunTag = ({
 
   useQueryRefreshAtInterval(lastRunQuery, FIFTEEN_SECONDS);
 
-  const run = useMemo(() => {
+  const run = React.useMemo(() => {
     const runsOrError = lastRunQuery.data?.pipelineRunsOrError;
     if (runsOrError && runsOrError.__typename === 'Runs') {
       return runsOrError.results[0] || null;
@@ -81,7 +79,7 @@ export const LatestRunTag = ({
               <StyledTable>
                 <tbody>
                   <tr>
-                    <td style={{color: Colors.textLighter()}}>
+                    <td style={{color: Colors.Gray300}}>
                       <Box padding={{right: 16}}>Started</Box>
                     </td>
                     <td>
@@ -93,7 +91,7 @@ export const LatestRunTag = ({
                     </td>
                   </tr>
                   <tr>
-                    <td style={{color: Colors.textLighter()}}>Ended</td>
+                    <td style={{color: Colors.Gray300}}>Ended</td>
                     <td>
                       {stats.end ? (
                         <TimestampDisplay timestamp={stats.end} timeFormat={TIME_FORMAT} />
@@ -116,10 +114,10 @@ export const LatestRunTag = ({
   );
 };
 
-export const LATEST_RUN_TAG_QUERY = gql`
+const LATEST_RUN_TAG_QUERY = gql`
   query LatestRunTagQuery($runsFilter: RunsFilter) {
     pipelineRunsOrError(filter: $runsFilter, limit: 1) {
-      ... on Runs {
+      ... on PipelineRuns {
         results {
           id
           status

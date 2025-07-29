@@ -5,7 +5,6 @@ import botocore
 import pytest
 from botocore import exceptions
 from dagster import DagsterResourceFunctionError, In, Out, build_op_context, configured, job, op
-
 from dagster_aws.s3 import (
     S3FileHandle,
     S3FileManager,
@@ -229,7 +228,7 @@ def test_s3_file_manager_resource_with_profile_pythonic() -> None:
         # placeholder function to test resource initialization
         return context.log.info("return from test_solid")
 
-    with pytest.raises(botocore.exceptions.ProfileNotFound):  # pyright: ignore (reportAttributeAccessIssue)
+    with pytest.raises(botocore.exceptions.ProfileNotFound):
         context = build_op_context(
             resources={"file_manager": S3FileManagerResource(**resource_config)},
         )

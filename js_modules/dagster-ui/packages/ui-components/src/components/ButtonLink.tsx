@@ -1,9 +1,9 @@
+import * as React from 'react';
 import styled, {css} from 'styled-components';
 
-import {Box} from './Box';
-import {Colors} from './Color';
+import {Colors} from './Colors';
 
-type Colors =
+type Color =
   | string
   | {
       link: string;
@@ -13,7 +13,13 @@ type Colors =
 
 type Underline = 'never' | 'always' | 'hover';
 
-const fontColor = (color: Colors) => {
+interface Props {
+  color: Color;
+  disabled?: boolean;
+  underline?: Underline;
+}
+
+const fontColor = (color: Color) => {
   if (typeof color === 'string') {
     return css`
       color: ${color};
@@ -28,6 +34,13 @@ const fontColor = (color: Colors) => {
   `;
 };
 
+const outlineColor = (color: Color) => {
+  if (typeof color === 'string') {
+    return color;
+  }
+  return color.link;
+};
+
 const textDecoration = (underline: Underline) => {
   switch (underline) {
     case 'always':
@@ -36,11 +49,8 @@ const textDecoration = (underline: Underline) => {
       `;
     case 'hover':
       return css`
-        &:hover:not(:disabled) {
+        &:hover {
           text-decoration: underline;
-          & > ${Box} {
-            text-decoration: underline;
-          }
         }
       `;
     case 'never':
@@ -49,14 +59,7 @@ const textDecoration = (underline: Underline) => {
   }
 };
 
-interface Props extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'color'> {
-  color?: Colors;
-  underline?: Underline;
-}
-
-export const ButtonLink = styled(({color: _color, underline: _underline, ...rest}: Props) => (
-  <button {...rest} />
-))`
+export const ButtonLink = styled(({color, underline, ...rest}) => <button {...rest} />)<Props>`
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -66,17 +69,28 @@ export const ButtonLink = styled(({color: _color, underline: _underline, ...rest
   margin: -8px;
   text-align: left;
 
+  &:active,
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 1px auto ${({color}) => outlineColor(color)};
+    outline-offset: 2px;
+  }
+
   &:disabled {
     cursor: default;
     opacity: 0.7;
   }
 
-  &:focus:not(:focus-visible) {
-    outline: none;
-  }
-
   transition: 30ms color linear;
 
-  ${({color}) => fontColor(color || Colors.linkDefault())}
-  ${({underline}) => textDecoration(underline || 'hover')}
+  ${({color}) => fontColor(color)}
+  ${({underline}) => textDecoration(underline)}
 `;
+
+ButtonLink.defaultProps = {
+  color: Colors.Link,
+  underline: 'hover',
+};

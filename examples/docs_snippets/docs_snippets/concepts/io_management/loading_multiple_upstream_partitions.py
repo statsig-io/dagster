@@ -1,32 +1,39 @@
 from datetime import datetime
+from typing import Dict
 
 import pandas as pd
 
-import dagster as dg
+from dagster import (
+    AssetExecutionContext,
+    DailyPartitionsDefinition,
+    HourlyPartitionsDefinition,
+    asset,
+    materialize,
+)
 
 start = datetime(2022, 1, 1)
 
-hourly_partitions = dg.HourlyPartitionsDefinition(start_date=f"{start:%Y-%m-%d-%H:%M}")
-daily_partitions = dg.DailyPartitionsDefinition(start_date=f"{start:%Y-%m-%d}")
+hourly_partitions = HourlyPartitionsDefinition(start_date=f"{start:%Y-%m-%d-%H:%M}")
+daily_partitions = DailyPartitionsDefinition(start_date=f"{start:%Y-%m-%d}")
 
 
-@dg.asset(partitions_def=hourly_partitions)
-def upstream_asset(context: dg.AssetExecutionContext) -> pd.DataFrame:
+@asset(partitions_def=hourly_partitions)
+def upstream_asset(context: AssetExecutionContext) -> pd.DataFrame:
     return pd.DataFrame({"date": [context.partition_key]})
 
 
-@dg.asset(
+@asset(
     partitions_def=daily_partitions,
 )
-def downstream_asset(upstream_asset: dict[str, pd.DataFrame]) -> pd.DataFrame:
+def downstream_asset(upstream_asset: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     return pd.concat(list(upstream_asset.values()))
 
 
-result = dg.materialize(
+result = materialize(
     [*upstream_asset.to_source_assets(), downstream_asset],
     partition_key=start.strftime(daily_partitions.fmt),
 )
 downstream_asset_data = result.output_for_node("downstream_asset", "result")
-assert len(downstream_asset_data) == 24, (
-    "downstream day should map to upstream 24 hours"
-)
+assert (
+    len(downstream_asset_data) == 24
+), "downstream day should map to upstream 24 hours"

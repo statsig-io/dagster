@@ -1,16 +1,17 @@
 import {Colors} from '@dagster-io/ui-components';
-import {Fragment} from 'react';
+import * as React from 'react';
 import styled from 'styled-components';
+
+import {titleOfIO} from '../app/titleOfIO';
+import {OpNameOrPath} from '../ops/OpNameOrPath';
 
 import {ExternalConnectionNode} from './ExternalConnectionNode';
 import {MappingLine} from './MappingLine';
-import {OpIOBox, PARENT_IN, PARENT_OUT, metadataForCompositeParentIO} from './OpIOBox';
-import {SVGMonospaceText} from './SVGComponents';
+import {metadataForCompositeParentIO, PARENT_IN, PARENT_OUT, OpIOBox} from './OpIOBox';
+import {SVGLabeledRect} from './SVGComponents';
 import {OpGraphLayout} from './asyncGraphLayout';
 import {Edge} from './common';
 import {OpGraphOpFragment} from './types/OpGraph.types';
-import {titleOfIO} from '../app/titleOfIO';
-import {OpNameOrPath} from '../ops/OpNameOrPath';
 
 interface ParentOpNodeProps {
   layout: OpGraphLayout;
@@ -23,7 +24,7 @@ interface ParentOpNodeProps {
   onHighlightEdges: (edges: Edge[]) => void;
 }
 
-export const ParentOpNode = (props: ParentOpNodeProps) => {
+export const ParentOpNode: React.FC<ParentOpNodeProps> = (props) => {
   const {layout, op, minified} = props;
 
   const def = props.op.definition;
@@ -52,32 +53,14 @@ export const ParentOpNode = (props: ParentOpNodeProps) => {
       <SVGLabeledParentRect
         {...bounds}
         label={op.definition.name}
-        fill={Colors.backgroundYellow()}
+        fill={Colors.Gray50}
         minified={minified}
       />
       {def.inputMappings.map(({definition, mappedInput}, idx) => {
-        // The mappings link the IOs of the parent graph op to the
-        // input / outputs of ops within the subgraph.
-
-        const parentIO = parentLayout.inputs[definition.name];
-        const destinationNode = layout.nodes[mappedInput.solid.name];
-        if (!destinationNode || !parentIO) {
-          console.warn(
-            `Assertion failure - Unable to find ${mappedInput.solid.name} in the layout ` +
-              `or ${definition.name} in the parent layout`,
-          );
-          return <g key={mappedInput.solid.name} />;
-        }
-
-        const destinationIOFull = destinationNode.inputs[mappedInput.definition.name];
-        const destinationIOCollapsed = Object.values(destinationNode.inputs).find((o) =>
-          o.collapsed.includes(mappedInput.definition.name),
-        );
-        const destinationIO = destinationIOFull || destinationIOCollapsed;
-        if (!destinationIO) {
-          console.warn(
-            `Assertion failure - Unable to find port for ${mappedInput.definition.name}`,
-          );
+        const destination = layout.nodes[mappedInput.solid.name];
+        const sourcePort = parentLayout.inputs[definition.name]?.port;
+        const trgtPort = destination?.inputs[mappedInput.definition.name]?.port;
+        if (!destination || !sourcePort || !trgtPort) {
           return <g key={mappedInput.solid.name} />;
         }
 
@@ -85,8 +68,8 @@ export const ParentOpNode = (props: ParentOpNodeProps) => {
           <MappingLine
             {...highlightingProps}
             key={`in-${idx}`}
-            target={destinationIO.port}
-            source={parentIO.port}
+            target={trgtPort}
+            source={sourcePort}
             minified={minified}
             leftEdgeX={mappingLeftEdge - idx * mappingLeftSpacing}
             edge={{a: titleOfIO(mappedInput), b: PARENT_IN}}
@@ -94,142 +77,90 @@ export const ParentOpNode = (props: ParentOpNodeProps) => {
         );
       })}
       {def.outputMappings.map(({definition, mappedOutput}, idx) => {
-        const parentIO = parentLayout.outputs[definition.name];
         const destination = layout.nodes[mappedOutput.solid.name];
-        if (!destination || !parentIO) {
-          console.warn(
-            `Unable to find ${mappedOutput.solid.name} in the layout ` +
-              `or ${definition.name} in the parent layout`,
-          );
+        if (!destination) {
           return <g key={mappedOutput.solid.name} />;
         }
-
-        const destinationIOFull = destination.outputs[mappedOutput.definition.name];
-        const destinationIOCollapsed = Object.values(destination.outputs).find((o) =>
-          o.collapsed.includes(mappedOutput.definition.name),
-        );
-        const destinationIO = destinationIOFull || destinationIOCollapsed;
-        if (!destinationIO) {
-          console.warn(`Unable to find port for ${mappedOutput.definition.name}`);
-          return <g key={mappedOutput.solid.name} />;
-        }
+        const sourcePort = parentLayout.outputs[definition.name]!.port;
+        const trgtPort = destination.outputs[mappedOutput.definition.name]!.port;
 
         return (
           <MappingLine
             {...highlightingProps}
             key={`out-${idx}`}
-            target={destinationIO.port}
-            source={parentIO.port}
+            target={trgtPort}
+            source={sourcePort}
             minified={minified}
             leftEdgeX={mappingLeftEdge - idx * mappingLeftSpacing}
             edge={{a: titleOfIO(mappedOutput), b: PARENT_OUT}}
           />
         );
       })}
-      {op.definition.inputDefinitions.map((input, idx) => {
-        const metadata = metadataForCompositeParentIO(op.definition, input);
-        const invocationInput = op.inputs.find((i) => i.definition.name === input.name)!;
-        return (
-          <Fragment key={idx}>
-            {invocationInput.dependsOn.map((dependsOn, iidx) => (
-              <ExternalConnectionNode
-                {...highlightingProps}
-                {...metadata}
-                key={iidx}
-                labelAttachment="top"
-                label={titleOfIO(dependsOn)}
-                minified={minified}
-                layout={parentLayout.dependsOn[titleOfIO(dependsOn)]!}
-                target={parentLayout.inputs[input.name]!.port}
-                onDoubleClickLabel={() => props.onClickOp({path: ['..', dependsOn.solid.name]})}
-              />
-            ))}
-          </Fragment>
-        );
-      })}
-      {op.definition.outputDefinitions.map((output, idx) => {
-        const metadata = metadataForCompositeParentIO(op.definition, output);
-        const invocationOutput = op.outputs.find((i) => i.definition.name === output.name)!;
-        return (
-          <Fragment key={idx}>
-            {invocationOutput.dependedBy.map((dependedBy, iidx) => (
-              <ExternalConnectionNode
-                {...highlightingProps}
-                {...metadata}
-                key={iidx}
-                labelAttachment="bottom"
-                label={titleOfIO(dependedBy)}
-                minified={minified}
-                layout={parentLayout.dependedBy[titleOfIO(dependedBy)]!}
-                target={parentLayout.outputs[output.name]!.port}
-                onDoubleClickLabel={() => props.onClickOp({path: ['..', dependedBy.solid.name]})}
-              />
-            ))}
-          </Fragment>
-        );
-      })}
       <foreignObject width={layout.width} height={layout.height} style={{pointerEvents: 'none'}}>
-        {op.definition.inputDefinitions.map((input, idx) => (
-          <OpIOBox
-            {...highlightingProps}
-            {...metadataForCompositeParentIO(op.definition, input)}
-            key={idx}
-            minified={minified}
-            colorKey="input"
-            item={input}
-            layoutInfo={parentLayout.inputs[input.name]}
-          />
-        ))}
-        {op.definition.outputDefinitions.map((output, idx) => (
-          <OpIOBox
-            {...highlightingProps}
-            {...metadataForCompositeParentIO(op.definition, output)}
-            key={idx}
-            minified={minified}
-            colorKey="output"
-            item={output}
-            layoutInfo={parentLayout.outputs[output.name]}
-          />
-        ))}
+        {op.definition.inputDefinitions.map((input, idx) => {
+          const metadata = metadataForCompositeParentIO(op.definition, input);
+          const invocationInput = op.inputs.find((i) => i.definition.name === input.name)!;
+
+          return (
+            <React.Fragment key={idx}>
+              {invocationInput.dependsOn.map((dependsOn, iidx) => (
+                <ExternalConnectionNode
+                  {...highlightingProps}
+                  {...metadata}
+                  key={iidx}
+                  labelAttachment="top"
+                  label={titleOfIO(dependsOn)}
+                  minified={minified}
+                  layout={parentLayout.dependsOn[titleOfIO(dependsOn)]!}
+                  target={parentLayout.inputs[input.name]!.port}
+                  onDoubleClickLabel={() => props.onClickOp({path: ['..', dependsOn.solid.name]})}
+                />
+              ))}
+              <OpIOBox
+                {...highlightingProps}
+                {...metadata}
+                minified={minified}
+                colorKey="input"
+                item={input}
+                layoutInfo={parentLayout.inputs[input.name]}
+              />
+            </React.Fragment>
+          );
+        })}
+        {op.definition.outputDefinitions.map((output, idx) => {
+          const metadata = metadataForCompositeParentIO(op.definition, output);
+          const invocationOutput = op.outputs.find((i) => i.definition.name === output.name)!;
+
+          return (
+            <React.Fragment key={idx}>
+              {invocationOutput.dependedBy.map((dependedBy, iidx) => (
+                <ExternalConnectionNode
+                  {...highlightingProps}
+                  {...metadata}
+                  key={iidx}
+                  labelAttachment="bottom"
+                  label={titleOfIO(dependedBy)}
+                  minified={minified}
+                  layout={parentLayout.dependedBy[titleOfIO(dependedBy)]!}
+                  target={parentLayout.outputs[output.name]!.port}
+                  onDoubleClickLabel={() => props.onClickOp({path: ['..', dependedBy.solid.name]})}
+                />
+              ))}
+              <OpIOBox
+                {...highlightingProps}
+                {...metadata}
+                minified={minified}
+                colorKey="output"
+                item={output}
+                layoutInfo={parentLayout.outputs[output.name]}
+              />
+            </React.Fragment>
+          );
+        })}
       </foreignObject>
     </>
   );
 };
-
-const SVGLabeledRect = ({
-  minified,
-  label,
-  fill,
-  className,
-  ...rect
-}: {
-  x: number;
-  y: number;
-  minified: boolean;
-  width: number;
-  height: number;
-  label: string;
-  fill: string;
-  className?: string;
-}) => (
-  <g>
-    <rect
-      {...rect}
-      fill={fill}
-      stroke={Colors.keylineDefault()}
-      strokeWidth={1}
-      className={className}
-    />
-    <SVGMonospaceText
-      x={rect.x + (minified ? 10 : 5)}
-      y={rect.y + (minified ? 10 : 5)}
-      height={undefined}
-      size={minified ? 30 : 16}
-      text={label}
-      fill="#979797"
-    />
-  </g>
-);
 
 export const SVGLabeledParentRect = styled(SVGLabeledRect)`
   transition:

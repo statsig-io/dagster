@@ -1,6 +1,12 @@
 from hashlib import sha256
 
-import dagster as dg
+from dagster import (
+    DataVersion,
+    Output,
+    asset,
+    file_relative_path,
+    observable_source_asset,
+)
 
 
 def sha256_digest_from_str(string: str) -> str:
@@ -9,22 +15,22 @@ def sha256_digest_from_str(string: str) -> str:
     return hash_sig.hexdigest()
 
 
-FILE_PATH = dg.file_relative_path(__file__, "input_number.txt")
+FILE_PATH = file_relative_path(__file__, "input_number.txt")
 
 
-@dg.observable_source_asset
+@observable_source_asset
 def input_number():
     with open(FILE_PATH) as ff:
-        return dg.DataVersion(sha256_digest_from_str(ff.read()))
+        return DataVersion(sha256_digest_from_str(ff.read()))
 
 
-@dg.asset(code_version="v6", deps=[input_number])
+@asset(code_version="v6", deps=[input_number])
 def versioned_number():
     with open(FILE_PATH) as ff:
         value = int(ff.read())
-        return dg.Output(value, data_version=dg.DataVersion(str(value)))
+        return Output(value, data_version=DataVersion(str(value)))
 
 
-@dg.asset(code_version="v1")
+@asset(code_version="v1")
 def multiplied_number(versioned_number):
     return versioned_number * 2

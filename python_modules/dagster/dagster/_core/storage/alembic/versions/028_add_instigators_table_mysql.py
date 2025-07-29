@@ -5,7 +5,6 @@ Revises: 54666da3db5c
 Create Date: 2022-03-18 16:17:20.338259
 
 """
-
 from dagster._core.storage.migration.utils import create_instigators_table
 
 # revision identifiers, used by Alembic.

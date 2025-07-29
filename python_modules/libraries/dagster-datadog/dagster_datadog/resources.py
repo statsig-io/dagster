@@ -1,7 +1,6 @@
 from dagster import ConfigurableResource, resource
-from dagster._annotations import beta
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
-from datadog import DogStatsd, api, initialize, statsd
+from datadog import DogStatsd, initialize, statsd
 from pydantic import Field
 
 
@@ -31,29 +30,23 @@ class DatadogClient:
             "service_check",
             "timed",
             "timing",
-            "flush",
-            "wait_for_pending",
         ]:
             setattr(self, method, getattr(statsd, method))
 
-        self.api = api
 
-
-@beta
 class DatadogResource(ConfigurableResource):
     """This resource is a thin wrapper over the
     `dogstatsd library <https://datadogpy.readthedocs.io/en/latest/>`_.
 
     As such, we directly mirror the public API methods of DogStatsd here; you can refer to the
-    `Datadog documentation <https://docs.datadoghq.com/developers/dogstatsd/>`_ for how to use this
+    `DataDog documentation <https://docs.datadoghq.com/developers/dogstatsd/>`_ for how to use this
     resource.
 
     Examples:
         .. code-block:: python
 
             @op
-            def datadog_op(datadog_resource: DatadogResource):
-                datadog_client = datadog_resource.get_client()
+            def datadog_op(datadog_client: ResourceParam[DatadogClient]):
                 datadog_client.event('Man down!', 'This server needs assistance.')
                 datadog_client.gauge('users.online', 1001, tags=["protocol:http"])
                 datadog_client.increment('page.views')
@@ -76,7 +69,7 @@ class DatadogResource(ConfigurableResource):
                 datadog_op()
 
             job_for_datadog_op.execute_in_process(
-                resources={"datadog_resource": DatadogResource(api_key="FOO", app_key="BAR")}
+                resources={"datadog_client": DatadogResource(api_key="FOO", app_key="BAR")}
             )
 
     """
@@ -101,7 +94,6 @@ class DatadogResource(ConfigurableResource):
         return DatadogClient(self.api_key, self.app_key)
 
 
-@beta
 @dagster_maintained_resource
 @resource(
     config_schema=DatadogResource.to_config_schema(),

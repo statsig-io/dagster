@@ -42,108 +42,8 @@ export type LaunchPipelineExecutionMutation = {
     | {__typename: 'UnauthorizedError'};
 };
 
-export type LaunchMultipleRunsMutationVariables = Types.Exact<{
-  executionParamsList: Array<Types.ExecutionParams> | Types.ExecutionParams;
-}>;
-
-export type LaunchMultipleRunsMutation = {
-  __typename: 'Mutation';
-  launchMultipleRuns:
-    | {
-        __typename: 'LaunchMultipleRunsResult';
-        launchMultipleRunsResult: Array<
-          | {__typename: 'ConflictingExecutionParamsError'; message: string}
-          | {__typename: 'InvalidOutputError'; stepKey: string; invalidOutputName: string}
-          | {__typename: 'InvalidStepError'; invalidStepKey: string}
-          | {__typename: 'InvalidSubsetError'}
-          | {
-              __typename: 'LaunchRunSuccess';
-              run: {
-                __typename: 'Run';
-                id: string;
-                status: Types.RunStatus;
-                runConfigYaml: string;
-                mode: string;
-                resolvedOpSelection: Array<string> | null;
-                pipeline:
-                  | {__typename: 'PipelineSnapshot'; name: string}
-                  | {__typename: 'UnknownPipeline'; name: string};
-                tags: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
-              };
-            }
-          | {__typename: 'NoModeProvidedError'}
-          | {__typename: 'PipelineNotFoundError'; message: string; pipelineName: string}
-          | {__typename: 'PresetNotFoundError'; preset: string; message: string}
-          | {
-              __typename: 'PythonError';
-              message: string;
-              stack: Array<string>;
-              errorChain: Array<{
-                __typename: 'ErrorChainLink';
-                isExplicitLink: boolean;
-                error: {__typename: 'PythonError'; message: string; stack: Array<string>};
-              }>;
-            }
-          | {
-              __typename: 'RunConfigValidationInvalid';
-              pipelineName: string;
-              errors: Array<
-                | {
-                    __typename: 'FieldNotDefinedConfigError';
-                    message: string;
-                    path: Array<string>;
-                    reason: Types.EvaluationErrorReason;
-                  }
-                | {
-                    __typename: 'FieldsNotDefinedConfigError';
-                    message: string;
-                    path: Array<string>;
-                    reason: Types.EvaluationErrorReason;
-                  }
-                | {
-                    __typename: 'MissingFieldConfigError';
-                    message: string;
-                    path: Array<string>;
-                    reason: Types.EvaluationErrorReason;
-                  }
-                | {
-                    __typename: 'MissingFieldsConfigError';
-                    message: string;
-                    path: Array<string>;
-                    reason: Types.EvaluationErrorReason;
-                  }
-                | {
-                    __typename: 'RuntimeMismatchConfigError';
-                    message: string;
-                    path: Array<string>;
-                    reason: Types.EvaluationErrorReason;
-                  }
-                | {
-                    __typename: 'SelectorTypeConfigError';
-                    message: string;
-                    path: Array<string>;
-                    reason: Types.EvaluationErrorReason;
-                  }
-              >;
-            }
-          | {__typename: 'RunConflict'}
-          | {__typename: 'UnauthorizedError'}
-        >;
-      }
-    | {
-        __typename: 'PythonError';
-        message: string;
-        stack: Array<string>;
-        errorChain: Array<{
-          __typename: 'ErrorChainLink';
-          isExplicitLink: boolean;
-          error: {__typename: 'PythonError'; message: string; stack: Array<string>};
-        }>;
-      };
-};
-
 export type DeleteMutationVariables = Types.Exact<{
-  runId: Types.Scalars['String']['input'];
+  runId: Types.Scalars['String'];
 }>;
 
 export type DeleteMutation = {
@@ -165,13 +65,13 @@ export type DeleteMutation = {
 };
 
 export type TerminateMutationVariables = Types.Exact<{
-  runIds: Array<Types.Scalars['String']['input']> | Types.Scalars['String']['input'];
+  runId: Types.Scalars['String'];
   terminatePolicy?: Types.InputMaybe<Types.TerminateRunPolicy>;
 }>;
 
 export type TerminateMutation = {
   __typename: 'Mutation';
-  terminateRuns:
+  terminatePipelineExecution:
     | {
         __typename: 'PythonError';
         message: string;
@@ -182,28 +82,13 @@ export type TerminateMutation = {
           error: {__typename: 'PythonError'; message: string; stack: Array<string>};
         }>;
       }
+    | {__typename: 'RunNotFoundError'; message: string}
+    | {__typename: 'TerminateRunFailure'; message: string}
     | {
-        __typename: 'TerminateRunsResult';
-        terminateRunResults: Array<
-          | {
-              __typename: 'PythonError';
-              message: string;
-              stack: Array<string>;
-              errorChain: Array<{
-                __typename: 'ErrorChainLink';
-                isExplicitLink: boolean;
-                error: {__typename: 'PythonError'; message: string; stack: Array<string>};
-              }>;
-            }
-          | {__typename: 'RunNotFoundError'; message: string}
-          | {__typename: 'TerminateRunFailure'; message: string}
-          | {
-              __typename: 'TerminateRunSuccess';
-              run: {__typename: 'Run'; id: string; canTerminate: boolean};
-            }
-          | {__typename: 'UnauthorizedError'; message: string}
-        >;
-      };
+        __typename: 'TerminateRunSuccess';
+        run: {__typename: 'Run'; id: string; canTerminate: boolean};
+      }
+    | {__typename: 'UnauthorizedError'; message: string};
 };
 
 export type LaunchPipelineReexecutionMutationVariables = Types.Exact<{
@@ -260,18 +145,7 @@ export type RunTimeFragment = {
   __typename: 'Run';
   id: string;
   status: Types.RunStatus;
-  creationTime: number;
   startTime: number | null;
   endTime: number | null;
   updateTime: number | null;
 };
-
-export const LaunchPipelineExecutionVersion = '292088c4a697aca6be1d3bbc0cfc45d8a13cdb2e75cfedc64b68c6245ea34f89';
-
-export const LaunchMultipleRunsVersion = 'a56d9efdb35e71e0fd1744dd768129248943bc5b23e717458b82c46829661763';
-
-export const DeleteVersion = '3c61c79b99122910e754a8863e80dc5ed479a0c23cc1a9d9878d91e603fc0dfe';
-
-export const TerminateVersion = '67acf403eb320a93c9a9aa07f675a1557e0887d499cd5598f1d5ff360afc15c0';
-
-export const LaunchPipelineReexecutionVersion = 'd21e4ecaf3d1d163c4772f1d847dbdcbdaa9a40e6de0808a064ae767adf0c311';

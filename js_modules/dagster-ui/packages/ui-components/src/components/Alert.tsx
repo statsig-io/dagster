@@ -2,67 +2,57 @@ import * as React from 'react';
 import styled from 'styled-components';
 
 import {Box} from './Box';
-import {Colors} from './Color';
+import {Colors} from './Colors';
 import {Group} from './Group';
-import {Icon, IconName} from './Icon';
+import {IconName, Icon} from './Icon';
 
-export type AlertIntent = 'info' | 'warning' | 'error' | 'success' | 'none';
+export type AlertIntent = 'info' | 'warning' | 'error' | 'success';
 
 interface Props {
-  intent?: AlertIntent;
+  intent: AlertIntent;
   title: React.ReactNode;
   description?: React.ReactNode;
   icon?: React.ReactNode;
-  rightButton?: React.ReactNode;
   onClose?: () => void;
 }
 
-export const Alert = (props: Props) => {
-  const {intent = 'info', title, description, rightButton, onClose} = props;
+export const Alert: React.FC<Props> = (props) => {
+  const {intent, title, description, onClose} = props;
 
   const {backgroundColor, borderColor, icon, iconColor, textColor} = React.useMemo(() => {
     switch (intent) {
       case 'warning':
         return {
-          backgroundColor: Colors.backgroundYellow(),
-          borderColor: Colors.accentYellow(),
+          backgroundColor: Colors.Yellow50,
+          borderColor: Colors.Yellow500,
           icon: 'warning',
-          iconColor: Colors.accentYellow(),
-          textColor: Colors.textYellow(),
+          iconColor: Colors.Yellow500,
+          textColor: Colors.Yellow700,
         };
       case 'error':
         return {
-          backgroundColor: Colors.backgroundRed(),
-          borderColor: Colors.accentRed(),
+          backgroundColor: Colors.Red50,
+          borderColor: Colors.Red500,
           icon: 'error',
-          iconColor: Colors.accentRed(),
-          textColor: Colors.textRed(),
+          iconColor: Colors.Red500,
+          textColor: Colors.Red700,
         };
       case 'success':
         return {
-          backgroundColor: Colors.backgroundGreen(),
-          borderColor: Colors.accentGreen(),
+          backgroundColor: Colors.Green50,
+          borderColor: Colors.Green500,
           icon: 'done',
-          iconColor: Colors.accentGreen(),
-          textColor: Colors.textGreen(),
-        };
-
-      case 'none':
-        return {
-          backgroundColor: Colors.backgroundGray(),
-          borderColor: Colors.accentGray(),
-          icon: 'info',
-          iconColor: Colors.accentGray(),
-          textColor: Colors.textLight(),
+          iconColor: Colors.Green500,
+          textColor: Colors.Green700,
         };
       case 'info':
       default:
         return {
-          backgroundColor: Colors.backgroundBlue(),
-          borderColor: Colors.accentBlue(),
+          backgroundColor: Colors.Blue50,
+          borderColor: Colors.Blue500,
           icon: 'info',
-          iconColor: Colors.accentBlue(),
-          textColor: Colors.textBlue(),
+          iconColor: Colors.Blue500,
+          textColor: Colors.Blue700,
         };
     }
   }, [intent]);
@@ -86,12 +76,14 @@ export const Alert = (props: Props) => {
           <ButtonWrapper onClick={onClose}>
             <Icon name="close" color={textColor} />
           </ButtonWrapper>
-        ) : rightButton ? (
-          <div style={{alignSelf: 'center'}}>{rightButton}</div>
         ) : null}
       </Box>
     </AlertContainer>
   );
+};
+
+Alert.defaultProps = {
+  intent: 'info',
 };
 
 const ButtonWrapper = styled.button`

@@ -1,18 +1,18 @@
 import {MockedProvider} from '@apollo/client/testing';
 import {Box} from '@dagster-io/ui-components';
+import React from 'react';
 
 import {createAppCache} from '../../app/AppCache';
 import {RunStatus, buildStaleCause} from '../../graphql/types';
-import {WorkspaceProvider} from '../../workspace/WorkspaceContext/WorkspaceContext';
+import {WorkspaceProvider} from '../../workspace/WorkspaceContext';
 import {
   AssetPartitionDetail,
   AssetPartitionDetailEmpty,
   AssetPartitionDetailLoader,
 } from '../AssetPartitionDetail';
 import {
-  MaterializationUpstreamDataFullMock,
   buildAssetPartitionDetailMock,
-  buildAssetPartitionStaleMock,
+  MaterializationUpstreamDataFullMock,
 } from '../__fixtures__/AssetEventDetail.fixtures';
 
 // eslint-disable-next-line import/no-default-export
@@ -34,11 +34,7 @@ export const EmptyState = () => {
 export const MaterializationFollowedByObservations = () => {
   return (
     <MockedProvider
-      mocks={[
-        buildAssetPartitionDetailMock(),
-        buildAssetPartitionStaleMock(),
-        MaterializationUpstreamDataFullMock,
-      ]}
+      mocks={[buildAssetPartitionDetailMock(), MaterializationUpstreamDataFullMock]}
       cache={createAppCache()}
     >
       <WorkspaceProvider>
@@ -54,8 +50,7 @@ export const MaterializationWithRecentFailure = () => {
   return (
     <MockedProvider
       mocks={[
-        buildAssetPartitionDetailMock(RunStatus.FAILURE),
-        buildAssetPartitionStaleMock([buildStaleCause()]),
+        buildAssetPartitionDetailMock(RunStatus.FAILURE, [buildStaleCause()]),
         MaterializationUpstreamDataFullMock,
       ]}
       cache={createAppCache()}
@@ -74,7 +69,6 @@ export const MaterializationWithInProgressRun = () => {
     <MockedProvider
       mocks={[
         buildAssetPartitionDetailMock(RunStatus.STARTING),
-        buildAssetPartitionStaleMock(),
         MaterializationUpstreamDataFullMock,
       ]}
       cache={createAppCache()}

@@ -4,14 +4,12 @@ from unittest import mock
 
 import pytest
 from click.testing import CliRunner
+from dagster import _seven
 from dagster._core.instance import DagsterInstance
 from dagster._core.telemetry import START_DAGSTER_WEBSERVER, UPDATE_REPO_STATS, hash_name
 from dagster._core.test_utils import instance_for_test
 from dagster._core.workspace.load import load_workspace_process_context_from_yaml_paths
 from dagster._utils import file_relative_path
-from dagster._utils.log import get_structlog_json_formatter
-from dagster_shared import seven
-from dagster_shared.telemetry import cleanup_telemetry_logger, get_telemetry_logger
 from dagster_webserver.app import create_app_from_workspace_process_context
 from dagster_webserver.cli import (
     DEFAULT_WEBSERVER_PORT,
@@ -19,16 +17,6 @@ from dagster_webserver.cli import (
     host_dagster_ui_with_workspace_process_context,
 )
 from starlette.testclient import TestClient
-
-
-@pytest.fixture
-def telemetry_caplog(caplog):
-    # telemetry logger doesn't propagate to the root logger, so need to attach the caplog handler
-    get_telemetry_logger().addHandler(caplog.handler)
-    yield caplog
-    get_telemetry_logger().removeHandler(caplog.handler)
-    # Needed to avoid file contention issues on windows with the telemetry log file
-    cleanup_telemetry_logger()
 
 
 @pytest.fixture
@@ -102,7 +90,7 @@ def test_index_view(instance):
         res = client.get("/")
 
         assert res.status_code == 200, res.content
-        assert b'<title data-next-head="">Dagster</title>' in res.content
+        assert b"<title>Dagster</title>" in res.content
 
 
 def test_index_view_at_path_prefix(instance):
@@ -163,7 +151,7 @@ def test_successful_host_dagster_ui_from_workspace():
                 log_level="warning",
             )
 
-        server_call.assert_called_with(mock.ANY, host="127.0.0.1", port=2343, log_level="warning")
+        assert server_call.called_with(mock.ANY, host="127.0.0.1", port=2343, log_level="warning")
 
 
 @pytest.fixture
@@ -196,7 +184,7 @@ def test_host_dagster_webserver_choose_port(mock_is_port_in_use, mock_find_free_
                 log_level="warning",
             )
 
-        server_call.assert_called_with(
+        assert server_call.called_with(
             mock.ANY, host="127.0.0.1", port=DEFAULT_WEBSERVER_PORT, log_level="warning"
         )
 
@@ -212,7 +200,7 @@ def test_host_dagster_webserver_choose_port(mock_is_port_in_use, mock_find_free_
                 log_level="warning",
             )
 
-        server_call.assert_called_with(mock.ANY, host="127.0.0.1", port=1234, log_level="warning")
+        assert server_call.called_with(mock.ANY, host="127.0.0.1", port=1234, log_level="warning")
 
 
 def test_successful_host_dagster_ui_from_multiple_workspace_files():
@@ -295,7 +283,7 @@ def test_valid_path_prefix():
 
 
 @mock.patch("uvicorn.run")
-def test_dagster_webserver_logs(_, telemetry_caplog):
+def test_dagster_webserver_logs(_, caplog):
     with tempfile.TemporaryDirectory() as temp_dir:
         with instance_for_test(temp_dir=temp_dir, overrides={"telemetry": {"enabled": True}}):
             runner = CliRunner(env={"DAGSTER_HOME": temp_dir})
@@ -312,10 +300,10 @@ def test_dagster_webserver_logs(_, telemetry_caplog):
             }
             actions = set()
             records = []
-            for record in telemetry_caplog.records:
+            for record in caplog.records:
                 try:
                     message = json.loads(record.getMessage())
-                except seven.JSONDecodeError:
+                except _seven.JSONDecodeError:
                     continue
 
                 records.append(record)
@@ -349,38 +337,3 @@ def test_dagster_webserver_logs(_, telemetry_caplog):
 
             assert actions == set([START_DAGSTER_WEBSERVER, UPDATE_REPO_STATS])
             assert len(records) == 3
-
-
-@mock.patch("uvicorn.run")
-def test_dagster_webserver_json_logs(
-    _: mock.Mock,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    # https://github.com/pytest-dev/pytest/issues/2987#issuecomment-1460509126
-    #
-    # pytest captures log records using their handler. However, as a side-effect, this prevents
-    # Dagster's log formatting from being applied in a unit test.
-    #
-    # To test the formatting, we monkeypatch the handler's formatter to use the same formatter as
-    # the one used by Dagster when enabling JSON log format.
-    monkeypatch.setattr(caplog.handler, "formatter", get_structlog_json_formatter())
-
-    runner = CliRunner()
-    result = runner.invoke(dagster_webserver, ["--log-format", "json", "--empty-workspace"])
-
-    assert result.exit_code == 0, str(result.exception)
-
-    lines = [line for line in caplog.text.split("\n") if line]
-
-    assert lines
-    assert [json.loads(line) for line in lines]
-
-
-@mock.patch("uvicorn.run")
-def test_dagster_webserver_rich_logs(_: mock.Mock) -> None:
-    runner = CliRunner()
-    result = runner.invoke(dagster_webserver, ["--log-format", "rich", "--empty-workspace"])
-
-    # Test that the webserver can be started with rich formatting.
-    assert result.exit_code == 0, str(result.exception)

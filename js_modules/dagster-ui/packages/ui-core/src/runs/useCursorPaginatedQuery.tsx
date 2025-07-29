@@ -1,8 +1,8 @@
+import {useQuery} from '@apollo/client';
 import {CursorPaginationProps} from '@dagster-io/ui-components';
 import {DocumentNode} from 'graphql';
-import {useState} from 'react';
+import * as React from 'react';
 
-import {useQuery} from '../apollo-client';
 import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
 
 interface CursorPaginationQueryVariables {
@@ -24,28 +24,20 @@ interface CursorPaginationQueryVariables {
  */
 export function useCursorPaginatedQuery<T, TVars extends CursorPaginationQueryVariables>(options: {
   query: DocumentNode;
+  nextCursorForResult: (result: T) => string | undefined;
   skip?: boolean;
   variables: Omit<TVars, 'cursor' | 'limit'>;
   pageSize: number;
-  queryKey?: string;
   getResultArray: (result: T | undefined) => any[];
-  nextCursorForResult: (result: T) => string | undefined;
-  hasMoreForResult?: (result: T) => boolean;
 }) {
-  const [cursorStack, setCursorStack] = useState<string[]>(() => []);
-  const [cursor, setCursor] = useQueryPersistedState<string | undefined>({
-    queryKey: options.queryKey || 'cursor',
-  });
+  const [cursorStack, setCursorStack] = React.useState<string[]>(() => []);
+  const [cursor, setCursor] = useQueryPersistedState<string | undefined>({queryKey: 'cursor'});
 
-  // If you don't provide a hasMoreForResult function for extracting hasMore from
-  // the response, we fall back to an old approach that fetched one extra item
-  // and used it's presence to determine if more items were available. If you use
-  // the old approach, your `nextCursorForResult` method needs to use
-  // `items[pageSize - 1]` NOT `items[items.length - 1]` to get the next cursor,
-  // or an item will be skipped when you advance.
-  //
-  const limit = options.hasMoreForResult ? options.pageSize : options.pageSize + 1;
-  const queryVars: any = {...options.variables, cursor, limit};
+  const queryVars: any = {
+    ...options.variables,
+    cursor,
+    limit: options.pageSize + 1,
+  };
 
   const queryResult = useQuery<T, TVars>(options.query, {
     skip: options.skip,
@@ -54,18 +46,9 @@ export function useCursorPaginatedQuery<T, TVars extends CursorPaginationQueryVa
   });
 
   const resultArray = options.getResultArray(queryResult.data);
-
-  let hasNextCursor = false;
-  if (options.hasMoreForResult) {
-    hasNextCursor = queryResult.data ? options.hasMoreForResult(queryResult.data) : false;
-  } else {
-    hasNextCursor = resultArray.length === options.pageSize + 1;
-  }
-
   const paginationProps: CursorPaginationProps = {
-    cursor,
     hasPrevCursor: !!cursor,
-    hasNextCursor,
+    hasNextCursor: resultArray.length === options.pageSize + 1,
     popCursor: () => {
       const nextStack = [...cursorStack];
       setCursor(nextStack.pop());

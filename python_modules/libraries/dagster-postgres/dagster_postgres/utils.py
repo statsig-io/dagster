@@ -1,8 +1,7 @@
 import logging
 import time
-from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, Iterator, Mapping, Optional, TypeVar
 from urllib.parse import quote, urlencode
 
 import alembic.config
@@ -170,8 +169,6 @@ def create_pg_connection(
             conn.close()
 
 
-def set_pg_statement_timeout(conn: psycopg2.extensions.connection, millis: int):
+def pg_statement_timeout(millis: int) -> str:
     check.int_param(millis, "millis")
-    with conn:
-        with conn.cursor() as curs:
-            curs.execute(f"SET statement_timeout = {millis};")
+    return f"-c statement_timeout={millis}"

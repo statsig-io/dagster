@@ -1,14 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import update_wrapper
-from typing import (  # noqa: UP035
-    TYPE_CHECKING,
-    AbstractSet,
-    Callable,
-    Optional,
-    Union,
-    cast,
-    overload,
-)
+from typing import TYPE_CHECKING, AbstractSet, Callable, Optional, Union, cast, overload
 
 from typing_extensions import TypeAlias, TypeGuard
 
@@ -79,7 +71,7 @@ class InputManagerDefinition(ResourceDefinition, IInputManagerDefinition):
         self._input_config_schema = convert_user_facing_definition_config_schema(
             input_config_schema
         )
-        super().__init__(
+        super(InputManagerDefinition, self).__init__(
             resource_fn=resource_fn,
             config_schema=config_schema,
             description=description,
@@ -146,7 +138,7 @@ def input_manager(
             If not set, Dagster will accept any config provided.
         required_resource_keys (Optional[Set[str]]): Keys for the resources required by the input
             manager.
-        version (Optional[str]): The version of the input manager definition.
+        version (Optional[str]): (Experimental) the version of the input manager definition.
 
     **Examples:**
 
@@ -179,7 +171,7 @@ def input_manager(
 
     def _wrap(load_fn: InputLoadFn) -> InputManagerDefinition:
         return _InputManagerDecoratorCallable(
-            config_schema=cast("CoercableToConfigSchema", config_schema),
+            config_schema=cast(CoercableToConfigSchema, config_schema),
             description=description,
             version=version,
             input_config_schema=input_config_schema,
@@ -203,7 +195,9 @@ class InputManagerWrapper(InputManager):
         # result is an InputManager. If so we call it's load_input method
         intermediate = (
             # type-ignore because function being used as attribute
-            self._load_fn(context) if has_at_least_one_parameter(self._load_fn) else self._load_fn()  # type: ignore  # (strict type guard)
+            self._load_fn(context)
+            if has_at_least_one_parameter(self._load_fn)
+            else self._load_fn()  # type: ignore  # (strict type guard)
         )
 
         if isinstance(intermediate, InputManager):

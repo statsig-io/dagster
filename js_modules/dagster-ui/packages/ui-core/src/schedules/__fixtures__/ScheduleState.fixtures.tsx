@@ -34,7 +34,8 @@ export const scheduleDelawareCurrentlyRunning = {
   repoAddress,
   scheduleName: 'delaware',
   scheduleState: buildInstigationState({
-    id: 'delaware-id',
+    id: 'delaware-state-id',
+    selectorId: 'delaware-selector',
     status: InstigationStatus.RUNNING,
   }),
 };
@@ -43,7 +44,8 @@ export const scheduleHawaiiCurrentlyRunning = {
   repoAddress,
   scheduleName: 'hawaii',
   scheduleState: buildInstigationState({
-    id: 'hawaii-id',
+    id: 'hawaii-state-id',
+    selectorId: 'hawaii-selector',
     status: InstigationStatus.RUNNING,
   }),
 };
@@ -129,7 +131,8 @@ export const buildStopDelawareSuccess = (delay = 0): MockedResponse<StopSchedule
     request: {
       query: STOP_SCHEDULE_MUTATION,
       variables: {
-        id: 'delaware-id',
+        scheduleOriginId: 'delaware-state-id',
+        scheduleSelectorId: 'delaware-selector',
       },
     },
     result: {
@@ -151,7 +154,8 @@ export const buildStopHawaiiSuccess = (delay = 0): MockedResponse<StopScheduleMu
     request: {
       query: STOP_SCHEDULE_MUTATION,
       variables: {
-        id: 'hawaii-id',
+        scheduleOriginId: 'hawaii-state-id',
+        scheduleSelectorId: 'hawaii-selector',
       },
     },
     result: {
@@ -173,7 +177,8 @@ export const buildStopHawaiiError = (delay = 0): MockedResponse<StopScheduleMuta
     request: {
       query: STOP_SCHEDULE_MUTATION,
       variables: {
-        id: 'hawaii-id',
+        scheduleOriginId: 'hawaii-state-id',
+        scheduleSelectorId: 'hawaii-selector',
       },
     },
     result: {

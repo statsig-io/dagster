@@ -9,10 +9,10 @@ from dagster._core.storage.runs import RunStorage
 from dagster._core.storage.schedules import ScheduleStorage
 from dagster._serdes import ConfigurableClass, ConfigurableClassData
 
-from dagster_mysql.event_log import MySQLEventLogStorage
-from dagster_mysql.run_storage import MySQLRunStorage
-from dagster_mysql.schedule_storage import MySQLScheduleStorage
-from dagster_mysql.utils import mysql_url_from_config
+from .event_log import MySQLEventLogStorage
+from .run_storage import MySQLRunStorage
+from .schedule_storage import MySQLScheduleStorage
+from .utils import mysql_url_from_config
 
 
 class DagsterMySQLStorage(DagsterStorage, ConfigurableClass):
@@ -50,7 +50,7 @@ class DagsterMySQLStorage(DagsterStorage, ConfigurableClass):
         return mysql_config()
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_config_value(
         cls, inst_data: Optional[ConfigurableClassData], config_value: MySqlStorageConfig
     ) -> "DagsterMySQLStorage":
         return DagsterMySQLStorage(

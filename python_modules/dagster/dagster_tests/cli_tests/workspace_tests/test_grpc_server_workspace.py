@@ -1,24 +1,24 @@
 from contextlib import ExitStack
 
-import dagster as dg
 import pytest
 import yaml
+from dagster import _seven
 from dagster._check import CheckError
 from dagster._core.errors import DagsterUserCodeUnreachableError
-from dagster._core.remote_representation import GrpcServerCodeLocationOrigin
-from dagster._core.test_utils import environ
+from dagster._core.host_representation import GrpcServerCodeLocationOrigin
+from dagster._core.test_utils import environ, instance_for_test
 from dagster._core.workspace.load import location_origins_from_config
 from dagster._grpc.server import GrpcServerProcess
-from dagster_shared import seven
+from dagster._utils import file_relative_path
 
 
 @pytest.fixture
 def instance():
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         yield instance
 
 
-@pytest.mark.skipif(seven.IS_WINDOWS, reason="no named sockets on Windows")
+@pytest.mark.skipif(_seven.IS_WINDOWS, reason="no named sockets on Windows")
 def test_grpc_socket_workspace(instance):
     with GrpcServerProcess(
         instance_ref=instance.get_ref(), wait_on_exit=True
@@ -43,12 +43,12 @@ load_from:
             origins = location_origins_from_config(
                 yaml.safe_load(workspace_yaml),
                 # fake out as if it were loaded by a yaml file in this directory
-                dg.file_relative_path(__file__, "not_a_real.yaml"),
+                file_relative_path(__file__, "not_a_real.yaml"),
             )
 
             with ExitStack() as stack:
                 code_locations = {
-                    name: stack.enter_context(origin.create_location(instance))
+                    name: stack.enter_context(origin.create_location())
                     for name, origin in origins.items()
                 }
                 assert len(code_locations) == 2
@@ -57,16 +57,16 @@ load_from:
                 assert code_locations.get(default_location_name)
                 local_port = code_locations.get(default_location_name)
 
-                assert local_port.socket == first_socket  # pyright: ignore[reportOptionalMemberAccess]
-                assert local_port.host == "localhost"  # pyright: ignore[reportOptionalMemberAccess]
-                assert local_port.port is None  # pyright: ignore[reportOptionalMemberAccess]
+                assert local_port.socket == first_socket
+                assert local_port.host == "localhost"
+                assert local_port.port is None
 
                 assert code_locations.get("local_port_default_host")
                 local_port_default_host = code_locations.get("local_port_default_host")
 
-                assert local_port_default_host.socket == second_socket  # pyright: ignore[reportOptionalMemberAccess]
-                assert local_port_default_host.host == "localhost"  # pyright: ignore[reportOptionalMemberAccess]
-                assert local_port_default_host.port is None  # pyright: ignore[reportOptionalMemberAccess]
+                assert local_port_default_host.socket == second_socket
+                assert local_port_default_host.host == "localhost"
+                assert local_port_default_host.port is None
 
                 assert all(map(lambda x: x.name, code_locations.values()))
 
@@ -97,7 +97,7 @@ def test_grpc_server_env_vars():
 
         origins = location_origins_from_config(
             yaml.safe_load(valid_yaml),
-            dg.file_relative_path(__file__, "not_a_real.yaml"),
+            file_relative_path(__file__, "not_a_real.yaml"),
         )
 
         assert len(origins) == 2
@@ -105,14 +105,14 @@ def test_grpc_server_env_vars():
         port_origin = origins["my_grpc_server_port"]
         assert isinstance(origins["my_grpc_server_port"], GrpcServerCodeLocationOrigin)
 
-        assert port_origin.port == 1234  # pyright: ignore[reportAttributeAccessIssue]
-        assert port_origin.host == "barhost"  # pyright: ignore[reportAttributeAccessIssue]
+        assert port_origin.port == 1234
+        assert port_origin.host == "barhost"
 
         socket_origin = origins["my_grpc_server_socket"]
         assert isinstance(origins["my_grpc_server_socket"], GrpcServerCodeLocationOrigin)
 
-        assert socket_origin.socket == "barsocket"  # pyright: ignore[reportAttributeAccessIssue]
-        assert socket_origin.host == "barhost"  # pyright: ignore[reportAttributeAccessIssue]
+        assert socket_origin.socket == "barsocket"
+        assert socket_origin.host == "barhost"
 
 
 def test_ssl_grpc_server_workspace(instance):
@@ -133,35 +133,18 @@ load_from:
         origins = location_origins_from_config(
             yaml.safe_load(ssl_yaml),
             # fake out as if it were loaded by a yaml file in this directory
-            dg.file_relative_path(__file__, "not_a_real.yaml"),
+            file_relative_path(__file__, "not_a_real.yaml"),
         )
         origin = next(iter(origins.values()))
-        assert origin.use_ssl  # pyright: ignore[reportAttributeAccessIssue]
+        assert origin.use_ssl
 
         # Actually connecting to the server will fail since it's expecting SSL
         # and we didn't set up the server with SSL
         try:
-            with origin.create_location(instance):
+            with origin.create_location():
                 assert False
         except DagsterUserCodeUnreachableError:
             pass
-
-
-def test_port_range(instance):
-    with environ({"DAGSTER_PORT_RANGE": "12345-12399"}):
-        with GrpcServerProcess(
-            instance_ref=instance.get_ref(), force_port=True, wait_on_exit=True
-        ) as server_process:
-            assert server_process.port
-            assert server_process.port >= 12345
-            assert server_process.port <= 12399
-
-    with pytest.raises(Exception, match="DAGSTER_PORT_RANGE must be of the form"):
-        with environ({"DAGSTER_PORT_RANGE": "wat"}):
-            with GrpcServerProcess(
-                instance_ref=instance.get_ref(), force_port=True, wait_on_exit=True
-            ) as server_process:
-                pass
 
 
 def test_grpc_server_workspace(instance):
@@ -188,12 +171,12 @@ load_from:
             origins = location_origins_from_config(
                 yaml.safe_load(workspace_yaml),
                 # fake out as if it were loaded by a yaml file in this directory
-                dg.file_relative_path(__file__, "not_a_real.yaml"),
+                file_relative_path(__file__, "not_a_real.yaml"),
             )
 
             with ExitStack() as stack:
                 code_locations = {
-                    name: stack.enter_context(origin.create_location(instance))
+                    name: stack.enter_context(origin.create_location())
                     for name, origin in origins.items()
                 }
                 assert len(code_locations) == 2
@@ -202,16 +185,16 @@ load_from:
                 assert code_locations.get(default_location_name)
                 local_port = code_locations.get(default_location_name)
 
-                assert local_port.port == first_port  # pyright: ignore[reportOptionalMemberAccess]
-                assert local_port.host == "localhost"  # pyright: ignore[reportOptionalMemberAccess]
-                assert local_port.socket is None  # pyright: ignore[reportOptionalMemberAccess]
+                assert local_port.port == first_port
+                assert local_port.host == "localhost"
+                assert local_port.socket is None
 
                 assert code_locations.get("local_port_default_host")
                 local_port_default_host = code_locations.get("local_port_default_host")
 
-                assert local_port_default_host.port == second_port  # pyright: ignore[reportOptionalMemberAccess]
-                assert local_port_default_host.host == "localhost"  # pyright: ignore[reportOptionalMemberAccess]
-                assert local_port_default_host.socket is None  # pyright: ignore[reportOptionalMemberAccess]
+                assert local_port_default_host.port == second_port
+                assert local_port_default_host.host == "localhost"
+                assert local_port_default_host.socket is None
 
                 assert all(map(lambda x: x.name, code_locations.values()))
 
@@ -228,5 +211,5 @@ load_from:
         location_origins_from_config(
             yaml.safe_load(workspace_yaml),
             # fake out as if it were loaded by a yaml file in this directory
-            dg.file_relative_path(__file__, "not_a_real.yaml"),
+            file_relative_path(__file__, "not_a_real.yaml"),
         )

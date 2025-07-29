@@ -1,7 +1,5 @@
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
-from functools import cached_property
-from typing import NamedTuple
+from typing import DefaultDict, Dict, List, Mapping, NamedTuple, Sequence
 
 import dagster._check as check
 from dagster._core.definitions import GraphDefinition
@@ -60,7 +58,7 @@ class DependencyStructureSnapshot(
     )
 ):
     def __new__(cls, node_invocation_snaps: Sequence["NodeInvocationSnap"]):
-        return super().__new__(
+        return super(DependencyStructureSnapshot, cls).__new__(
             cls,
             sorted(
                 check.sequence_param(
@@ -76,7 +74,7 @@ class InputHandle(
     NamedTuple("_InputHandle", [("node_def_name", str), ("node_name", str), ("input_name", str)])
 ):
     def __new__(cls, node_def_name: str, node_name: str, input_name: str):
-        return super().__new__(
+        return super(InputHandle, cls).__new__(
             cls,
             node_def_name=check.str_param(node_def_name, "node_def_name"),
             node_name=check.str_param(node_name, "node_name"),
@@ -88,7 +86,7 @@ class InputHandle(
 # for a given "level" in a pipeline. So either the pipelines
 # or within a graph
 class DependencyStructureIndex:
-    _invocations_dict: dict[str, "NodeInvocationSnap"]
+    _invocations_dict: Dict[str, "NodeInvocationSnap"]
     _output_to_upstream_index: Mapping[str, Mapping[str, Sequence[InputHandle]]]
 
     def __init__(self, dep_structure_snapshot: DependencyStructureSnapshot):
@@ -105,7 +103,7 @@ class DependencyStructureIndex:
     def _build_index(
         self, node_invocation_snaps: Sequence["NodeInvocationSnap"]
     ) -> Mapping[str, Mapping[str, Sequence[InputHandle]]]:
-        output_to_upstream_index: defaultdict[str, Mapping[str, list[InputHandle]]] = defaultdict(
+        output_to_upstream_index: DefaultDict[str, Mapping[str, List[InputHandle]]] = defaultdict(
             lambda: defaultdict(list)
         )
         for invocation in node_invocation_snaps:
@@ -142,7 +140,11 @@ class DependencyStructureIndex:
         check.str_param(node_name, "node_name")
         check.str_param(input_name, "input_name")
 
-        return self.get_invocation(node_name).input_dep_snap(input_name).upstream_output_snaps
+        for input_dep_snap in self.get_invocation(node_name).input_dep_snaps:
+            if input_dep_snap.input_name == input_name:
+                return input_dep_snap.upstream_output_snaps
+
+        check.failed(f"Input {input_name} not found for node {node_name}")
 
     def get_upstream_output(self, node_name: str, input_name: str) -> "OutputHandleSnap":
         check.str_param(node_name, "node_name")
@@ -161,7 +163,7 @@ class DependencyStructureIndex:
 @whitelist_for_serdes(storage_field_names={"node_name": "solid_name"})
 class OutputHandleSnap(NamedTuple("_OutputHandleSnap", [("node_name", str), ("output_name", str)])):
     def __new__(cls, node_name: str, output_name: str):
-        return super().__new__(
+        return super(OutputHandleSnap, cls).__new__(
             cls,
             node_name=check.str_param(node_name, "node_name"),
             output_name=check.str_param(output_name, "output_name"),
@@ -185,7 +187,7 @@ class InputDependencySnap(
         upstream_output_snaps: Sequence[OutputHandleSnap],
         is_dynamic_collect: bool = False,
     ):
-        return super().__new__(
+        return super(InputDependencySnap, cls).__new__(
             cls,
             input_name=check.str_param(input_name, "input_name"),
             upstream_output_snaps=check.sequence_param(
@@ -222,7 +224,7 @@ class NodeInvocationSnap(
         input_dep_snaps: Sequence[InputDependencySnap],
         is_dynamic_mapped: bool = False,
     ):
-        return super().__new__(
+        return super(NodeInvocationSnap, cls).__new__(
             cls,
             node_name=check.str_param(node_name, "node_name"),
             node_def_name=check.str_param(node_def_name, "node_def_name"),
@@ -233,13 +235,9 @@ class NodeInvocationSnap(
             is_dynamic_mapped=check.bool_param(is_dynamic_mapped, "is_dynamic_mapped"),
         )
 
-    @cached_property
-    def input_dep_map(self) -> Mapping[str, InputDependencySnap]:
-        return {inp_snap.input_name: inp_snap for inp_snap in self.input_dep_snaps}
-
     def input_dep_snap(self, input_name: str) -> InputDependencySnap:
-        inp_snap = self.input_dep_map.get(input_name)
-        if inp_snap:
-            return inp_snap
+        for inp_snap in self.input_dep_snaps:
+            if inp_snap.input_name == input_name:
+                return inp_snap
 
-        check.failed(f"Input {input_name} not found for node {self.node_name}")
+        check.failed(f"No input found named {input_name}")

@@ -1,21 +1,19 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING, NamedTuple, Optional
+from typing import NamedTuple, Optional
 
 from dagster._core.instance import MayHaveInstanceWeakref, T_DagsterInstance
 from dagster._core.origin import JobPythonOrigin
 from dagster._core.storage.dagster_run import DagsterRun
+from dagster._core.workspace.workspace import IWorkspace
 from dagster._serdes import whitelist_for_serdes
-
-if TYPE_CHECKING:
-    from dagster._core.workspace.context import BaseWorkspaceRequestContext
 
 
 class LaunchRunContext(NamedTuple):
     """Context available within a run launcher's launch_run call."""
 
     dagster_run: DagsterRun
-    workspace: Optional["BaseWorkspaceRequestContext"]
+    workspace: Optional[IWorkspace]
 
     @property
     def job_code_origin(self) -> Optional[JobPythonOrigin]:
@@ -26,7 +24,7 @@ class ResumeRunContext(NamedTuple):
     """Context available within a run launcher's resume_run call."""
 
     dagster_run: DagsterRun
-    workspace: Optional["BaseWorkspaceRequestContext"]
+    workspace: Optional[IWorkspace]
     resume_attempt_number: Optional[int] = None
 
     @property
@@ -69,7 +67,7 @@ class RunLauncher(ABC, MayHaveInstanceWeakref[T_DagsterInstance]):
         Args:
             context (LaunchRunContext): information about the launch - every run launcher
             will need the PipelineRun, and some run launchers may need information from the
-            BaseWorkspaceRequestContext from which the run was launched.
+            IWorkspace from which the run was launched.
         """
 
     @abstractmethod
@@ -98,9 +96,7 @@ class RunLauncher(ABC, MayHaveInstanceWeakref[T_DagsterInstance]):
             "This run launcher does not support run monitoring. Please disable it on your instance."
         )
 
-    def get_run_worker_debug_info(
-        self, run: DagsterRun, include_container_logs: Optional[bool] = True
-    ) -> Optional[str]:
+    def get_run_worker_debug_info(self, run: DagsterRun) -> Optional[str]:
         return None
 
     @property

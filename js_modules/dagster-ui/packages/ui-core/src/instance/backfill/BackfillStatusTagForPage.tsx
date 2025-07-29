@@ -1,4 +1,5 @@
-import {Box, ButtonLink, Tag} from '@dagster-io/ui-components';
+import {Box, Tag} from '@dagster-io/ui-components';
+import * as React from 'react';
 import styled from 'styled-components';
 
 import {showCustomAlert} from '../../app/CustomAlertProvider';
@@ -14,15 +15,15 @@ type BackfillState = {
 export const BackfillStatusTagForPage = ({backfill}: {backfill: BackfillState}) => {
   const {status, error} = backfill;
   function errorState(status: string) {
-    const onClick = () =>
-      error && showCustomAlert({title: 'Error', body: <PythonErrorInfo error={error} />});
-
     return (
-      <Box margin={{bottom: 12}} flex={{gap: 8}}>
-        <TagButton onClick={onClick}>
+      <Box margin={{bottom: 12}}>
+        <TagButton
+          onClick={() =>
+            error && showCustomAlert({title: 'Error', body: <PythonErrorInfo error={error} />})
+          }
+        >
           <Tag intent="danger">{status}</Tag>
         </TagButton>
-        <ButtonLink onClick={onClick}>View error</ButtonLink>
       </Box>
     );
   }
@@ -39,10 +40,6 @@ export const BackfillStatusTagForPage = ({backfill}: {backfill: BackfillState}) 
       return errorState('Failed');
     case BulkActionStatus.COMPLETED:
       return <Tag intent="success">Completed</Tag>;
-    case BulkActionStatus.COMPLETED_SUCCESS:
-      return <Tag intent="success">Succeeded</Tag>;
-    case BulkActionStatus.COMPLETED_FAILED:
-      return errorState('Failed');
     default:
       return <Tag>{status}</Tag>;
   }

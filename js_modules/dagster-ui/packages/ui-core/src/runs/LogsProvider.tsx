@@ -1,45 +1,45 @@
+import {
+  gql,
+  OnSubscriptionDataOptions,
+  useApolloClient,
+  useQuery,
+  useSubscription,
+} from '@apollo/client';
 import {TokenizingFieldValue} from '@dagster-io/ui-components';
 import throttle from 'lodash/throttle';
 import * as React from 'react';
+
+import {WebSocketContext} from '../app/WebSocketProvider';
+import {RunStatus} from '../graphql/types';
 
 import {LogLevelCounts} from './LogsToolbar';
 import {RUN_DAGSTER_RUN_EVENT_FRAGMENT} from './RunFragments';
 import {logNodeLevel} from './logNodeLevel';
 import {LogNode} from './types';
 import {
-  OnSubscriptionDataOptions,
-  gql,
-  useApolloClient,
-  useQuery,
-  useSubscription,
-} from '../apollo-client';
-import {
-  PipelineRunLogsSubscription,
-  PipelineRunLogsSubscriptionStatusFragment,
-  PipelineRunLogsSubscriptionVariables,
-  RunLogsQuery,
-  RunLogsQueryVariables,
   RunLogsSubscriptionSuccessFragment,
+  PipelineRunLogsSubscriptionStatusFragment,
+  RunLogsQuery,
+  PipelineRunLogsSubscription,
+  RunLogsQueryVariables,
+  PipelineRunLogsSubscriptionVariables,
 } from './types/LogsProvider.types';
 import {RunDagsterRunEventFragment} from './types/RunFragments.types';
-import {WebSocketContext} from '../app/WebSocketProvider';
-import {RunStatus} from '../graphql/types';
-import {CompletionType, useTraceDependency} from '../performance/TraceContext';
 
-export type LogFilterValue = TokenizingFieldValue & {
+export interface LogFilterValue extends TokenizingFieldValue {
   token?: 'step' | 'type' | 'query';
-};
+}
 
-export type LogFilter = {
+export interface LogFilter {
   logQuery: LogFilterValue[];
   levels: {[key: string]: boolean};
   focusedTime: number;
   sinceTime: number;
   hideNonMatches: boolean;
-};
+}
 
 export interface LogsProviderLogs {
-  allNodeChunks: LogNode[][];
+  allNodes: LogNode[];
   counts: LogLevelCounts;
   loading: boolean;
 }
@@ -69,10 +69,10 @@ const pipelineStatusFromMessages = (messages: RunDagsterRunEventFragment[]) => {
 };
 
 const BATCH_INTERVAL = 100;
-const QUERY_LOG_LIMIT = 1000;
+const QUERY_LOG_LIMIT = 10000;
 
 type State = {
-  nodeChunks: LogNode[][];
+  nodes: LogNode[];
   cursor: string | null;
   counts: LogLevelCounts;
   loading: boolean;
@@ -99,29 +99,25 @@ const reducer = (state: State, action: Action) => {
         ...node,
         clientsideKey: `csk${node.timestamp}-${ii}`,
       }));
-
-      const copy = state.nodeChunks.slice();
-      copy.push(queuedNodes);
-
+      const nodes = [...state.nodes, ...queuedNodes];
       const counts = {...state.counts};
       queuedNodes.forEach((node) => {
         const level = logNodeLevel(node);
         counts[level]++;
       });
-
-      return {nodeChunks: copy, counts, loading: action.hasMore, cursor: action.cursor};
+      return {nodes, counts, loading: action.hasMore, cursor: action.cursor};
     }
     case 'set-cursor':
       return {...state, cursor: action.cursor};
     case 'reset':
-      return {nodeChunks: [], counts: emptyCounts, cursor: null, loading: true};
+      return {nodes: [], counts: emptyCounts, cursor: null, loading: true};
     default:
       return state;
   }
 };
 
 const initialState: State = {
-  nodeChunks: [] as LogNode[][],
+  nodes: [],
   counts: emptyCounts,
   cursor: null,
   loading: true,
@@ -188,7 +184,7 @@ const useLogsProviderWithSubscription = (runId: string) => {
     }, BATCH_INTERVAL);
   }, [syncPipelineStatusToApolloCache]);
 
-  const {nodeChunks, counts, cursor, loading} = state;
+  const {nodes, counts, cursor, loading} = state;
 
   const {availability, disabled, status} = React.useContext(WebSocketContext);
   const lostWebsocket = !disabled && availability === 'available' && status === WebSocket.CLOSED;
@@ -231,10 +227,10 @@ const useLogsProviderWithSubscription = (runId: string) => {
 
   return React.useMemo(
     () =>
-      nodeChunks !== null
-        ? {allNodeChunks: nodeChunks, counts, loading, subscriptionComponent}
-        : {allNodeChunks: [], counts, loading, subscriptionComponent},
-    [counts, loading, nodeChunks, subscriptionComponent],
+      nodes !== null
+        ? {allNodes: nodes, counts, loading, subscriptionComponent}
+        : {allNodes: [], counts, loading, subscriptionComponent},
+    [counts, loading, nodes, subscriptionComponent],
   );
 };
 
@@ -269,7 +265,7 @@ interface LogsProviderProps {
   children: (result: LogsProviderLogs) => React.ReactChild;
 }
 
-const LogsProviderWithSubscription = (props: LogsProviderProps) => {
+const LogsProviderWithSubscription: React.FC<LogsProviderProps> = (props) => {
   const state = useLogsProviderWithSubscription(props.runId);
   return (
     <>
@@ -289,15 +285,12 @@ const POLL_INTERVAL = 5000;
 const LogsProviderWithQuery = (props: LogsProviderWithQueryProps) => {
   const {children, runId} = props;
   const [state, dispatch] = React.useReducer(reducer, initialState);
-  const {counts, cursor, nodeChunks} = state;
-
-  const dependency = useTraceDependency('RunLogsQuery');
+  const {counts, cursor, nodes} = state;
 
   const {stopPolling, startPolling} = useQuery<RunLogsQuery, RunLogsQueryVariables>(
     RUN_LOGS_QUERY,
     {
       notifyOnNetworkStatusChange: true,
-      fetchPolicy: 'no-cache',
       variables: {runId, cursor, limit: QUERY_LOG_LIMIT},
       pollInterval: POLL_INTERVAL,
       onCompleted: (data: RunLogsQuery) => {
@@ -308,7 +301,6 @@ const LogsProviderWithQuery = (props: LogsProviderWithQueryProps) => {
           data?.pipelineRunOrError.__typename !== 'Run' ||
           data?.logsForRun.__typename !== 'EventConnection'
         ) {
-          dependency.completeDependency(CompletionType.ERROR);
           return;
         }
 
@@ -324,7 +316,6 @@ const LogsProviderWithQuery = (props: LogsProviderWithQueryProps) => {
           status !== RunStatus.CANCELED;
 
         dispatch({type: 'append', queued, hasMore, cursor});
-        dependency.completeDependency(CompletionType.SUCCESS);
 
         if (hasMore) {
           startPolling(POLL_INTERVAL);
@@ -336,15 +327,15 @@ const LogsProviderWithQuery = (props: LogsProviderWithQueryProps) => {
   return (
     <>
       {children(
-        nodeChunks !== null && nodeChunks.length > 0
-          ? {allNodeChunks: nodeChunks, counts, loading: false}
-          : {allNodeChunks: [], counts, loading: true},
+        nodes !== null && nodes.length > 0
+          ? {allNodes: nodes, counts, loading: false}
+          : {allNodes: [], counts, loading: true},
       )}
     </>
   );
 };
 
-export const LogsProvider = (props: LogsProviderProps) => {
+export const LogsProvider: React.FC<LogsProviderProps> = (props) => {
   const {children, runId} = props;
   const {availability, disabled} = React.useContext(WebSocketContext);
 
@@ -354,7 +345,7 @@ export const LogsProvider = (props: LogsProviderProps) => {
   }
 
   if (availability === 'attempting-to-connect') {
-    return <>{children({allNodeChunks: [], counts: emptyCounts, loading: true})}</>;
+    return <>{children({allNodes: [], counts: emptyCounts, loading: true})}</>;
   }
 
   return <LogsProviderWithSubscription runId={runId}>{children}</LogsProviderWithSubscription>;

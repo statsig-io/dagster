@@ -1,7 +1,7 @@
-import {Button, Dialog, DialogFooter} from '@dagster-io/ui-components';
-import {useMemo, useState} from 'react';
+import {gql} from '@apollo/client';
+import {Button, DialogFooter, Dialog} from '@dagster-io/ui-components';
+import * as React from 'react';
 
-import {BackfillStepStatusDialogBackfillFragment} from './types/BackfillFragments.types';
 import {PartitionPerOpStatus} from '../../partitions/PartitionStepStatus';
 import {usePartitionStepQuery} from '../../partitions/usePartitionStepQuery';
 import {DagsterTag} from '../../runs/RunTag';
@@ -9,6 +9,8 @@ import {RunFilterToken} from '../../runs/RunsFilterInput';
 import {buildRepoAddress} from '../../workspace/buildRepoAddress';
 import {repoAddressToSelector} from '../../workspace/repoAddressToSelector';
 import {RepoAddress} from '../../workspace/types';
+
+import {BackfillStepStatusDialogBackfillFragment} from './types/BackfillStepStatusDialog.types';
 
 interface Props {
   backfill?: BackfillStepStatusDialogBackfillFragment;
@@ -61,6 +63,21 @@ export const BackfillStepStatusDialog = ({backfill, onClose}: Props) => {
   );
 };
 
+export const BACKFILL_STEP_STATUS_DIALOG_BACKFILL_FRAGMENT = gql`
+  fragment BackfillStepStatusDialogBackfillFragment on PartitionBackfill {
+    id
+    partitionNames
+    partitionSet {
+      name
+      pipelineName
+      repositoryOrigin {
+        repositoryName
+        repositoryLocationName
+      }
+    }
+  }
+`;
+
 interface ContentProps {
   backfill: BackfillStepStatusDialogBackfillFragment;
   partitionSet: NonNullable<BackfillStepStatusDialogBackfillFragment['partitionSet']>;
@@ -75,10 +92,10 @@ const BackfillStepStatusDialogContent = ({
   partitionNames,
   repoAddress,
 }: ContentProps) => {
-  const [pageSize, setPageSize] = useState(60);
-  const [offset, setOffset] = useState<number>(0);
+  const [pageSize, setPageSize] = React.useState(60);
+  const [offset, setOffset] = React.useState<number>(0);
 
-  const runsFilter = useMemo(() => {
+  const runsFilter = React.useMemo(() => {
     const token: RunFilterToken = {token: 'tag', value: `dagster/backfill=${backfill.id}`};
     return [token];
   }, [backfill.id]);

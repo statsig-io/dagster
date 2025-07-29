@@ -1,7 +1,7 @@
 # ruff: isort: skip_file
 
 
-from dagster import DependencyDefinition, GraphDefinition, job, op, OpExecutionContext
+from dagster import DependencyDefinition, GraphDefinition, job, op
 
 
 @op
@@ -11,12 +11,12 @@ def my_op():
 
 # start_pipeline_example_marker
 @op
-def return_one(context: OpExecutionContext):
+def return_one(context):
     return 1
 
 
 @op
-def add_one(context: OpExecutionContext, number: int):
+def add_one(context, number: int):
     return number + 1
 
 

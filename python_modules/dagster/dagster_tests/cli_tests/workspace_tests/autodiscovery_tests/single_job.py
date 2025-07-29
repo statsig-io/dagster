@@ -1,6 +1,6 @@
-import dagster as dg
+from dagster import job
 
 
-@dg.job
+@job
 def a_job():
     pass

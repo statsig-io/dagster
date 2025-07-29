@@ -1,4 +1,6 @@
-import {dynamicKeyWithoutIndex, isPlannedDynamicStep} from '../gantt/DynamicStepSupport';
+import {isPlannedDynamicStep, dynamicKeyWithoutIndex} from '../gantt/DynamicStepSupport';
+
+const MAX_RENDERED_FOR_EMPTY_QUERY = 100;
 
 export interface GraphQueryItem {
   name: string;
@@ -20,8 +22,12 @@ export interface GraphQueryItem {
 
 type TraverseStepFunction<T> = (item: T, callback: (nextItem: T) => void) => void;
 
-export class GraphTraverser<T extends GraphQueryItem> {
+class GraphTraverser<T extends GraphQueryItem> {
   itemNameMap: {[name: string]: T} = {};
+
+  // TODO: One reason doing DFS on the client side is sub optimal.
+  // javascript is tail end recursive tho so we could go for ever without worrying about
+  // stack overflow problems?
 
   constructor(items: T[]) {
     items.forEach((item) => (this.itemNameMap[item.name] = item));
@@ -31,29 +37,21 @@ export class GraphTraverser<T extends GraphQueryItem> {
     return this.itemNameMap[name];
   }
 
-  traverse(rootItem: T, nextItemsForItem: TraverseStepFunction<T>, maxDepth: number) {
-    const results: {[key: string]: T} = {};
-    const queue: [T, number][] = [[rootItem, 0]];
+  traverse(
+    item: T,
+    step: TraverseStepFunction<T>,
+    depth: number,
+    results: {[key: string]: T} = {},
+  ) {
+    results[item.name] = item;
 
-    /** This code performs a breadth-first search, putting all the items discovered at depth 1
-     * onto the queue before visiting any items at depth 2. This is important because graphs
-     * can look like this:
-     *
-     *  /---------\
-     * A --> B --> C
-     */
-    while (queue.length) {
-      const [item, depth] = queue.shift()!;
-      results[item.name] = item;
-      if (depth < maxDepth) {
-        nextItemsForItem(item, (next) => {
-          if (!(next.name in results)) {
-            queue.push([next, depth + 1]);
-          }
-        });
-      }
+    if (depth > 0) {
+      step(item, (next) => {
+        if (!(next.name in results)) {
+          this.traverse(next, step, depth - 1, results);
+        }
+      });
     }
-
     return Object.values(results);
   }
 
@@ -62,9 +60,7 @@ export class GraphTraverser<T extends GraphQueryItem> {
       item.inputs.forEach((input) =>
         input.dependsOn.forEach((d) => {
           const item = this.itemNamed(d.solid.name);
-          if (item) {
-            callback(item);
-          }
+          item && callback(item);
         }),
       );
 
@@ -76,9 +72,7 @@ export class GraphTraverser<T extends GraphQueryItem> {
       item.outputs.forEach((output) =>
         output.dependedBy.forEach((d) => {
           const item = this.itemNamed(d.solid.name);
-          if (item) {
-            callback(item);
-          }
+          item && callback(item);
         }),
       );
 
@@ -91,13 +85,20 @@ function expansionDepthForClause(clause: string) {
 }
 
 export function filterByQuery<T extends GraphQueryItem>(items: T[], query: string) {
-  if (query === '*' || query === '') {
-    return {all: items, focus: []};
+  if (query === '*') {
+    return {all: items, applyingEmptyDefault: false, focus: []};
+  }
+  if (query === '') {
+    return {
+      all: items.length >= MAX_RENDERED_FOR_EMPTY_QUERY ? [] : items,
+      applyingEmptyDefault: items.length >= MAX_RENDERED_FOR_EMPTY_QUERY,
+      focus: [],
+    };
   }
 
   const traverser = new GraphTraverser<T>(items);
   const results = new Set<T>();
-  const clauses = query.toLowerCase().split(/(,| AND | and | )/g);
+  const clauses = query.split(/(,| AND | and | )/g);
   const focus = new Set<T>();
 
   for (const clause of clauses) {
@@ -108,14 +109,13 @@ export function filterByQuery<T extends GraphQueryItem>(items: T[], query: strin
     const [, parentsClause = '', itemName = '', descendentsClause = ''] = parts;
 
     const itemsMatching = items.filter((s) => {
-      const name = s.name.toLowerCase();
       if (isPlannedDynamicStep(itemName.replace(/\"/g, ''))) {
         // When unresolved dynamic step (i.e ends with `[?]`) is selected, match all dynamic steps
-        return name.startsWith(dynamicKeyWithoutIndex(itemName.replace(/\"/g, '')));
+        return s.name.startsWith(dynamicKeyWithoutIndex(itemName.replace(/\"/g, '')));
       } else {
         return /\".*\"/.test(itemName)
-          ? name === itemName.replace(/\"/g, '')
-          : name.includes(itemName);
+          ? s.name === itemName.replace(/\"/g, '')
+          : s.name.includes(itemName);
       }
     });
 
@@ -133,5 +133,6 @@ export function filterByQuery<T extends GraphQueryItem>(items: T[], query: strin
   return {
     all: Array.from(results),
     focus: Array.from(focus),
+    applyingEmptyDefault: false,
   };
 }

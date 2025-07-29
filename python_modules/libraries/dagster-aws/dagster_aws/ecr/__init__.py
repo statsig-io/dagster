@@ -1,4 +1,4 @@
-from dagster_aws.ecr.resources import (
+from .resources import (
     ECRPublicResource as ECRPublicResource,
     FakeECRPublicResource as FakeECRPublicResource,
     ecr_public_resource as ecr_public_resource,

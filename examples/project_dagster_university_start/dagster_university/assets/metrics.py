@@ -1,3 +1,3 @@
-import dagster as dg
+from dagster import asset
 
 from . import constants

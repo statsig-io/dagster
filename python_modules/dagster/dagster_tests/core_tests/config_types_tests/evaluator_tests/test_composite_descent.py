@@ -1,14 +1,30 @@
-import dagster as dg
 import pytest
+from dagster import (
+    ConfigMapping,
+    DagsterInvalidConfigError,
+    DagsterInvalidDefinitionError,
+    Enum,
+    EnumValue,
+    Field,
+    In,
+    Output,
+    String,
+    configured,
+    graph,
+    job,
+    mem_io_manager,
+    op,
+)
+from dagster._core.definitions.input import GraphIn
 from dagster._core.system_config.composite_descent import composite_descent
 
 
 def test_single_level_job():
-    @dg.op(config_schema=int)
+    @op(config_schema=int)
     def return_int(context):
         return context.op_config
 
-    @dg.job
+    @job
     def return_int_job():
         return_int()
 
@@ -19,18 +35,18 @@ def test_single_level_job():
 
 
 def test_single_op_job_composite_descent():
-    @dg.op(config_schema=int)
+    @op(config_schema=int)
     def return_int(context):
         return context.op_config
 
-    @dg.job
+    @job
     def return_int_job():
         return_int()
 
     op_config_dict = composite_descent(
         return_int_job,
         {"return_int": {"config": 3}},
-        resource_defs={"io_manager": dg.mem_io_manager},
+        resource_defs={"io_manager": mem_io_manager},
     )
 
     assert op_config_dict["return_int"].config == 3
@@ -42,22 +58,22 @@ def test_single_op_job_composite_descent():
 
 
 def test_single_layer_job_composite_descent():
-    @dg.op(config_schema=int)
+    @op(config_schema=int)
     def return_int(context):
         return context.op_config
 
-    @dg.graph
+    @graph
     def return_int_passthrough():
         return_int()
 
-    @dg.job
+    @job
     def return_int_job_passthrough():
         return_int_passthrough()
 
     op_config_dict = composite_descent(
         return_int_job_passthrough,
         {"return_int_passthrough": {"ops": {"return_int": {"config": 34}}}},
-        resource_defs={"io_manager": dg.mem_io_manager},
+        resource_defs={"io_manager": mem_io_manager},
     )
 
     handle = "return_int_passthrough.return_int"
@@ -74,63 +90,63 @@ def test_single_layer_job_composite_descent():
 
 
 def test_single_layer_job_hardcoded_config_mapping():
-    @dg.op(config_schema=int)
+    @op(config_schema=int)
     def return_int(context):
         return context.op_config
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={}, config_fn=lambda _cfg: {"return_int": {"config": 35}}
         )
     )
     def return_int_hardcode_wrap():
         return_int()
 
-    @dg.job
+    @job
     def return_int_hardcode_wrap_job():
         return_int_hardcode_wrap()
 
     op_config_dict = composite_descent(
         return_int_hardcode_wrap_job,
         {},
-        resource_defs={"io_manager": dg.mem_io_manager},
+        resource_defs={"io_manager": mem_io_manager},
     )
 
     assert op_config_dict["return_int_hardcode_wrap.return_int"].config == 35
 
 
 def test_single_layer_job_computed_config_mapping():
-    @dg.op(config_schema=int)
+    @op(config_schema=int)
     def return_int(context):
         return context.op_config
 
     def _config_fn(cfg):
         return {"return_int": {"config": cfg["number"] + 1}}
 
-    @dg.graph(config=dg.ConfigMapping(config_schema={"number": int}, config_fn=_config_fn))
+    @graph(config=ConfigMapping(config_schema={"number": int}, config_fn=_config_fn))
     def return_int_plus_one():
         return_int()
 
-    @dg.job
+    @job
     def return_int_hardcode_wrap_job():
         return_int_plus_one()
 
     op_config_dict = composite_descent(
         return_int_hardcode_wrap_job,
         {"return_int_plus_one": {"config": {"number": 23}}},
-        resource_defs={"io_manager": dg.mem_io_manager},
+        resource_defs={"io_manager": mem_io_manager},
     )
 
     assert op_config_dict["return_int_plus_one.return_int"].config == 24
 
 
 def test_mix_layer_computed_mapping():
-    @dg.op(config_schema=int)
+    @op(config_schema=int)
     def return_int(context):
         return context.op_config
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={"number": int},
             config_fn=lambda cfg: {"return_int": {"config": cfg["number"] + 1}},
         )
@@ -144,8 +160,8 @@ def test_mix_layer_computed_mapping():
         else:
             return {"layer_three_wrap": {"config": {"number": cfg["number"] + 1}}}
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={"number": int, "inject_error": bool},
             config_fn=_layer_two_double_wrap_cfg_fn,
         )
@@ -153,16 +169,16 @@ def test_mix_layer_computed_mapping():
     def layer_two_double_wrap():
         layer_three_wrap()
 
-    @dg.graph
+    @graph
     def layer_two_passthrough():
         return_int()
 
-    @dg.graph
+    @graph
     def layer_one():
         layer_two_passthrough()
         layer_two_double_wrap()
 
-    @dg.job
+    @job
     def layered_config():
         layer_one()
 
@@ -176,14 +192,14 @@ def test_mix_layer_computed_mapping():
                 }
             }
         },
-        resource_defs={"io_manager": dg.mem_io_manager},
+        resource_defs={"io_manager": mem_io_manager},
     )
 
     assert op_config_dict["layer_one.layer_two_passthrough.return_int"].config == 234
     # this passed through both config fns which each added one
     assert op_config_dict["layer_one.layer_two_double_wrap.layer_three_wrap.return_int"].config == 7
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         composite_descent(
             layered_config,
             {
@@ -194,7 +210,7 @@ def test_mix_layer_computed_mapping():
                     }
                 }
             },
-            resource_defs={"io_manager": dg.mem_io_manager},
+            resource_defs={"io_manager": mem_io_manager},
         )
 
     assert 'Op "layer_two_double_wrap" with definition "layer_two_double_wrap"' in str(
@@ -225,12 +241,12 @@ def test_mix_layer_computed_mapping():
 
 
 def test_nested_input_via_config_mapping():
-    @dg.op
+    @op
     def add_one(_, num):
         return num + 1
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={},
             config_fn=lambda _cfg: {"add_one": {"inputs": {"num": {"value": 2}}}},
         )
@@ -238,12 +254,12 @@ def test_nested_input_via_config_mapping():
     def wrap_add_one():
         add_one()
 
-    @dg.job
+    @job
     def wrap_add_one_job():
         wrap_add_one()
 
     op_config_dict = composite_descent(
-        wrap_add_one_job, {}, resource_defs={"io_manager": dg.mem_io_manager}
+        wrap_add_one_job, {}, resource_defs={"io_manager": mem_io_manager}
     )
     assert op_config_dict["wrap_add_one.add_one"].inputs == {"num": {"value": 2}}
 
@@ -253,12 +269,12 @@ def test_nested_input_via_config_mapping():
 
 
 def test_double_nested_input_via_config_mapping():
-    @dg.op
+    @op
     def number(num):
         return num
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={},
             config_fn=lambda _: {"number": {"inputs": {"num": {"value": 4}}}},
         )
@@ -266,19 +282,19 @@ def test_double_nested_input_via_config_mapping():
     def wrap_graph():
         return number()
 
-    @dg.graph
+    @graph
     def double_wrap(num):
         number(num)
         return wrap_graph()
 
-    @dg.job
+    @job
     def wrap_job_double_nested_input():
         double_wrap()
 
     node_handle_dict = composite_descent(
         wrap_job_double_nested_input,
         {"double_wrap": {"inputs": {"num": {"value": 2}}}},
-        resource_defs={"io_manager": dg.mem_io_manager},
+        resource_defs={"io_manager": mem_io_manager},
     )
     assert node_handle_dict["double_wrap.wrap_graph.number"].inputs == {"num": {"value": 4}}
     assert node_handle_dict["double_wrap"].inputs == {"num": {"value": 2}}
@@ -290,14 +306,14 @@ def test_double_nested_input_via_config_mapping():
 
 
 def test_provide_one_of_two_inputs_via_config():
-    @dg.op(
+    @op(
         config_schema={
-            "config_field_a": dg.Field(dg.String),
-            "config_field_b": dg.Field(dg.String),
+            "config_field_a": Field(String),
+            "config_field_b": Field(String),
         },
         ins={
-            "input_a": dg.In(dg.String),
-            "input_b": dg.In(dg.String),
+            "input_a": In(String),
+            "input_b": In(String),
         },
     )
     def basic(context, input_a, input_b):
@@ -309,10 +325,10 @@ def test_provide_one_of_two_inputs_via_config():
                 input_b,
             ]
         )
-        yield dg.Output(res)
+        yield Output(res)
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_fn=lambda cfg: {
                 "basic": {
                     "config": {
@@ -323,15 +339,15 @@ def test_provide_one_of_two_inputs_via_config():
                 }
             },
             config_schema={
-                "config_field_a": dg.Field(dg.String),
-                "config_field_b": dg.Field(dg.String),
+                "config_field_a": Field(String),
+                "config_field_b": Field(String),
             },
         )
     )
     def wrap_all_config_one_input(input_a):
         return basic(input_a)
 
-    @dg.job(name="config_mapping")
+    @job(name="config_mapping")
     def config_mapping_job():
         wrap_all_config_one_input()
 
@@ -352,19 +368,19 @@ def test_provide_one_of_two_inputs_via_config():
     )
 
 
-@dg.op(config_schema=dg.Field(dg.String, is_required=False))
+@op(config_schema=Field(String, is_required=False))
 def scalar_config_op(context):
-    yield dg.Output(context.op_config)
+    yield Output(context.op_config)
 
 
-@dg.op(config_schema=dg.Field(dg.String, is_required=True))
+@op(config_schema=Field(String, is_required=True))
 def required_scalar_config_op(context):
-    yield dg.Output(context.op_config)
+    yield Output(context.op_config)
 
 
-@dg.graph(
-    config=dg.ConfigMapping(
-        config_schema={"override_str": dg.Field(dg.String)},
+@graph(
+    config=ConfigMapping(
+        config_schema={"override_str": Field(String)},
         config_fn=lambda cfg: {"layer2": {"config": cfg["override_str"]}},
     )
 )
@@ -372,9 +388,9 @@ def wrap():
     return scalar_config_op.alias("layer2")()
 
 
-@dg.graph(
-    config=dg.ConfigMapping(
-        config_schema={"nesting_override": dg.Field(dg.String)},
+@graph(
+    config=ConfigMapping(
+        config_schema={"nesting_override": Field(String)},
         config_fn=lambda cfg: {"layer1": {"config": {"override_str": cfg["nesting_override"]}}},
     )
 )
@@ -382,22 +398,22 @@ def nesting_wrap():
     return wrap.alias("layer1")()
 
 
-@dg.job
+@job
 def wrap_job():
     nesting_wrap.alias("layer0")()
 
 
-@dg.graph
+@graph
 def wrap_no_mapping():
     return required_scalar_config_op.alias("layer2")()
 
 
-@dg.graph
+@graph
 def nesting_wrap_no_mapping():
     return wrap_no_mapping.alias("layer1")()
 
 
-@dg.job
+@job
 def no_wrap_job():
     nesting_wrap_no_mapping.alias("layer0")()
 
@@ -407,33 +423,33 @@ def get_fully_unwrapped_config():
 
 
 def test_direct_composite_descent_with_error():
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"override_str": dg.Field(int)},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"override_str": Field(int)},
             config_fn=lambda cfg: {"layer2": {"config": cfg["override_str"]}},
         )
     )
     def wrap_coerce_to_wrong_type():
         return scalar_config_op.alias("layer2")()
 
-    @dg.graph(
-        config=dg.ConfigMapping(
-            config_schema={"nesting_override": dg.Field(int)},
+    @graph(
+        config=ConfigMapping(
+            config_schema={"nesting_override": Field(int)},
             config_fn=lambda cfg: {"layer1": {"config": {"override_str": cfg["nesting_override"]}}},
         )
     )
     def nesting_wrap_wrong_type_at_leaf():
         return wrap_coerce_to_wrong_type.alias("layer1")()
 
-    @dg.job
+    @job
     def wrap_job_with_error():
         nesting_wrap_wrong_type_at_leaf.alias("layer0")()
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         composite_descent(
             wrap_job_with_error,
             {"layer0": {"config": {"nesting_override": 214}}},
-            resource_defs={"io_manager": dg.mem_io_manager},
+            resource_defs={"io_manager": mem_io_manager},
         )
 
     assert "In job wrap_job_with_error at stack layer0:layer1:" in str(exc_info.value)
@@ -471,20 +487,20 @@ def test_config_mapped_enum():
         VALUE_ONE = 0
         OTHER = 1
 
-    DagsterEnumType = dg.Enum(
+    DagsterEnumType = Enum(
         "MappedTestEnum",
         [
-            dg.EnumValue("VALUE_ONE", TestPythonEnum.VALUE_ONE),
-            dg.EnumValue("OTHER", TestPythonEnum.OTHER),
+            EnumValue("VALUE_ONE", TestPythonEnum.VALUE_ONE),
+            EnumValue("OTHER", TestPythonEnum.OTHER),
         ],
     )
 
-    @dg.op(config_schema={"enum": DagsterEnumType})
+    @op(config_schema={"enum": DagsterEnumType})
     def return_enum(context):
         return context.op_config["enum"]
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={"num": int},
             config_fn=lambda cfg: {
                 "return_enum": {"config": {"enum": "VALUE_ONE" if cfg["num"] == 1 else "OTHER"}}
@@ -494,7 +510,7 @@ def test_config_mapped_enum():
     def wrapping_return_enum():
         return return_enum()
 
-    @dg.job
+    @job
     def wrapping_return_enum_job():
         wrapping_return_enum()
 
@@ -512,12 +528,12 @@ def test_config_mapped_enum():
         == TestPythonEnum.OTHER
     )
 
-    @dg.op(config_schema={"num": int})
+    @op(config_schema={"num": int})
     def return_int(context):
         return context.op_config["num"]
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={"enum": DagsterEnumType},
             config_fn=lambda cfg: {
                 "return_int": {
@@ -529,7 +545,7 @@ def test_config_mapped_enum():
     def wrap_return_int():
         return return_int()
 
-    @dg.job
+    @job
     def wrap_return_int_job():
         wrap_return_int()
 
@@ -549,13 +565,13 @@ def test_config_mapped_enum():
 
 
 def test_single_level_job_with_configured_op():
-    @dg.op(config_schema=int)
+    @op(config_schema=int)
     def return_int(context):
         return context.op_config
 
-    return_int_5 = dg.configured(return_int, name="return_int_5")(5)
+    return_int_5 = configured(return_int, name="return_int_5")(5)
 
-    @dg.job
+    @job
     def return_int_job():
         return_int_5()
 
@@ -566,16 +582,14 @@ def test_single_level_job_with_configured_op():
 
 
 def test_configured_op_with_inputs():
-    @dg.op(config_schema=str, ins={"x": dg.In(int)})
+    @op(config_schema=str, ins={"x": In(int)})
     def return_int(context, x):
         assert context.op_config == "config sentinel"
         return x
 
-    return_int_configured = dg.configured(return_int, name="return_int_configured")(
-        "config sentinel"
-    )
+    return_int_configured = configured(return_int, name="return_int_configured")("config sentinel")
 
-    @dg.job
+    @job
     def return_int_job():
         return_int_configured()
 
@@ -588,18 +602,18 @@ def test_configured_op_with_inputs():
 
 
 def test_single_level_job_with_complex_configured_op_within_composite():
-    @dg.op(config_schema={"age": int, "name": str})
+    @op(config_schema={"age": int, "name": str})
     def introduce(context):
         return "{name} is {age} years old".format(**context.op_config)
 
-    @dg.configured(introduce, {"age": int})
+    @configured(introduce, {"age": int})
     def introduce_aj(config):
         return {"name": "AJ", "age": config["age"]}
 
     assert introduce_aj.name == "introduce_aj"
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={"num_as_str": str},
             config_fn=lambda cfg: {"introduce_aj": {"config": {"age": int(cfg["num_as_str"])}}},
         )
@@ -607,7 +621,7 @@ def test_single_level_job_with_complex_configured_op_within_composite():
     def introduce_wrapper():
         return introduce_aj()
 
-    @dg.job
+    @job
     def introduce_job():
         introduce_wrapper()
 
@@ -620,13 +634,13 @@ def test_single_level_job_with_complex_configured_op_within_composite():
 
 
 def test_single_level_job_with_complex_configured_op():
-    @dg.op(config_schema={"age": int, "name": str})
+    @op(config_schema={"age": int, "name": str})
     def introduce(context):
         return "{name} is {age} years old".format(**context.op_config)
 
-    introduce_aj = dg.configured(introduce, name="introduce_aj")({"age": 20, "name": "AJ"})
+    introduce_aj = configured(introduce, name="introduce_aj")({"age": 20, "name": "AJ"})
 
-    @dg.job
+    @job
     def introduce_job():
         introduce_aj()
 
@@ -637,17 +651,17 @@ def test_single_level_job_with_complex_configured_op():
 
 
 def test_single_level_job_with_complex_configured_op_nested():
-    @dg.op(config_schema={"age": int, "name": str})
+    @op(config_schema={"age": int, "name": str})
     def introduce(context):
         return "{name} is {age} years old".format(**context.op_config)
 
-    @dg.configured(introduce, {"age": int})
+    @configured(introduce, {"age": int})
     def introduce_aj(config):
         return {"name": "AJ", "age": config["age"]}
 
-    introduce_aj_20 = dg.configured(introduce_aj, name="introduce_aj_20")({"age": 20})
+    introduce_aj_20 = configured(introduce_aj, name="introduce_aj_20")({"age": 20})
 
-    @dg.job
+    @job
     def introduce_job():
         introduce_aj_20()
 
@@ -658,16 +672,16 @@ def test_single_level_job_with_complex_configured_op_nested():
 
 
 def test_single_level_job_with_configured_graph():
-    @dg.op(config_schema={"inner": int})
+    @op(config_schema={"inner": int})
     def multiply_by_two(context):
         return context.op_config["inner"] * 2
 
-    @dg.op
+    @op
     def add(_context, lhs, rhs):
         return lhs + rhs
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={"outer": int},
             config_fn=lambda c: {
                 "multiply_by_two": {"config": {"inner": c["outer"]}},
@@ -678,11 +692,11 @@ def test_single_level_job_with_configured_graph():
     def multiply_by_four():
         return add(multiply_by_two(), multiply_by_two.alias("multiply_by_two_again")())
 
-    multiply_three_by_four = dg.configured(multiply_by_four, name="multiply_three_by_four")(
+    multiply_three_by_four = configured(multiply_by_four, name="multiply_three_by_four")(
         {"outer": 3}
     )
 
-    @dg.job
+    @job
     def test_job():
         multiply_three_by_four()
 
@@ -693,16 +707,16 @@ def test_single_level_job_with_configured_graph():
 
 
 def test_single_level_job_with_configured_decorated_graph():
-    @dg.op(config_schema={"inner": int})
+    @op(config_schema={"inner": int})
     def multiply_by_two(context):
         return context.op_config["inner"] * 2
 
-    @dg.op
+    @op
     def add(_context, lhs, rhs):
         return lhs + rhs
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={"outer": int},
             config_fn=lambda c: {
                 "multiply_by_two": {"config": {"inner": c["outer"]}},
@@ -713,7 +727,7 @@ def test_single_level_job_with_configured_decorated_graph():
     def multiply_by_four():
         return add(multiply_by_two(), multiply_by_two.alias("multiply_by_two_again")())
 
-    @dg.configured(
+    @configured(
         multiply_by_four, config_schema={}
     )  # test that with config_schema={} we can omit config
     def multiply_three_by_four(_config):
@@ -721,7 +735,7 @@ def test_single_level_job_with_configured_decorated_graph():
 
     assert multiply_three_by_four.name == "multiply_three_by_four"
 
-    @dg.job
+    @job
     def test_job():
         multiply_three_by_four()
 
@@ -732,21 +746,21 @@ def test_single_level_job_with_configured_decorated_graph():
 
 
 def test_configured_graph_with_inputs():
-    @dg.op(config_schema=str, ins={"x": dg.In(int)})
+    @op(config_schema=str, ins={"x": In(int)})
     def return_int(context, x):
         assert context.op_config == "inner config sentinel"
         return x
 
-    return_int_x = dg.configured(return_int, name="return_int_x")("inner config sentinel")
+    return_int_x = configured(return_int, name="return_int_x")("inner config sentinel")
 
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def add(context, lhs, rhs):
         assert context.op_config == "outer config sentinel"
         return lhs + rhs
 
-    @dg.graph(
-        ins={"x": dg.GraphIn(), "y": dg.GraphIn()},
-        config=dg.ConfigMapping(
+    @graph(
+        ins={"x": GraphIn(), "y": GraphIn()},
+        config=ConfigMapping(
             config_schema={"outer": str},
             config_fn=lambda cfg: {"add": {"config": cfg["outer"]}},
         ),
@@ -754,11 +768,11 @@ def test_configured_graph_with_inputs():
     def return_int_graph(x, y):
         return add(return_int_x(x), return_int_x.alias("return_int_again")(y))
 
-    return_int_composite_x = dg.configured(return_int_graph, name="return_int_graph")(
+    return_int_composite_x = configured(return_int_graph, name="return_int_graph")(
         {"outer": "outer config sentinel"}
     )
 
-    @dg.job
+    @job
     def test_job():
         return_int_composite_x()
 
@@ -771,12 +785,12 @@ def test_configured_graph_with_inputs():
 
 
 def test_configured_graph_cannot_stub_inner_ops_config():
-    @dg.op(config_schema=int)
+    @op(config_schema=int)
     def return_int(context, x):
         return context.op_config + x
 
-    @dg.graph(
-        config=dg.ConfigMapping(
+    @graph(
+        config=ConfigMapping(
             config_schema={"num": int},
             config_fn=lambda config: {"return_int": {"config": config["num"]}},
         )
@@ -784,12 +798,12 @@ def test_configured_graph_cannot_stub_inner_ops_config():
     def return_int_graph():
         return return_int()
 
-    @dg.job
+    @job
     def return_int_job():
         return_int_graph()
 
     with pytest.raises(
-        dg.DagsterInvalidConfigError,
+        DagsterInvalidConfigError,
         match='Received unexpected config entry "ops" at path root:ops:return_int_graph.',
     ):
         return_int_job.execute_in_process(
@@ -805,19 +819,19 @@ def test_configured_graph_cannot_stub_inner_ops_config():
 
 
 def test_configuring_graph_with_no_config_mapping():
-    @dg.op
+    @op
     def return_run_id(context):
         return context.run_id
 
-    @dg.graph
+    @graph
     def graph_without_config_fn():
         return return_run_id()
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match=(
             "Only graphs utilizing config mapping can be pre-configured. The graph "
             '"graph_without_config_fn"'
         ),
     ):
-        dg.configured(graph_without_config_fn, name="configured_composite")({})
+        configured(graph_without_config_fn, name="configured_composite")({})

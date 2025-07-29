@@ -6,74 +6,58 @@ import image from '@rollup/plugin-image';
 import json from '@rollup/plugin-json';
 import resolve from '@rollup/plugin-node-resolve';
 import url from '@rollup/plugin-url';
+import nodeGlobals from 'rollup-plugin-node-globals';
 import polyfills from 'rollup-plugin-polyfill-node';
 import styles from 'rollup-plugin-styles';
 
 const extensions = ['.js', '.jsx', '.ts', '.tsx', '.css', '.svg'];
 
-const sharedPlugins = [
-  styles({
-    extract: true,
-  }),
-  json(),
-  url(),
-  image(),
-  babel({
-    babelHelpers: 'bundled',
-    exclude: 'node_modules/**',
-    extensions: ['.js', '.jsx', '.ts', '.tsx'],
-  }),
-  commonjs(),
-  polyfills(),
-  resolve({extensions, preferBuiltins: false}),
-];
+export default {
+  input: {
+    index: './src/index.ts',
 
-const sharedExternals = [
-  '@blueprintjs/core',
-  '@blueprintjs/popover2',
-  '@blueprintjs/select',
-  '@tanstack/react-virtual',
-  'react',
-  'react-dom',
-  'react-is',
-  'styled-components',
-  'stylis',
-];
+    // Our core fonts, usable as global style components, e.g. `<GlobalInconsolata />`.
+    'fonts/GlobalInconsolata': './src/fonts/GlobalInconsolata.tsx',
+    'fonts/GlobalInter': './src/fonts/GlobalInter.tsx',
 
-export default [
-  {
-    input: {
-      index: './src/index.ts',
-
-      // Our core fonts, usable as global style components, e.g. `<GlobalGeist />`.
-      'fonts/GlobalGeistMono': './src/fonts/GlobalGeistMono.tsx',
-      'fonts/GlobalGeist': './src/fonts/GlobalGeist.tsx',
-
-      // Components are listed here individually so that they may be imported
-      // without pulling in the entire library.
-      'components/Box': './src/components/Box.tsx',
-      'components/Button': './src/components/Button.tsx',
-      'components/Color': './src/components/Color.tsx',
-      'components/Icon': './src/components/Icon.tsx',
-    },
-    output: {
-      dir: 'lib',
-      exports: 'named',
-      format: 'cjs',
-      sourcemap: true,
-    },
-    plugins: sharedPlugins,
-    external: [...sharedExternals, '@tanstack/react-virtual'],
+    // Components are listed here individually so that they may be imported
+    // without pulling in the entire library.
+    'components/Box': './src/components/Box.tsx',
+    'components/Button': './src/components/Button.tsx',
+    'components/Colors': './src/components/Colors.tsx',
+    'components/Icon': './src/components/Icon.tsx',
   },
-  {
-    input: './src/editor.ts',
-    output: {
-      dir: 'lib',
-      exports: 'named',
-      format: 'cjs',
-      sourcemap: true,
-    },
-    plugins: sharedPlugins,
-    external: sharedExternals,
+  output: {
+    dir: 'lib',
+    exports: 'named',
+    format: 'cjs',
+    sourcemap: true,
   },
-];
+  plugins: [
+    styles({
+      extract: true,
+    }),
+    json(),
+    url(),
+    image(),
+    babel({
+      babelHelpers: 'bundled',
+      exclude: 'node_modules/**',
+      extensions: ['.js', '.jsx', '.ts', '.tsx'],
+    }),
+    commonjs(),
+    polyfills(),
+    nodeGlobals(),
+    resolve({extensions, preferBuiltins: false}),
+  ],
+  external: [
+    '@blueprintjs/core',
+    '@blueprintjs/popover2',
+    '@blueprintjs/select',
+    'react',
+    'react-dom',
+    'react-is',
+    'react-virtualized',
+    'styled-components',
+  ],
+};

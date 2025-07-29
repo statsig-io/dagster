@@ -1,36 +1,35 @@
-from collections.abc import Iterable, Sequence
 from enum import Enum
-from typing import TYPE_CHECKING, NamedTuple, Optional
-
-from dagster_shared.serdes import deserialize_value
-from dagster_shared.serdes.errors import DeserializationError
+from typing import TYPE_CHECKING, Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
 
 from dagster import (
     AssetKey,
+    DagsterEventType,
     DagsterInstance,
     DagsterRunStatus,
+    EventLogRecord,
+    EventRecordsFilter,
     _check as check,
 )
-from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView
-from dagster._core.asset_graph_view.entity_subset import EntitySubset, _ValidatedEntitySubsetValue
-from dagster._core.definitions.partitions.context import partition_loading_context
-from dagster._core.definitions.partitions.definition import (
-    DynamicPartitionsDefinition,
+from dagster._core.definitions.multi_dimensional_partitions import (
+    MultiPartitionKey,
     MultiPartitionsDefinition,
-    PartitionsDefinition,
-    StaticPartitionsDefinition,
-    TimeWindowPartitionsDefinition,
 )
-from dagster._core.definitions.partitions.subset import PartitionsSubset
-from dagster._core.definitions.partitions.utils import MultiPartitionKey
+from dagster._core.definitions.partition import (
+    DynamicPartitionsDefinition,
+    PartitionsDefinition,
+    PartitionsSubset,
+    StaticPartitionsDefinition,
+)
+from dagster._core.definitions.time_window_partitions import TimeWindowPartitionsDefinition
 from dagster._core.instance import DynamicPartitionsStore
-from dagster._core.loader import LoadableBy, LoadingContext
 from dagster._core.storage.dagster_run import FINISHED_STATUSES, RunsFilter
 from dagster._core.storage.tags import (
     MULTIDIMENSIONAL_PARTITION_PREFIX,
     get_dimension_from_partition_tag,
 )
 from dagster._serdes import whitelist_for_serdes
+from dagster._serdes.errors import DeserializationError
+from dagster._serdes.serdes import deserialize_value
 
 if TYPE_CHECKING:
     from dagster._core.storage.event_log.base import AssetRecord
@@ -42,7 +41,6 @@ CACHEABLE_PARTITION_TYPES = (
     StaticPartitionsDefinition,
     DynamicPartitionsDefinition,
 )
-RUN_FETCH_BATCH_SIZE = 100
 
 
 class AssetPartitionStatus(Enum):
@@ -81,8 +79,7 @@ class AssetStatusCacheValue(
             ("serialized_in_progress_partition_subset", Optional[str]),
             ("earliest_in_progress_materialization_event_id", Optional[int]),
         ],
-    ),
-    LoadableBy[tuple[AssetKey, PartitionsDefinition]],
+    )
 ):
     """Set of asset fields that reflect partition materialization status. This is used to display
     global partition status in the asset view.
@@ -124,7 +121,7 @@ class AssetStatusCacheValue(
         check.opt_str_param(
             serialized_in_progress_partition_subset, "serialized_in_progress_partition_subset"
         )
-        return super().__new__(
+        return super(AssetStatusCacheValue, cls).__new__(
             cls,
             latest_storage_id,
             partitions_def_id,
@@ -145,12 +142,6 @@ class AssetStatusCacheValue(
             return None
 
         return cached_data
-
-    @classmethod
-    def _blocking_batch_load(
-        cls, keys: Iterable[tuple[AssetKey, PartitionsDefinition]], context: LoadingContext
-    ) -> Iterable[Optional["AssetStatusCacheValue"]]:
-        return context.instance.event_log_storage.get_asset_status_cache_values(keys, context)
 
     def deserialize_materialized_partition_subsets(
         self, partitions_def: PartitionsDefinition
@@ -176,45 +167,12 @@ class AssetStatusCacheValue(
 
         return partitions_def.deserialize_subset(self.serialized_in_progress_partition_subset)
 
-    def get_materialized_subset(
-        self,
-        asset_graph_view: AssetGraphView,
-        asset_key: AssetKey,
-        partitions_def: PartitionsDefinition,
-    ) -> EntitySubset[AssetKey]:
-        value = self.deserialize_materialized_partition_subsets(partitions_def)
-        return EntitySubset(
-            asset_graph_view, key=asset_key, value=_ValidatedEntitySubsetValue(value)
-        )
-
-    def get_failed_subset(
-        self,
-        asset_graph_view: AssetGraphView,
-        asset_key: AssetKey,
-        partitions_def: PartitionsDefinition,
-    ) -> EntitySubset[AssetKey]:
-        value = self.deserialize_failed_partition_subsets(partitions_def)
-        return EntitySubset(
-            asset_graph_view, key=asset_key, value=_ValidatedEntitySubsetValue(value)
-        )
-
-    def get_in_progress_subset(
-        self,
-        asset_graph_view: AssetGraphView,
-        asset_key: AssetKey,
-        partitions_def: PartitionsDefinition,
-    ) -> EntitySubset[AssetKey]:
-        value = self.deserialize_in_progress_partition_subsets(partitions_def)
-        return EntitySubset(
-            asset_graph_view, key=asset_key, value=_ValidatedEntitySubsetValue(value)
-        )
-
 
 def get_materialized_multipartitions(
     instance: DagsterInstance, asset_key: AssetKey, partitions_def: MultiPartitionsDefinition
 ) -> Sequence[str]:
     dimension_names = partitions_def.partition_dimension_names
-    materialized_keys: list[MultiPartitionKey] = []
+    materialized_keys: List[MultiPartitionKey] = []
     for event_tags in instance.get_event_tags_for_asset(asset_key):
         event_partition_keys_by_dimension = {
             get_dimension_from_partition_tag(key): value
@@ -238,140 +196,78 @@ def get_materialized_multipartitions(
 
 
 def get_validated_partition_keys(
+    dynamic_partitions_store: DynamicPartitionsStore,
     partitions_def: PartitionsDefinition,
-    partition_keys: set[str],
+    partition_keys: Set[str],
 ):
     if isinstance(partitions_def, (DynamicPartitionsDefinition, StaticPartitionsDefinition)):
-        validated_partitions = set(partitions_def.get_partition_keys()) & partition_keys
+        validated_partitions = (
+            set(
+                partitions_def.get_partition_keys(dynamic_partitions_store=dynamic_partitions_store)
+            )
+            & partition_keys
+        )
     elif isinstance(partitions_def, MultiPartitionsDefinition):
-        validated_partitions = partitions_def.filter_valid_partition_keys(partition_keys)
+        validated_partitions = partitions_def.filter_valid_partition_keys(
+            partition_keys, dynamic_partitions_store
+        )
     else:
         if not isinstance(partitions_def, TimeWindowPartitionsDefinition):
             check.failed("Unexpected partitions definition type {partitions_def}")
-        validated_partitions = {pk for pk in partition_keys if partitions_def.has_partition_key(pk)}
+        validated_partitions = {
+            pk for pk in partition_keys if partitions_def.is_valid_partition_key(pk)
+        }
     return validated_partitions
-
-
-def get_last_planned_storage_id(
-    instance: DagsterInstance, asset_key: AssetKey, asset_record: Optional["AssetRecord"]
-) -> int:
-    if instance.event_log_storage.asset_records_have_last_planned_and_failed_materializations:
-        return (
-            (asset_record.asset_entry.last_planned_materialization_storage_id or 0)
-            if asset_record
-            else 0
-        )
-
-    info = instance.get_latest_planned_materialization_info(asset_key)
-    if not info:
-        return 0
-
-    return info.storage_id
 
 
 def _build_status_cache(
     instance: DagsterInstance,
     asset_key: AssetKey,
+    latest_storage_id: int,
     partitions_def: Optional[PartitionsDefinition],
-    stored_cache_value: Optional[AssetStatusCacheValue],
-    asset_record: Optional["AssetRecord"],
-) -> Optional[AssetStatusCacheValue]:
+    dynamic_partitions_store: DynamicPartitionsStore,
+) -> AssetStatusCacheValue:
     """This method refreshes the asset status cache for a given asset key. It recalculates
     the materialized partition subset for the asset key and updates the cache value.
     """
-    last_materialization_storage_id = (
-        asset_record.asset_entry.last_materialization_storage_id if asset_record else None
-    )
-
-    last_planned_materialization_storage_id = get_last_planned_storage_id(
-        instance, asset_key, asset_record
-    )
-
-    latest_storage_id = max(
-        last_materialization_storage_id or 0,
-        last_planned_materialization_storage_id or 0,
-    )
-    if not latest_storage_id:
-        return None
-
     if not partitions_def or not is_cacheable_partition_type(partitions_def):
         return AssetStatusCacheValue(latest_storage_id=latest_storage_id)
 
-    failed_subset = (
-        partitions_def.deserialize_subset(stored_cache_value.serialized_failed_partition_subset)
-        if stored_cache_value and stored_cache_value.serialized_failed_partition_subset
-        else None
-    )
-
-    cached_in_progress_cursor = (
-        (
-            stored_cache_value.earliest_in_progress_materialization_event_id - 1
-            if stored_cache_value.earliest_in_progress_materialization_event_id
-            else stored_cache_value.latest_storage_id
-        )
-        if stored_cache_value
-        else None
-    )
-
-    if stored_cache_value:
-        # fetch the incremental new materialized partitions, and update the cached materialized
-        # subset
-        new_partitions = set()
-        if (
-            last_materialization_storage_id
-            and last_materialization_storage_id > stored_cache_value.latest_storage_id
-        ):
-            new_partitions = get_validated_partition_keys(
-                partitions_def,
-                instance.get_materialized_partitions(
-                    asset_key, after_cursor=stored_cache_value.latest_storage_id
-                ),
-            )
-
-        materialized_subset: PartitionsSubset = (
-            partitions_def.deserialize_subset(
-                stored_cache_value.serialized_materialized_partition_subset
-            )
-            if stored_cache_value.serialized_materialized_partition_subset
-            else partitions_def.empty_subset()
-        )
-
-        if new_partitions:
-            materialized_subset = materialized_subset.with_partition_keys(new_partitions)
-
-        if failed_subset and new_partitions:
-            failed_subset = failed_subset - partitions_def.empty_subset().with_partition_keys(
-                new_partitions
-            )
-
+    materialized_keys: Sequence[str]
+    if isinstance(partitions_def, MultiPartitionsDefinition):
+        materialized_keys = get_materialized_multipartitions(instance, asset_key, partitions_def)
     else:
-        materialized_subset = partitions_def.empty_subset().with_partition_keys(
+        materialized_keys = [
+            key
+            for key, count in instance.get_materialization_count_by_partition([asset_key])
+            .get(asset_key, {})
+            .items()
+            if count > 0
+        ]
+
+    serialized_materialized_partition_subset = partitions_def.empty_subset()
+
+    serialized_materialized_partition_subset = (
+        serialized_materialized_partition_subset.with_partition_keys(
             get_validated_partition_keys(
-                partitions_def,
-                instance.get_materialized_partitions(asset_key),
+                dynamic_partitions_store, partitions_def, set(materialized_keys)
             )
         )
+    )
 
-    (
-        failed_subset,
-        in_progress_subset,
-        earliest_in_progress_materialization_event_id,
-    ) = build_failed_and_in_progress_partition_subset(
-        instance,
-        asset_key,
-        partitions_def,
-        last_planned_materialization_storage_id=last_planned_materialization_storage_id,
-        failed_subset=failed_subset,
-        after_storage_id=cached_in_progress_cursor,
+    failed_subset, in_progress_subset, cursor = build_failed_and_in_progress_partition_subset(
+        instance, asset_key, partitions_def, dynamic_partitions_store
     )
 
     return AssetStatusCacheValue(
         latest_storage_id=latest_storage_id,
-        partitions_def_id=partitions_def.get_serializable_unique_identifier(),
-        serialized_materialized_partition_subset=materialized_subset.serialize(),
+        partitions_def_id=partitions_def.get_serializable_unique_identifier(
+            dynamic_partitions_store=dynamic_partitions_store
+        ),
+        serialized_materialized_partition_subset=serialized_materialized_partition_subset.serialize(),
         serialized_failed_partition_subset=failed_subset.serialize(),
         serialized_in_progress_partition_subset=in_progress_subset.serialize(),
-        earliest_in_progress_materialization_event_id=earliest_in_progress_materialization_event_id,
+        earliest_in_progress_materialization_event_id=cursor,
     )
 
 
@@ -379,67 +275,52 @@ def build_failed_and_in_progress_partition_subset(
     instance: DagsterInstance,
     asset_key: AssetKey,
     partitions_def: PartitionsDefinition,
-    last_planned_materialization_storage_id: int,
-    failed_subset: Optional[PartitionsSubset[str]] = None,
-    after_storage_id: Optional[int] = None,
-) -> tuple[PartitionsSubset, PartitionsSubset, Optional[int]]:
-    in_progress_partitions: set[str] = set()
+    dynamic_partitions_store: DynamicPartitionsStore,
+) -> Tuple[PartitionsSubset, PartitionsSubset, Optional[int]]:
+    incomplete_materializations = instance.event_log_storage.get_latest_asset_partition_materialization_attempts_without_materializations(
+        asset_key
+    )
 
-    incomplete_materializations = {}
+    if not incomplete_materializations:
+        return partitions_def.empty_subset(), partitions_def.empty_subset(), None
 
-    failed_subset = failed_subset or partitions_def.empty_subset()
-
-    # Fetch incomplete materializations if there have been any planned materializations since the
-    # cursor
-    if last_planned_materialization_storage_id and (
-        not after_storage_id or last_planned_materialization_storage_id > after_storage_id
-    ):
-        incomplete_materializations = instance.event_log_storage.get_latest_asset_partition_materialization_attempts_without_materializations(
-            asset_key, after_storage_id=after_storage_id
+    finished_runs = {
+        r.run_id: r.status
+        for r in instance.get_runs(
+            filters=RunsFilter(
+                run_ids=[run_id for run_id, _event_id in incomplete_materializations.values()],
+                statuses=FINISHED_STATUSES,
+            )
         )
+    }
 
-    failed_partitions: set[str] = set()
-
+    new_failed_partitions = set()
+    in_progress_partitions = set()
     cursor = None
-    if incomplete_materializations:
-        to_fetch = list(set([run_id for run_id, _event_id in incomplete_materializations.values()]))
-        finished_runs = {}
-        unfinished_runs = {}
-
-        while to_fetch:
-            chunk = to_fetch[:RUN_FETCH_BATCH_SIZE]
-            to_fetch = to_fetch[RUN_FETCH_BATCH_SIZE:]
-            for r in instance.get_runs(filters=RunsFilter(run_ids=chunk)):
-                if r.status in FINISHED_STATUSES:
-                    finished_runs[r.run_id] = r.status
-                else:
-                    unfinished_runs[r.run_id] = r.status
-
-        for partition, (run_id, event_id) in incomplete_materializations.items():
-            if run_id in finished_runs:
-                status = finished_runs.get(run_id)
-                if status == DagsterRunStatus.FAILURE:
-                    failed_partitions.add(partition)
-            elif run_id in unfinished_runs:
-                in_progress_partitions.add(partition)
-                # If the run is not finished, keep track of the event id so we can check on it next time
-                if cursor is None or event_id < cursor:
-                    cursor = event_id
-            else:
-                # Runs that are neither finished nor unfinished must have been deleted, so are
-                # considered neither in-progress nor failed
-                pass
-
-    if failed_partitions:
-        failed_subset = failed_subset.with_partition_keys(
-            get_validated_partition_keys(partitions_def, failed_partitions)
-        )
+    for partition, (run_id, event_id) in incomplete_materializations.items():
+        if run_id in finished_runs:
+            status = finished_runs.get(run_id)
+            if status == DagsterRunStatus.FAILURE:
+                new_failed_partitions.add(partition)
+        else:
+            in_progress_partitions.add(partition)
+            # If the run is not finished, keep track of the event id so we can check on it next time
+            if cursor is None or event_id < cursor:
+                cursor = event_id
 
     return (
-        failed_subset,
         (
             partitions_def.empty_subset().with_partition_keys(
-                get_validated_partition_keys(partitions_def, in_progress_partitions)
+                get_validated_partition_keys(
+                    dynamic_partitions_store, partitions_def, new_failed_partitions
+                )
+            )
+            if new_failed_partitions
+            else partitions_def.empty_subset()
+        ),
+        (
+            partitions_def.empty_subset().with_partition_keys(
+                get_validated_partition_keys(instance, partitions_def, in_progress_partitions)
             )
             if in_progress_partitions
             else partitions_def.empty_subset()
@@ -448,119 +329,254 @@ def build_failed_and_in_progress_partition_subset(
     )
 
 
-def get_and_update_asset_status_cache_value(
+def _get_updated_failed_and_in_progress_partition_subset(
     instance: DagsterInstance,
     asset_key: AssetKey,
+    partitions_def: PartitionsDefinition,
+    current_cached_subset: PartitionsSubset,
+    unevaluated_event_records: Sequence[EventLogRecord],
+    dynamic_partitions_store: DynamicPartitionsStore,
+) -> Tuple[PartitionsSubset, PartitionsSubset, Optional[int]]:
+    current_failed_partitions = set(current_cached_subset.get_partition_keys())
+
+    cursor = None
+    incomplete_materialization_records: Dict[str, EventLogRecord] = {}
+    for record in sorted(unevaluated_event_records, key=lambda r: r.storage_id):
+        event = check.not_none(record.event_log_entry.dagster_event)
+        if event.is_asset_materialization_planned:
+            if event.partition:
+                # If we have a planned materilization for a partition, keep track of it to see if we
+                # also find a materialization. If not, we'll check if the run failed and add it to
+                # the failed partitions.
+                incomplete_materialization_records[event.partition] = record
+        if event.is_step_materialization:
+            if event.partition:
+                incomplete_materialization_records.pop(event.partition, None)
+                # if we have a new materialization for a partition, that negates the old failure
+                current_failed_partitions.discard(event.partition)
+
+    new_failed_partitions = set()
+    in_progress_partitions = set()
+    if incomplete_materialization_records:
+        finished_runs = {
+            r.run_id: r.status
+            for r in instance.get_runs(
+                filters=RunsFilter(
+                    run_ids=[
+                        record.run_id for record in incomplete_materialization_records.values()
+                    ],
+                    statuses=FINISHED_STATUSES,
+                )
+            )
+        }
+
+        for partition, record in incomplete_materialization_records.items():
+            if record.run_id in finished_runs:
+                if finished_runs[record.run_id] == DagsterRunStatus.FAILURE:
+                    new_failed_partitions.add(partition)
+            else:
+                in_progress_partitions.add(partition)
+                if cursor is None or record.storage_id <= cursor:
+                    # If the run is not finished, keep track of the event id so we can check on it next time
+                    cursor = record.storage_id
+
+    return (
+        partitions_def.empty_subset().with_partition_keys(
+            get_validated_partition_keys(
+                instance, partitions_def, new_failed_partitions | current_failed_partitions
+            )
+        ),
+        partitions_def.empty_subset().with_partition_keys(
+            get_validated_partition_keys(instance, partitions_def, in_progress_partitions)
+        ),
+        cursor,
+    )
+
+
+def _get_updated_status_cache(
+    instance: DagsterInstance,
+    asset_key: AssetKey,
+    stored_cache_value: AssetStatusCacheValue,
     partitions_def: Optional[PartitionsDefinition],
-    dynamic_partitions_loader: Optional[DynamicPartitionsStore] = None,
-    loading_context: Optional[LoadingContext] = None,
-) -> Optional[AssetStatusCacheValue]:
-    from dagster._core.storage.event_log.base import AssetRecord
-
-    with partition_loading_context(None, dynamic_partitions_loader or instance):
-        if loading_context:
-            asset_record = AssetRecord.blocking_get(loading_context, asset_key)
-        else:
-            asset_record = next(iter(instance.get_asset_records(asset_keys=[asset_key])), None)
-
-        if asset_record is None:
-            stored_cache_value = None
-        else:
-            stored_cache_value = asset_record.asset_entry.cached_status
-
-        use_cached_value = (
-            stored_cache_value
-            and partitions_def
-            and stored_cache_value.partitions_def_id
-            == partitions_def.get_serializable_unique_identifier()
+    dynamic_partitions_store: DynamicPartitionsStore,
+    latest_materialization_storage_id: Optional[int],
+) -> AssetStatusCacheValue:
+    """This method accepts the current asset status cache value, and fetches unevaluated
+    records from the event log. It then updates the cache value with the new materializations.
+    """
+    # if earliest_in_progress_materialization_event_id is set, we fetch all events including the
+    # materialization planned event at that id (hence the - 1). We'll use this to determine if the
+    # materialization is still in progress.
+    cursor = (
+        stored_cache_value.earliest_in_progress_materialization_event_id - 1
+        if stored_cache_value.earliest_in_progress_materialization_event_id
+        else stored_cache_value.latest_storage_id
+    )
+    unevaluated_planned_event_records = instance.get_event_records(
+        event_records_filter=EventRecordsFilter(
+            event_type=DagsterEventType.ASSET_MATERIALIZATION_PLANNED,
+            asset_key=asset_key,
+            after_cursor=cursor,
         )
-        updated_cache_value = _build_status_cache(
+    )
+    unevaluated_materialization_event_records = (
+        instance.get_event_records(
+            event_records_filter=EventRecordsFilter(
+                event_type=DagsterEventType.ASSET_MATERIALIZATION,
+                asset_key=asset_key,
+                after_cursor=cursor,
+            )
+        )
+        if cursor < (latest_materialization_storage_id or 0)
+        else []
+    )
+
+    if not (unevaluated_materialization_event_records or unevaluated_planned_event_records):
+        return stored_cache_value
+
+    unevaluated_event_records = list(unevaluated_planned_event_records)
+    unevaluated_event_records.extend(list(unevaluated_materialization_event_records))
+
+    latest_storage_id = max([record.storage_id for record in unevaluated_event_records])
+    if not partitions_def or not is_cacheable_partition_type(partitions_def):
+        return AssetStatusCacheValue(latest_storage_id=latest_storage_id)
+
+    check.invariant(
+        stored_cache_value.partitions_def_id
+        == partitions_def.get_serializable_unique_identifier(
+            dynamic_partitions_store=dynamic_partitions_store
+        )
+    )
+    materialized_subset: PartitionsSubset = (
+        partitions_def.deserialize_subset(
+            stored_cache_value.serialized_materialized_partition_subset
+        )
+        if stored_cache_value and stored_cache_value.serialized_materialized_partition_subset
+        else partitions_def.empty_subset()
+    )
+    newly_materialized_partitions = set()
+
+    for record in unevaluated_event_records:
+        if not record.event_log_entry.dagster_event:
+            check.failed("Expected dagster event")
+
+        if record.event_log_entry.dagster_event.is_step_materialization:
+            if record.event_log_entry.dagster_event.partition:
+                newly_materialized_partitions.add(record.event_log_entry.dagster_event.partition)
+        elif not record.event_log_entry.dagster_event.is_asset_materialization_planned:
+            check.failed("Expected materialization or materialization planned event")
+
+    materialized_subset = materialized_subset.with_partition_keys(
+        get_validated_partition_keys(
+            dynamic_partitions_store, partitions_def, newly_materialized_partitions
+        )
+    )
+
+    failed_subset: PartitionsSubset = (
+        partitions_def.deserialize_subset(stored_cache_value.serialized_failed_partition_subset)
+        if stored_cache_value and stored_cache_value.serialized_failed_partition_subset
+        else partitions_def.empty_subset()
+    )
+
+    (
+        failed_subset,
+        in_progress_subset,
+        new_cursor,
+    ) = _get_updated_failed_and_in_progress_partition_subset(
+        instance,
+        asset_key,
+        partitions_def,
+        failed_subset,
+        unevaluated_event_records,
+        dynamic_partitions_store=dynamic_partitions_store,
+    )
+
+    return AssetStatusCacheValue(
+        latest_storage_id=latest_storage_id,
+        partitions_def_id=stored_cache_value.partitions_def_id,
+        serialized_materialized_partition_subset=materialized_subset.serialize(),
+        serialized_failed_partition_subset=failed_subset.serialize(),
+        serialized_in_progress_partition_subset=in_progress_subset.serialize(),
+        earliest_in_progress_materialization_event_id=new_cursor,
+    )
+
+
+def _get_fresh_asset_status_cache_value(
+    instance: DagsterInstance,
+    asset_key: AssetKey,
+    dynamic_partitions_store: DynamicPartitionsStore,
+    partitions_def: Optional[PartitionsDefinition],
+    stored_cache_value: Optional[AssetStatusCacheValue],
+    latest_materialization_storage_id: Optional[int],
+) -> Optional[AssetStatusCacheValue]:
+    updated_cache_value = None
+    if stored_cache_value is None or stored_cache_value.partitions_def_id != (
+        partitions_def.get_serializable_unique_identifier(
+            dynamic_partitions_store=dynamic_partitions_store
+        )
+        if partitions_def
+        else None
+    ):
+        planned_event_records = instance.get_event_records(
+            event_records_filter=EventRecordsFilter(
+                event_type=DagsterEventType.ASSET_MATERIALIZATION_PLANNED,
+                asset_key=asset_key,
+            ),
+            limit=1,
+        )
+
+        if latest_materialization_storage_id or planned_event_records:
+            latest_storage_id = max(
+                (latest_materialization_storage_id or 0),
+                next(iter(planned_event_records)).storage_id if planned_event_records else 0,
+            )
+            updated_cache_value = _build_status_cache(
+                instance=instance,
+                asset_key=asset_key,
+                partitions_def=partitions_def,
+                latest_storage_id=latest_storage_id,
+                dynamic_partitions_store=dynamic_partitions_store,
+            )
+    else:
+        updated_cache_value = _get_updated_status_cache(
             instance=instance,
             asset_key=asset_key,
             partitions_def=partitions_def,
-            stored_cache_value=stored_cache_value if use_cached_value else None,
-            asset_record=asset_record,
+            stored_cache_value=stored_cache_value,
+            dynamic_partitions_store=dynamic_partitions_store,
+            latest_materialization_storage_id=latest_materialization_storage_id,
         )
-        if (
-            updated_cache_value is not None
-            and instance.event_log_storage.can_write_asset_status_cache()
-            and updated_cache_value != stored_cache_value
-        ):
-            instance.update_asset_cached_status_data(asset_key, updated_cache_value)
 
-        return updated_cache_value
+    return updated_cache_value
 
 
-def get_partition_subsets(
+def get_and_update_asset_status_cache_value(
     instance: DagsterInstance,
-    loading_context: LoadingContext,
     asset_key: AssetKey,
-    dynamic_partitions_loader: DynamicPartitionsStore,
     partitions_def: Optional[PartitionsDefinition] = None,
-) -> tuple[Optional[PartitionsSubset], Optional[PartitionsSubset], Optional[PartitionsSubset]]:
-    """Returns a tuple of PartitionSubset objects: the first is the materialized partitions,
-    the second is the failed partitions, and the third are in progress.
-    """
-    from dagster._core.storage.event_log.base import AssetRecord
+    dynamic_partitions_loader: Optional[DynamicPartitionsStore] = None,
+    asset_record: Optional["AssetRecord"] = None,
+) -> Optional[AssetStatusCacheValue]:
+    asset_record = asset_record or next(
+        iter(instance.get_asset_records(asset_keys=[asset_key])), None
+    )
+    if asset_record is None:
+        stored_cache_value, latest_materialization_storage_id = None, None
+    else:
+        stored_cache_value = asset_record.asset_entry.cached_status
+        latest_materialization_storage_id = asset_record.asset_entry.last_materialization_storage_id
 
-    if not partitions_def:
-        return None, None, None
+    updated_cache_value = _get_fresh_asset_status_cache_value(
+        instance=instance,
+        asset_key=asset_key,
+        partitions_def=partitions_def,
+        dynamic_partitions_store=(
+            dynamic_partitions_loader if dynamic_partitions_loader else instance
+        ),
+        stored_cache_value=stored_cache_value,
+        latest_materialization_storage_id=latest_materialization_storage_id,
+    )
+    if updated_cache_value is not None and updated_cache_value != stored_cache_value:
+        instance.update_asset_cached_status_data(asset_key, updated_cache_value)
 
-    with partition_loading_context(None, dynamic_partitions_loader or instance):
-        if instance.can_read_asset_status_cache() and is_cacheable_partition_type(partitions_def):
-            # When the "cached_status_data" column exists in storage, update the column to contain
-            # the latest partition status values
-            updated_cache_value = get_and_update_asset_status_cache_value(
-                instance,
-                asset_key,
-                partitions_def,
-                dynamic_partitions_loader,
-                loading_context,
-            )
-            materialized_subset = (
-                updated_cache_value.deserialize_materialized_partition_subsets(partitions_def)
-                if updated_cache_value
-                else partitions_def.empty_subset()
-            )
-            failed_subset = (
-                updated_cache_value.deserialize_failed_partition_subsets(partitions_def)
-                if updated_cache_value
-                else partitions_def.empty_subset()
-            )
-            in_progress_subset = (
-                updated_cache_value.deserialize_in_progress_partition_subsets(partitions_def)
-                if updated_cache_value
-                else partitions_def.empty_subset()
-            )
-
-            return materialized_subset, failed_subset, in_progress_subset
-
-        else:
-            # If the partition status can't be cached, fetch partition status from storage
-            if isinstance(partitions_def, MultiPartitionsDefinition):
-                materialized_keys = get_materialized_multipartitions(
-                    instance, asset_key, partitions_def
-                )
-            else:
-                materialized_keys = instance.get_materialized_partitions(asset_key)
-
-            validated_keys = get_validated_partition_keys(partitions_def, set(materialized_keys))
-
-            materialized_subset = (
-                partitions_def.empty_subset().with_partition_keys(validated_keys)
-                if validated_keys
-                else partitions_def.empty_subset()
-            )
-
-            asset_record = AssetRecord.blocking_get(loading_context, asset_key)
-
-            failed_subset, in_progress_subset, _ = build_failed_and_in_progress_partition_subset(
-                instance,
-                asset_key,
-                partitions_def,
-                last_planned_materialization_storage_id=get_last_planned_storage_id(
-                    instance, asset_key, asset_record
-                ),
-            )
-
-            return materialized_subset, failed_subset, in_progress_subset
+    return updated_cache_value

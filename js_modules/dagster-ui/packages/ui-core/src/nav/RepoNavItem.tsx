@@ -2,29 +2,30 @@ import {
   Box,
   Button,
   Colors,
-  Dialog,
   DialogFooter,
   DialogHeader,
+  Dialog,
   Group,
   Icon,
   IconWrapper,
   Spinner,
   Tooltip,
 } from '@dagster-io/ui-components';
-import {useState} from 'react';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
+
+import {ShortcutHandler} from '../app/ShortcutHandler';
+import {buildRepoAddress, DUNDER_REPO_NAME} from '../workspace/buildRepoAddress';
+import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
+import {RepoAddress} from '../workspace/types';
+import {workspacePathFromAddress} from '../workspace/workspacePath';
 
 import {
   NO_RELOAD_PERMISSION_TEXT,
   ReloadRepositoryLocationButton,
 } from './ReloadRepositoryLocationButton';
 import {RepoSelector, RepoSelectorOption} from './RepoSelector';
-import {ShortcutHandler} from '../app/ShortcutHandler';
-import {DUNDER_REPO_NAME, buildRepoAddress} from '../workspace/buildRepoAddress';
-import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
-import {RepoAddress} from '../workspace/types';
-import {workspacePathFromAddress} from '../workspace/workspacePath';
 
 interface Props {
   allRepos: RepoSelectorOption[];
@@ -32,13 +33,13 @@ interface Props {
   onToggle: (repoAddresses: RepoAddress[]) => void;
 }
 
-export const RepoNavItem = (props: Props) => {
+export const RepoNavItem: React.FC<Props> = (props) => {
   const {allRepos, selected, onToggle} = props;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = React.useState(false);
 
   const summary = () => {
     if (allRepos.length === 0) {
-      return <span style={{color: Colors.textLighter()}}>No definitions</span>;
+      return <span style={{color: Colors.Gray700}}>No definitions</span>;
     }
     if (allRepos.length === 1) {
       return <SingleRepoSummary repo={allRepos[0]!} onlyRepo />;
@@ -51,11 +52,7 @@ export const RepoNavItem = (props: Props) => {
   };
 
   return (
-    <Box
-      background={Colors.backgroundLighter()}
-      padding={{vertical: 12, left: 24, right: 20}}
-      border="top"
-    >
+    <Box background={Colors.Gray50} padding={{vertical: 12, left: 24, right: 20}} border="top">
       <Box flex={{justifyContent: 'space-between', alignItems: 'center'}}>
         <Box flex={{direction: 'row', alignItems: 'center', gap: 8}}>
           <Icon name="folder" />
@@ -95,7 +92,10 @@ export const RepoNavItem = (props: Props) => {
   );
 };
 
-const SingleRepoSummary = ({repo, onlyRepo}: {repo: RepoSelectorOption; onlyRepo: boolean}) => {
+const SingleRepoSummary: React.FC<{repo: RepoSelectorOption; onlyRepo: boolean}> = ({
+  repo,
+  onlyRepo,
+}) => {
   const repoAddress = buildRepoAddress(repo.repository.name, repo.repositoryLocation.name);
   const isDunder = repoAddress.name === DUNDER_REPO_NAME;
   return (
@@ -144,7 +144,7 @@ const SingleRepoSummary = ({repo, onlyRepo}: {repo: RepoSelectorOption; onlyRepo
                   <ReloadButton disabled={!hasReloadPermission} onClick={tryReload}>
                     <Icon
                       name="refresh"
-                      color={hasReloadPermission ? Colors.textLight() : Colors.textDisabled()}
+                      color={hasReloadPermission ? Colors.Gray900 : Colors.Gray400}
                     />
                   </ReloadButton>
                 )}
@@ -165,20 +165,20 @@ const SummaryText = styled.div`
 `;
 
 const SingleRepoNameLink = styled(Link)<{$onlyRepo: boolean}>`
-  color: ${Colors.textLight()};
+  color: ${Colors.Gray900};
   display: block;
   max-width: ${({$onlyRepo}) => ($onlyRepo ? '248px' : '192px')};
   overflow-x: hidden;
   text-overflow: ellipsis;
   transition: color 100ms linear;
 
-  &&:hover {
-    color: ${Colors.textDefault()};
+  && {
+    color: ${Colors.Gray900};
   }
 
   &&:hover,
   &&:active {
-    color: ${Colors.textDefault()};
+    color: ${Colors.Gray800};
     text-decoration: none;
   }
 `;
@@ -207,7 +207,7 @@ const ReloadButton = styled.button`
   }
 
   :hover ${IconWrapper} {
-    color: ${Colors.accentBlue()};
+    color: ${Colors.Blue200};
   }
 `;
 

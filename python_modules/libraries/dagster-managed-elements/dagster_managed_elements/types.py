@@ -1,8 +1,6 @@
 import enum
 from abc import ABC, abstractmethod
-from collections import OrderedDict
-from collections.abc import Sequence
-from typing import Any, NamedTuple, Optional, Union
+from typing import Any, NamedTuple, Optional, OrderedDict, Sequence, Tuple, Union
 
 import click
 import dagster._check as check
@@ -12,14 +10,7 @@ class ManagedElementError(enum.Enum):
     CANNOT_CONNECT = "cannot_connect"
 
 
-SANITIZE_KEY_KEYWORDS = [
-    "password",
-    "token",
-    "secret",
-    "ssh_key",
-    "credentials_json",
-    "access_key_id",
-]
+SANITIZE_KEY_KEYWORDS = ["password", "token", "secret", "ssh_key", "credentials_json"]
 SANITIZE_KEY_EXACT_MATCHES = ["pat"]
 
 SECRET_MASK_VALUE = "**********"
@@ -43,7 +34,7 @@ def _sanitize(key: str, value: str):
 
 class DiffData(NamedTuple("_DiffData", [("key", str), ("value", Any)])):
     def __new__(cls, key: str, value: str):
-        return super().__new__(
+        return super(DiffData, cls).__new__(
             cls,
             key=check.str_param(key, "key"),
             value=value,
@@ -57,7 +48,7 @@ class ModifiedDiffData(
     NamedTuple("_ModifiedDiffData", [("key", str), ("old_value", Any), ("new_value", Any)])
 ):
     def __new__(cls, key: str, old_value: Any, new_value: Any):
-        return super().__new__(
+        return super(ModifiedDiffData, cls).__new__(
             cls, key=check.str_param(key, "key"), old_value=old_value, new_value=new_value
         )
 
@@ -171,7 +162,7 @@ class ManagedElementDiff(
 
     def get_diff_display_entries(
         self, indent: int = 0
-    ) -> tuple[Sequence[str], Sequence[str], Sequence[str]]:
+    ) -> Tuple[Sequence[str], Sequence[str], Sequence[str]]:
         """Returns a tuple of additions, deletions, and modification entries associated with this diff object."""
         # Get top-level additions/deletions/modifications
         my_additions = [

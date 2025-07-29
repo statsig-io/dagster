@@ -1,4 +1,4 @@
-from dagster_aws.ssm.resources import (
+from .resources import (
     ParameterStoreResource as ParameterStoreResource,
     ParameterStoreTag as ParameterStoreTag,
     SSMResource as SSMResource,

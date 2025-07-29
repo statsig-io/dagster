@@ -2,7 +2,7 @@ import {Meta} from '@storybook/react';
 import * as React from 'react';
 
 import {ButtonLink} from '../ButtonLink';
-import {Colors} from '../Color';
+import {Colors} from '../Colors';
 import {Group} from '../Group';
 import {useSuggestionsForString} from '../useSuggestionsForString';
 
@@ -47,13 +47,12 @@ export const Example = () => {
         value={value}
         onChange={onChange}
         style={{
-          border: `1px solid ${Colors.borderDefault()}`,
+          border: `1px solid ${Colors.Gray400}`,
           borderRadius: '3px',
           padding: '8px',
           fontSize: '14px',
           width: '500px',
         }}
-        placeholder="Type something…"
       />
       <div>
         {suggestions.map((suggestion) => (

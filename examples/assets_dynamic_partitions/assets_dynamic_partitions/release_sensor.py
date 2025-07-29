@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Tuple
 
 import requests
 from dagster import AssetSelection, RunRequest, SensorResult, SkipReason, sensor
@@ -7,7 +8,7 @@ from dagster import AssetSelection, RunRequest, SensorResult, SkipReason, sensor
 from . import assets
 
 
-def semver_tuple(release: str) -> tuple[int, ...]:
+def semver_tuple(release: str) -> Tuple[int, ...]:
     return tuple(map(int, release.split(".")))
 
 

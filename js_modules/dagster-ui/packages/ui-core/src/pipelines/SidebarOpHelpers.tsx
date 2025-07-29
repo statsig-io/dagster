@@ -1,13 +1,14 @@
 // eslint-disable-next-line no-restricted-imports
 import {Text} from '@blueprintjs/core';
-import {Code, Colors, FontFamily, Group, Icon, IconWrapper} from '@dagster-io/ui-components';
+import {Colors, Group, Icon, IconWrapper, Code, FontFamily} from '@dagster-io/ui-components';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
-import {SectionHeader} from './SidebarComponents';
 import {titleOfIO} from '../app/titleOfIO';
 import {OpColumn, OpColumnContainer} from '../runs/LogsRowComponents';
+
+import {SectionHeader} from './SidebarComponents';
 
 type OpLinkInfo = {
   solid: {name: string};
@@ -26,7 +27,7 @@ export type OpMappingTable = {
 export const ShowAllButton = styled.button`
   background: transparent;
   border: none;
-  color: ${Colors.accentBlue()};
+  color: ${Colors.Blue500};
   text-decoration: underline;
   padding-top: 10px;
   font-size: 0.9rem;
@@ -57,7 +58,7 @@ export const Invocation = (props: {invocation: SidebarOpInvocationInfo; onClick:
   const handlePath = handleID.split('.');
   return (
     <InvocationContainer onClick={props.onClick}>
-      {pipelineName && <div style={{color: Colors.textBlue()}}>{pipelineName}</div>}
+      {pipelineName && <div style={{color: Colors.Blue700}}>{pipelineName}</div>}
       <OpColumn stepKey={handlePath.join('.')} />
     </InvocationContainer>
   );
@@ -77,8 +78,8 @@ export const DependencyRow = ({
       <Cell>{typeof from === 'string' ? <Code>{from}</Code> : <OpLink {...from} />}</Cell>
       <td style={{whiteSpace: 'nowrap', textAlign: 'right'}}>
         <Group direction="row" spacing={2} alignItems="center">
-          {isDynamic && <Icon name="op_dynamic" color={Colors.accentGray()} />}
-          <Icon name="arrow_forward" color={Colors.accentGray()} />
+          {isDynamic && <Icon name="op_dynamic" color={Colors.Gray700} />}
+          <Icon name="arrow_forward" color={Colors.Gray700} />
         </Group>
       </td>
       <Cell>{typeof to === 'string' ? <Code>{to}</Code> : <OpLink {...to} />}</Cell>
@@ -91,7 +92,7 @@ interface DependencyHeaderRowProps {
   style?: React.CSSProperties;
 }
 
-export const DependencyHeaderRow = ({label, ...rest}: DependencyHeaderRowProps) => (
+export const DependencyHeaderRow: React.FC<DependencyHeaderRowProps> = ({label, ...rest}) => (
   <tr>
     <DependencyHeaderCell {...rest}>{label}</DependencyHeaderCell>
   </tr>
@@ -126,21 +127,21 @@ export const DependencyTable = styled.table`
 
 const DependencyHeaderCell = styled.td`
   font-size: 0.7rem;
-  color: ${Colors.textLight()};
+  color: ${Colors.Gray400};
 `;
 
 const InvocationContainer = styled.div`
   user-select: none;
   padding: 12px 24px;
   cursor: pointer;
-  border-bottom: 1px solid ${Colors.keylineDefault()};
+  border-bottom: 1px solid ${Colors.KeylineGray};
 
   &:last-child {
     border-bottom: none;
   }
 
   &:hover {
-    background: ${Colors.backgroundLight()};
+    background: ${Colors.Gray50};
   }
 
   font-family: ${FontFamily.monospace};

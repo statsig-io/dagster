@@ -1,6 +1,6 @@
 import {Meta} from '@storybook/react';
 import faker from 'faker';
-import {useMemo, useState} from 'react';
+import * as React from 'react';
 
 import {Button} from '../Button';
 import {Icon} from '../Icon';
@@ -18,9 +18,9 @@ type Product = {
 };
 
 export const Default = () => {
-  const [active, setActive] = useState<Product | null>(null);
+  const [active, setActive] = React.useState<Product | null>(null);
 
-  const items = useMemo(() => {
+  const items = React.useMemo(() => {
     const items = new Array(10).fill(null).map(() => ({productName: faker.commerce.productName()}));
     return Array.from(new Set(items));
   }, []);
@@ -35,34 +35,6 @@ export const Default = () => {
       onItemSelect={(item) => setActive(item)}
     >
       <Button intent="primary" rightIcon={<Icon name="arrow_drop_down" />}>
-        {active ? active.productName : 'Choose a product'}
-      </Button>
-    </Select>
-  );
-};
-
-export const WithMinWidth = () => {
-  const [active, setActive] = useState<Product | null>(null);
-
-  const items = useMemo(() => {
-    const items = new Array(10).fill(null).map(() => ({productName: faker.commerce.productName()}));
-    return Array.from(new Set(items));
-  }, []);
-
-  return (
-    <Select<Product>
-      items={items}
-      itemPredicate={(query, item) => item.productName.toLowerCase().includes(query)}
-      itemRenderer={(item, props) => (
-        <MenuItem key={item.productName} text={item.productName} onClick={props.handleClick} />
-      )}
-      onItemSelect={(item) => setActive(item)}
-    >
-      <Button
-        intent="primary"
-        style={{minWidth: '200px', display: 'flex', justifyContent: 'space-between'}}
-        rightIcon={<Icon name="arrow_drop_down" />}
-      >
         {active ? active.productName : 'Choose a product'}
       </Button>
     </Select>

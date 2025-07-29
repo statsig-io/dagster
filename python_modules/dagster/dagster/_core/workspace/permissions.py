@@ -1,6 +1,5 @@
-from collections.abc import Mapping
 from enum import Enum, unique
-from typing import NamedTuple, Optional
+from typing import Dict, Mapping, NamedTuple, Optional
 
 
 @unique
@@ -16,7 +15,6 @@ class Permissions(str, Enum):
     RELOAD_REPOSITORY_LOCATION = "reload_repository_location"
     RELOAD_WORKSPACE = "reload_workspace"
     WIPE_ASSETS = "wipe_assets"
-    REPORT_RUNLESS_ASSET_EVENTS = "report_runless_asset_events"
     LAUNCH_PARTITION_BACKFILL = "launch_partition_backfill"
     CANCEL_PARTITION_BACKFILL = "cancel_partition_backfill"
     EDIT_DYNAMIC_PARTITIONS = "edit_dynamic_partitions"
@@ -27,7 +25,7 @@ class Permissions(str, Enum):
         return str.__str__(self)
 
 
-VIEWER_PERMISSIONS: dict[str, bool] = {
+VIEWER_PERMISSIONS: Dict[str, bool] = {
     Permissions.LAUNCH_PIPELINE_EXECUTION: False,
     Permissions.LAUNCH_PIPELINE_REEXECUTION: False,
     Permissions.START_SCHEDULE: False,
@@ -39,7 +37,6 @@ VIEWER_PERMISSIONS: dict[str, bool] = {
     Permissions.RELOAD_REPOSITORY_LOCATION: False,
     Permissions.RELOAD_WORKSPACE: False,
     Permissions.WIPE_ASSETS: False,
-    Permissions.REPORT_RUNLESS_ASSET_EVENTS: False,
     Permissions.LAUNCH_PARTITION_BACKFILL: False,
     Permissions.CANCEL_PARTITION_BACKFILL: False,
     Permissions.EDIT_DYNAMIC_PARTITIONS: False,
@@ -47,7 +44,7 @@ VIEWER_PERMISSIONS: dict[str, bool] = {
     Permissions.EDIT_CONCURRENCY_LIMIT: False,
 }
 
-EDITOR_PERMISSIONS: dict[str, bool] = {
+EDITOR_PERMISSIONS: Dict[str, bool] = {
     Permissions.LAUNCH_PIPELINE_EXECUTION: True,
     Permissions.LAUNCH_PIPELINE_REEXECUTION: True,
     Permissions.START_SCHEDULE: True,
@@ -59,7 +56,6 @@ EDITOR_PERMISSIONS: dict[str, bool] = {
     Permissions.RELOAD_REPOSITORY_LOCATION: True,
     Permissions.RELOAD_WORKSPACE: True,
     Permissions.WIPE_ASSETS: True,
-    Permissions.REPORT_RUNLESS_ASSET_EVENTS: True,
     Permissions.LAUNCH_PARTITION_BACKFILL: True,
     Permissions.CANCEL_PARTITION_BACKFILL: True,
     Permissions.EDIT_DYNAMIC_PARTITIONS: True,
@@ -80,8 +76,6 @@ LOCATION_SCOPED_PERMISSIONS = {
     Permissions.LAUNCH_PARTITION_BACKFILL,
     Permissions.CANCEL_PARTITION_BACKFILL,
     Permissions.EDIT_DYNAMIC_PARTITIONS,
-    Permissions.REPORT_RUNLESS_ASSET_EVENTS,
-    Permissions.WIPE_ASSETS,
 }
 
 
