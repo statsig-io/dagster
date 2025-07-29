@@ -206,7 +206,7 @@ class ConfigurableIOManagerFactory(ConfigurableResourceFactory[TIOManagerValue])
         return None
 
 
-class PartialIOManager(Generic[TResValue], PartialResource[TResValue]):
+class PartialIOManager(PartialResource[TResValue], Generic[TResValue]):
     def __init__(
         self,
         resource_cls: Type[ConfigurableResourceFactory[TResValue]],

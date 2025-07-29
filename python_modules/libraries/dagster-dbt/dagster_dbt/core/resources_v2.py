@@ -34,7 +34,7 @@ from dagster._annotations import public
 from dagster._core.errors import DagsterInvalidPropertyError
 from dbt.contracts.results import NodeStatus, TestStatus
 from dbt.node_types import NodeType
-from pydantic import Field, validator
+from pydantic import Field, field_validator
 from typing_extensions import Literal
 
 from ..asset_utils import (
@@ -505,7 +505,7 @@ class DbtCliResource(ConfigurableResource):
         if not path.joinpath(file_name).exists():
             raise ValueError(error_message)
 
-    @validator("project_dir", "profiles_dir", pre=True)
+    @field_validator("project_dir", "profiles_dir", mode='before')
     def convert_path_to_str(cls, v: Any) -> Any:
         """Validate that the path is converted to a string."""
         if isinstance(v, Path):
@@ -520,7 +520,7 @@ class DbtCliResource(ConfigurableResource):
 
         return v
 
-    @validator("project_dir")
+    @field_validator("project_dir")
     def validate_project_dir(cls, project_dir: str) -> str:
         resolved_project_dir = cls._validate_absolute_path_exists(project_dir)
 
@@ -535,7 +535,7 @@ class DbtCliResource(ConfigurableResource):
 
         return os.fspath(resolved_project_dir)
 
-    @validator("profiles_dir")
+    @field_validator("profiles_dir")
     def validate_profiles_dir(cls, profiles_dir: str) -> str:
         resolved_project_dir = cls._validate_absolute_path_exists(profiles_dir)
 
