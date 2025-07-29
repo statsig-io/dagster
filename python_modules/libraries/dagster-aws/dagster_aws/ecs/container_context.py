@@ -1,5 +1,4 @@
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, cast
+from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Optional, Sequence, cast
 
 from dagster import (
     Array,
@@ -17,10 +16,10 @@ from dagster._core.errors import DagsterInvalidConfigError
 from dagster._core.storage.dagster_run import DagsterRun
 from dagster._core.utils import parse_env_var
 
-from dagster_aws.secretsmanager import get_tagged_secrets
+from ..secretsmanager import get_tagged_secrets
 
 if TYPE_CHECKING:
-    from dagster_aws.ecs import EcsRunLauncher
+    from . import EcsRunLauncher
 
 # Config shared between EcsRunLauncher and EcsContainerContext
 SHARED_ECS_SCHEMA = {
@@ -187,12 +186,6 @@ ECS_CONTAINER_CONTEXT_SCHEMA = {
                     is_required=False,
                     description="The ephemeral storage, in GiB, to use for the launched task.",
                 ),
-                "replica_count": Field(
-                    int,
-                    default_value=1,
-                    is_required=False,
-                    description="The number of code server instances to launch.",
-                ),
             }
         )
     ),
@@ -215,11 +208,6 @@ ECS_CONTAINER_CONTEXT_SCHEMA = {
         Array(Permissive({})),
         is_required=False,
         description="Additional sidecar containers to include in run task definitions.",
-    ),
-    "server_health_check": Field(
-        Permissive(),
-        is_required=False,
-        description="Health check to include in code server task definitions.",
     ),
     **SHARED_TASK_DEFINITION_FIELDS,
     **SHARED_ECS_SCHEMA,
@@ -247,7 +235,6 @@ class EcsContainerContext(
             ("server_ecs_tags", Sequence[Mapping[str, Optional[str]]]),
             ("run_ecs_tags", Sequence[Mapping[str, Optional[str]]]),
             ("repository_credentials", Optional[str]),
-            ("server_health_check", Optional[Mapping[str, Any]]),
         ],
     )
 ):
@@ -272,9 +259,8 @@ class EcsContainerContext(
         server_ecs_tags: Optional[Sequence[Mapping[str, Optional[str]]]] = None,
         run_ecs_tags: Optional[Sequence[Mapping[str, Optional[str]]]] = None,
         repository_credentials: Optional[str] = None,
-        server_health_check: Optional[Mapping[str, Any]] = None,
     ):
-        return super().__new__(
+        return super(EcsContainerContext, cls).__new__(
             cls,
             secrets=check.opt_sequence_param(secrets, "secrets"),
             secrets_tags=check.opt_sequence_param(secrets_tags, "secrets_tags"),
@@ -301,7 +287,6 @@ class EcsContainerContext(
             repository_credentials=check.opt_str_param(
                 repository_credentials, "repository_credentials"
             ),
-            server_health_check=check.opt_mapping_param(server_health_check, "server_health_check"),
         )
 
     def merge(self, other: "EcsContainerContext") -> "EcsContainerContext":
@@ -326,7 +311,6 @@ class EcsContainerContext(
             server_ecs_tags=[*other.server_ecs_tags, *self.server_ecs_tags],
             run_ecs_tags=[*other.run_ecs_tags, *self.run_ecs_tags],
             repository_credentials=other.repository_credentials or self.repository_credentials,
-            server_health_check=other.server_health_check or self.server_health_check,
         )
 
     def get_secrets_dict(self, secrets_manager) -> Mapping[str, str]:
@@ -399,7 +383,7 @@ class EcsContainerContext(
                 run_ecs_container_context,
             )
 
-        processed_context_value = cast("Mapping[str, Any]", processed_container_context.value)
+        processed_context_value = cast(Mapping[str, Any], processed_container_context.value)
 
         return shared_container_context.merge(
             EcsContainerContext(
@@ -420,6 +404,5 @@ class EcsContainerContext(
                 server_ecs_tags=processed_context_value.get("server_ecs_tags"),
                 run_ecs_tags=processed_context_value.get("run_ecs_tags"),
                 repository_credentials=processed_context_value.get("repository_credentials"),
-                server_health_check=processed_context_value.get("server_health_check"),
             )
         )

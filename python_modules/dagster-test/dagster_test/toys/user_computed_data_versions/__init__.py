@@ -16,45 +16,36 @@ The materialization endpoint of the external system returns a data version strin
 indicating whether a memoized value was used. This information is passed to the Dagster framework by
 returning a `Nothing` `Output`.
 """
-
 import warnings
-from collections.abc import Sequence
-from typing import cast
+from typing import Sequence, cast
 
 from dagster import (
     AssetKey,
     AssetsDefinition,
     AssetSelection,
-    BetaWarning,
     DataProvenance,
     DataVersion,
     Definitions,
+    ExperimentalWarning,
     In,
     Nothing,
     OpDefinition,
     OpExecutionContext,
     Out,
     Output,
-    PreviewWarning,
     SourceAsset,
     define_asset_job,
 )
 from typing_extensions import TypedDict
 
-from dagster_test.toys.user_computed_data_versions.external_system import (
-    AssetInfo,
-    ExternalSystem,
-    ProvenanceSpec,
-    SourceAssetInfo,
-)
+from .external_system import AssetSpec, ExternalSystem, ProvenanceSpec, SourceAssetSpec
 
-warnings.simplefilter("ignore", category=PreviewWarning)
-warnings.simplefilter("ignore", category=BetaWarning)
+warnings.filterwarnings("ignore", category=ExperimentalWarning)
 
 
-def external_asset(asset_spec: AssetInfo):
+def external_asset(asset_spec: AssetSpec):
     """Factory to build an `AssetsDefinition` object to represent an asset externally defined by an
-    `AssetInfo`.
+    `AssetSpec`.
 
     The op attached to the `AssetsDefinition` forwards materialization requests to the external
     system, sending an asset key and provenance info for the last recorded materialization of the
@@ -64,7 +55,7 @@ def external_asset(asset_spec: AssetInfo):
     `Nothing` because Dagster is not handling passing data in between ops in this scenario.
 
     Args:
-        asset_spec (AssetInfo):
+        asset_spec (AssetSpec):
             A dictionary containing the metadata that defines the asset.
 
     Returns (AssetsDefinition):
@@ -95,7 +86,7 @@ def external_asset(asset_spec: AssetInfo):
     keys_by_output_name = {"result": key}
     op_def = OpDefinition(
         name=key.path[-1],
-        ins={k.to_user_string(): In(cast("type", Nothing)) for k in dependencies},
+        ins={k.to_user_string(): In(cast(type, Nothing)) for k in dependencies},
         outs={"result": Out(Nothing)},
         code_version=code_version,
         compute_fn=fn,
@@ -107,14 +98,14 @@ def external_asset(asset_spec: AssetInfo):
     )
 
 
-def external_source_asset(source_asset_spec: SourceAssetInfo) -> SourceAsset:
-    """Factory to build a `SourceAsset` object to represent a source asset externally defined by a `SourceAssetInfo`.
+def external_source_asset(source_asset_spec: SourceAssetSpec) -> SourceAsset:
+    """Factory to build a `SourceAsset` object to represent a source asset externally defined by a `SourceAssetSpec`.
 
     The op attached to the `SourceAsset` forwards observation requests to the external system. The
     external system responds with the current data version of the asset.
 
     Args:
-        source_asset_spec (SourceAssetInfo):
+        source_asset_spec (SourceAssetSpec):
             A dictionary containing the metadata that defines the source asset.
 
     Returns (SourceAsset):
@@ -146,8 +137,8 @@ def provenance_to_dict(provenance: DataProvenance) -> ProvenanceSpec:
 
 
 class Schema(TypedDict):
-    assets: Sequence[AssetInfo]
-    source_assets: Sequence[SourceAssetInfo]
+    assets: Sequence[AssetSpec]
+    source_assets: Sequence[SourceAssetSpec]
 
 
 SCHEMA: Schema = {
@@ -169,5 +160,5 @@ source_assets = [
 
 defs = Definitions(
     assets=[*assets, *source_assets],
-    jobs=[define_asset_job("external_system_job", AssetSelection.assets("alpha", "beta"))],
+    jobs=[define_asset_job("external_system_job", AssetSelection.keys("alpha", "beta"))],
 )

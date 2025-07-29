@@ -1,25 +1,26 @@
 import asyncio
 import inspect
 from abc import abstractmethod
-from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Union
+
+from fsspec import AbstractFileSystem
+from fsspec.implementations.local import LocalFileSystem
 
 from dagster import (
     InputContext,
     MetadataValue,
+    MultiPartitionKey,
     OutputContext,
     _check as check,
 )
-from dagster._core.definitions.partitions.utils import MultiPartitionKey
-from dagster._core.storage.io_manager import IOManager
+from dagster._core.storage.memoizable_io_manager import MemoizableIOManager
 
 if TYPE_CHECKING:
-    from fsspec import AbstractFileSystem
     from upath import UPath
 
 
-class UPathIOManager(IOManager):
+class UPathIOManager(MemoizableIOManager):
     """Abstract IOManager base class compatible with local and cloud storage via `universal-pathlib` and `fsspec`.
 
     Features:
@@ -52,52 +53,14 @@ class UPathIOManager(IOManager):
     def load_from_path(self, context: InputContext, path: "UPath") -> Any:
         """Child classes should override this method to load the object from the filesystem."""
 
-    def load_partitions(self, context: InputContext):
-        """This method is responsible for loading partitions.
-        The default implementation assumes that different partitions are stored as independent files.
-        When loading a single partition, it will call `load_from_path` on it.
-        When loading multiple partitions, it will invoke `load_from_path` multiple times over paths produced by
-        `get_path_for_partition` method, and store the results in a dictionary with formatted partitions as keys.
-        Sometimes, this is not desired. If the serialization format natively supports loading multiple partitions at once, this method should be overridden together with `get_path_for_partition`.
-        hint: context.asset_partition_keys can be used to access the partitions to load.
-        """
-        paths = self._get_paths_for_partitions(context)  # paths for normal partitions
-        backcompat_paths = self._get_multipartition_backcompat_paths(
-            context
-        )  # paths for multipartitions
-
-        context.log.debug(f"Loading {len(context.asset_partition_keys)} partitions...")
-
-        if len(context.asset_partition_keys) == 1:
-            partition_key = context.asset_partition_keys[0]
-            return self._load_partition_from_path(
-                context, partition_key, paths[partition_key], backcompat_paths.get(partition_key)
-            )
-        else:
-            objs = {}
-
-            for partition_key in context.asset_partition_keys:
-                obj = self._load_partition_from_path(
-                    context,
-                    partition_key,
-                    paths[partition_key],
-                    backcompat_paths.get(partition_key),
-                )
-                if obj is not None:  # in case some partitions were skipped
-                    objs[partition_key] = obj
-
-            return objs
-
     @property
-    def fs(self) -> "AbstractFileSystem":
+    def fs(self) -> AbstractFileSystem:
         """Utility function to get the IOManager filesystem.
 
         Returns:
             AbstractFileSystem: fsspec filesystem.
 
         """
-        # Deferred for import perf
-        from fsspec.implementations.local import LocalFileSystem
         from upath import UPath
 
         if isinstance(self._base_path, UPath):
@@ -108,7 +71,7 @@ class UPathIOManager(IOManager):
             raise ValueError(f"Unsupported base_path type: {type(self._base_path)}")
 
     @property
-    def storage_options(self) -> dict[str, Any]:
+    def storage_options(self) -> Dict[str, Any]:
         """Utility function to get the fsspec storage_options which are often consumed by various I/O functions.
 
         Returns:
@@ -117,7 +80,7 @@ class UPathIOManager(IOManager):
         from upath import UPath
 
         if isinstance(self._base_path, UPath):
-            return self._base_path._kwargs.copy()  # noqa  # pyright: ignore[reportAttributeAccessIssue]
+            return self._base_path._kwargs.copy()  # noqa
         elif isinstance(self._base_path, Path):
             return {}
         else:
@@ -127,7 +90,7 @@ class UPathIOManager(IOManager):
         self,
         context: OutputContext,
         obj: Any,
-    ) -> dict[str, MetadataValue]:
+    ) -> Dict[str, MetadataValue]:
         """Child classes should override this method to add custom metadata to the outputs."""
         return {}
 
@@ -209,7 +172,7 @@ class UPathIOManager(IOManager):
         Args:
             context (Union[InputContext, OutputContext]): The context for the I/O operation.
             path (UPath): The path to the file or object.
-            partition (str): slash-formatted partition/multipartition key
+            partition (str): Formatted partition/multipartition key
 
         Returns:
             UPath: The path to the file with the partition key appended.
@@ -218,7 +181,7 @@ class UPathIOManager(IOManager):
 
     def _get_paths_for_partitions(
         self, context: Union[InputContext, OutputContext]
-    ) -> dict[str, "UPath"]:
+    ) -> Dict[str, "UPath"]:
         """Returns a dict of partition_keys into I/O paths for a given context."""
         if not context.has_asset_partitions:
             raise TypeError(
@@ -268,12 +231,31 @@ class UPathIOManager(IOManager):
             if isinstance(partition_key, MultiPartitionKey)
         }
 
-    def _load_single_input(self, path: "UPath", context: InputContext) -> Any:
+    def _load_single_input(
+        self, path: "UPath", context: InputContext, backcompat_path: Optional["UPath"] = None
+    ) -> Any:
         context.log.debug(self.get_loading_input_log_message(path))
-        obj = self.load_from_path(context=context, path=path)
-        if asyncio.iscoroutine(obj):
-            obj = asyncio.run(obj)
+        try:
+            obj = self.load_from_path(context=context, path=path)
+            if asyncio.iscoroutine(obj):
+                obj = asyncio.run(obj)
+        except FileNotFoundError as e:
+            if backcompat_path is not None:
+                try:
+                    obj = self.load_from_path(context=context, path=backcompat_path)
+                    if asyncio.iscoroutine(obj):
+                        obj = asyncio.run(obj)
 
+                    context.log.debug(
+                        f"File not found at {path}. Loaded instead from backcompat path:"
+                        f" {backcompat_path}"
+                    )
+                except FileNotFoundError:
+                    raise e
+            else:
+                raise e
+
+        context.add_input_metadata({"path": MetadataValue.path(str(path))})
         return obj
 
     def _load_partition_from_path(
@@ -292,14 +274,14 @@ class UPathIOManager(IOManager):
             context (InputContext): IOManager Input context
             partition_key (str): the partition key corresponding to the partition being loaded
             path (UPath): The path to the partition.
-            backcompat_path (Optional[UPath]): The path to the partition in the backcompat location. These paths can be present in assets produced by very old Dagster versions (TODO: specify concrete version).
+            backcompat_path (Optional[UPath]): The path to the partition in the backcompat location.
 
         Returns:
             Any: The object loaded from the partition.
         """
         allow_missing_partitions = (
-            context.definition_metadata.get("allow_missing_partitions", False)
-            if context.definition_metadata is not None
+            context.metadata.get("allow_missing_partitions", False)
+            if context.metadata is not None
             else False
         )
 
@@ -310,13 +292,13 @@ class UPathIOManager(IOManager):
         except FileNotFoundError as e:
             if backcompat_path is not None:
                 try:
-                    obj = self.load_from_path(context=context, path=backcompat_path)
+                    obj = self.load_from_path(context=context, path=path)
                     context.log.debug(
                         f"File not found at {path}. Loaded instead from backcompat path:"
                         f" {backcompat_path}"
                     )
                     return obj
-                except FileNotFoundError:
+                except FileNotFoundError as e:
                     if allow_missing_partitions:
                         context.log.warning(self.get_missing_partition_log_message(partition_key))
                         return None
@@ -328,105 +310,130 @@ class UPathIOManager(IOManager):
             else:
                 raise e
 
-    def load_partitions_async(self, context: InputContext):
-        """Same as `load_partitions`, but for async."""
+    def _load_multiple_inputs(self, context: InputContext) -> Dict[str, Any]:
+        # load multiple partitions
         paths = self._get_paths_for_partitions(context)  # paths for normal partitions
         backcompat_paths = self._get_multipartition_backcompat_paths(
             context
         )  # paths for multipartitions
 
-        async def collect():
-            loop = asyncio.get_running_loop()
+        context.log.debug(f"Loading {len(paths)} partitions...")
 
-            tasks = []
+        objs = {}
 
+        if not inspect.iscoroutinefunction(self.load_from_path):
             for partition_key in context.asset_partition_keys:
-                tasks.append(
-                    loop.create_task(
-                        self._load_partition_from_path(
-                            context,
-                            partition_key,
-                            paths[partition_key],
-                            backcompat_paths.get(partition_key),
+                obj = self._load_partition_from_path(
+                    context,
+                    partition_key,
+                    paths[partition_key],
+                    backcompat_paths.get(partition_key),
+                )
+                if obj is not None:  # in case some partitions were skipped
+                    objs[partition_key] = obj
+            return objs
+        else:
+            # load_from_path returns a coroutine, so we need to await the results
+
+            async def collect():
+                loop = asyncio.get_running_loop()
+
+                tasks = []
+
+                for partition_key in context.asset_partition_keys:
+                    tasks.append(
+                        loop.create_task(
+                            self._load_partition_from_path(
+                                context,
+                                partition_key,
+                                paths[partition_key],
+                                backcompat_paths.get(partition_key),
+                            )
                         )
                     )
+
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # need to handle missing partitions here because exceptions don't get propagated from async calls
+                allow_missing_partitions = (
+                    context.metadata.get("allow_missing_partitions", False)
+                    if context.metadata is not None
+                    else False
                 )
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # need to handle missing partitions here because exceptions don't get propagated from async calls
-            allow_missing_partitions = (
-                context.definition_metadata.get("allow_missing_partitions", False)
-                if context.definition_metadata is not None
-                else False
-            )
-
-            results_without_errors = []
-            found_errors = False
-            for partition_key, result in zip(context.asset_partition_keys, results):
-                if isinstance(result, FileNotFoundError):
-                    if allow_missing_partitions:
-                        context.log.warning(self.get_missing_partition_log_message(partition_key))
-                    else:
+                results_without_errors = []
+                found_errors = False
+                for partition_key, result in zip(context.asset_partition_keys, results):
+                    if isinstance(result, FileNotFoundError):
+                        if allow_missing_partitions:
+                            context.log.warning(
+                                self.get_missing_partition_log_message(partition_key)
+                            )
+                        else:
+                            context.log.error(str(result))
+                            found_errors = True
+                    elif isinstance(result, Exception):
                         context.log.error(str(result))
                         found_errors = True
-                elif isinstance(result, Exception):
-                    context.log.error(str(result))
-                    found_errors = True
-                else:
-                    results_without_errors.append(result)
+                    else:
+                        results_without_errors.append(result)
 
                 if found_errors:
                     raise RuntimeError(
                         f"{len(paths) - len(results_without_errors)} partitions could not be loaded"
                     )
 
-            return results_without_errors
+                return results_without_errors
 
-        awaited_objects = asyncio.get_event_loop().run_until_complete(collect())
+            awaited_objects = asyncio.get_event_loop().run_until_complete(collect())
 
-        return {
-            partition_key: awaited_object
-            for partition_key, awaited_object in zip(context.asset_partition_keys, awaited_objects)
-            if awaited_object is not None
-        }
+            return {
+                partition_key: awaited_object
+                for partition_key, awaited_object in zip(
+                    context.asset_partition_keys, awaited_objects
+                )
+                if awaited_object is not None
+            }
 
-    def _load_partitions(self, context: InputContext) -> dict[str, Any]:
-        # load multiple partitions
-        if not inspect.iscoroutinefunction(self.load_from_path):
-            return self.load_partitions(context)
-        else:
-            # load_from_path returns a coroutine, so we need to await the results
-            return self.load_partitions_async(context)
-
-    def load_input(self, context: InputContext) -> Union[Any, dict[str, Any]]:
+    def load_input(self, context: InputContext) -> Union[Any, Dict[str, Any]]:
         # If no asset key, we are dealing with an op output which is always non-partitioned
         if not context.has_asset_key or not context.has_asset_partitions:
             path = self._get_path(context)
             return self._load_single_input(path, context)
         else:
-            # we are loading asset partitions
             asset_partition_keys = context.asset_partition_keys
             if len(asset_partition_keys) == 0:
                 return None
-            else:
-                return self._load_partitions(context)
+            elif len(asset_partition_keys) == 1:
+                paths = self._get_paths_for_partitions(context)
+                check.invariant(len(paths) == 1, f"Expected 1 path, but got {len(paths)}")
+                path = next(iter(paths.values()))
+                backcompat_paths = self._get_multipartition_backcompat_paths(context)
+                backcompat_path = (
+                    None if not backcompat_paths else next(iter(backcompat_paths.values()))
+                )
 
-    def _handle_transition_to_partitioned_asset(self, context: OutputContext, path: "UPath"):
-        # if the asset was previously non-partitioned, path will be a file, when it should
-        # be a directory for the partitioned asset. Delete the file, so that it can be made
-        # into a directory
+                return self._load_single_input(path, context, backcompat_path)
+            else:  # we are dealing with multiple partitions of an asset
+                type_annotation = context.dagster_type.typing_type
+                if type_annotation != Any and not is_dict_type(type_annotation):
+                    check.failed(
+                        "Loading an input that corresponds to multiple partitions, but the"
+                        " type annotation on the op input is not a dict, Dict, Mapping, or"
+                        f" Any: is '{type_annotation}'."
+                    )
 
-        # TODO: this might not be the case if the serialization format is already operating with directories
-        # e.g. DeltaLake, zarr
-        if path.exists() and path.is_file():
-            context.log.warn(
-                f"Found file at {path} believed to correspond with previously non-partitioned version"
-                f" of {context.asset_key}. Removing {path} and replacing with directory for partitioned data files."
-            )
-            path.unlink(missing_ok=True)
+                return self._load_multiple_inputs(context)
 
     def handle_output(self, context: OutputContext, obj: Any):
+        if context.dagster_type.typing_type == type(None):
+            check.invariant(
+                obj is None,
+                "Output had Nothing type or 'None' annotation, but handle_output received"
+                f" value that was not None and was of type {type(obj)}.",
+            )
+            return None
+
         if context.has_asset_partitions:
             paths = self._get_paths_for_partitions(context)
 
@@ -435,25 +442,17 @@ class UPathIOManager(IOManager):
                 f"The current IO manager {type(self)} does not support persisting an output"
                 " associated with multiple partitions. This error is likely occurring because a"
                 " backfill was launched using the 'single run' option. Instead, launch the"
-                " backfill with a multi-run backfill policy. You can also avoid this error by"
-                " opting out of IO managers entirely by setting the return type of your asset/op to `None`.",
+                " backfill with the 'multiple runs' option.",
             )
 
             path = next(iter(paths.values()))
-            self._handle_transition_to_partitioned_asset(context, path.parent)
         else:
             path = self._get_path(context)
         self.make_directory(path.parent)
         context.log.debug(self.get_writing_output_log_message(path))
         self.dump_to_path(context=context, obj=obj, path=path)
 
-        # Usually, when the value is None, it means that the user didn't intend to use an IO manager
-        # at all, but ended up with one because they didn't set None as their return type
-        # annotation. In these cases, seeing a "path" metadata value can be very confusing, because
-        # often they're actually writing data to a different location within their op. We omit
-        # the metadata when "obj is None", in order to avoid this confusion in the common case.
-        # This comes at the cost of this metadata not being present in these edge cases.
-        metadata = {"path": MetadataValue.path(str(path))} if obj is not None else {}
+        metadata = {"path": MetadataValue.path(str(path))}
         custom_metadata = self.get_metadata(context=context, obj=obj)
         metadata.update(custom_metadata)  # type: ignore
 
@@ -464,7 +463,7 @@ def is_dict_type(type_obj) -> bool:
     if type_obj == dict:
         return True
 
-    if hasattr(type_obj, "__origin__") and type_obj.__origin__ in (dict, dict, Mapping):
+    if hasattr(type_obj, "__origin__") and type_obj.__origin__ in (dict, Dict, Mapping):
         return True
 
     return False

@@ -2,7 +2,7 @@ import boto3
 import moto
 import pytest
 
-from dagster_aws_tests.ecs_tests.stubbed_ecs import ThreadsafeStubbedEcs
+from .stubbed_ecs import ThreadsafeStubbedEcs
 
 
 @pytest.fixture

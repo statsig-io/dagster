@@ -1,9 +1,12 @@
-from typing import Any, Callable
+from typing import Callable
 
 import sqlalchemy as db
 
 from dagster._core.instance import DagsterInstance
-from dagster._core.storage.event_log import SqlEventLogStorage, SqliteEventLogStorage
+from dagster._core.storage.event_log import (
+    SqlEventLogStorage,
+    SqliteEventLogStorage,
+)
 from dagster._core.storage.event_log.schema import (
     AssetKeyTable,
     DynamicPartitionsTable,
@@ -18,7 +21,10 @@ from dagster._core.storage.runs.schema import (
     SecondaryIndexMigrationTable as RunSecondaryIndexTable,
     SnapshotsTable,
 )
-from dagster._core.storage.schedules import SqliteScheduleStorage, SqlScheduleStorage
+from dagster._core.storage.schedules import (
+    SqliteScheduleStorage,
+    SqlScheduleStorage,
+)
 from dagster._core.storage.schedules.schema import (
     InstigatorsTable,
     JobTable,
@@ -33,17 +39,14 @@ def _has_integer_id_column(inspector, table):
     return id_col_type and str(id_col_type) == str(db.Integer())
 
 
-def _convert_id_from_int_to_bigint(conn, table, should_autoincrement):
+def _convert_id_from_int_to_bigint(conn, table):
     # Since we are not using alembic (which might mess up the versioning system), we need to
     # manually handle the dialect differences for running the migration
     dialect = db.inspect(conn).dialect.name
     if dialect == "postgresql":
         statement = db.text(f"ALTER TABLE {table.name} ALTER COLUMN id TYPE BIGINT")
     elif dialect == "mysql":
-        if should_autoincrement:
-            statement = db.text(f"ALTER TABLE {table.name} MODIFY COLUMN id BIGINT AUTO_INCREMENT")
-        else:
-            statement = db.text(f"ALTER TABLE {table.name} MODIFY COLUMN id BIGINT")
+        statement = db.text(f"ALTER TABLE {table.name} MODIFY COLUMN id BIGINT")
     else:
         raise Exception(f"Unsupported dialect {dialect}")
     conn.execute(statement)
@@ -80,24 +83,22 @@ def _migrate_storage(conn, tables_to_migrate, print_fn):
 
     for table in tables_to_migrate:
         if _has_integer_id_column(inspector, table):
-            should_autoincrement = table.columns["id"].autoincrement
-
             if table.name == "event_logs" and "asset_event_tags" in all_table_names:
                 # the asset event tags table has a foreign key on the event_logs id that has to be
                 # removed before the event logs col can be converted to bigint
                 _remove_asset_event_tags_foreign_key(conn, inspector, print_fn)
 
             print_fn(f"Altering {table} to use bigint for id column")
-            _convert_id_from_int_to_bigint(conn, table, should_autoincrement)
+            _convert_id_from_int_to_bigint(conn, table)
             print_fn(f"Completed {table} migration")
 
         # restore the foreign key on the asset event tags table if needed, even if we did not just
         # migrate the event logs table in case we hit some error and exited in a bad state
         if table == "event_logs" and "asset_event_tags" in all_table_names:
-            _restore_asset_event_tags_foreign_key(conn, print_fn)  # pyright: ignore[reportCallIssue]
+            _restore_asset_event_tags_foreign_key(conn, print_fn)
 
 
-def run_bigint_migration(instance: DagsterInstance, print_fn: Callable[..., Any] = print):
+def run_bigint_migration(instance: DagsterInstance, print_fn: Callable = print):
     if isinstance(instance.event_log_storage, SqliteEventLogStorage):
         print_fn("Sqlite does not support bigint types, no need to migrate event log storage.")
     elif isinstance(instance.event_log_storage, SqlEventLogStorage):

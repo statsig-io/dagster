@@ -1,13 +1,13 @@
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Optional, TypeVar, cast
+from typing import Any, Iterable, List, Mapping, Optional, Sequence, TypeVar, cast
 
 from dagster import _check as check
-from dagster._config import Shape
-from dagster._core.definitions.resource_requirement import ResourceAddable
-from dagster._core.definitions.utils import DEFAULT_IO_MANAGER_KEY
-from dagster._core.errors import DagsterInvalidConfigError, DagsterInvalidInvocationError
 from dagster._core.execution.build_resources import wrap_resources_for_execution
 from dagster._utils.merger import merge_dicts
+
+from ..._config import Shape
+from ..definitions.resource_requirement import ResourceAddable
+from ..definitions.utils import DEFAULT_IO_MANAGER_KEY
+from ..errors import DagsterInvalidConfigError, DagsterInvalidInvocationError
 
 T = TypeVar("T", bound=ResourceAddable)
 
@@ -55,10 +55,7 @@ def with_resources(
                 ...
 
             asset1_with_foo, asset2_with_foo = with_resources(
-                [asset1, asset2],
-                resource_defs={
-                    "foo": foo_resource
-                },
+                [the_asset, other_asset],
                 resource_config_by_key={
                     "foo": {
                         "config": {"bar": ...}
@@ -103,8 +100,8 @@ def with_resources(
                 )
             resource_defs[key] = resource_defs[key].configured(resource_config["config"])
 
-    transformed_defs: list[T] = []
+    transformed_defs: List[T] = []
     for definition in definitions:
-        transformed_defs.append(cast("T", definition.with_resources(resource_defs)))
+        transformed_defs.append(cast(T, definition.with_resources(resource_defs)))
 
     return transformed_defs

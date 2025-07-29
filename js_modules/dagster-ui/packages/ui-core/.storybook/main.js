@@ -9,18 +9,23 @@ function getAbsolutePath(value) {
 }
 
 const config = {
-  stories: ['../src/**/*.stories.tsx'],
+  stories: ['../src/**/*.stories.mdx', '../src/**/*.stories.@(js|jsx|ts|tsx)'],
   addons: [
-    getAbsolutePath('@storybook/addon-themes'),
     getAbsolutePath('@storybook/addon-links'),
     getAbsolutePath('@storybook/addon-essentials'),
-    getAbsolutePath('@chromatic-com/storybook'),
+    getAbsolutePath('@storybook/addon-mdx-gfm'),
   ],
-  typescript: {
-    reactDocgen: false,
-  },
   framework: {
-    name: getAbsolutePath('@storybook/nextjs'),
+    name: getAbsolutePath('@storybook/react-webpack5'),
+    options: {},
+  },
+  // https://storybook.js.org/docs/react/configure/webpack#bundle-splitting
+  features: {
+    storyStoreV7: true,
+  },
+  // https://github.com/hipstersmoothie/react-docgen-typescript-plugin/issues/78#issuecomment-1409224863
+  typescript: {
+    reactDocgen: 'react-docgen-typescript-plugin',
   },
   // https://github.com/storybookjs/storybook/issues/16690#issuecomment-971579785
   webpackFinal: async (config) => {
@@ -33,7 +38,6 @@ const config = {
         alias: {
           ...config.resolve.alias,
           '@dagster-io/ui-components': path.resolve('../ui-components/src'),
-          '@dagster-io/dg-docs-components': path.resolve('../dg-docs-components/src'),
         },
       },
       module: {
@@ -45,20 +49,13 @@ const config = {
             include: /node_modules/,
             type: 'javascript/auto',
           },
-          {
-            test: /\.(graphql|gql)$/,
-            exclude: /node_modules/,
-            loader: 'graphql-tag/loader',
-          },
         ],
       },
     };
   },
-  docs: {},
-  env: (config) => ({
-    ...config,
-    STORYBOOK: true,
-  }),
+  docs: {
+    autodocs: true,
+  },
 };
 
 export default config;

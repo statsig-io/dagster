@@ -1,7 +1,6 @@
 import {Button, Dialog, DialogBody, DialogFooter, Icon, Tooltip} from '@dagster-io/ui-components';
-import {useEffect, useState} from 'react';
+import * as React from 'react';
 
-import {RepositoryLocationErrorDialog} from './RepositoryLocationErrorDialog';
 import {useUnscopedPermissions} from '../app/Permissions';
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
 import {
@@ -9,13 +8,9 @@ import {
   useRepositoryLocationReload,
 } from '../nav/useRepositoryLocationReload';
 
-interface Props {
-  icon?: React.ComponentProps<typeof Button>['icon'];
-  label?: React.ReactNode;
-}
+import {RepositoryLocationErrorDialog} from './RepositoryLocationErrorDialog';
 
-export const ReloadAllButton = (props: Props) => {
-  const {icon = <Icon name="reload_definitions" />, label = 'Reload all'} = props;
+export const ReloadAllButton: React.FC<{label?: string}> = ({label = 'Reload all'}) => {
   const {
     permissions: {canReloadWorkspace},
     disabledReasons,
@@ -25,13 +20,13 @@ export const ReloadAllButton = (props: Props) => {
     reloadFn: reloadFnForWorkspace,
   });
 
-  const [isOpen, setIsOpen] = useState(!!error);
-  useEffect(() => setIsOpen(!!error), [error]);
+  const [isOpen, setIsOpen] = React.useState(!!error);
+  React.useEffect(() => setIsOpen(!!error), [error]);
 
   if (!canReloadWorkspace) {
     return (
       <Tooltip content={disabledReasons.canReloadWorkspace}>
-        <Button outlined icon={icon} disabled>
+        <Button icon={<Icon name="refresh" />} disabled intent="none">
           {label}
         </Button>
       </Tooltip>
@@ -40,7 +35,7 @@ export const ReloadAllButton = (props: Props) => {
 
   return (
     <>
-      <Button outlined onClick={tryReload} icon={icon} loading={reloading}>
+      <Button onClick={tryReload} icon={<Icon name="refresh" />} loading={reloading} intent="none">
         {label}
       </Button>
       {errorLocationId ? (

@@ -1,4 +1,5 @@
-import {Box, Button, Dialog, DialogBody, DialogFooter} from '@dagster-io/ui-components';
+import {Box, Button, DialogBody, DialogFooter, Dialog} from '@dagster-io/ui-components';
+import * as React from 'react';
 
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
 import {PythonErrorFragment} from '../app/types/PythonErrorFragment.types';
@@ -9,10 +10,10 @@ interface Props {
   error: PythonErrorFragment | {message: string} | null;
   reloading: boolean;
   onDismiss: () => void;
-  onTryReload?: () => void;
+  onTryReload: () => void;
 }
 
-export const RepositoryLocationErrorDialog = (props: Props) => {
+export const RepositoryLocationErrorDialog: React.FC<Props> = (props) => {
   const {isOpen, error, location, reloading, onTryReload, onDismiss} = props;
   return (
     <Dialog
@@ -27,18 +28,16 @@ export const RepositoryLocationErrorDialog = (props: Props) => {
         <ErrorContents location={location} error={error} />
       </DialogBody>
       <DialogFooter>
-        {onTryReload && (
-          <Button onClick={onTryReload} loading={reloading} intent="primary">
-            Reload again
-          </Button>
-        )}
+        <Button onClick={onTryReload} loading={reloading} intent="primary">
+          Reload again
+        </Button>
         <Button onClick={onDismiss}>Dismiss</Button>
       </DialogFooter>
     </Dialog>
   );
 };
 
-export const RepositoryLocationNonBlockingErrorDialog = (props: Props) => {
+export const RepositoryLocationNonBlockingErrorDialog: React.FC<Props> = (props) => {
   const {isOpen, error, location, reloading, onTryReload, onDismiss} = props;
   return (
     <Dialog
@@ -52,24 +51,19 @@ export const RepositoryLocationNonBlockingErrorDialog = (props: Props) => {
         <ErrorContents location={location} error={error} />
       </DialogBody>
       <DialogFooter>
-        {onTryReload && (
-          <Button onClick={onTryReload} loading={reloading} intent="primary">
-            Reload
-          </Button>
-        )}
+        <Button onClick={onTryReload} loading={reloading} intent="primary">
+          Reload
+        </Button>
         <Button onClick={onDismiss}>Close</Button>
       </DialogFooter>
     </Dialog>
   );
 };
 
-const ErrorContents = ({
-  location,
-  error,
-}: {
+const ErrorContents: React.FC<{
   location: string;
   error: PythonErrorFragment | {message: string} | null;
-}) => (
+}> = ({location, error}) => (
   <>
     <Box margin={{bottom: 12}}>
       Error loading <strong>{location}</strong>. Try reloading the code location after resolving the

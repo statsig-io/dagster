@@ -1,18 +1,13 @@
-from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any, List, Mapping, Optional
 
 from pydantic import BaseModel, Field
 
-from schema.charts.dagster import subschema
-from schema.charts.dagster_user_deployments.subschema.user_deployments import UserDeployments
-from schema.charts.utils import kubernetes
+from ..dagster_user_deployments.subschema.user_deployments import UserDeployments
+from ..utils import kubernetes
+from . import subschema
 
 
-# We have `extra="allow"` here to support passing `dagit` as an alias for `dagsterWebserver` when
-# constructing without validation. This can be removed in 2.0 since we will no longer support the
-# dagit alias. It is possible there is a better way to do this using Pydantic field aliases, but the
-# current solution does work.
-class DagsterHelmValues(BaseModel, extra="allow"):
+class DagsterHelmValues(BaseModel):
     __doc__ = "@" + "generated"
 
     dagsterWebserver: subschema.Webserver
@@ -24,7 +19,7 @@ class DagsterHelmValues(BaseModel, extra="allow"):
     redis: subschema.Redis
     flower: subschema.Flower
     ingress: subschema.Ingress
-    imagePullSecrets: list[kubernetes.SecretRef]
+    imagePullSecrets: List[kubernetes.SecretRef]
     computeLogManager: subschema.ComputeLogManager
     scheduler: subschema.Scheduler
     runLauncher: subschema.RunLauncher
@@ -36,4 +31,4 @@ class DagsterHelmValues(BaseModel, extra="allow"):
     serviceAccount: subschema.ServiceAccount
     global_: subschema.Global = Field(..., alias="global")
     retention: subschema.Retention
-    additionalInstanceConfig: Optional[Mapping[str, Any]] = None
+    additionalInstanceConfig: Optional[Mapping[str, Any]]

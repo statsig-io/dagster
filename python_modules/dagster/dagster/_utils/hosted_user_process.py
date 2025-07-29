@@ -8,16 +8,20 @@ These should only be invoked from contexts where we know this
 to be the case.
 """
 
-from collections.abc import Iterable
-from typing import AbstractSet, Optional  # noqa: UP035
+from typing import TYPE_CHECKING
 
 import dagster._check as check
-from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.reconstruct import ReconstructableJob, ReconstructableRepository
+from dagster._core.host_representation import ExternalJob, ExternalRepository
+from dagster._core.host_representation.external_data import (
+    external_job_data_from_def,
+    external_repository_data_from_def,
+)
 from dagster._core.origin import JobPythonOrigin, RepositoryPythonOrigin
-from dagster._core.remote_representation import RemoteJob
-from dagster._core.remote_representation.external_data import JobDataSnap
-from dagster._core.remote_representation.handle import RepositoryHandle
+
+if TYPE_CHECKING:
+    from dagster._core.definitions.repository_definition import RepositoryDefinition
+    from dagster._core.host_representation.handle import RepositoryHandle
 
 
 def recon_job_from_origin(origin: JobPythonOrigin) -> ReconstructableJob:
@@ -37,12 +41,13 @@ def recon_repository_from_origin(origin: RepositoryPythonOrigin) -> "Reconstruct
     )
 
 
-def remote_job_from_recon_job(
-    recon_job: ReconstructableJob,
-    op_selection: Optional[Iterable[str]],
-    repository_handle: RepositoryHandle,
-    asset_selection: Optional[AbstractSet[AssetKey]] = None,
-) -> RemoteJob:
+def external_repo_from_def(
+    repository_def: "RepositoryDefinition", repository_handle: "RepositoryHandle"
+) -> ExternalRepository:
+    return ExternalRepository(external_repository_data_from_def(repository_def), repository_handle)
+
+
+def external_job_from_recon_job(recon_job, op_selection, repository_handle, asset_selection=None):
     if op_selection or asset_selection:
         sub_recon_job = recon_job.get_subset(
             op_selection=op_selection, asset_selection=asset_selection
@@ -51,7 +56,7 @@ def remote_job_from_recon_job(
     else:
         job_def = recon_job.get_definition()
 
-    return RemoteJob(
-        JobDataSnap.from_job_def(job_def, include_parent_snapshot=True),
+    return ExternalJob(
+        external_job_data_from_def(job_def),
         repository_handle=repository_handle,
     )

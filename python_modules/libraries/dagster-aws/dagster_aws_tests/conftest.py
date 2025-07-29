@@ -1,6 +1,6 @@
 import boto3
 import pytest
-from moto import mock_rds, mock_rdsdata, mock_s3, mock_secretsmanager, mock_ssm
+from moto import mock_s3, mock_secretsmanager, mock_ssm
 
 
 # Make sure unit tests never connect to real AWS
@@ -8,7 +8,6 @@ from moto import mock_rds, mock_rdsdata, mock_s3, mock_secretsmanager, mock_ssm
 def fake_aws_credentials(monkeypatch):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
 
 
 @pytest.fixture
@@ -32,15 +31,3 @@ def mock_secretsmanager_resource():
 def mock_ssm_client():
     with mock_ssm():
         yield boto3.client("ssm")
-
-
-@pytest.fixture
-def mock_rds_client():
-    with mock_rds():
-        yield boto3.client("rds")
-
-
-@pytest.fixture
-def mock_rds_data_client():
-    with mock_rdsdata():
-        yield boto3.client("rds-data")

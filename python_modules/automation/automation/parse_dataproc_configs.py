@@ -4,7 +4,7 @@ from collections import namedtuple
 
 import requests
 
-from automation.printer import IndentingBufferPrinter
+from .printer import IndentingBufferPrinter
 
 SCALAR_TYPES = {
     "string": "String",
@@ -27,10 +27,9 @@ class Enum:
         self.enum_descriptions = enum_descriptions
 
     def write(self, printer):
-        capitalized_name = self.name[0].upper() + self.name[1:]
-        printer.line(capitalized_name + " = Enum(")
+        printer.line(self.name.title() + " = Enum(")
         with printer.with_indent():
-            printer.line(f"name='{capitalized_name}',")
+            printer.line(f"name='{self.name.title()}',")
             printer.line("enum_values=[")
             with printer.with_indent():
                 if self.enum_descriptions:
@@ -56,7 +55,11 @@ class Field:
         self.description = description
 
     def __repr__(self):
-        return f"Field({pprint.pformat(self.fields)}, {self.is_required!s}, {self.description})"
+        return "Field(%s, %s, %s)" % (
+            pprint.pformat(self.fields),
+            str(self.is_required),
+            self.description,
+        )
 
     def _print_fields(self, printer):
         # Scalars
@@ -113,7 +116,7 @@ class Field:
 
             # Print is_required=True/False if defined; if not defined, default to True
             printer.line(
-                f"is_required={self.is_required if self.is_required is not None else True!s},"
+                "is_required=%s," % str(self.is_required if self.is_required is not None else True)
             )
         printer.line(")")
         return printer.read()
@@ -121,15 +124,15 @@ class Field:
 
 class ParsedConfig(namedtuple("_ParsedConfig", "name configs enums")):
     def __new__(cls, name, configs, enums):
-        return super().__new__(cls, name, configs, enums)
+        return super(ParsedConfig, cls).__new__(cls, name, configs, enums)
 
     def write_configs(self, base_path):
-        configs_filename = f"configs_{self.name}.py"
+        configs_filename = "configs_%s.py" % self.name
         print("Writing", configs_filename)  # noqa: T201
         with open(os.path.join(base_path, configs_filename), "wb") as f:
             f.write(self.configs)
 
-        enums_filename = f"types_{self.name}.py"
+        enums_filename = "types_%s.py" % self.name
         with open(os.path.join(base_path, enums_filename), "wb") as f:
             f.write(self.enums)
 
@@ -149,11 +152,12 @@ class ConfigParser:
 
             # Optionally write enum includes
             if self.all_enums:
-                enums = ", ".join(self.all_enums.keys())
-                printer.line(f"from dagster_gcp.dataproc.types_{suffix} import {enums}")
+                printer.line(
+                    "from .types_{} import {}".format(suffix, ", ".join(self.all_enums.keys()))
+                )
                 printer.blank_line()
 
-            printer.line(f"def define_{suffix}_config():")
+            printer.line("def define_%s_config():" % suffix)
             with printer.with_indent():
                 printer.append("return ")
                 base_field.write(printer)
@@ -192,8 +196,6 @@ class ConfigParser:
             # than they should be for type "Component" and the name isn't there
             if name is None:
                 name = "Component"
-            else:
-                name = name[0].upper() + name[1:]
 
             enum = Enum(name, obj["enum"], enum_descriptions or obj.get("enumDescriptions"))
             self.all_enums[name] = enum
@@ -225,9 +227,7 @@ class ConfigParser:
         else:
             raise Exception("unknown type: ", obj)
 
-        description = obj.get("description")
-        is_required = description is not None and description.startswith("Required.")
-        return Field(fields, is_required=is_required, description=description)
+        return Field(fields, is_required=None, description=obj.get("description"))
 
     def extract_schema_for_object(self, object_name, name):
         # Reset enums for this object

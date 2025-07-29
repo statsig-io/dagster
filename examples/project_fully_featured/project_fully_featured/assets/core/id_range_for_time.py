@@ -1,9 +1,8 @@
-from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Mapping, Tuple
 
 from dagster import (
-    AssetExecutionContext,
+    OpExecutionContext,
     _check as check,
 )
 
@@ -71,9 +70,7 @@ def _id_range_for_time(start: int, end: int, hn_client: HNClient):
     min_item_id = hn_client.min_item_id()
 
     start_id = binary_search_nearest_left(_get_item_timestamp, min_item_id, max_item_id, start)
-    end_id = check.not_none(
-        binary_search_nearest_right(_get_item_timestamp, min_item_id, max_item_id, end)
-    )
+    end_id = binary_search_nearest_right(_get_item_timestamp, min_item_id, max_item_id, end)
 
     start_timestamp = str(datetime.fromtimestamp(_get_item_timestamp(start_id), tz=timezone.utc))
     end_timestamp = str(datetime.fromtimestamp(_get_item_timestamp(end_id), tz=timezone.utc))
@@ -92,8 +89,8 @@ def _id_range_for_time(start: int, end: int, hn_client: HNClient):
 
 
 def id_range_for_time(
-    context: AssetExecutionContext, hn_client: HNClient
-) -> tuple[tuple[int, int], Mapping[str, Any]]:
+    context: OpExecutionContext, hn_client: HNClient
+) -> Tuple[Tuple[int, int], Mapping[str, Any]]:
     """For the configured time partition, searches for the range of ids that were created in that time."""
-    start, end = context.partition_time_window
+    start, end = context.asset_partitions_time_window_for_output()
     return _id_range_for_time(int(start.timestamp()), int(end.timestamp()), hn_client)

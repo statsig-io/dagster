@@ -1,19 +1,18 @@
+import {gql} from '@apollo/client';
 import {Alert, ButtonLink, Colors, Group, Mono} from '@dagster-io/ui-components';
+import {History} from 'history';
 import * as React from 'react';
 
-import {gql, useQuery} from '../apollo-client';
-import {
-  DaemonNotRunningAlertInstanceFragment,
-  DaemonNotRunningAlertQuery,
-  DaemonNotRunningAlertQueryVariables,
-  UsingDefaultLauncherAlertInstanceFragment,
-} from './types/BackfillMessaging.types';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {showSharedToaster} from '../app/DomUtils';
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
 import {LaunchPartitionBackfillMutation} from '../instance/backfill/types/BackfillUtils.types';
-import {getBackfillPath} from '../runs/RunsFeedUtils';
-import {AnchorButton} from '../ui/AnchorButton';
+import {runsPathWithFilters} from '../runs/RunsFilterInput';
+
+import {
+  DaemonNotRunningAlertInstanceFragment,
+  UsingDefaultLauncherAlertInstanceFragment,
+} from './types/BackfillMessaging.types';
 
 const DEFAULT_RUN_LAUNCHER_NAME = 'DefaultRunLauncher';
 
@@ -42,7 +41,7 @@ function messageForLaunchBackfillError(data: LaunchPartitionBackfillMutation | n
       <div>An unexpected error occurred. This backfill was not launched.</div>
       {errors ? (
         <ButtonLink
-          color={Colors.accentReversed()}
+          color={Colors.White}
           underline="always"
           onClick={() => {
             showCustomAlert({
@@ -67,8 +66,11 @@ export async function showBackfillErrorToast(
   });
 }
 
-export async function showBackfillSuccessToast(backfillId: string) {
-  const url = getBackfillPath(backfillId);
+export async function showBackfillSuccessToast(
+  history: History<unknown>,
+  backfillId: string,
+  isAssetBackfill: boolean,
+) {
   await showSharedToaster({
     intent: 'success',
     message: (
@@ -77,8 +79,15 @@ export async function showBackfillSuccessToast(backfillId: string) {
       </div>
     ),
     action: {
-      type: 'custom',
-      element: <AnchorButton to={url}>View</AnchorButton>,
+      text: 'View',
+      href: isAssetBackfill
+        ? `/overview/backfills/${backfillId}`
+        : runsPathWithFilters([
+            {
+              token: 'tag',
+              value: `dagster/backfill=${backfillId}`,
+            },
+          ]),
     },
   });
 }
@@ -96,30 +105,12 @@ export const DAEMON_NOT_RUNNING_ALERT_INSTANCE_FRAGMENT = gql`
   }
 `;
 
-const DAEMON_NOT_RUNNING_ALERT_QUERY = gql`
-  query DaemonNotRunningAlertQuery {
-    instance {
-      id
-      ...DaemonNotRunningAlertInstanceFragment
-    }
-  }
+export const DaemonNotRunningAlert: React.FC<{
+  instance: DaemonNotRunningAlertInstanceFragment;
+}> = ({instance}) =>
+  !instance.daemonHealth.daemonStatus.healthy ? <DaemonNotRunningAlertBody /> : null;
 
-  ${DAEMON_NOT_RUNNING_ALERT_INSTANCE_FRAGMENT}
-`;
-
-export function isBackfillDaemonHealthy(instance: DaemonNotRunningAlertInstanceFragment) {
-  return instance.daemonHealth.daemonStatus.healthy;
-}
-
-export function useIsBackfillDaemonHealthy() {
-  const queryData = useQuery<DaemonNotRunningAlertQuery, DaemonNotRunningAlertQueryVariables>(
-    DAEMON_NOT_RUNNING_ALERT_QUERY,
-    {blocking: false},
-  );
-  return queryData.data ? isBackfillDaemonHealthy(queryData.data.instance) : true;
-}
-
-export const DaemonNotRunningAlert = () => (
+export const DaemonNotRunningAlertBody = () => (
   <Alert
     intent="warning"
     title="The backfill daemon is not running."
@@ -149,11 +140,9 @@ export const USING_DEFAULT_LAUNCHER_ALERT_INSTANCE_FRAGMENT = gql`
   }
 `;
 
-export const UsingDefaultLauncherAlert = ({
-  instance,
-}: {
+export const UsingDefaultLauncherAlert: React.FC<{
   instance: UsingDefaultLauncherAlertInstanceFragment;
-}) =>
+}> = ({instance}) =>
   instance.runLauncher?.name === DEFAULT_RUN_LAUNCHER_NAME && !instance.runQueuingSupported ? (
     <Alert
       intent="warning"

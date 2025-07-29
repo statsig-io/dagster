@@ -1,16 +1,17 @@
 import os
-from typing import TYPE_CHECKING, cast
 
 import duckdb
 import pandas as pd
 import pytest
 from dagster import (
-    AssetExecutionContext,
     AssetIn,
     AssetKey,
-    Definitions,
-    MetadataValue,
+    DailyPartitionsDefinition,
+    DynamicPartitionsDefinition,
+    MultiPartitionKey,
+    MultiPartitionsDefinition,
     Out,
+    StaticPartitionsDefinition,
     TimeWindowPartitionMapping,
     asset,
     graph,
@@ -19,17 +20,7 @@ from dagster import (
     op,
 )
 from dagster._check import CheckError
-from dagster._core.definitions.partitions.definition import (
-    DailyPartitionsDefinition,
-    DynamicPartitionsDefinition,
-    MultiPartitionsDefinition,
-    StaticPartitionsDefinition,
-)
-from dagster._core.definitions.partitions.utils import MultiPartitionKey
 from dagster_duckdb_pandas import DuckDBPandasIOManager, duckdb_pandas_io_manager
-
-if TYPE_CHECKING:
-    from dagster._core.definitions.metadata.metadata_value import IntMetadataValue
 
 
 @pytest.fixture
@@ -107,31 +98,6 @@ def test_duckdb_io_manager_with_assets(tmp_path, io_managers):
             assert out_df["a"].tolist() == [2, 3, 4]
 
             duckdb_conn.close()
-
-
-def test_io_manager_asset_metadata(tmp_path) -> None:
-    @asset
-    def my_pandas_df() -> pd.DataFrame:
-        return pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-
-    db_file = os.path.join(tmp_path, "unit_test.duckdb")
-    defs = Definitions(
-        assets=[my_pandas_df],
-        resources={
-            "io_manager": DuckDBPandasIOManager(database=db_file, schema="custom_schema"),
-        },
-    )
-
-    res = defs.resolve_implicit_global_asset_job_def().execute_in_process()
-    assert res.success
-
-    mats = res.get_asset_materialization_events()
-    assert len(mats) == 1
-    mat = mats[0]
-
-    assert mat.materialization.metadata["dagster/table_name"] == MetadataValue.text(
-        f"{db_file}.custom_schema.my_pandas_df"
-    )
 
 
 def test_duckdb_io_manager_with_schema(tmp_path):
@@ -227,9 +193,9 @@ def test_not_supported_type(tmp_path, io_managers):
     metadata={"partition_expr": "time"},
     config_schema={"value": str},
 )
-def daily_partitioned(context: AssetExecutionContext) -> pd.DataFrame:
-    partition = pd.Timestamp(context.partition_key)
-    value = context.op_execution_context.op_config["value"]
+def daily_partitioned(context) -> pd.DataFrame:
+    partition = pd.Timestamp(context.asset_partition_key_for_output())
+    value = context.op_config["value"]
 
     return pd.DataFrame(
         {
@@ -244,19 +210,12 @@ def test_time_window_partitioned_asset(tmp_path, io_managers):
     for io_manager in io_managers:
         resource_defs = {"io_manager": io_manager}
 
-        result = materialize(
+        materialize(
             [daily_partitioned],
             partition_key="2022-01-01",
             resources=resource_defs,
             run_config={"ops": {"my_schema__daily_partitioned": {"config": {"value": "1"}}}},
         )
-        materialization = next(
-            event
-            for event in result.all_events
-            if event.event_type_value == "ASSET_MATERIALIZATION"
-        )
-        meta = materialization.materialization.metadata["dagster/partition_row_count"]
-        assert cast("IntMetadataValue", meta).value == 3
 
         duckdb_conn = duckdb.connect(database=os.path.join(tmp_path, "unit_test.duckdb"))
         out_df = duckdb_conn.execute("SELECT * FROM my_schema.daily_partitioned").fetch_df()
@@ -300,9 +259,9 @@ def test_time_window_partitioned_asset(tmp_path, io_managers):
     metadata={"partition_expr": "color"},
     config_schema={"value": str},
 )
-def static_partitioned(context: AssetExecutionContext) -> pd.DataFrame:
-    partition = context.partition_key
-    value = context.op_execution_context.op_config["value"]
+def static_partitioned(context) -> pd.DataFrame:
+    partition = context.asset_partition_key_for_output()
+    value = context.op_config["value"]
     return pd.DataFrame(
         {
             "color": [partition, partition, partition],
@@ -364,12 +323,12 @@ def test_static_partitioned_asset(tmp_path, io_managers):
         }
     ),
     key_prefix=["my_schema"],
-    metadata={"partition_expr": {"time": "CAST(time as DATE)", "color": "color"}},
+    metadata={"partition_expr": {"time": "CAST(time as TIMESTAMP)", "color": "color"}},
     config_schema={"value": str},
 )
 def multi_partitioned(context) -> pd.DataFrame:
     partition = context.partition_key.keys_by_dimension
-    value = context.op_execution_context.op_config["value"]
+    value = context.op_config["value"]
     return pd.DataFrame(
         {
             "color": [partition["color"], partition["color"], partition["color"]],
@@ -444,9 +403,9 @@ dynamic_fruits = DynamicPartitionsDefinition(name="dynamic_fruits")
     metadata={"partition_expr": "fruit"},
     config_schema={"value": str},
 )
-def dynamic_partitioned(context: AssetExecutionContext) -> pd.DataFrame:
-    partition = context.partition_key
-    value = context.op_execution_context.op_config["value"]
+def dynamic_partitioned(context) -> pd.DataFrame:
+    partition = context.asset_partition_key_for_output()
+    value = context.op_config["value"]
     return pd.DataFrame(
         {
             "fruit": [partition, partition, partition],
@@ -460,7 +419,7 @@ def test_dynamic_partition(tmp_path, io_managers):
         with instance_for_test() as instance:
             resource_defs = {"io_manager": io_manager}
 
-            instance.add_dynamic_partitions(dynamic_fruits.name, ["apple"])  # pyright: ignore[reportArgumentType]
+            instance.add_dynamic_partitions(dynamic_fruits.name, ["apple"])
 
             materialize(
                 [dynamic_partitioned],
@@ -475,7 +434,7 @@ def test_dynamic_partition(tmp_path, io_managers):
             assert out_df["a"].tolist() == ["1", "1", "1"]
             duckdb_conn.close()
 
-            instance.add_dynamic_partitions(dynamic_fruits.name, ["orange"])  # pyright: ignore[reportArgumentType]
+            instance.add_dynamic_partitions(dynamic_fruits.name, ["orange"])
 
             materialize(
                 [dynamic_partitioned],
@@ -524,20 +483,15 @@ def test_self_dependent_asset(tmp_path, io_managers):
         },
         config_schema={"value": str, "last_partition_key": str},
     )
-    def self_dependent_asset(
-        context: AssetExecutionContext, self_dependent_asset: pd.DataFrame
-    ) -> pd.DataFrame:
-        key = context.partition_key
+    def self_dependent_asset(context, self_dependent_asset: pd.DataFrame) -> pd.DataFrame:
+        key = context.asset_partition_key_for_output()
 
         if not self_dependent_asset.empty:
             assert len(self_dependent_asset.index) == 3
-            assert (
-                self_dependent_asset["key"]
-                == context.op_execution_context.op_config["last_partition_key"]
-            ).all()
+            assert (self_dependent_asset["key"] == context.op_config["last_partition_key"]).all()
         else:
-            assert context.op_execution_context.op_config["last_partition_key"] == "NA"
-        value = context.op_execution_context.op_config["value"]
+            assert context.op_config["last_partition_key"] == "NA"
+        value = context.op_config["value"]
         pd_df = pd.DataFrame(
             {
                 "key": [key, key, key],

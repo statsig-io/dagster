@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: dict[str, str] = {}
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_wandb/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -23,6 +24,7 @@ setup(
     description="Package for wandb Dagster components.",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-wandb",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
@@ -30,11 +32,9 @@ setup(
         "Operating System :: OS Independent",
     ],
     packages=find_packages(exclude=["dagster_wandb_tests*"]),
-    include_package_data=True,
-    python_requires=">=3.9,<3.14",
     install_requires=[
-        f"dagster{pin}",
-        "wandb>=0.15.11,<1.0",
+        "dagster==1.4.16",
+        "wandb>=0.13.5,<0.15.5",
     ],
     extras_require={"dev": ["cloudpickle", "joblib", "callee", "dill"]},
     zip_safe=False,

@@ -1,7 +1,8 @@
 import * as dagre from 'dagre';
 
-import type {IBounds, IPoint} from './common';
 import {titleOfIO} from '../app/titleOfIO';
+
+import {IBounds, IPoint} from './common';
 
 export type OpLayoutEdgeSide = {
   point: IPoint;
@@ -133,7 +134,7 @@ export function layoutOpGraph(pipelineOps: ILayoutOp[], opts: LayoutOpGraphOptio
   }
 
   // Define a new top-down, left to right graph layout
-  g.setGraph({rankdir: 'TB', marginx, marginy, ranker: 'tight-tree'});
+  g.setGraph({rankdir: 'TB', marginx, marginy});
   g.setDefaultEdgeLabel(() => ({}));
 
   const edges: OpLayoutEdge[] = [];

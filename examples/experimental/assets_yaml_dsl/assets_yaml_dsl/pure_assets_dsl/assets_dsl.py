@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import Any
+from typing import Any, Dict, List
 
 import yaml
 from dagster import AssetsDefinition
@@ -13,16 +13,16 @@ except ImportError:
     from yaml import Loader
 
 from dagster import AssetKey, asset
-from dagster._core.pipes.subprocess import PipesSubprocessClient
+from dagster._core.ext.subprocess import ExtSubprocess
 
 
-def load_yaml(relative_path) -> dict[str, Any]:
+def load_yaml(relative_path) -> Dict[str, Any]:
     path = os.path.join(os.path.dirname(__file__), relative_path)
-    with open(path, encoding="utf8") as ff:
+    with open(path, "r", encoding="utf8") as ff:
         return yaml.load(ff, Loader=Loader)
 
 
-def from_asset_entries(asset_entries: dict[str, Any]) -> list[AssetsDefinition]:
+def from_asset_entries(asset_entries: Dict[str, Any]) -> List[AssetsDefinition]:
     assets_defs = []
 
     group_name = asset_entries.get("group_name")
@@ -39,22 +39,22 @@ def from_asset_entries(asset_entries: dict[str, Any]) -> list[AssetsDefinition]:
         @asset(key=asset_key, deps=deps, description=description, group_name=group_name)
         def _assets_def(
             context: AssetExecutionContext,
-            pipes_subprocess_client: PipesSubprocessClient,
-        ):
+            subprocess_resource: ExtSubprocess,
+        ) -> None:
             # instead of querying a dummy client, do your real data processing here
 
             python_executable = shutil.which("python")
             assert python_executable is not None
-            pipes_subprocess_client.run(
+            subprocess_resource.run(
                 command=[python_executable, file_relative_path(__file__, "sql_script.py"), sql],
                 context=context,
-            ).get_results()
+            )
 
         assets_defs.append(_assets_def)
 
     return assets_defs
 
 
-def get_asset_dsl_example_defs() -> list[AssetsDefinition]:
+def get_asset_dsl_example_defs() -> List[AssetsDefinition]:
     asset_entries = load_yaml("assets.yaml")
     return from_asset_entries(asset_entries)

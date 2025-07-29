@@ -1,56 +1,64 @@
-import dagster as dg
 import pytest
+from dagster import (
+    DagsterInvalidDefinitionError,
+    DynamicOut,
+    DynamicOutput,
+    GraphOut,
+    graph,
+    job,
+    op,
+)
 
 
-@dg.op(out=dg.DynamicOut())
+@op(out=DynamicOut())
 def dynamic_numbers(_):
-    yield dg.DynamicOutput(1, mapping_key="1")
-    yield dg.DynamicOutput(2, mapping_key="2")
+    yield DynamicOutput(1, mapping_key="1")
+    yield DynamicOutput(2, mapping_key="2")
 
 
-@dg.op
+@op
 def emit_one(_):
     return 1
 
 
-@dg.op
+@op
 def echo(_, x):
     return x
 
 
-@dg.op
+@op
 def add_one(_, x):
     return x + 1
 
 
 def test_must_unpack():
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="Dynamic output must be unpacked by invoking map or collect",
     ):
 
-        @dg.job
+        @job
         def _should_fail():
             echo(dynamic_numbers())
 
 
 def test_must_unpack_composite():
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="Dynamic output must be unpacked by invoking map or collect",
     ):
 
-        @dg.graph
+        @graph
         def composed():
             return dynamic_numbers()
 
-        @dg.job
+        @job
         def _should_fail():
             echo(composed())
 
 
 def test_mapping():
-    @dg.job
+    @job
     def mapping():
         dynamic_numbers().map(add_one).map(echo)
 
@@ -65,7 +73,7 @@ def test_mapping_multi():
         c = add_one(b)
         return a, b, c
 
-    @dg.job
+    @job
     def multi_map():
         a, b, c = dynamic_numbers().map(_multi)
         a.map(echo)
@@ -77,15 +85,15 @@ def test_mapping_multi():
 
 
 def test_composite_multi_out():
-    @dg.graph(out={"one": dg.GraphOut(), "numbers": dg.GraphOut()})
+    @graph(out={"one": GraphOut(), "numbers": GraphOut()})
     def multi_out():
         one = emit_one()
         numbers = dynamic_numbers()
         return {"one": one, "numbers": numbers}
 
-    @dg.job
+    @job
     def composite_multi():
-        one, numbers = multi_out()  # pyright: ignore[reportGeneralTypeIssues]
+        one, numbers = multi_out()
         echo(one)
         numbers.map(echo)
 

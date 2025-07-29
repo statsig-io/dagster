@@ -1,95 +1,106 @@
-import {Box, Colors, Heading, Icon, Mono, Subheading} from '@dagster-io/ui-components';
-import {useMemo} from 'react';
+import {Box, Colors, Group, Heading, Icon, Mono, Subheading} from '@dagster-io/ui-components';
+import React from 'react';
 import {Link} from 'react-router-dom';
+
+import {Timestamp} from '../app/time/Timestamp';
+import {isHiddenAssetGroupJob} from '../asset-graph/Utils';
+import {AssetKeyInput} from '../graphql/types';
+import {PipelineReference} from '../pipelines/PipelineReference';
+import {RunStatusWithStats} from '../runs/RunStatusDots';
+import {titleForRun, linkToRunEvent} from '../runs/RunUtils';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
+import {buildRepoAddress} from '../workspace/buildRepoAddress';
 
 import {AssetEventMetadataEntriesTable} from './AssetEventMetadataEntriesTable';
 import {AssetEventSystemTags} from './AssetEventSystemTags';
 import {AssetLineageElements} from './AssetLineageElements';
-import {RunlessEventTag} from './RunlessEventTag';
-import {assetDetailsPathForKey} from './assetDetailsPathForKey';
-import {isRunlessEvent} from './isRunlessEvent';
+import {AssetMaterializationUpstreamData} from './AssetMaterializationUpstreamData';
 import {
-  AssetFailedToMaterializeFragment,
+  AssetMaterializationFragment,
   AssetObservationFragment,
-  AssetSuccessfulMaterializationFragment,
 } from './types/useRecentAssetEvents.types';
-import {Timestamp} from '../app/time/Timestamp';
-import {AssetKeyInput} from '../graphql/types';
-import {Description} from '../pipelines/Description';
-import {linkToRunEvent, titleForRun} from '../runs/RunUtils';
-import {buildRepoAddress} from '../workspace/buildRepoAddress';
 
-export const AssetEventDetail = ({
-  event,
-  assetKey,
-}: {
+export const AssetEventDetail: React.FC<{
   assetKey: AssetKeyInput;
-  event:
-    | AssetSuccessfulMaterializationFragment
-    | AssetFailedToMaterializeFragment
-    | AssetObservationFragment;
-}) => {
+  event: AssetMaterializationFragment | AssetObservationFragment;
+}> = ({event, assetKey}) => {
   const run = event.runOrError?.__typename === 'Run' ? event.runOrError : null;
   const repositoryOrigin = run?.repositoryOrigin;
   const repoAddress = repositoryOrigin
     ? buildRepoAddress(repositoryOrigin.repositoryName, repositoryOrigin.repositoryLocationName)
     : null;
+  const repo = useRepository(repoAddress);
   const assetLineage = event.__typename === 'MaterializationEvent' ? event.assetLineage : [];
-
-  const {icon, label} = useMemo(() => {
-    switch (event.__typename) {
-      case 'MaterializationEvent':
-        return {
-          icon: <Icon name="run_success" color={Colors.accentGreen()} size={16} />,
-          label: 'Materialized',
-        };
-      case 'ObservationEvent':
-        return {
-          icon: <Icon name="observation" color={Colors.accentGreen()} size={16} />,
-          label: 'Observed',
-        };
-      case 'FailedToMaterializeEvent':
-        return {
-          icon: <Icon name="run_failed" color={Colors.accentRed()} size={16} />,
-          label: 'Failed',
-        };
-    }
-  }, [event.__typename]);
 
   return (
     <Box padding={{horizontal: 24, bottom: 24}} style={{flex: 1}}>
-      <Box padding={{vertical: 24}} border="bottom" flex={{direction: 'column', gap: 8}}>
-        <Box flex={{direction: 'row', gap: 12, alignItems: 'center'}}>
-          <Heading>
-            <Timestamp timestamp={{ms: Number(event.timestamp)}} />
-          </Heading>
-          {isRunlessEvent(event) ? <RunlessEventTag tags={event.tags} /> : undefined}
-        </Box>
-        <Box flex={{direction: 'row', gap: 4, alignItems: 'center'}}>
-          {icon}
-          {event.partition ? (
-            <>
-              Partition
-              <Link
-                to={assetDetailsPathForKey(assetKey, {
-                  view: 'partitions',
-                  partition: event.partition,
-                })}
-              >
-                {event.partition}
-              </Link>
-              {label.toLowerCase()}
-            </>
+      <Box
+        padding={{vertical: 24}}
+        border="bottom"
+        flex={{alignItems: 'center', justifyContent: 'space-between'}}
+      >
+        <Heading>
+          <Timestamp timestamp={{ms: Number(event.timestamp)}} />
+        </Heading>
+      </Box>
+      <Box
+        style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16}}
+        border="bottom"
+        padding={{vertical: 16}}
+      >
+        <Box flex={{gap: 4, direction: 'column'}}>
+          <Subheading>Event</Subheading>
+          {event.__typename === 'MaterializationEvent' ? (
+            <Box flex={{gap: 4}}>
+              <Icon name="materialization" />
+              Materialization
+            </Box>
           ) : (
-            <span>{label}</span>
+            <Box flex={{gap: 4}}>
+              <Icon name="observation" />
+              Observation
+            </Box>
           )}
-          {run && (
-            <>
-              <span>in run</span>
+        </Box>
+        {event.partition && (
+          <Box flex={{gap: 4, direction: 'column'}}>
+            <Subheading>Partition</Subheading>
+            <Box flex={{gap: 4}}>{event.partition}</Box>
+          </Box>
+        )}
+        <Box flex={{gap: 4, direction: 'column'}} style={{minHeight: 64}}>
+          <Subheading>Run</Subheading>
+          {run ? (
+            <Box flex={{direction: 'row', gap: 8, alignItems: 'center'}}>
+              <RunStatusWithStats runId={run.id} status={run.status} />
               <Link to={linkToRunEvent(run, event)}>
                 <Mono>{titleForRun(run)}</Mono>
               </Link>
-            </>
+            </Box>
+          ) : (
+            '—'
+          )}
+        </Box>
+        <Box flex={{gap: 4, direction: 'column'}}>
+          <Subheading>Job</Subheading>
+          {run && !isHiddenAssetGroupJob(run.pipelineName) ? (
+            <Box>
+              <Box>
+                <PipelineReference
+                  showIcon
+                  pipelineName={run.pipelineName}
+                  pipelineHrefContext={repoAddress || 'repo-unknown'}
+                  snapshotId={run.pipelineSnapshotId}
+                  isJob={isThisThingAJob(repo, run.pipelineName)}
+                />
+              </Box>
+              <Group direction="row" spacing={8} alignItems="center">
+                <Icon name="linear_scale" color={Colors.Gray400} />
+                <Link to={linkToRunEvent(run, event)}>{event.stepKey}</Link>
+              </Group>
+            </Box>
+          ) : (
+            '—'
           )}
         </Box>
       </Box>
@@ -97,22 +108,24 @@ export const AssetEventDetail = ({
       {event.description && (
         <Box padding={{top: 24}} flex={{direction: 'column', gap: 8}}>
           <Subheading>Description</Subheading>
-          <Description description={event.description} />
+          {event.description}
         </Box>
       )}
 
       <Box padding={{top: 24}} flex={{direction: 'column', gap: 8}}>
         <Subheading>Metadata</Subheading>
-        <AssetEventMetadataEntriesTable
-          repoAddress={repoAddress}
-          assetKey={assetKey}
-          event={event}
-          showDescriptions
-        />
+        <AssetEventMetadataEntriesTable event={event} />
       </Box>
 
+      {event.__typename === 'MaterializationEvent' && (
+        <Box padding={{top: 24}} flex={{direction: 'column', gap: 8}}>
+          <Subheading>Source data</Subheading>
+          <AssetMaterializationUpstreamData timestamp={event.timestamp} assetKey={assetKey} />
+        </Box>
+      )}
+
       <Box padding={{top: 24}} flex={{direction: 'column', gap: 8}}>
-        <Subheading>Tags</Subheading>
+        <Subheading>System tags</Subheading>
         <AssetEventSystemTags event={event} collapsible />
       </Box>
 
@@ -133,7 +146,7 @@ export const AssetEventDetailEmpty = () => (
       border="bottom"
       flex={{alignItems: 'center', justifyContent: 'space-between'}}
     >
-      <Heading color={Colors.textLight()}>No event selected</Heading>
+      <Heading color={Colors.Gray400}>No event selected</Heading>
     </Box>
     <Box
       style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16}}
@@ -153,7 +166,7 @@ export const AssetEventDetailEmpty = () => (
 
     <Box padding={{top: 24}} flex={{direction: 'column', gap: 8}}>
       <Subheading>Metadata</Subheading>
-      <AssetEventMetadataEntriesTable event={null} repoAddress={null} showDescriptions />
+      <AssetEventMetadataEntriesTable event={null} />
     </Box>
   </Box>
 );

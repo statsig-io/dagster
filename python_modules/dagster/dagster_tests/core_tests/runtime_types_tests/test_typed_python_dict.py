@@ -1,23 +1,23 @@
-import dagster as dg
 import pytest
+from dagster import DagsterTypeCheckDidNotPass, Dict, In, Out, op
 from dagster._utils.test import wrap_op_in_graph_and_execute
 
 
 def test_typed_python_dict():
-    int_to_int = dg.Dict[int, int]
+    int_to_int = Dict[int, int]
 
-    int_to_int.type_check(None, {1: 1})  # pyright: ignore[reportArgumentType]
+    int_to_int.type_check(None, {1: 1})
 
 
 def test_typed_python_dict_failure():
-    int_to_int = dg.Dict[int, int]
+    int_to_int = Dict[int, int]
 
-    res = int_to_int.type_check(None, {1: "1"})  # pyright: ignore[reportArgumentType]
+    res = int_to_int.type_check(None, {1: "1"})
     assert not res.success
 
 
 def test_basic_op_dict_int_int_output():
-    @dg.op(out=dg.Out(dg.Dict[int, int]))
+    @op(out=Out(Dict[int, int]))
     def emit_dict_int_int():
         return {1: 1}
 
@@ -25,16 +25,16 @@ def test_basic_op_dict_int_int_output():
 
 
 def test_basic_op_dict_int_int_output_faile():
-    @dg.op(out=dg.Out(dg.Dict[int, int]))
+    @op(out=Out(Dict[int, int]))
     def emit_dict_int_int():
         return {1: "1"}
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         wrap_op_in_graph_and_execute(emit_dict_int_int)
 
 
 def test_basic_op_dict_int_int_input_pass():
-    @dg.op(ins={"ddict": dg.In(dg.Dict[int, int])})
+    @op(ins={"ddict": In(Dict[int, int])})
     def emit_dict_int_int(ddict):
         return ddict
 
@@ -44,9 +44,9 @@ def test_basic_op_dict_int_int_input_pass():
 
 
 def test_basic_op_dict_int_int_input_fails():
-    @dg.op(ins={"ddict": dg.In(dg.Dict[int, int])})
+    @op(ins={"ddict": In(Dict[int, int])})
     def emit_dict_int_int(ddict):
         return ddict
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         wrap_op_in_graph_and_execute(emit_dict_int_int, input_values={"ddict": {"1": 2}})

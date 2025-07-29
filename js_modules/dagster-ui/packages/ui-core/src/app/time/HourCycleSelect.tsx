@@ -1,9 +1,8 @@
-import {Button, Icon, Menu, MenuItem, Select} from '@dagster-io/ui-components';
-import {useContext, useEffect, useMemo, useState} from 'react';
+import {MenuItem, Menu, Select, ButtonLink} from '@dagster-io/ui-components';
+import * as React from 'react';
 
 import {HourCycle} from './HourCycle';
 import {TimeContext} from './TimeContext';
-import {browserHourCycle} from './browserTimezone';
 
 /**
  * Show the "hour cycle" options available to the user:
@@ -15,14 +14,14 @@ import {browserHourCycle} from './browserTimezone';
  * We detect the automatic behavior for the user's locale and show that as an option
  * as well. The user can override this with one of the choices above.
  */
-export const HourCycleSelect = () => {
+export const HourCycleSelect: React.FC = () => {
   const {
     hourCycle: [hourCycle, setHourCycle],
-  } = useContext(TimeContext);
+  } = React.useContext(TimeContext);
 
-  const [date, setDate] = useState(() => new Date());
+  const [date, setDate] = React.useState(() => new Date());
 
-  const formats = useMemo(() => {
+  const formats = React.useMemo(() => {
     return {
       automatic: new Intl.DateTimeFormat(navigator.language, {timeStyle: 'short'}),
       h12: new Intl.DateTimeFormat(navigator.language, {hourCycle: 'h12', timeStyle: 'short'}),
@@ -30,15 +29,19 @@ export const HourCycleSelect = () => {
     };
   }, []);
 
-  const labels = useMemo(() => {
+  const labels = React.useMemo(() => {
+    // Detect the hour cycle based on the presence of a dayPeriod in a formatted time string,
+    // since the `hourCycle` property on the Intl.Locale object may be undefined.
+    const parts = formats.automatic.formatToParts(new Date());
+    const partKeys = parts.map((part) => part.type);
     return {
-      automatic: `Automatic (${browserHourCycle() === 'h12' ? '12-hour' : '24-hour'})`,
+      automatic: `Automatic (${partKeys.includes('dayPeriod') ? '12-hour' : '24-hour'})`,
       h12: '12-hour',
       h23: '24-hour',
     };
-  }, []);
+  }, [formats.automatic]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const interval = setInterval(() => {
       setDate(new Date());
     }, 1000);
@@ -72,7 +75,8 @@ export const HourCycleSelect = () => {
   return (
     <Select<(typeof items)[0]>
       popoverProps={{
-        position: 'bottom-right',
+        position: 'bottom-left',
+        modifiers: {offset: {enabled: true, offset: '-12px, 8px'}},
       }}
       filterable={false}
       activeItem={items.find((item) => item.key === hourCycle)}
@@ -95,12 +99,9 @@ export const HourCycleSelect = () => {
       }}
       onItemSelect={(item) => setHourCycle(item.key as HourCycle)}
     >
-      <Button
-        rightIcon={<Icon name="arrow_drop_down" />}
-        style={{minWidth: '200px', display: 'flex', justifyContent: 'space-between'}}
-      >
+      <ButtonLink>
         {hourCycle === 'Automatic' || !hourCycle ? labels.automatic : labels[hourCycle]}
-      </Button>
+      </ButtonLink>
     </Select>
   );
 };

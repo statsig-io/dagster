@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Dict
 
 from dagster import (
     Bool,
@@ -7,12 +7,11 @@ from dagster import (
     Int,
     op,
 )
-from dagster._annotations import beta
-from dagster_shared.seven import json
+from dagster._seven import json
 from pydantic import Field
 
-from dagster_gcp.dataproc.configs import define_dataproc_submit_job_config
-from dagster_gcp.dataproc.resources import TWENTY_MINUTES, DataprocResource
+from .configs import define_dataproc_submit_job_config
+from .resources import TWENTY_MINUTES, DataprocResource
 
 # maintain the old config schema because of the nested job_config schema
 DATAPROC_CONFIG_SCHEMA = {
@@ -34,7 +33,6 @@ DATAPROC_CONFIG_SCHEMA = {
 }
 
 
-@beta
 class DataprocOpConfig(Config):
     job_timeout_in_seconds: int = Field(
         default=TWENTY_MINUTES,
@@ -54,7 +52,7 @@ class DataprocOpConfig(Config):
         )
     )
     region: str = Field(description="The GCP region.")
-    job_config: dict[str, Any] = Field(
+    job_config: Dict[str, Any] = Field(
         description="Python dictionary containing configuration for the Dataproc Job."
     )
 
@@ -64,7 +62,7 @@ def _dataproc_compute(context):
     job_timeout = context.op_config["job_timeout_in_seconds"]
 
     context.log.info(
-        "submitting job with config: %s and timeout of: %d seconds"  # noqa: UP031
+        "submitting job with config: %s and timeout of: %d seconds"
         % (str(json.dumps(job_config)), job_timeout)
     )
 
@@ -94,19 +92,17 @@ def dataproc_solid(context):
 
 
 @op(required_resource_keys={"dataproc"}, config_schema=DATAPROC_CONFIG_SCHEMA)
-@beta
 def dataproc_op(context):
     return _dataproc_compute(context)
 
 
 @op
-@beta
 def configurable_dataproc_op(context, dataproc: DataprocResource, config: DataprocOpConfig):
     job_config = {"projectId": config.project_id, "region": config.region, "job": config.job_config}
     job_timeout = config.job_timeout_in_seconds
 
     context.log.info(
-        "submitting job with config: %s and timeout of: %d seconds"  # noqa: UP031
+        "submitting job with config: %s and timeout of: %d seconds"
         % (str(json.dumps(job_config)), job_timeout)
     )
 

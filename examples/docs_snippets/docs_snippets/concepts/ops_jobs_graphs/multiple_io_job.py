@@ -1,23 +1,23 @@
 # start_marker
-import dagster as dg
+from dagster import job, op
 
 
-@dg.op
-def return_one(context: dg.OpExecutionContext) -> int:
+@op
+def return_one(context) -> int:
     return 1
 
 
-@dg.op
-def add_one(context: dg.OpExecutionContext, number: int):
+@op
+def add_one(context, number: int):
     return number + 1
 
 
-@dg.op
-def adder(context: dg.OpExecutionContext, a: int, b: int) -> int:
+@op
+def adder(context, a: int, b: int) -> int:
     return a + b
 
 
-@dg.job
+@job
 def inputs_and_outputs():
     value = return_one()
     a = add_one(value)

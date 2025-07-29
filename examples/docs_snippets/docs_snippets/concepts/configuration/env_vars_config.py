@@ -1,20 +1,20 @@
 # start_database_example
-import dagster as dg
+from dagster import StringSource, job, op, resource
 
 
-@dg.resource(config_schema={"username": dg.StringSource, "password": dg.StringSource})
-def database_client(context: dg.InitResourceContext):
+@resource(config_schema={"username": StringSource, "password": StringSource})
+def database_client(context):
     username = context.resource_config["username"]
     password = context.resource_config["password"]
     ...
 
 
-@dg.op(required_resource_keys={"database"})
-def get_one(context: dg.OpExecutionContext):
+@op(required_resource_keys={"database"})
+def get_one(context):
     context.resources.database.execute_query("SELECT 1")
 
 
-@dg.job(
+@job(
     resource_defs={
         "database": database_client.configured(
             {

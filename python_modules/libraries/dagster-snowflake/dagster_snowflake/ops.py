@@ -4,7 +4,6 @@ from dagster import (
     op,
 )
 from dagster._core.definitions.input import In
-from dagster._core.storage.tags import COMPUTE_KIND_TAG
 
 
 def _core_create_snowflake_command(dagster_decorator, decorator_name, sql, parameters=None):
@@ -15,7 +14,7 @@ def _core_create_snowflake_command(dagster_decorator, decorator_name, sql, param
         name=f"snowflake_{decorator_name}",
         ins={"start": In(Nothing)},
         required_resource_keys={"snowflake"},
-        tags={COMPUTE_KIND_TAG: "sql", "sql": sql},
+        tags={"kind": "sql", "sql": sql},
     )
     def snowflake_fn(context):
         context.resources.snowflake.execute_query(sql=sql, parameters=parameters)

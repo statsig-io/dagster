@@ -1,27 +1,27 @@
 // eslint-disable-next-line no-restricted-imports
 import {Tooltip2, Tooltip2Props} from '@blueprintjs/popover2';
 import deepmerge from 'deepmerge';
-import * as React from 'react';
+import React from 'react';
 import styled, {createGlobalStyle, css} from 'styled-components';
 
-import {Colors} from './Color';
+import {Colors} from './Colors';
 import {FontFamily} from './styles';
 
 export const GlobalTooltipStyle = createGlobalStyle`
-  .dagster-tooltip .bp5-popover-content {
+  .dagster-tooltip .bp4-popover2-content {
       font-family: ${FontFamily.default};
       font-size: 12px;
       line-height: 16px;
-      background: ${Colors.tooltipBackground()};
-      color: ${Colors.tooltipText()};
+      background: ${Colors.Gray900};
+      color: ${Colors.Gray50};
       padding: 8px 16px;
   }
 
-  .block-tooltip.bp5-popover-target {
+  .block-tooltip.bp4-popover2-target {
     display: block;
   }
 
-  .dagster-tooltip-bare .bp5-popover-content {
+  .dagster-tooltip-bare .bp4-popover2-content {
     padding: 0;
   }
 `;
@@ -54,9 +54,7 @@ export const Tooltip = (props: Props) => {
       document.body.addEventListener('mousemove', listener);
     }
     return () => {
-      if (listener) {
-        document.body.removeEventListener('mousemove', listener);
-      }
+      listener && document.body.removeEventListener('mousemove', listener);
     };
   }, [isOpen, useDisabledButtonTooltipFix]);
 

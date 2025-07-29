@@ -78,8 +78,6 @@ module.exports = {
     '\\.(css|less)$': 'identity-obj-proxy',
     '^worker-loader(.*)/workers/(.*)$': '<rootDir>/jest/mocks/$2',
     '^@dagster-io/ui-components$': '<rootDir>/../ui-components/src/index',
-    '^@dagster-io/ui-components/editor$': '<rootDir>/../ui-components/src/editor',
-    '^shared/(.*)$': '<rootDir>/src/$1',
   },
 
   // An array of regexp pattern strings, matched against all module paths before considered 'visible' to the module loader
@@ -98,7 +96,7 @@ module.exports = {
   // projects: undefined,
 
   // Use this configuration option to add custom reporters to Jest
-  reporters: ['default', 'buildkite-test-collector/jest/reporter'],
+  // reporters: undefined,
 
   // Automatically reset mock state between every test
   // resetMocks: false,
@@ -124,7 +122,7 @@ module.exports = {
   // runner: "jest-runner",
 
   // The paths to modules that run some code to configure or set up the testing environment before each test
-  setupFiles: ['fake-indexeddb/auto'],
+  // setupFiles: [],
 
   // A list of paths to modules that run some code to configure or set up the testing framework before each test
   setupFilesAfterEnv: ['<rootDir>/src/setupTests.ts'],
@@ -136,7 +134,7 @@ module.exports = {
   // snapshotSerializers: [],
 
   // The test environment that will be used for testing
-  testEnvironment: './src/quarantine-test-utils/custom-jest-environment.ts',
+  testEnvironment: 'jsdom',
 
   // Options that will be passed to the testEnvironment
   // https://jestjs.io/docs/configuration#testenvironmentoptions-object
@@ -147,7 +145,7 @@ module.exports = {
   },
 
   // Adds a location field to test results
-  testLocationInResults: true,
+  // testLocationInResults: false,
 
   // The glob patterns Jest uses to detect test files
   testMatch: ['**/__tests__/**/*.test.[jt]s?(x)'],

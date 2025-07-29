@@ -1,23 +1,28 @@
 import time
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Mapping, Optional, cast
 
-import dagster_shared.seven as seven
 from typing_extensions import Self
 
-from dagster import _check as check
+import dagster._seven as seven
+from dagster import (
+    _check as check,
+)
 from dagster._config.config_schema import UserConfigSchema
 from dagster._core.errors import (
     DagsterInvariantViolationError,
     DagsterLaunchFailedError,
     DagsterUserCodeProcessError,
 )
-from dagster._core.launcher.base import LaunchRunContext, RunLauncher
 from dagster._core.storage.dagster_run import DagsterRun
 from dagster._core.storage.tags import GRPC_INFO_TAG
-from dagster._serdes import ConfigurableClass, deserialize_value
+from dagster._serdes import (
+    ConfigurableClass,
+    deserialize_value,
+)
 from dagster._serdes.config_class import ConfigurableClassData
 from dagster._utils.merger import merge_dicts
+
+from .base import LaunchRunContext, RunLauncher
 
 if TYPE_CHECKING:
     from dagster._core.instance import DagsterInstance
@@ -50,7 +55,7 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
     def from_config_value(
         cls, inst_data: ConfigurableClassData, config_value: Mapping[str, Any]
     ) -> Self:
-        return cls(inst_data=inst_data)
+        return DefaultRunLauncher(inst_data=inst_data)
 
     @staticmethod
     def launch_run_from_grpc_client(
@@ -79,7 +84,7 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
         res = deserialize_value(
             grpc_client.start_run(
                 ExecuteExternalJobArgs(
-                    job_origin=run.remote_job_origin,  # type: ignore  # (possible none)
+                    job_origin=run.external_job_origin,  # type: ignore  # (possible none)
                     run_id=run.run_id,
                     instance_ref=instance.get_ref(),
                 )
@@ -95,7 +100,9 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
 
     def launch_run(self, context: LaunchRunContext) -> None:
         # defer for perf
-        from dagster._core.remote_representation.code_location import GrpcServerCodeLocation
+        from dagster._core.host_representation.code_location import (
+            GrpcServerCodeLocation,
+        )
 
         run = context.dagster_run
 
@@ -106,9 +113,9 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
                 "DefaultRunLauncher requires a workspace to be included in its LaunchRunContext"
             )
 
-        remote_job_origin = check.not_none(run.remote_job_origin)
+        external_job_origin = check.not_none(run.external_job_origin)
         code_location = context.workspace.get_code_location(
-            remote_job_origin.repository_origin.code_location_origin.location_name
+            external_job_origin.external_repository_origin.code_location_origin.location_name
         )
 
         check.inst(
@@ -118,7 +125,7 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
         )
 
         DefaultRunLauncher.launch_run_from_grpc_client(
-            self._instance, run, cast("GrpcServerCodeLocation", code_location).client
+            self._instance, run, cast(GrpcServerCodeLocation, code_location).client
         )
 
         self._run_ids.add(run.run_id)
@@ -139,7 +146,7 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
         if GRPC_INFO_TAG not in tags:
             return None
 
-        grpc_info = seven.json.loads(tags.get(GRPC_INFO_TAG))  # pyright: ignore[reportArgumentType]
+        grpc_info = seven.json.loads(tags.get(GRPC_INFO_TAG))
 
         return DagsterGrpcClient(
             port=grpc_info.get("port"),
@@ -157,7 +164,7 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
             return False
 
         run = self._instance.get_run_by_id(run_id)
-        if not run or run.is_finished:
+        if not run:
             return False
 
         self._instance.report_run_canceling(run)
@@ -195,7 +202,7 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
                 for run_id in self._run_ids
                 if (
                     self._instance.get_run_by_id(run_id)
-                    and not self._instance.get_run_by_id(run_id).is_finished  # pyright: ignore[reportOptionalMemberAccess]
+                    and not self._instance.get_run_by_id(run_id).is_finished
                 )
             ]
 

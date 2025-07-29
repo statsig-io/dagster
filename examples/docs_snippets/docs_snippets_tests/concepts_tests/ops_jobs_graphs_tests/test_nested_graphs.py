@@ -33,6 +33,7 @@ def test_composite_config():
             __file__,
             "../../../docs_snippets/concepts/ops_jobs_graphs/composite_config.yaml",
         ),
+        "r",
         encoding="utf8",
     ) as fd:
         run_config = yaml.safe_load(fd.read())
@@ -58,6 +59,7 @@ def test_config_mapping():
             __file__,
             "../../../docs_snippets/concepts/ops_jobs_graphs/composite_config_mapping.yaml",
         ),
+        "r",
         encoding="utf8",
     ) as fd:
         run_config = yaml.safe_load(fd.read())

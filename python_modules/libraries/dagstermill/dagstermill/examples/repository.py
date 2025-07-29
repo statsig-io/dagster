@@ -23,7 +23,7 @@ from dagster import (
     with_resources,
 )
 from dagster._config.pythonic_config import Config
-from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
+from dagster._core.definitions.asset_graph import AssetGraph
 from dagster._core.definitions.utils import DEFAULT_OUTPUT
 from dagster._utils import PICKLE_PROTOCOL, file_relative_path
 
@@ -303,12 +303,12 @@ def error_job():
 
 if DAGSTER_PANDAS_PRESENT and SKLEARN_PRESENT and MATPLOTLIB_PRESENT:
     # We need type-ignores here because type checkers don't understand the `*_PRESENT` kwargs.
-    clean_data = test_nb_op("clean_data", outs={DEFAULT_OUTPUT: Out(DataFrame)})  # pyright: ignore[reportPossiblyUnboundVariable]
+    clean_data = test_nb_op("clean_data", outs={DEFAULT_OUTPUT: Out(DataFrame)})  # type: ignore
 
     # FIXME add an output to this
-    tutorial_LR = test_nb_op("tutorial_LR", ins={"df": In(DataFrame)})  # pyright: ignore[reportPossiblyUnboundVariable]
+    tutorial_LR = test_nb_op("tutorial_LR", ins={"df": In(DataFrame)})  # type: ignore
 
-    tutorial_RF = test_nb_op("tutorial_RF", ins={"df": In(DataFrame)})  # pyright: ignore[reportPossiblyUnboundVariable]
+    tutorial_RF = test_nb_op("tutorial_RF", ins={"df": In(DataFrame)})  # type: ignore
 
     @job(resource_defs=common_resource_defs)
     def tutorial_job():
@@ -570,7 +570,6 @@ custom_io_mgr_key_asset = dagstermill.define_dagstermill_asset(
     name="custom_io_mgr_key",
     notebook_path=nb_test_path("hello_world"),
     io_manager_key="my_custom_io_manager",
-    asset_tags={"foo": "bar"},
 )
 
 yield_event_asset = dagstermill.define_dagstermill_asset(

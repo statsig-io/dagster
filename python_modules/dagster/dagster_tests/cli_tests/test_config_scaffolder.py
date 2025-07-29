@@ -1,7 +1,12 @@
-import dagster as dg
-from dagster import _check as check
+from dagster import (
+    Int,
+    OpDefinition,
+    ResourceDefinition,
+    _check as check,
+)
 from dagster._cli.config_scaffolder import scaffold_job_config, scaffold_type
 from dagster._config import config_type
+from dagster._core.definitions.graph_definition import GraphDefinition
 
 
 def fail_me():
@@ -16,12 +21,12 @@ def test_scalars():
 
 
 def test_basic_ops_config(snapshot):
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="BasicOpsConfigGraph",
         node_defs=[
-            dg.OpDefinition(
+            OpDefinition(
                 name="required_field_op",
-                config_schema={"required_int": dg.Int},
+                config_schema={"required_int": Int},
                 compute_fn=lambda *_args: fail_me(),
             )
         ],
@@ -29,15 +34,15 @@ def test_basic_ops_config(snapshot):
 
     env_config_type = job_def.run_config_schema.config_type
 
-    assert env_config_type.fields["ops"].is_required  # pyright: ignore[reportAttributeAccessIssue]
-    ops_config_type = env_config_type.fields["ops"].config_type  # pyright: ignore[reportAttributeAccessIssue]
+    assert env_config_type.fields["ops"].is_required
+    ops_config_type = env_config_type.fields["ops"].config_type
     assert ops_config_type.fields["required_field_op"].is_required
     required_op_config_type = ops_config_type.fields["required_field_op"].config_type
     assert required_op_config_type.fields["config"].is_required
 
-    assert set(env_config_type.fields["loggers"].config_type.fields.keys()) == set(["console"])  # pyright: ignore[reportAttributeAccessIssue]
+    assert set(env_config_type.fields["loggers"].config_type.fields.keys()) == set(["console"])
 
-    console_logger_config_type = env_config_type.fields["loggers"].config_type.fields["console"]  # pyright: ignore[reportAttributeAccessIssue]
+    console_logger_config_type = env_config_type.fields["loggers"].config_type.fields["console"]
 
     assert set(console_logger_config_type.config_type.fields.keys()) == set(["config"])
 
@@ -53,4 +58,4 @@ def test_basic_ops_config(snapshot):
 
 
 def dummy_resource(config_field):
-    return dg.ResourceDefinition(lambda _: None, config_field)
+    return ResourceDefinition(lambda _: None, config_field)

@@ -41,14 +41,12 @@ alias copy_py="rsync -av \
       --exclude .coverage"
 
 copy_py $ROOT/python_modules/dagster \
-        $ROOT/python_modules/dagster-pipes \
         $ROOT/python_modules/dagster-webserver \
         $ROOT/python_modules/dagster-graphql \
         python_modules/
 
 copy_py $ROOT/python_modules/libraries/dagster-postgres \
         $ROOT/python_modules/libraries/dagster-docker \
-        $ROOT/python_modules/libraries/dagster-shared \
         python_modules/libraries/
 
 echo -e "--- \033[32m:docker: Building Docker images\033[0m"

@@ -2,21 +2,55 @@ import enum
 import json
 from datetime import datetime
 from itertools import count
-from typing import Any, Optional
+from typing import Any, List, Optional
 
-import dagster as dg
+import pendulum
 import pytest
-from dagster import DagsterInstance, Enum
+from dagster import (
+    ConfigMapping,
+    DagsterInstance,
+    DagsterTypeCheckDidNotPass,
+    DynamicOut,
+    DynamicOutput,
+    Enum,
+    Field,
+    GraphOut,
+    In,
+    InputMapping,
+    Nothing,
+    Out,
+    Permissive,
+    Shape,
+    graph,
+    input_manager,
+    logger,
+    op,
+    resource,
+    success_hook,
+)
 from dagster._check import CheckError
-from dagster._time import parse_time_string
+from dagster._core.definitions.graph_definition import GraphDefinition
+from dagster._core.definitions.job_definition import JobDefinition
+from dagster._core.definitions.partition import (
+    PartitionedConfig,
+    StaticPartitionsDefinition,
+)
+from dagster._core.definitions.time_window_partitions import DailyPartitionsDefinition, TimeWindow
+from dagster._core.errors import (
+    DagsterConfigMappingFunctionError,
+    DagsterInvalidConfigError,
+    DagsterInvalidDefinitionError,
+)
+from dagster._core.test_utils import instance_for_test
+from dagster._loggers import json_console_logger
 
 
 def get_ops():
-    @dg.op
+    @op
     def emit_one(_):
         return 1
 
-    @dg.op
+    @op
     def add(_, x, y):
         return x + y
 
@@ -24,11 +58,11 @@ def get_ops():
 
 
 def test_top_level_inputs_execution():
-    @dg.op
+    @op
     def the_op(leaf_in: int):
         return leaf_in + 1
 
-    @dg.graph
+    @graph
     def the_graph(the_in):
         return the_op(the_in)
 
@@ -37,7 +71,7 @@ def test_top_level_inputs_execution():
     assert result.output_value() == 3
 
     with pytest.raises(
-        dg.DagsterTypeCheckDidNotPass,
+        DagsterTypeCheckDidNotPass,
         match=(
             'Type check failed for step input "leaf_in" - expected type "Int". Description: Value'
             ' "bad_value" of python type "str" must be a int.'
@@ -49,11 +83,11 @@ def test_top_level_inputs_execution():
 def test_basic_graph():
     emit_one, add = get_ops()
 
-    @dg.graph
+    @graph
     def get_two():
         return add(emit_one(), emit_one())
 
-    assert isinstance(get_two, dg.GraphDefinition)
+    assert isinstance(get_two, GraphDefinition)
 
     result = get_two.execute_in_process()
     assert result.success
@@ -62,11 +96,11 @@ def test_basic_graph():
 def test_aliased_graph():
     emit_one, add = get_ops()
 
-    @dg.graph
+    @graph
     def get_two():
         return add(emit_one(), emit_one.alias("emit_one_part_two")())
 
-    assert isinstance(get_two, dg.GraphDefinition)
+    assert isinstance(get_two, GraphDefinition)
 
     result = get_two.execute_in_process()
     assert result.success
@@ -78,27 +112,27 @@ def test_aliased_graph():
 def test_composite_graph():
     emit_one, add = get_ops()
 
-    @dg.graph
+    @graph
     def add_one(x):
         return add(emit_one(), x)
 
-    @dg.graph
+    @graph
     def add_two(x):
         return add(add_one(x), emit_one())
 
-    assert isinstance(add_two, dg.GraphDefinition)
+    assert isinstance(add_two, GraphDefinition)
 
 
 def test_with_resources():
-    @dg.resource
+    @resource
     def a_resource(_):
         return "a"
 
-    @dg.op(required_resource_keys={"a"})
+    @op(required_resource_keys={"a"})
     def needs_resource(context):
         return context.resources.a
 
-    @dg.graph
+    @graph
     def my_graph():
         needs_resource()
 
@@ -113,15 +147,15 @@ def test_with_resources():
 
 
 def test_error_on_invalid_resource_key():
-    @dg.resource
+    @resource
     def test_resource():
         return "test-resource"
 
-    @dg.op(required_resource_keys={"test-resource"})
+    @op(required_resource_keys={"test-resource"})
     def needs_resource(_):
         return ""
 
-    @dg.graph
+    @graph
     def test_graph():
         needs_resource()
 
@@ -134,18 +168,18 @@ def test_error_on_invalid_resource_key():
 
 
 def test_config_mapping_fn():
-    @dg.resource(config_schema=str)
+    @resource(config_schema=str)
     def date(context) -> str:
         return context.resource_config
 
-    @dg.op(
+    @op(
         required_resource_keys={"date"},
         config_schema={"msg": str},
     )
     def do_stuff(context):
-        return f"{context.op_config['msg']} on {context.resources.date}"
+        return f"{context.op_config['msg'] } on {context.resources.date}"
 
-    @dg.graph
+    @graph
     def needs_config():
         do_stuff()
 
@@ -157,7 +191,7 @@ def test_config_mapping_fn():
 
     job = needs_config.to_job(
         resource_defs={"date": date},
-        config=dg.ConfigMapping(
+        config=ConfigMapping(
             config_schema={"date": str},  # top level has to be dict
             config_fn=_mapped,
         ),
@@ -169,18 +203,18 @@ def test_config_mapping_fn():
 
 
 def test_default_config():
-    @dg.resource(config_schema=str)
+    @resource(config_schema=str)
     def date(context) -> str:
         return context.resource_config
 
-    @dg.op(
+    @op(
         required_resource_keys={"date"},
         config_schema={"msg": str},
     )
     def do_stuff(context):
-        return f"{context.op_config['msg']} on {context.resources.date}"
+        return f"{context.op_config['msg'] } on {context.resources.date}"
 
-    @dg.graph
+    @graph
     def needs_config():
         do_stuff()
 
@@ -200,22 +234,22 @@ def test_default_config():
 def test_suffix():
     emit_one, add = get_ops()
 
-    @dg.graph
+    @graph
     def get_two():
         return add(emit_one(), emit_one())
 
-    assert isinstance(get_two, dg.GraphDefinition)
+    assert isinstance(get_two, GraphDefinition)
 
     my_job = get_two.to_job(name="get_two_prod")
     assert my_job.name == "get_two_prod"
 
 
 def test_partitions():
-    @dg.op(config_schema={"date": str})
+    @op(config_schema={"date": str})
     def my_op(_):
         pass
 
-    @dg.graph
+    @graph
     def my_graph():
         my_op()
 
@@ -223,9 +257,9 @@ def test_partitions():
         return {"ops": {"my_op": {"config": {"date": partition_key}}}}
 
     job_def = my_graph.to_job(
-        config=dg.PartitionedConfig(
+        config=PartitionedConfig(
             run_config_for_partition_key_fn=config_fn,
-            partitions_def=dg.StaticPartitionsDefinition(["2020-02-25", "2020-02-26"]),
+            partitions_def=StaticPartitionsDefinition(["2020-02-25", "2020-02-26"]),
         ),
     )
     assert job_def.partitions_def
@@ -250,9 +284,9 @@ def test_partitions():
         return my_config
 
     job_def = my_graph.to_job(
-        config=dg.PartitionedConfig(
+        config=PartitionedConfig(
             run_config_for_partition_key_fn=shared_config_fn,
-            partitions_def=dg.StaticPartitionsDefinition(["2020-02-25", "2020-02-26"]),
+            partitions_def=StaticPartitionsDefinition(["2020-02-25", "2020-02-26"]),
         ),
     )
     assert job_def.partitions_def
@@ -270,11 +304,11 @@ def test_partitions():
 
 
 def test_tags_on_job():
-    @dg.op
+    @op
     def basic():
         pass
 
-    @dg.graph
+    @graph
     def basic_graph():
         basic()
 
@@ -287,11 +321,11 @@ def test_tags_on_job():
 
 
 def test_non_string_tag():
-    @dg.op
+    @op
     def basic():
         pass
 
-    @dg.graph
+    @graph
     def basic_graph():
         basic()
 
@@ -300,39 +334,39 @@ def test_non_string_tag():
     job = basic_graph.to_job(tags=tags)
     assert job.tags == {"my_tag": json.dumps(inner)}
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError, match="Invalid value for tag"):
+    with pytest.raises(DagsterInvalidDefinitionError, match="Invalid value for tag"):
         basic_graph.to_job(tags={"my_tag": basic_graph})
 
 
 def test_logger_defs():
-    @dg.op
+    @op
     def my_op(_):
         pass
 
-    @dg.graph
+    @graph
     def my_graph():
         my_op()
 
-    @dg.logger  # pyright: ignore[reportCallIssue,reportArgumentType]
+    @logger
     def my_logger(_):
         pass
 
-    my_job = my_graph.to_job(logger_defs={"abc": my_logger})  # pyright: ignore[reportArgumentType]
+    my_job = my_graph.to_job(logger_defs={"abc": my_logger})
     assert my_job.loggers == {"abc": my_logger}
 
 
 def test_job_with_hooks():
     entered = []
 
-    @dg.success_hook
+    @success_hook
     def basic_hook(_):
         entered.append("yes")
 
-    @dg.op
+    @op
     def basic_emit():
         pass
 
-    @dg.graph
+    @graph
     def basic_hook_graph():
         basic_emit()
 
@@ -345,28 +379,28 @@ def test_job_with_hooks():
 
 
 def test_composition_bug():
-    @dg.op
+    @op
     def expensive_task1():
         pass
 
-    @dg.op
+    @op
     def expensive_task2(_my_input):
         pass
 
-    @dg.op
+    @op
     def expensive_task3(_my_input):
         pass
 
-    @dg.graph
+    @graph
     def my_graph1():
         task1_done = expensive_task1()
         _task2_done = expensive_task2(task1_done)
 
-    @dg.graph
+    @graph
     def my_graph2():
         _task3_done = expensive_task3()
 
-    @dg.graph
+    @graph
     def my_graph_final():
         my_graph1()
         my_graph2()
@@ -379,24 +413,24 @@ def test_composition_bug():
 
 
 def test_conflict():
-    @dg.op(name="conflict")
+    @op(name="conflict")
     def test_1():
         pass
 
-    @dg.graph(name="conflict")
+    @graph(name="conflict")
     def test_2():
         pass
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError, match="definitions with the same name"):
+    with pytest.raises(DagsterInvalidDefinitionError, match="definitions with the same name"):
 
-        @dg.graph
+        @graph
         def _conflict_zone():
             test_1()
             test_2()
 
 
 def test_desc():
-    @dg.graph(description="graph desc")
+    @graph(description="graph desc")
     def empty():
         pass
 
@@ -409,11 +443,11 @@ def test_desc():
 
 
 def test_config_naming_collisions():
-    @dg.op(config_schema={"ops": dg.Permissive()})
+    @op(config_schema={"ops": Permissive()})
     def my_op(context):
         return context.op_config
 
-    @dg.graph
+    @graph
     def my_graph():
         return my_op()
 
@@ -424,7 +458,7 @@ def test_config_naming_collisions():
     assert result.success
     assert result.output_value() == config
 
-    @dg.graph
+    @graph
     def ops():
         return my_op()
 
@@ -434,11 +468,11 @@ def test_config_naming_collisions():
 
 
 def test_to_job_incomplete_default_config():
-    @dg.op(config_schema={"foo": str})
+    @op(config_schema={"foo": str})
     def my_op(_):
         pass
 
-    @dg.graph
+    @graph
     def my_graph():
         my_op()
 
@@ -462,10 +496,10 @@ def test_to_job_incomplete_default_config():
     # Ensure that errors nested into the config tree are caught
     for invalid_config, error_msg in invalid_configs:
         with pytest.raises(
-            dg.DagsterInvalidConfigError,
+            DagsterInvalidConfigError,
             match=error_msg,
         ):
-            my_graph.to_job(name="my_job", config=invalid_config).execute_in_process()
+            my_graph.to_job(name="my_job", config=invalid_config)
 
 
 class TestEnum(enum.Enum):
@@ -474,9 +508,9 @@ class TestEnum(enum.Enum):
 
 
 def test_enum_config_mapping():
-    @dg.op(
+    @op(
         config_schema={
-            "my_enum": dg.Field(
+            "my_enum": Field(
                 Enum.from_python_enum(TestEnum), is_required=False, default_value="ONE"
             )
         }
@@ -484,14 +518,14 @@ def test_enum_config_mapping():
     def my_op(context):
         return context.op_config["my_enum"]
 
-    @dg.graph
+    @graph
     def my_graph():
         my_op()
 
     def _use_defaults_mapping(_):
         return {}
 
-    use_defaults = my_graph.to_job(config=dg.ConfigMapping(config_fn=_use_defaults_mapping))
+    use_defaults = my_graph.to_job(config=ConfigMapping(config_fn=_use_defaults_mapping))
     result = use_defaults.execute_in_process()
     assert result.success
     assert result.output_for_node("my_op") == TestEnum.ONE
@@ -499,9 +533,7 @@ def test_enum_config_mapping():
     def _override_defaults_mapping(_):
         return {"ops": {"my_op": {"config": {"my_enum": "TWO"}}}}
 
-    override_defaults = my_graph.to_job(
-        config=dg.ConfigMapping(config_fn=_override_defaults_mapping)
-    )
+    override_defaults = my_graph.to_job(config=ConfigMapping(config_fn=_override_defaults_mapping))
     result = override_defaults.execute_in_process()
     assert result.success
     assert result.output_for_node("my_op") == TestEnum.TWO
@@ -509,11 +541,11 @@ def test_enum_config_mapping():
     def _ingest_config_mapping(x):
         return {"ops": {"my_op": {"config": {"my_enum": x["my_field"]}}}}
 
-    default_config_mapping = dg.ConfigMapping(
+    default_config_mapping = ConfigMapping(
         config_fn=_ingest_config_mapping,
-        config_schema=dg.Shape(
+        config_schema=Shape(
             {
-                "my_field": dg.Field(
+                "my_field": Field(
                     Enum.from_python_enum(TestEnum),
                     is_required=False,
                     default_value="TWO",
@@ -527,11 +559,9 @@ def test_enum_config_mapping():
     assert result.success
     assert result.output_for_node("my_op") == TestEnum.TWO
 
-    no_default_config_mapping = dg.ConfigMapping(
+    no_default_config_mapping = ConfigMapping(
         config_fn=_ingest_config_mapping,
-        config_schema=dg.Shape(
-            {"my_field": dg.Field(Enum.from_python_enum(TestEnum), is_required=True)}
-        ),
+        config_schema=Shape({"my_field": Field(Enum.from_python_enum(TestEnum), is_required=True)}),
         receive_processed_config_values=False,
     )
     ingest_mapping_no_default = my_graph.to_job(config=no_default_config_mapping)
@@ -543,11 +573,9 @@ def test_enum_config_mapping():
         assert x["my_field"] == TestEnum.TWO
         return {"ops": {"my_op": {"config": {"my_enum": "TWO"}}}}
 
-    config_mapping_with_preprocessing = dg.ConfigMapping(
+    config_mapping_with_preprocessing = ConfigMapping(
         config_fn=_ingest_post_processed_config,
-        config_schema=dg.Shape(
-            {"my_field": dg.Field(Enum.from_python_enum(TestEnum), is_required=True)}
-        ),
+        config_schema=Shape({"my_field": Field(Enum.from_python_enum(TestEnum), is_required=True)}),
     )
     ingest_preprocessing = my_graph.to_job(config=config_mapping_with_preprocessing)
     result = ingest_preprocessing.execute_in_process(run_config={"my_field": "TWO"})
@@ -556,9 +584,9 @@ def test_enum_config_mapping():
 
 
 def test_enum_default_config():
-    @dg.op(
+    @op(
         config_schema={
-            "my_enum": dg.Field(
+            "my_enum": Field(
                 Enum.from_python_enum(TestEnum), is_required=False, default_value="ONE"
             )
         }
@@ -566,7 +594,7 @@ def test_enum_default_config():
     def my_op(context):
         return context.op_config["my_enum"]
 
-    @dg.graph
+    @graph
     def my_graph():
         my_op()
 
@@ -577,9 +605,9 @@ def test_enum_default_config():
 
 
 def test_enum_to_execution():
-    @dg.op(
+    @op(
         config_schema={
-            "my_enum": dg.Field(
+            "my_enum": Field(
                 Enum.from_python_enum(TestEnum), is_required=False, default_value="ONE"
             )
         }
@@ -587,7 +615,7 @@ def test_enum_to_execution():
     def my_op(context):
         return context.op_config["my_enum"]
 
-    @dg.graph
+    @graph
     def my_graph():
         my_op()
 
@@ -606,11 +634,11 @@ def test_enum_to_execution():
 def test_raise_on_error_execute_in_process():
     error_str = "My error"
 
-    @dg.op
+    @op
     def emit_error():
         raise Exception(error_str)
 
-    @dg.graph
+    @graph
     def error_graph():
         emit_error()
 
@@ -624,22 +652,22 @@ def test_raise_on_error_execute_in_process():
 
 
 def test_job_subset():
-    @dg.op
+    @op
     def my_op():
         pass
 
-    @dg.graph
+    @graph
     def basic():
         my_op()
         my_op()
 
     the_job = basic.to_job()
 
-    assert isinstance(the_job.get_subset(op_selection=["my_op"]), dg.JobDefinition)
+    assert isinstance(the_job.get_subset(op_selection=["my_op"]), JobDefinition)
 
 
 def test_tags():
-    @dg.graph(tags={"a": "x"})
+    @graph(tags={"a": "x"})
     def mygraphic():
         pass
 
@@ -653,7 +681,7 @@ def test_tags():
 
 
 def test_job_and_graph_tags():
-    @dg.graph(tags={"a": "x", "c": "q"})
+    @graph(tags={"a": "x", "c": "q"})
     def mygraphic():
         pass
 
@@ -668,11 +696,11 @@ def test_job_and_graph_tags():
 
 
 def test_output_for_node_non_standard_name():
-    @dg.op(out={"foo": dg.Out()})
+    @op(out={"foo": Out()})
     def my_op():
         return 5
 
-    @dg.graph
+    @graph
     def basic():
         my_op()
 
@@ -682,11 +710,11 @@ def test_output_for_node_non_standard_name():
 
 
 def test_execute_in_process_aliased_graph():
-    @dg.op
+    @op
     def my_op():
         return 5
 
-    @dg.graph
+    @graph
     def my_graph():
         return my_op()
 
@@ -696,11 +724,11 @@ def test_execute_in_process_aliased_graph():
 
 
 def test_execute_in_process_aliased_graph_config():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
-    @dg.graph
+    @graph
     def my_graph():
         return my_op()
 
@@ -712,9 +740,9 @@ def test_execute_in_process_aliased_graph_config():
 
 
 def test_job_name_valid():
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
+    with pytest.raises(DagsterInvalidDefinitionError):
 
-        @dg.graph
+        @graph
         def my_graph():
             pass
 
@@ -722,14 +750,14 @@ def test_job_name_valid():
 
 
 def test_top_level_config_mapping_graph():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
     def _config_fn(_):
         return {"my_op": {"config": "foo"}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_config_fn))
+    @graph(config=ConfigMapping(config_fn=_config_fn))
     def my_graph():
         my_op()
 
@@ -740,14 +768,14 @@ def test_top_level_config_mapping_graph():
 
 
 def test_top_level_config_mapping_config_schema():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
     def _config_fn(outer):
         return {"my_op": {"config": outer}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_config_fn, config_schema=str))
+    @graph(config=ConfigMapping(config_fn=_config_fn, config_schema=str))
     def my_graph():
         my_op()
 
@@ -763,21 +791,21 @@ def test_top_level_config_mapping_config_schema():
 
 
 def test_nested_graph_config_mapping():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
     def _nested_config_fn(outer):
         return {"my_op": {"config": outer}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_nested_config_fn, config_schema=str))
+    @graph(config=ConfigMapping(config_fn=_nested_config_fn, config_schema=str))
     def my_nested_graph():
         my_op()
 
     def _config_fn(outer):
         return {"my_nested_graph": {"config": outer}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_config_fn, config_schema=str))
+    @graph(config=ConfigMapping(config_fn=_config_fn, config_schema=str))
     def my_graph():
         my_nested_graph()
 
@@ -788,19 +816,19 @@ def test_nested_graph_config_mapping():
 
 
 def test_top_level_graph_config_mapping_failure():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
     def _nested_config_fn(_):
         return "foo"
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_nested_config_fn))
+    @graph(config=ConfigMapping(config_fn=_nested_config_fn))
     def my_nested_graph():
         my_op()
 
     with pytest.raises(
-        dg.DagsterInvalidConfigError,
+        DagsterInvalidConfigError,
         match=(
             "In job 'my_nested_graph', top level graph 'my_nested_graph' has a configuration error."
         ),
@@ -809,32 +837,30 @@ def test_top_level_graph_config_mapping_failure():
 
 
 def test_top_level_graph_outer_config_failure():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
     def _config_fn(outer):
         return {"my_op": {"config": outer}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_config_fn, config_schema=str))
+    @graph(config=ConfigMapping(config_fn=_config_fn, config_schema=str))
     def my_graph():
         my_op()
 
-    with pytest.raises(
-        dg.DagsterInvalidConfigError, match="Invalid scalar at path root:ops:config"
-    ):
+    with pytest.raises(DagsterInvalidConfigError, match="Invalid scalar at path root:ops:config"):
         my_graph.to_job().execute_in_process(run_config={"ops": {"config": {"bad_type": "foo"}}})
 
-    with pytest.raises(dg.DagsterInvalidConfigError, match="Invalid scalar at path root:config"):
-        my_graph.to_job(config={"ops": {"config": {"bad_type": "foo"}}}).execute_in_process()
+    with pytest.raises(DagsterInvalidConfigError, match="Invalid scalar at path root:config"):
+        my_graph.to_job(config={"ops": {"config": {"bad_type": "foo"}}})
 
 
 def test_graph_dict_config():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
-    @dg.graph(config={"my_op": {"config": "foo"}})
+    @graph(config={"my_op": {"config": "foo"}})
     def my_graph():
         return my_op()
 
@@ -844,31 +870,15 @@ def test_graph_dict_config():
     assert result.output_value() == "foo"
 
 
-def test_graph_dict_config_resource_defs():
-    @dg.op(out=dg.Out(io_manager_key="dummy"))
-    def my_op(x: int) -> int:
-        return x
-
-    @dg.graph
-    def my_graph(x: int) -> int:
-        return my_op(x)
-
-    my_job = my_graph.to_job(name="my_job", config={"inputs": {"x": 1}})
-
-    defs = dg.Definitions(jobs=[my_job], resources={"dummy": dg.FilesystemIOManager(base_dir=".")})
-    result = defs.resolve_job_def("my_job").execute_in_process()
-    assert result.success
-
-
 def test_graph_with_configured():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
     def _config_fn(outer):
         return {"my_op": {"config": outer}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_config_fn, config_schema=str))
+    @graph(config=ConfigMapping(config_fn=_config_fn, config_schema=str))
     def my_graph():
         my_op()
 
@@ -892,14 +902,14 @@ def test_graph_with_configured():
 
 
 def test_graph_configured_error_in_config():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
     def _config_fn(outer):
         return {"my_op": {"config": outer}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_config_fn, config_schema=str))
+    @graph(config=ConfigMapping(config_fn=_config_fn, config_schema=str))
     def my_graph():
         my_op()
 
@@ -908,19 +918,19 @@ def test_graph_configured_error_in_config():
 
     configured_graph = my_graph.configured(name="blah", config_or_config_fn=_bad_config_fn)
 
-    with pytest.raises(dg.DagsterInvalidConfigError, match="Error in config for graph blah"):
+    with pytest.raises(DagsterInvalidConfigError, match="Error in config for graph blah"):
         configured_graph.execute_in_process()
 
 
 def test_graph_configured_error_in_fn():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
     def _config_fn(outer):
         return {"my_op": {"config": outer}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_config_fn, config_schema=str))
+    @graph(config=ConfigMapping(config_fn=_config_fn, config_schema=str))
     def my_graph():
         my_op()
 
@@ -930,7 +940,7 @@ def test_graph_configured_error_in_fn():
     configured_graph = my_graph.configured(name="blah", config_or_config_fn=_bad_config_fn)
 
     with pytest.raises(
-        dg.DagsterConfigMappingFunctionError,
+        DagsterConfigMappingFunctionError,
         match=(
             "The config mapping function on a `configured` GraphDefinition has thrown an "
             "unexpected error during its execution."
@@ -940,12 +950,12 @@ def test_graph_configured_error_in_fn():
 
 
 def test_job_non_default_logger_config():
-    @dg.graph
+    @graph
     def your_graph():
         pass
 
     your_job = your_graph.to_job(
-        logger_defs={"json": dg.json_console_logger},
+        logger_defs={"json": json_console_logger},
         config={"loggers": {"json": {"config": {}}}},
     )
 
@@ -958,28 +968,28 @@ def test_job_non_default_logger_config():
 
 
 def test_job_partitions_def():
-    @dg.op
+    @op
     def my_op(context):
         assert context.has_partition_key
         assert context.partition_key == "2020-01-01"
-        assert context.partition_time_window == dg.TimeWindow(
-            parse_time_string("2020-01-01"), parse_time_string("2020-01-02")
+        assert context.partition_time_window == TimeWindow(
+            pendulum.parse("2020-01-01"), pendulum.parse("2020-01-02")
         )
 
-    @dg.graph
+    @graph
     def my_graph():
         my_op()
 
-    my_job = my_graph.to_job(partitions_def=dg.DailyPartitionsDefinition(start_date="2020-01-01"))
+    my_job = my_graph.to_job(partitions_def=DailyPartitionsDefinition(start_date="2020-01-01"))
     assert my_job.execute_in_process(partition_key="2020-01-01").success
 
 
 def test_graph_top_level_input():
-    @dg.op
+    @op
     def my_op(x, y):
         return x + y
 
-    @dg.graph
+    @graph
     def my_graph(x, y):
         return my_op(x, y)
 
@@ -989,7 +999,7 @@ def test_graph_top_level_input():
     assert result.success
     assert result.output_for_node("my_op") == 5
 
-    @dg.graph
+    @graph
     def my_graph_with_nesting(x):
         my_graph(x, x)
 
@@ -999,76 +1009,72 @@ def test_graph_top_level_input():
 
 
 def test_run_id_execute_in_process():
-    @dg.graph
+    @graph
     def blank():
         pass
 
-    with dg.instance_for_test() as instance:
-        result_one = blank.execute_in_process(instance=instance)
-        assert result_one.success
-        assert instance.get_run_by_id(result_one.dagster_run.run_id)
+    with instance_for_test() as instance:
+        result = blank.execute_in_process(instance=instance, run_id="foo")
+        assert result.success
+        assert instance.get_run_by_id("foo")
 
-        result_two = blank.to_job().execute_in_process(instance=instance)
-        assert result_two.success
-        assert instance.get_run_by_id(result_two.dagster_run.run_id)
-        assert result_one.dagster_run.run_id != result_two.dagster_run.run_id
+        result = blank.to_job().execute_in_process(instance=instance, run_id="bar")
+        assert result.success
+        assert instance.get_run_by_id("bar")
 
-        result_three = blank.alias("some_name").execute_in_process(instance=instance)
-        assert result_three.success
-        assert instance.get_run_by_id(result_three.dagster_run.run_id)
-        assert result_three.dagster_run.run_id not in set(
-            [result_one.dagster_run.run_id, result_two.dagster_run.run_id]
-        )
+        result = blank.alias("some_name").execute_in_process(instance=instance, run_id="baz")
+        assert result.success
+        assert instance.get_run_by_id("baz")
 
 
 def test_graphs_break_type_checks():
     # Test to ensure we use grab the type from correct input def along mapping chains for type checks.
 
-    @dg.op
+    @op
     def emit_str():
         return "one"
 
-    @dg.op
+    @op
     def echo_int(y: int):
         assert isinstance(y, int), "type checks should fail before op invocation"
         return y
 
-    @dg.graph
+    @graph
     def no_repro():
         echo_int(emit_str())
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         no_repro.execute_in_process()
 
-    @dg.graph
+    @graph
     def map_any(x):
         echo_int(x)
 
-    @dg.graph
+    @graph
     def repro():
         map_any(emit_str())
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         repro.execute_in_process()
 
-    @dg.graph
+    @graph
     def map_str(x: str):
         echo_int(x)
 
-    @dg.graph
+    @graph
     def repro_2():
         map_str(emit_str())
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         repro_2.execute_in_process()
 
 
 def test_to_job_input_values():
-    @dg.op
+    @op
     def my_op(x, y):
         return x + y
 
-    @dg.graph
+    @graph
     def my_graph(x, y):
         return my_op(x, y)
 
@@ -1094,16 +1100,16 @@ def test_to_job_input_values():
 
 
 def test_input_values_name_not_found():
-    @dg.op
+    @op
     def my_op(x, y):
         return x + y
 
-    @dg.graph
+    @graph
     def my_graph(x, y):
         return my_op(x, y)
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match=(
             "Error when constructing JobDefinition 'my_graph': Input value provided for key 'z',"
             " but job has no top-level input with that name."
@@ -1113,11 +1119,11 @@ def test_input_values_name_not_found():
 
 
 def test_input_values_override_default():
-    @dg.op(ins={"x": dg.In(default_value=5)})
+    @op(ins={"x": In(default_value=5)})
     def op_with_default_input(x):
         return x
 
-    @dg.graph
+    @graph
     def my_graph(x):
         return op_with_default_input(x)
 
@@ -1126,68 +1132,21 @@ def test_input_values_override_default():
     assert result.output_value() == 6
 
 
-def test_uses_default_value():
-    @dg.op
-    def op_with_default_input(x=5):
-        return x
-
-    @dg.graph
-    def graph_one(y):
-        return op_with_default_input(y)
-
-    result = graph_one.execute_in_process()
-    assert result.success
-    assert result.output_value() == 5
-
-    @dg.op
-    def op_with_other_value(x=1):
-        return x
-
-    @dg.graph(out={"a": dg.GraphOut(), "b": dg.GraphOut()})
-    def graph_two(y):
-        a = op_with_default_input(y)
-        b = op_with_other_value(y)
-        return {"a": a, "b": b}
-
-    result = graph_two.execute_in_process()
-    assert result.success
-    assert result.output_value("a") == 5
-    assert result.output_value("b") == 1
-
-    result = graph_two.execute_in_process(input_values={"y": 2})
-    assert result.success
-    assert result.output_value("a") == 2
-    assert result.output_value("b") == 2
-
-    @dg.op
-    def op_without_default(x):
-        return x
-
-    @dg.graph
-    def graph_three(y):
-        op_with_default_input(y)
-        op_without_default(y)
-
-    # but fails if not all destinations have a default
-    with pytest.raises(dg.DagsterInvariantViolationError):
-        graph_three.execute_in_process()
-
-
 def test_unsatisfied_input_nested():
-    @dg.op
+    @op
     def ingest(x: datetime) -> str:
         return str(x)
 
-    @dg.graph
+    @graph
     def the_graph(x):
         ingest(x)
 
-    @dg.graph
+    @graph
     def the_top_level_graph():
         the_graph()
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="Input 'x' of graph 'the_graph' has no way of being resolved.",
     ):
         the_top_level_graph.to_job()
@@ -1200,15 +1159,15 @@ def test_all_dagster_types():
     class Bar(Foo):
         pass
 
-    @dg.op
+    @op
     def my_op(x: Foo):
         return x
 
-    @dg.op
+    @op
     def my_op_2(x: Foo):
         return x
 
-    @dg.graph
+    @graph
     def my_graph(x: Optional[Bar]):
         y = x or Foo()
         my_op_2(my_op(y))
@@ -1221,14 +1180,14 @@ def test_all_dagster_types():
 
 
 def test_graph_definition_input_mappings():
-    @dg.op
+    @op
     def inner_op(int_input: int) -> int:
         return int_input + 7
 
-    the_graph = dg.GraphDefinition(
+    the_graph = GraphDefinition(
         name="the_graph",
         input_mappings=[
-            dg.InputMapping(
+            InputMapping(
                 graph_input_name="x",
                 mapped_node_name="inner_op",
                 mapped_node_input_name="int_input",
@@ -1239,11 +1198,11 @@ def test_graph_definition_input_mappings():
     )
     assert the_graph.execute_in_process(input_values={"x": 5}).output_for_node("inner_op") == 12
 
-    @dg.op
+    @op
     def outer_op() -> int:
         return 5
 
-    @dg.graph
+    @graph
     def link():
         the_graph(outer_op())
 
@@ -1251,24 +1210,24 @@ def test_graph_definition_input_mappings():
 
 
 def test_graph_with_mapped_out():
-    @dg.op(out=dg.DynamicOut())
+    @op(out=DynamicOut())
     def dyn_vals():
         for i in range(3):
-            yield dg.DynamicOutput(i, mapping_key=f"num_{i}")
+            yield DynamicOutput(i, mapping_key=f"num_{i}")
 
-    @dg.op
+    @op
     def echo(x):
         return x
 
-    @dg.op
+    @op
     def double(x):
         return x * 2
 
-    @dg.op
+    @op
     def total(nums):
         return sum(nums)
 
-    @dg.graph
+    @graph
     def mapped_out():
         return dyn_vals().map(echo)
 
@@ -1278,10 +1237,10 @@ def test_graph_with_mapped_out():
 
 
 def test_infer_graph_input_type_from_inner_input():
-    @dg.op(ins={"in1": dg.In(dg.Nothing)})
+    @op(ins={"in1": In(Nothing)})
     def op1(): ...
 
-    @dg.graph
+    @graph
     def graph1(in1):
         op1(in1)
 
@@ -1291,11 +1250,11 @@ def test_infer_graph_input_type_from_inner_input():
 
 
 def test_infer_graph_input_type_from_inner_input_int():
-    @dg.op
+    @op
     def op1(in1: int):
         assert in1 == 5
 
-    @dg.graph
+    @graph
     def graph1(in1):
         op1(in1)
 
@@ -1305,10 +1264,10 @@ def test_infer_graph_input_type_from_inner_input_int():
 
 
 def test_infer_graph_input_type_from_inner_input_explicit_any():
-    @dg.op(ins={"in1": dg.In(dg.Nothing)})
+    @op(ins={"in1": In(Nothing)})
     def op1(): ...
 
-    @dg.graph
+    @graph
     def graph1(in1: Any):
         op1(in1)
 
@@ -1318,10 +1277,10 @@ def test_infer_graph_input_type_from_inner_input_explicit_any():
 
 
 def test_infer_graph_input_type_from_inner_input_explicit_graphin_type():
-    @dg.op(ins={"in1": dg.In(dg.Nothing)})
+    @op(ins={"in1": In(Nothing)})
     def op1(): ...
 
-    @dg.graph
+    @graph
     def graph1(in1: int):
         op1(in1)
 
@@ -1329,13 +1288,13 @@ def test_infer_graph_input_type_from_inner_input_explicit_graphin_type():
 
 
 def test_infer_graph_input_type_from_multiple_inner_inputs():
-    @dg.op(ins={"in1": dg.In(dg.Nothing)})
+    @op(ins={"in1": In(Nothing)})
     def op1(): ...
 
-    @dg.op(ins={"in2": dg.In(dg.Nothing)})
+    @op(ins={"in2": In(Nothing)})
     def op2(): ...
 
-    @dg.graph
+    @graph
     def graph1(in1):
         op1(in1)
         op2(in1)
@@ -1346,33 +1305,33 @@ def test_infer_graph_input_type_from_multiple_inner_inputs():
 
 
 def test_dont_infer_graph_input_type_from_different_inner_inputs():
-    @dg.op(ins={"in1": dg.In(dg.Nothing)})
+    @op(ins={"in1": In(Nothing)})
     def op1(): ...
 
-    @dg.op
+    @op
     def op2(in2):
         del in2
 
-    @dg.graph
+    @graph
     def graph1(in1):
         op1(in1)
         op2(in1)
 
     assert not graph1.input_defs[0].dagster_type.is_nothing
 
-    with pytest.raises(dg.DagsterInvalidConfigError):
+    with pytest.raises(DagsterInvalidConfigError):
         graph1.execute_in_process()
 
 
 def test_infer_graph_input_type_from_inner_inner_input():
-    @dg.op(ins={"in1": dg.In(dg.Nothing)})
+    @op(ins={"in1": In(Nothing)})
     def op1(): ...
 
-    @dg.graph
+    @graph
     def inner(in1):
         op1(in1)
 
-    @dg.graph
+    @graph
     def outer(in1):
         inner(in1)
 
@@ -1382,11 +1341,11 @@ def test_infer_graph_input_type_from_inner_inner_input():
 
 
 def test_infer_graph_input_type_from_inner_input_fan_in():
-    @dg.op
-    def op1(in1: list[int]):
+    @op
+    def op1(in1: List[int]):
         assert in1 == [5]
 
-    @dg.graph
+    @graph
     def graph1(in1):
         op1([in1])
 
@@ -1396,12 +1355,12 @@ def test_infer_graph_input_type_from_inner_input_fan_in():
 
 
 def test_infer_graph_input_type_from_inner_input_mixed_fan_in():
-    @dg.op
-    def op1(in1: list[int], in2: int):
+    @op
+    def op1(in1: List[int], in2: int):
         assert in1 == [5]
         assert in2 == 5
 
-    @dg.graph
+    @graph
     def graph1(in1):
         op1([in1], in1)
 
@@ -1415,16 +1374,16 @@ def test_input_manager_key_and_custom_dagster_type_resolved():
         def __init__(self, value):
             self.value = value
 
-    @dg.input_manager
+    @input_manager
     def data_input_manager():
         return CustomType(5)
 
-    @dg.op(ins={"df_train": dg.In(CustomType, input_manager_key="data_input_manager")})
+    @op(ins={"df_train": In(CustomType, input_manager_key="data_input_manager")})
     def target_extractor_op(df_train):
         return 1
 
-    @dg.graph(
-        out={"target": dg.GraphOut()},
+    @graph(
+        out={"target": GraphOut()},
     )
     def target_extractor_graph():
         target = target_extractor_op()
@@ -1440,20 +1399,20 @@ def test_input_manager_key_and_custom_dagster_type_resolved():
 def test_collision():
     numbers = count()
 
-    @dg.op
+    @op
     def next_num():
         return next(numbers)
 
-    @dg.op
+    @op
     def echo(context, value):
         return value
 
-    @dg.graph
+    @graph
     def composed(value):
         echo(value)
         return next_num()
 
-    @dg.graph
+    @graph
     def collision_test():
         starting_value = next_num()
         composed(starting_value)

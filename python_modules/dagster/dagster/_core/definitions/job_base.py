@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
-from typing import TYPE_CHECKING, AbstractSet, Optional  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Iterable, Optional
 
-from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
+from typing_extensions import Self
+
+from dagster._core.definitions.asset_check_spec import AssetCheckHandle
 from dagster._core.definitions.events import AssetKey
 
 if TYPE_CHECKING:
-    from dagster._core.definitions.job_definition import JobDefinition
-    from dagster._core.definitions.repository_definition import RepositoryDefinition
+    from .job_definition import JobDefinition
 
 
 class IJob(ABC):
@@ -22,16 +22,12 @@ class IJob(ABC):
         pass
 
     @abstractmethod
-    def get_repository_definition(self) -> Optional["RepositoryDefinition"]:
-        pass
-
-    @abstractmethod
     def get_subset(
         self,
         *,
         op_selection: Optional[Iterable[str]] = None,
         asset_selection: Optional[AbstractSet[AssetKey]] = None,
-        asset_check_selection: Optional[AbstractSet[AssetCheckKey]] = None,
+        asset_check_selection: Optional[AbstractSet[AssetCheckHandle]] = None,
     ) -> "IJob":
         pass
 
@@ -43,11 +39,6 @@ class IJob(ABC):
     @property
     @abstractmethod
     def asset_selection(self) -> Optional[AbstractSet[AssetKey]]:
-        pass
-
-    @property
-    @abstractmethod
-    def asset_check_selection(self) -> Optional[AbstractSet[AssetCheckKey]]:
         pass
 
     @property
@@ -65,16 +56,13 @@ class InMemoryJob(IJob):
     def get_definition(self) -> "JobDefinition":
         return self._job_def
 
-    def get_repository_definition(self) -> Optional["RepositoryDefinition"]:
-        return None
-
     def get_subset(
         self,
         *,
         op_selection: Optional[Iterable[str]] = None,
         asset_selection: Optional[AbstractSet[AssetKey]] = None,
-        asset_check_selection: Optional[AbstractSet[AssetCheckKey]] = None,
-    ) -> "InMemoryJob":
+        asset_check_selection: Optional[AbstractSet[AssetCheckHandle]] = None,
+    ) -> Self:
         op_selection = set(op_selection) if op_selection else None
         return InMemoryJob(
             self._job_def.get_subset(
@@ -91,44 +79,3 @@ class InMemoryJob(IJob):
     @property
     def asset_selection(self) -> Optional[AbstractSet[AssetKey]]:
         return self._job_def.asset_selection
-
-    @property
-    def asset_check_selection(self) -> Optional[AbstractSet[AssetCheckKey]]:
-        return self._job_def.asset_check_selection
-
-
-class RepoBackedJob(IJob):
-    def __init__(
-        self,
-        job_name: str,
-        repository_def: "RepositoryDefinition",
-    ):
-        self._job_name = job_name
-        self._repository_def = repository_def
-
-    def get_definition(self) -> "JobDefinition":
-        return self._repository_def.get_job(self._job_name)
-
-    def get_repository_definition(self) -> Optional["RepositoryDefinition"]:
-        return self._repository_def
-
-    @property
-    def op_selection(self) -> Optional[AbstractSet[str]]:
-        return self.get_definition().op_selection
-
-    @property
-    def asset_selection(self) -> Optional[AbstractSet[AssetKey]]:
-        return self.get_definition().asset_selection
-
-    @property
-    def asset_check_selection(self) -> Optional[AbstractSet[AssetCheckKey]]:
-        return self.get_definition().asset_check_selection
-
-    def get_subset(
-        self,
-        *,
-        op_selection: Optional[Iterable[str]] = None,
-        asset_selection: Optional[AbstractSet[AssetKey]] = None,
-        asset_check_selection: Optional[AbstractSet[AssetCheckKey]] = None,
-    ) -> "RepoBackedJob":
-        raise NotImplementedError("RepoBackedJob does not support get_subset")

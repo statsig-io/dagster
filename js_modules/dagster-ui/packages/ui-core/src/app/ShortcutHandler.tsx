@@ -26,7 +26,7 @@ const SHORTCUT_VISIBLITY_DELAY = 800;
 // implemented inside a React component.
 //
 let shortcutsVisible = false;
-let shortcutsTimer: ReturnType<typeof setTimeout> | null = null;
+let shortcutsTimer: NodeJS.Timeout | null = null;
 
 function getShortcutsVisible() {
   return shortcutsVisible;
@@ -89,7 +89,7 @@ interface ShortcutHandlerProps {
   shortcutFilter?: (event: KeyboardEvent) => boolean;
 
   // Pass a shortcutLabel for the item to be highlighted during shortcut preview.
-  shortcutLabel?: React.ReactNode;
+  shortcutLabel?: string;
 }
 
 interface ShortcutHandlerState {
@@ -205,9 +205,9 @@ const ShortcutAnnotation = styled.div`
   padding: 2px;
   z-index: 20;
   transform: translate(-90%, -10px);
-  color: ${Colors.tooltipText()};
-  background: ${Colors.tooltipBackground()};
-  border: 1px solid ${Colors.borderHover()};
+  color: ${Colors.Gray100};
+  background: ${Colors.Gray800};
+  border: 1px solid ${Colors.Gray300};
   border-radius: 3px;
-  box-shadow: 0 1px 3px ${Colors.shadowDefault()};
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 `;

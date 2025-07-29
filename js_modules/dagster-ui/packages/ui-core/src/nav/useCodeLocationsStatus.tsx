@@ -1,16 +1,19 @@
-import {Box, ButtonLink} from '@dagster-io/ui-components';
-import qs from 'qs';
-import {useCallback, useContext, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import {gql, useQuery} from '@apollo/client';
+import {Box, ButtonLink, Colors} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {useHistory} from 'react-router-dom';
-import {atom, useRecoilValue} from 'recoil';
 import styled from 'styled-components';
 
 import {showSharedToaster} from '../app/DomUtils';
+import {useQueryRefreshAtInterval} from '../app/QueryRefresh';
 import {RepositoryLocationLoadStatus} from '../graphql/types';
 import {StatusAndMessage} from '../instance/DeploymentStatusType';
-import {CodeLocationRowStatusType} from '../workspace/CodeLocationRowStatusType';
-import {WorkspaceContext} from '../workspace/WorkspaceContext/WorkspaceContext';
-import {CodeLocationStatusQuery} from '../workspace/WorkspaceContext/types/WorkspaceQueries.types';
+import {WorkspaceContext} from '../workspace/WorkspaceContext';
+
+import {
+  CodeLocationStatusQuery,
+  CodeLocationStatusQueryVariables,
+} from './types/useCodeLocationsStatus.types';
 
 type LocationStatusEntry = {
   loadStatus: RepositoryLocationLoadStatus;
@@ -18,143 +21,79 @@ type LocationStatusEntry = {
   name: string;
 };
 
+const POLL_INTERVAL = 5 * 1000;
+
 type EntriesById = Record<string, LocationStatusEntry>;
 
-export const codeLocationStatusAtom = atom<CodeLocationStatusQuery | undefined>({
-  key: 'codeLocationStatusQuery',
-  default: undefined,
-});
-
-export const useCodeLocationsStatus = (): StatusAndMessage | null => {
-  const {locationEntries, loadingNonAssets: loading, data} = useContext(WorkspaceContext);
-  const [previousEntriesById, setPreviousEntriesById] = useState<EntriesById | null>(null);
+export const useCodeLocationsStatus = (skip = false): StatusAndMessage | null => {
+  const {locationEntries, refetch} = React.useContext(WorkspaceContext);
+  const [previousEntriesById, setPreviousEntriesById] = React.useState<EntriesById | null>(null);
 
   const history = useHistory();
-  const historyRef = useRef<typeof history>(history);
-  historyRef.current = history;
 
-  const [showSpinner, setShowSpinner] = useState(false);
+  const [showSpinner, setShowSpinner] = React.useState(false);
 
-  const onClickViewButton = useCallback((statuses: CodeLocationRowStatusType[]) => {
-    const params =
-      statuses.length > 0
-        ? qs.stringify({status: statuses}, {arrayFormat: 'brackets', addQueryPrefix: true})
-        : '';
-    historyRef.current.push(`/locations${params}`);
-  }, []);
+  const onClickViewButton = React.useCallback(() => {
+    history.push('/locations');
+  }, [history]);
 
   // Reload the workspace, but don't toast about it.
-
-  const previousErroredLocationEntries = useRef<typeof erroredLocationEntries | null>(null);
-  let erroredLocationEntries = useMemo(
-    () =>
-      Object.values(data)
-        .map((entry) => {
-          if (entry.__typename === 'PythonError') {
-            return entry.__typename;
-          }
-          if (
-            entry.locationOrLoadError?.__typename === 'PythonError' &&
-            entry.loadStatus !== RepositoryLocationLoadStatus.LOADING
-          ) {
-            return entry.updatedTimestamp;
-          }
-          return null;
-        })
-        .filter(Boolean),
-    [data],
-  );
-  if (
-    !previousErroredLocationEntries.current ||
-    previousErroredLocationEntries.current.length !== erroredLocationEntries.length ||
-    previousErroredLocationEntries.current?.some(
-      (entry, index) => entry !== erroredLocationEntries[index],
-    )
-  ) {
-    previousErroredLocationEntries.current = erroredLocationEntries;
-  } else {
-    // We need preserve the previous reference to avoid firing the error layout effect more than necessary.
-    // This is due to their being multiple updates to `data` due to locations being fetched individually
-    // and each updating `data` as they come in.
-    erroredLocationEntries = previousErroredLocationEntries.current;
-  }
-
-  const isFirstLoadedRender = useRef(true);
+  const reloadWorkspaceQuietly = React.useCallback(async () => {
+    setShowSpinner(true);
+    await refetch();
+    setShowSpinner(false);
+  }, [refetch]);
 
   // Reload the workspace, and show a success or error toast upon completion.
-  useLayoutEffect(() => {
-    if (loading) {
-      return;
-    }
+  const reloadWorkspaceLoudly = React.useCallback(async () => {
+    setShowSpinner(true);
+    const result = await refetch();
+    setShowSpinner(false);
 
-    if (isFirstLoadedRender.current) {
-      isFirstLoadedRender.current = false;
-      return;
-    }
+    const anyErrors =
+      result.data.workspaceOrError.__typename === 'PythonError' ||
+      result.data.workspaceOrError.locationEntries.some(
+        (entry) => entry.locationOrLoadError?.__typename === 'PythonError',
+      );
 
-    if (erroredLocationEntries.length) {
-      showSharedToaster({
+    const showViewButton = !alreadyViewingCodeLocations();
+
+    if (anyErrors) {
+      await showSharedToaster({
         intent: 'warning',
         message: (
           <Box flex={{direction: 'row', justifyContent: 'space-between', gap: 24, grow: 1}}>
             <div>Definitions loaded with errors</div>
-            <ViewCodeLocationsButton
-              onClick={() => {
-                onClickViewButton([CodeLocationRowStatusType.Failed]);
-              }}
-            />
+            {showViewButton ? <ViewCodeLocationsButton onClick={onClickViewButton} /> : null}
+          </Box>
+        ),
+        icon: 'check_circle',
+      });
+    } else {
+      await showSharedToaster({
+        intent: 'success',
+        message: (
+          <Box flex={{direction: 'row', justifyContent: 'space-between', gap: 24, grow: 1}}>
+            <div>Definitions reloaded</div>
+            {showViewButton ? <ViewCodeLocationsButton onClick={onClickViewButton} /> : null}
           </Box>
         ),
         icon: 'check_circle',
       });
     }
-  }, [erroredLocationEntries, loading, onClickViewButton]);
+  }, [onClickViewButton, refetch]);
 
-  useLayoutEffect(() => {
-    if (loading) {
-      return;
-    }
-    const anyLoading = Object.values(data).some(
-      (entry) =>
-        entry.__typename === 'WorkspaceLocationEntry' &&
-        entry.loadStatus === RepositoryLocationLoadStatus.LOADING,
-    );
-    if (!anyLoading) {
-      setShowSpinner(false);
-    }
-  }, [loading, data]);
-
-  const codeLocationStatusQueryData = useRecoilValue(codeLocationStatusAtom);
-
-  useLayoutEffect(() => {
+  const onLocationUpdate = async (data: CodeLocationStatusQuery) => {
     const isFreshPageload = previousEntriesById === null;
 
     // Given the previous and current code locations, determine whether to show a) a loading spinner
     // and/or b) a toast indicating that a code location is being reloaded.
     const entries =
-      codeLocationStatusQueryData?.locationStatusesOrError?.__typename ===
-      'WorkspaceLocationStatusEntries'
-        ? codeLocationStatusQueryData?.locationStatusesOrError.entries
+      data?.locationStatusesOrError?.__typename === 'WorkspaceLocationStatusEntries'
+        ? data?.locationStatusesOrError.entries
         : [];
 
     let hasUpdatedEntries = entries.length !== Object.keys(previousEntriesById || {}).length;
-
-    if (!isFreshPageload && hasUpdatedEntries) {
-      showSharedToaster({
-        intent: 'success',
-        message: (
-          <Box flex={{direction: 'row', justifyContent: 'space-between', gap: 24, grow: 1}}>
-            <div>Definitions reloaded</div>
-            <ViewCodeLocationsButton
-              onClick={() => {
-                onClickViewButton([]);
-              }}
-            />
-          </Box>
-        ),
-        icon: 'check_circle',
-      });
-    }
     const currEntriesById: {[key: string]: LocationStatusEntry} = {};
     entries.forEach((entry) => {
       const previousEntry = previousEntriesById && previousEntriesById[entry.id];
@@ -194,19 +133,19 @@ export const useCodeLocationsStatus = (): StatusAndMessage | null => {
     // At least one code location has been removed. Reload, but don't make a big deal about it
     // since this was probably done manually.
     if (previousEntries.length > currentEntries.length) {
+      reloadWorkspaceQuietly();
       return;
     }
+
+    const showViewButton = !alreadyViewingCodeLocations();
 
     // We have a new entry, and it has already finished loading. Wow! It's surprisingly fast for it
     // to have finished loading so quickly, but go ahead and indicate that the location has
     // been added, then reload the workspace.
     if (currentEntries.length > previousEntries.length && !currentlyLoading.length) {
-      const previousMap = previousEntries.reduce(
-        (accum, {id}) => {
-          accum[id] = true;
-          return accum;
-        },
-        {} as Record<string, true>,
+      const previousMap: {[id: string]: true} = previousEntries.reduce(
+        (accum, {id}) => ({...accum, [id]: true}),
+        {},
       );
 
       // Count the number of new code locations.
@@ -230,21 +169,18 @@ export const useCodeLocationsStatus = (): StatusAndMessage | null => {
         return <span>{addedEntries.length} code locations added</span>;
       };
 
-      showSharedToaster({
+      await showSharedToaster({
         intent: 'primary',
         message: (
           <Box flex={{direction: 'row', justifyContent: 'space-between', gap: 24, grow: 1}}>
             {toastContent()}
-            <ViewCodeLocationsButton
-              onClick={() => {
-                onClickViewButton([]);
-              }}
-            />
+            {showViewButton ? <ViewCodeLocationsButton onClick={onClickViewButton} /> : null}
           </Box>
         ),
         icon: 'add_circle',
       });
 
+      reloadWorkspaceLoudly();
       return;
     }
 
@@ -257,7 +193,7 @@ export const useCodeLocationsStatus = (): StatusAndMessage | null => {
     if (!anyPreviouslyLoading && anyCurrentlyLoading) {
       setShowSpinner(true);
 
-      showSharedToaster({
+      await showSharedToaster({
         intent: 'primary',
         message: (
           <Box flex={{direction: 'row', justifyContent: 'space-between', gap: 24, grow: 1}}>
@@ -268,11 +204,7 @@ export const useCodeLocationsStatus = (): StatusAndMessage | null => {
             ) : (
               <span>Updating {currentlyLoading.length} code locations</span>
             )}
-            <ViewCodeLocationsButton
-              onClick={() => {
-                onClickViewButton([]);
-              }}
-            />
+            {showViewButton ? <ViewCodeLocationsButton onClick={onClickViewButton} /> : null}
           </Box>
         ),
         icon: 'refresh',
@@ -280,8 +212,30 @@ export const useCodeLocationsStatus = (): StatusAndMessage | null => {
 
       return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codeLocationStatusQueryData]);
+
+    // A location was previously loading, and no longer is. Our workspace is ready. Refetch it.
+    if (anyPreviouslyLoading && !anyCurrentlyLoading) {
+      reloadWorkspaceLoudly();
+      return;
+    }
+
+    if (hasUpdatedEntries) {
+      reloadWorkspaceLoudly();
+      return;
+    }
+  };
+
+  const queryData = useQuery<CodeLocationStatusQuery, CodeLocationStatusQueryVariables>(
+    CODE_LOCATION_STATUS_QUERY,
+    {
+      fetchPolicy: 'network-only',
+      notifyOnNetworkStatusChange: true,
+      skip,
+      onCompleted: onLocationUpdate,
+    },
+  );
+
+  useQueryRefreshAtInterval(queryData, POLL_INTERVAL);
 
   if (showSpinner) {
     return {
@@ -308,10 +262,30 @@ export const useCodeLocationsStatus = (): StatusAndMessage | null => {
   return null;
 };
 
-const ViewCodeLocationsButton = ({onClick}: {onClick: () => void}) => {
-  return <ViewButton onClick={onClick}>View</ViewButton>;
+const alreadyViewingCodeLocations = () => document.location.pathname.endsWith('/locations');
+
+const ViewCodeLocationsButton: React.FC<{onClick: () => void}> = ({onClick}) => {
+  return (
+    <ViewButton onClick={onClick} color={Colors.White}>
+      View
+    </ViewButton>
+  );
 };
 
 const ViewButton = styled(ButtonLink)`
   white-space: nowrap;
+`;
+
+const CODE_LOCATION_STATUS_QUERY = gql`
+  query CodeLocationStatusQuery {
+    locationStatusesOrError {
+      ... on WorkspaceLocationStatusEntries {
+        entries {
+          id
+          name
+          loadStatus
+        }
+      }
+    }
+  }
 `;

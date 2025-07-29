@@ -1,6 +1,7 @@
 import datetime
 import os
 import tempfile
+from typing import List
 
 import pytest
 import pytz
@@ -21,6 +22,8 @@ from dagster_airflow import (
     make_dagster_definitions_from_airflow_example_dags,
     make_persistent_airflow_db_resource,
 )
+
+from dagster_airflow_tests.marks import requires_persistent_db
 
 RETRY_DAG = """
 from airflow import models
@@ -56,12 +59,12 @@ def reconstruct_retry_job(postgres_airflow_db: str, dags_path: str, *_args) -> J
     definitions = make_dagster_definitions_from_airflow_dags_path(
         dags_path, resource_defs={"airflow_db": airflow_db}
     )
-    job = definitions.resolve_job_def("retry_dag")
+    job = definitions.get_job_def("retry_dag")
     return job
 
 
 @pytest.mark.skipif(airflow_version < "2.0.0", reason="requires airflow 2")
-@pytest.mark.requires_persistent_db
+@requires_persistent_db
 def test_retry_from_failure(instance: DagsterInstance, postgres_airflow_db: str):
     with tempfile.TemporaryDirectory() as dags_path:
         with open(os.path.join(dags_path, "dag.py"), "wb") as f:
@@ -123,7 +126,7 @@ with models.DAG(
 
 
 @pytest.mark.skipif(airflow_version < "2.0.0", reason="requires airflow 2")
-@pytest.mark.requires_persistent_db
+@requires_persistent_db
 def test_pools(postgres_airflow_db: str):
     with tempfile.TemporaryDirectory() as dags_path:
         with open(os.path.join(dags_path, "dag.py"), "wb") as f:
@@ -141,7 +144,7 @@ def test_pools(postgres_airflow_db: str):
         definitions = make_dagster_definitions_from_airflow_dags_path(
             dags_path, resource_defs={"airflow_db": airflow_db}
         )
-        job = definitions.resolve_job_def("pool_dag")
+        job = definitions.get_job_def("pool_dag")
         result = job.execute_in_process()
         assert result.success
         for event in result.all_events:
@@ -176,7 +179,7 @@ with models.DAG(
 
 
 @pytest.mark.skipif(airflow_version < "2.0.0", reason="requires airflow 2")
-@pytest.mark.requires_persistent_db
+@requires_persistent_db
 def test_prev_execution_date(postgres_airflow_db: str):
     with tempfile.TemporaryDirectory() as dags_path:
         with open(os.path.join(dags_path, "dag.py"), "wb") as f:
@@ -187,7 +190,7 @@ def test_prev_execution_date(postgres_airflow_db: str):
         definitions = make_dagster_definitions_from_airflow_dags_path(
             dags_path, resource_defs={"airflow_db": airflow_db}
         )
-        job = definitions.resolve_job_def("previous_macro_dag")
+        job = definitions.get_job_def("previous_macro_dag")
 
         result = job.execute_in_process(
             tags={AIRFLOW_EXECUTION_DATE_STR: datetime.datetime(2023, 2, 2).isoformat()}
@@ -208,7 +211,7 @@ def airflow_examples_repo(postgres_airflow_db) -> RepositoryDefinition:
     return definitions.get_repository_def()
 
 
-def get_examples_airflow_repo_params() -> list[ParameterSet]:
+def get_examples_airflow_repo_params() -> List[ParameterSet]:
     definitions = make_dagster_definitions_from_airflow_example_dags()
     repo = definitions.get_repository_def()
     params = []
@@ -243,7 +246,7 @@ def get_examples_airflow_repo_params() -> list[ParameterSet]:
     "job_name, exclude_from_execution_tests",
     get_examples_airflow_repo_params(),
 )
-@pytest.mark.requires_persistent_db
+@requires_persistent_db
 def test_airflow_example_dags_persistent_db(
     airflow_examples_repo: RepositoryDefinition,
     job_name: str,
@@ -288,7 +291,7 @@ with models.DAG(
 
 
 @pytest.mark.skipif(airflow_version < "2.0.0", reason="requires airflow 2")
-@pytest.mark.requires_persistent_db
+@requires_persistent_db
 def test_dag_run_conf_persistent(postgres_airflow_db: str) -> None:
     with tempfile.TemporaryDirectory() as dags_path:
         with open(os.path.join(dags_path, "dag.py"), "wb") as f:
@@ -301,7 +304,7 @@ def test_dag_run_conf_persistent(postgres_airflow_db: str) -> None:
         definitions = make_dagster_definitions_from_airflow_dags_path(
             dags_path, resource_defs={"airflow_db": airflow_db}
         )
-        job = definitions.resolve_job_def("dag_run_conf_dag")
+        job = definitions.get_job_def("dag_run_conf_dag")
 
         result = job.execute_in_process(
             tags={AIRFLOW_EXECUTION_DATE_STR: datetime.datetime(2023, 2, 2).isoformat()}

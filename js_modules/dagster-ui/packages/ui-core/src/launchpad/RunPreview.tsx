@@ -1,3 +1,4 @@
+import {gql} from '@apollo/client';
 // eslint-disable-next-line no-restricted-imports
 import {Intent} from '@blueprintjs/core';
 import {
@@ -5,23 +6,17 @@ import {
   Button,
   ButtonLink,
   Checkbox,
-  Code,
   Colors,
-  FontFamily,
   Icon,
   SplitPanelContainer,
   Tag,
+  Code,
   Tooltip,
+  FontFamily,
 } from '@dagster-io/ui-components';
 import * as React from 'react';
 import styled from 'styled-components';
 
-import {LaunchpadType} from './types';
-import {gql} from '../apollo-client';
-import {
-  RunPreviewValidationErrorsFragment,
-  RunPreviewValidationFragment,
-} from './types/RunPreview.types';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {useConfirmation} from '../app/CustomConfirmationProvider';
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
@@ -31,6 +26,12 @@ import {
   CompositeConfigTypeForSchemaFragment,
   ConfigEditorRunConfigSchemaFragment,
 } from '../configeditor/types/ConfigEditorUtils.types';
+
+import {LaunchpadType} from './types';
+import {
+  RunPreviewValidationErrorsFragment,
+  RunPreviewValidationFragment,
+} from './types/RunPreview.types';
 
 type ValidationError = RunPreviewValidationErrorsFragment;
 type ValidationErrorOrNode = ValidationError | React.ReactNode;
@@ -72,7 +73,7 @@ const RemoveExtraConfigButton = ({
   for (const path of extraNodes) {
     const parts = path.split('.');
 
-    // If the length is 2, the first part of the path is a known key, such as "solids", "resources",
+    // If the length is 2, the first part of the path is a known key, such as "solids", "resouces",
     // or "loggers", and the user has provided extra config for one of those. We will keep track of
     // these in `knownKeyExtraPaths` just so we can display them with an extra description.
     if (parts.length === 2) {
@@ -136,7 +137,7 @@ const RemoveExtraConfigButton = ({
       </Button>
       {disabled ? (
         <Box flex={{direction: 'row', gap: 4, alignItems: 'center'}}>
-          <Icon name="check_circle" color={Colors.accentGreen()} />
+          <Icon name="check_circle" color={Colors.Green500} />
           No extra config to remove
         </Box>
       ) : null}
@@ -191,7 +192,7 @@ const ScaffoldConfigButton = ({
       </Button>
       {disabled ? (
         <Box flex={{direction: 'row', gap: 4, alignItems: 'center'}}>
-          <Icon name="check_circle" color={Colors.accentGreen()} />
+          <Icon name="check_circle" color={Colors.Green500} />
           No missing config
         </Box>
       ) : null}
@@ -228,7 +229,7 @@ const ExpandDefaultButton = ({
       </Button>
       {disabled ? (
         <Box flex={{direction: 'row', gap: 4, alignItems: 'center'}}>
-          <Icon name="check_circle" color={Colors.accentGreen()} />
+          <Icon name="check_circle" color={Colors.Green500} />
           All defaults expanded
         </Box>
       ) : null}
@@ -250,7 +251,7 @@ interface RunPreviewProps {
   solidSelection: string[] | null;
 }
 
-export const RunPreview = (props: RunPreviewProps) => {
+export const RunPreview: React.FC<RunPreviewProps> = (props) => {
   const {
     document,
     validation,
@@ -375,10 +376,10 @@ export const RunPreview = (props: RunPreviewProps) => {
           isMissing && item.isRequired
             ? 'missing'
             : isInvalid
-              ? 'invalid'
-              : isPresent
-                ? 'present'
-                : 'none';
+            ? 'invalid'
+            : isPresent
+            ? 'present'
+            : 'none';
 
         return (
           <Tooltip
@@ -422,7 +423,7 @@ export const RunPreview = (props: RunPreviewProps) => {
               ))
             ) : (
               <Box flex={{direction: 'row', gap: 4, alignItems: 'center'}}>
-                <Icon name="check_circle" color={Colors.accentGreen()} />
+                <Icon name="check_circle" color={Colors.Green500} />
                 No errors
               </Box>
             )}
@@ -487,11 +488,11 @@ export const RunPreview = (props: RunPreviewProps) => {
               top: 0,
               right: 0,
               padding: '12px 15px 0px 10px',
-              background: Colors.backgroundDefault(),
+              background: 'rgba(255,255,255,0.7)',
             }}
           >
             <Checkbox
-              label="Errors only"
+              label="Errors Only"
               checked={errorsOnly}
               onChange={() => setErrorsOnly(!errorsOnly)}
             />
@@ -559,7 +560,7 @@ export const RUN_PREVIEW_VALIDATION_FRAGMENT = gql`
 `;
 
 const SectionTitle = styled.div`
-  color: ${Colors.textLight()};
+  color: ${Colors.Gray400};
   text-transform: uppercase;
   font-size: 12px;
   margin-bottom: 8px;
@@ -591,7 +592,7 @@ const ErrorListContainer = styled.div`
 
 const ErrorRowContainer = styled.div<{hoverable: boolean}>`
   text-align: left;
-  font-size: 11px;
+  font-size: 13px;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ${FontFamily.monospace};
@@ -609,7 +610,7 @@ const ErrorRowContainer = styled.div<{hoverable: boolean}>`
   ${({hoverable}) =>
     hoverable &&
     `&:hover {
-      background: ${Colors.backgroundLight()};
+      background: ${Colors.Gray50};
     }
   `}
 `;
@@ -622,13 +623,10 @@ const RuntimeAndResourcesSection = styled.div`
   }
 `;
 
-const ErrorRow = ({
-  error,
-  onHighlight,
-}: {
+const ErrorRow: React.FC<{
   error: ValidationError | React.ReactNode;
   onHighlight: (path: string[]) => void;
-}) => {
+}> = ({error, onHighlight}) => {
   let message: React.ReactNode = null;
   let target: ValidationError | null = null;
   if (isValidationError(error)) {
@@ -649,7 +647,7 @@ const ErrorRow = ({
       onClick={() => target && onHighlight(errorStackToYamlPath(target.stack.entries))}
     >
       <div style={{paddingRight: 4}}>
-        <Icon name="error" color={Colors.accentRed()} />
+        <Icon name="error" color={Colors.Red500} />
       </div>
       <div>
         {displayed}

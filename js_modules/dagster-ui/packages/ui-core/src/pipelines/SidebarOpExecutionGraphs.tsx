@@ -1,37 +1,33 @@
+import {gql, useQuery} from '@apollo/client';
 import {Box, Colors, Spinner, Tooltip} from '@dagster-io/ui-components';
-import {useMemo, useState} from 'react';
+import React from 'react';
 import {Link} from 'react-router-dom';
 
-import {SidebarSection} from './SidebarComponents';
-import {gql, useQuery} from '../apollo-client';
-import {
-  SidebarOpGraphsQuery,
-  SidebarOpGraphsQueryVariables,
-} from './types/SidebarOpExecutionGraphs.types';
 import {AssetValueGraph, AssetValueGraphData} from '../assets/AssetValueGraph';
 import {StepStatusDot} from '../gantt/GanttStatusPanel';
 import {linkToRunEvent} from '../runs/RunUtils';
 import {RepoAddress} from '../workspace/types';
 
+import {SidebarSection} from './SidebarComponents';
+import {
+  SidebarOpGraphsQuery,
+  SidebarOpGraphsQueryVariables,
+} from './types/SidebarOpExecutionGraphs.types';
+
 const StateColors = {
-  SUCCESS: Colors.accentGreen(),
-  FAILURE: Colors.accentRed(),
-  SKIPPED: Colors.accentGray(),
-  IN_PROGRESS: Colors.accentBlue(),
+  SUCCESS: Colors.Green500,
+  FAILURE: Colors.Red500,
+  SKIPPED: Colors.Gray500,
+  IN_PROGRESS: Colors.Gray200,
 };
 
-export const SidebarOpExecutionGraphs = ({
-  repoAddress,
-  handleID,
-  pipelineName,
-  solidName,
-}: {
+export const SidebarOpExecutionGraphs: React.FC<{
   handleID: string;
   solidName: string;
   pipelineName: string;
   repoAddress: RepoAddress;
-}) => {
-  const [highlightedStartTime, setHighlightedStartTime] = useState<number | null>(null);
+}> = ({repoAddress, handleID, pipelineName, solidName}) => {
+  const [highlightedStartTime, setHighlightedStartTime] = React.useState<number | null>(null);
   const result = useQuery<SidebarOpGraphsQuery, SidebarOpGraphsQueryVariables>(
     SIDEBAR_OP_GRAPHS_QUERY,
     {
@@ -53,7 +49,7 @@ export const SidebarOpExecutionGraphs = ({
   const nodes =
     stepStats && stepStats.__typename === 'SolidStepStatsConnection' ? stepStats.nodes : null;
 
-  const executionTime = useMemo(() => {
+  const executionTime = React.useMemo(() => {
     const values = nodes
       ? nodes
           .filter((s) => s.startTime && s.endTime)
@@ -121,10 +117,10 @@ export const SidebarOpExecutionGraphs = ({
                       style={{
                         border: `2px solid ${
                           startTime && startTime * 1000 === highlightedStartTime
-                            ? Colors.accentBlue()
+                            ? Colors.Blue500
                             : 'transparent'
                         }`,
-                        backgroundColor: status ? StateColors[status] : Colors.accentGray(),
+                        backgroundColor: status ? StateColors[status] : Colors.Gray200,
                       }}
                     />
                   </Link>

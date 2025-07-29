@@ -1,4 +1,4 @@
-from dagster_airbyte.managed.generated import (
+from . import (
     destinations as destinations,
     sources as sources,
 )

@@ -1,20 +1,32 @@
-import {Box, ErrorBoundary, NonIdealState, Spinner} from '@dagster-io/ui-components';
+import {
+  Box,
+  ButtonGroup,
+  Colors,
+  Spinner,
+  Subheading,
+  ErrorBoundary,
+  Checkbox,
+  Popover,
+  Menu,
+  MenuItem,
+  Button,
+  Icon,
+} from '@dagster-io/ui-components';
 import * as React from 'react';
-import {useMemo} from 'react';
+
+import {LiveDataForNode, stepKeyForAsset} from '../asset-graph/Utils';
+import {RepositorySelector} from '../graphql/types';
+import {useStateWithStorage} from '../hooks/useStateWithStorage';
 
 import {AssetEventDetail, AssetEventDetailEmpty} from './AssetEventDetail';
 import {AssetEventList} from './AssetEventList';
+import {AssetPartitionDetail, AssetPartitionDetailEmpty} from './AssetPartitionDetail';
 import {CurrentRunsBanner} from './CurrentRunsBanner';
 import {FailedRunSinceMaterializationBanner} from './FailedRunSinceMaterializationBanner';
-import {LaunchAssetExecutionButton} from './LaunchAssetExecutionButton';
 import {AssetEventGroup, useGroupedEvents} from './groupByPartition';
 import {AssetKey, AssetViewParams} from './types';
 import {AssetViewDefinitionNodeFragment} from './types/AssetView.types';
-import {useAssetDefinition} from './useAssetDefinition';
-import {useAssetEventsFilters} from './useAssetEventsFilters';
-import {usePaginatedAssetEvents} from './usePaginatedAssetEvents';
-import {LiveDataForNode, stepKeyForAsset} from '../asset-graph/Utils';
-import {AssetEventHistoryEventTypeSelector, RepositorySelector} from '../graphql/types';
+import {useRecentAssetEvents} from './useRecentAssetEvents';
 
 interface Props {
   assetKey: AssetKey;
@@ -32,96 +44,42 @@ interface Props {
   opName?: string | null;
 }
 
-export const AssetEvents = ({
+export const AssetEvents: React.FC<Props> = ({
   assetKey,
   assetNode,
   params,
   setParams,
   liveData,
   dataRefreshHint,
-}: Props) => {
-  const {filterButton, activeFiltersJsx, filterState} = useAssetEventsFilters({
-    assetKey,
-    assetNode,
-  });
-
-  const combinedParams = useMemo(() => {
-    const combinedParams: Parameters<typeof usePaginatedAssetEvents>[1] = {
-      asOf: params.asOf,
-    };
-
-    if (filterState.dateRange) {
-      if (filterState.dateRange.end) {
-        combinedParams.before = filterState.dateRange.end;
-      }
-      if (filterState.dateRange.start) {
-        combinedParams.after = filterState.dateRange.start;
-      }
-    }
-    if (filterState.partitions) {
-      combinedParams.partitions = filterState.partitions;
-    }
-    if (filterState.status?.length === 1) {
-      const status = filterState.status[0];
-      const statusesForStatus =
-        status === 'Success'
-          ? [
-              AssetEventHistoryEventTypeSelector.MATERIALIZATION,
-              AssetEventHistoryEventTypeSelector.OBSERVATION,
-            ]
-          : [AssetEventHistoryEventTypeSelector.FAILED_TO_MATERIALIZE];
-
-      combinedParams.statuses = combinedParams.statuses
-        ? combinedParams.statuses.filter((c) => statusesForStatus.includes(c))
-        : statusesForStatus;
-    }
-
-    if (filterState.type?.length === 1) {
-      const type = filterState.type[0];
-      const statusesForType =
-        type === 'Materialization'
-          ? [
-              AssetEventHistoryEventTypeSelector.MATERIALIZATION,
-              AssetEventHistoryEventTypeSelector.FAILED_TO_MATERIALIZE,
-            ]
-          : [AssetEventHistoryEventTypeSelector.OBSERVATION];
-
-      combinedParams.statuses = combinedParams.statuses
-        ? combinedParams.statuses.filter((c) => statusesForType.includes(c))
-        : statusesForType;
-    }
-    return combinedParams;
-  }, [
-    params.asOf,
-    filterState.dateRange,
-    filterState.status,
-    filterState.type,
-    filterState.partitions,
-  ]);
-
-  const {events, fetchMore, fetchLatest, loading} = usePaginatedAssetEvents(
-    assetKey,
-    combinedParams,
-  );
+}) => {
+  const {xAxis, materializations, observations, loadedPartitionKeys, refetch, loading} =
+    useRecentAssetEvents(assetKey, params, {assetHasDefinedPartitions: false});
 
   React.useEffect(() => {
-    fetchLatest();
-  }, [
-    params.asOf,
-    dataRefreshHint,
-    fetchLatest,
-    combinedParams.after,
-    combinedParams.before,
-    combinedParams.statuses,
-    combinedParams.partitions,
-  ]);
+    if (params.asOf) {
+      return;
+    }
+    refetch();
+  }, [params.asOf, dataRefreshHint, refetch]);
 
-  const grouped = useGroupedEvents('time', events, []);
+  const [filters, setFilters] = useStateWithStorage<{types: EventType[]}>(
+    'asset-event-filters',
+    (json) => ({types: json?.types || ALL_EVENT_TYPES}),
+  );
+
+  const hideFilters = assetNode?.isSource;
+  const grouped = useGroupedEvents(
+    xAxis,
+    hideFilters || filters.types.includes('materialization') ? materializations : [],
+    hideFilters || filters.types.includes('observation') ? observations : [],
+    loadedPartitionKeys,
+  );
 
   const onSetFocused = (group: AssetEventGroup | undefined) => {
-    const updates: Partial<AssetViewParams> = {
-      time: group?.timestamp !== params.time ? group?.timestamp || '' : '',
-    };
+    const updates: Partial<AssetViewParams> =
+      xAxis === 'time'
+        ? {time: group?.timestamp !== params.time ? group?.timestamp || '' : ''}
+        : {partition: group?.partition !== params.partition ? group?.partition || '' : ''};
     setParams({...params, ...updates});
   };
 
@@ -130,9 +88,17 @@ export const AssetEvents = ({
       params.time
         ? Number(b.timestamp) <= Number(params.time)
         : params.partition
-          ? b.partition === params.partition
-          : false,
+        ? b.partition === params.partition
+        : false,
     ) || grouped[0];
+
+  // Note: This page still has a LOT of logic for displaying events by partition but it's only enabled
+  // in one case -- when the asset is an old-school, non-software-defined asset with partition keys
+  // on it's materializations but no defined partition set.
+  //
+  const assetHasUndefinedPartitions =
+    !assetNode?.partitionDefinition && grouped.some((g) => g.partition);
+  const assetHasLineage = materializations.some((m) => m.assetLineage.length > 0);
 
   const onKeyDown = (e: React.KeyboardEvent<any>) => {
     const shift = {ArrowDown: 1, ArrowUp: -1}[e.key];
@@ -146,47 +112,35 @@ export const AssetEvents = ({
     }
   };
 
-  const {cachedDefinition, definition} = useAssetDefinition(assetKey);
-
-  const def = definition ?? cachedDefinition;
-
-  const hasFilter = Object.keys(combinedParams).length > 0;
-
-  if (!loading && !events.length && !hasFilter) {
-    return (
-      <Box padding={{horizontal: 24, vertical: 64}}>
-        <NonIdealState
-          shrinkable
-          icon="materialization_planned"
-          title="This asset has not been materialized yet."
-          description="An asset materialization is the process of executing the function associated with an asset definition. This typically writes data to persistent storage."
-          action={
-            def ? (
-              <LaunchAssetExecutionButton
-                scope={{all: [def]}}
-                showChangedAndMissingOption={false}
-              />
-            ) : null
-          }
-        />
-      </Box>
-    );
-  }
-
   return (
     <>
-      <Box border="bottom" padding={{vertical: 16, horizontal: 24}}>
-        {filterButton}
-      </Box>
-      {activeFiltersJsx.length ? (
+      {assetHasUndefinedPartitions && (
         <Box
+          flex={{justifyContent: 'space-between', alignItems: 'center'}}
           border="bottom"
           padding={{vertical: 16, horizontal: 24}}
-          flex={{direction: 'row', gap: 4, alignItems: 'center'}}
+          style={{marginBottom: -1}}
         >
-          {activeFiltersJsx}
+          <Subheading>Asset Events</Subheading>
+          <div style={{margin: '-6px 0 '}}>
+            <ButtonGroup
+              activeItems={new Set([xAxis])}
+              buttons={[
+                {id: 'partition', label: 'By partition'},
+                {id: 'time', label: 'By timestamp'},
+              ]}
+              onClick={(id: string) =>
+                setParams(
+                  id === 'time'
+                    ? {...params, partition: undefined, time: focused?.timestamp || ''}
+                    : {...params, partition: focused?.partition || '', time: undefined},
+                )
+              }
+            />
+          </div>
         </Box>
-      ) : null}
+      )}
+
       {assetNode && !assetNode.partitionDefinition && (
         <>
           <FailedRunSinceMaterializationBanner
@@ -208,54 +162,131 @@ export const AssetEvents = ({
         onKeyDown={onKeyDown}
         tabIndex={-1}
       >
-        {(() => {
-          if (!grouped.length && !loading) {
-            return (
-              <Box flex={{alignItems: 'center', justifyContent: 'center'}} style={{flex: 1}}>
-                <NonIdealState
-                  icon="materialization_planned"
-                  title="No events found"
-                  description="No events found for the selected filters."
-                />
-              </Box>
-            );
-          }
-          return (
-            <>
-              <Box style={{display: 'flex', flex: 1, minWidth: 200}} flex={{direction: 'column'}}>
-                {loading && grouped.length === 0 ? (
-                  <Box flex={{alignItems: 'center', justifyContent: 'center'}} style={{flex: 1}}>
-                    <Spinner purpose="section" />
-                  </Box>
-                ) : (
-                  <AssetEventList
-                    xAxis="time"
-                    groups={grouped}
-                    focused={focused}
-                    setFocused={onSetFocused}
-                    loading={loading}
-                    onLoadMore={fetchMore}
-                  />
-                )}
-              </Box>
+        <Box
+          style={{display: 'flex', flex: 1, minWidth: 200}}
+          flex={{direction: 'column'}}
+          background={Colors.Gray50}
+        >
+          {hideFilters ? undefined : (
+            <Box
+              flex={{alignItems: 'center', gap: 16}}
+              padding={{vertical: 12, horizontal: 24}}
+              border="bottom"
+            >
+              <EventTypeSelect
+                value={filters.types}
+                onChange={(types) => setFilters({...filters, types})}
+              />
+            </Box>
+          )}
+          {loading ? (
+            <Box flex={{alignItems: 'center', justifyContent: 'center'}} style={{flex: 1}}>
+              <Spinner purpose="section" />
+            </Box>
+          ) : (
+            <AssetEventList
+              xAxis={xAxis}
+              groups={grouped}
+              focused={focused}
+              setFocused={onSetFocused}
+            />
+          )}
+        </Box>
 
-              <Box
-                flex={{direction: 'column'}}
-                style={{flex: 3, minWidth: 0, overflowY: 'auto'}}
-                border="left"
-              >
-                <ErrorBoundary region="event" resetErrorOnChange={[focused]}>
-                  {focused?.latest ? (
-                    <AssetEventDetail assetKey={assetKey} event={focused.latest} />
-                  ) : (
-                    <AssetEventDetailEmpty />
-                  )}
-                </ErrorBoundary>
-              </Box>
-            </>
-          );
-        })()}
+        <Box
+          flex={{direction: 'column'}}
+          style={{flex: 3, minWidth: 0, overflowY: 'auto'}}
+          border="left"
+        >
+          <ErrorBoundary region="event" resetErrorOnChange={[focused]}>
+            {xAxis === 'partition' ? (
+              focused ? (
+                <AssetPartitionDetail
+                  group={focused}
+                  hasLineage={assetHasLineage}
+                  assetKey={assetKey}
+                  stepKey={assetNode ? stepKeyForAsset(assetNode) : undefined}
+                  latestRunForPartition={null}
+                />
+              ) : (
+                <AssetPartitionDetailEmpty />
+              )
+            ) : focused?.latest ? (
+              <AssetEventDetail assetKey={assetKey} event={focused.latest} />
+            ) : (
+              <AssetEventDetailEmpty />
+            )}
+          </ErrorBoundary>
+        </Box>
       </Box>
     </>
+  );
+};
+
+type EventType = 'observation' | 'materialization';
+
+const ALL_EVENT_TYPES: EventType[] = ['observation', 'materialization'];
+
+export const EventTypeSelect: React.FC<{
+  value: EventType[];
+  onChange: (value: EventType[]) => void;
+}> = ({value, onChange}) => {
+  const [showMenu, setShowMenu] = React.useState(false);
+
+  const onToggle = (type: EventType) => {
+    if (value.includes(type)) {
+      onChange(value.filter((v) => v !== type));
+    } else {
+      onChange([...value, type]);
+    }
+  };
+
+  return (
+    <Popover
+      isOpen={showMenu}
+      placement="bottom-start"
+      canEscapeKeyClose
+      onInteraction={(nextOpenState: boolean) => setShowMenu(nextOpenState)}
+      content={
+        <Menu style={{width: 140}} aria-label="filter-options">
+          <MenuItem
+            shouldDismissPopover={false}
+            onClick={() => onToggle('materialization')}
+            text={
+              <Box padding={{horizontal: 2}} flex={{direction: 'row', alignItems: 'center'}}>
+                <Checkbox
+                  size="small"
+                  checked={value.includes('materialization')}
+                  onChange={() => {}}
+                  label="Materialization"
+                />
+              </Box>
+            }
+          />
+          <MenuItem
+            shouldDismissPopover={false}
+            onClick={() => onToggle('observation')}
+            text={
+              <Box padding={{horizontal: 2}} flex={{direction: 'row', alignItems: 'center'}}>
+                <Checkbox
+                  size="small"
+                  checked={value.includes('observation')}
+                  onChange={() => {}}
+                  label="Observation"
+                />
+              </Box>
+            }
+          />
+        </Menu>
+      }
+    >
+      <Button
+        onClick={() => setShowMenu((current) => !current)}
+        icon={<Icon name="filter_alt" />}
+        rightIcon={<Icon name="expand_more" />}
+      >
+        Type ({value.length})
+      </Button>
+    </Popover>
   );
 };

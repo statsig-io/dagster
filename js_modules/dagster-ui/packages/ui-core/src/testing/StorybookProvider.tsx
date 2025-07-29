@@ -1,11 +1,13 @@
+import {loader} from 'graphql.macro';
 import * as React from 'react';
 import {MemoryRouter, MemoryRouterProps} from 'react-router-dom';
-import {RecoilRoot} from 'recoil';
+
+import {CustomAlertProvider} from '../app/CustomAlertProvider';
+import {WorkspaceProvider} from '../workspace/WorkspaceContext';
 
 import {ApolloTestProps, ApolloTestProvider} from './ApolloTestProvider';
-import {CustomAlertProvider} from '../app/CustomAlertProvider';
-import typeDefs from '../graphql/schema.graphql';
-import {WorkspaceProvider} from '../workspace/WorkspaceContext/WorkspaceContext';
+
+const typeDefs = loader('../graphql/schema.graphql');
 
 interface Props {
   children: React.ReactNode;
@@ -13,17 +15,15 @@ interface Props {
   apolloProps?: ApolloTestProps;
 }
 
-export const StorybookProvider = (props: Props) => {
+export const StorybookProvider: React.FC<Props> = (props) => {
   const {apolloProps, routerProps} = props;
 
   return (
-    <RecoilRoot>
-      <MemoryRouter {...routerProps}>
-        <ApolloTestProvider {...apolloProps} typeDefs={typeDefs as any}>
-          <CustomAlertProvider />
-          <WorkspaceProvider>{props.children}</WorkspaceProvider>
-        </ApolloTestProvider>
-      </MemoryRouter>
-    </RecoilRoot>
+    <MemoryRouter {...routerProps}>
+      <ApolloTestProvider {...apolloProps} typeDefs={typeDefs as any}>
+        <CustomAlertProvider />
+        <WorkspaceProvider>{props.children}</WorkspaceProvider>
+      </ApolloTestProvider>
+    </MemoryRouter>
   );
 };

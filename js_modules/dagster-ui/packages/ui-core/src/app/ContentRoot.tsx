@@ -1,36 +1,31 @@
-import {ErrorBoundary, MainContent} from '@dagster-io/ui-components';
-import {memo, useEffect, useRef} from 'react';
-import {Redirect, Switch, useLocation} from 'react-router-dom';
-import {AssetsOverviewRoot} from 'shared/assets/AssetsOverviewRoot.oss';
+import {MainContent, ErrorBoundary} from '@dagster-io/ui-components';
+import * as React from 'react';
+import {Route, Switch, useLocation} from 'react-router-dom';
 
-import {Route} from './Route';
 import {AssetFeatureProvider} from '../assets/AssetFeatureContext';
-import {RunsFeedBackfillPage} from '../instance/backfill/RunsFeedBackfillPage';
-import RunsFeedRoot from '../runs/RunsFeedRoot';
-import {lazy} from '../util/lazy';
 
-const WorkspaceRoot = lazy(() => import('../workspace/WorkspaceRoot'));
-const OverviewRoot = lazy(() => import('../overview/OverviewRoot'));
-const MergedAutomationRoot = lazy(() => import('../automation/MergedAutomationRoot'));
-const FallthroughRoot = lazy(() =>
-  import('shared/app/FallthroughRoot.oss').then((mod) => ({default: mod.FallthroughRoot})),
+const WorkspaceRoot = React.lazy(() => import('../workspace/WorkspaceRoot'));
+const OverviewRoot = React.lazy(() => import('../overview/OverviewRoot'));
+const FallthroughRoot = React.lazy(() => import('./FallthroughRoot'));
+const AssetsCatalogRoot = React.lazy(() => import('../assets/AssetsCatalogRoot'));
+const AssetsGroupsGlobalGraphRoot = React.lazy(
+  () => import('../assets/AssetsGroupsGlobalGraphRoot'),
 );
-const AssetsGlobalGraphRoot = lazy(() => import('../assets/AssetsGlobalGraphRoot'));
-const InstanceConfig = lazy(() => import('../instance/InstanceConfig'));
-const InstanceConcurrencyPage = lazy(() => import('../instance/InstanceConcurrency'));
-const InstanceHealthPage = lazy(() => import('../instance/InstanceHealthPage'));
-const RunRoot = lazy(() => import('../runs/RunRoot'));
-const SnapshotRoot = lazy(() => import('../snapshots/SnapshotRoot'));
-const GuessJobLocationRoot = lazy(() => import('../workspace/GuessJobLocationRoot'));
-const SettingsRoot = lazy(() => import('../settings/SettingsRoot'));
-const JobsRoot = lazy(() => import('../jobs/JobsRoot'));
-const IntegrationsRoot = lazy(() => import('../integrations/IntegrationsRoot'));
+const CodeLocationsPage = React.lazy(() => import('../instance/CodeLocationsPage'));
+const InstanceConfig = React.lazy(() => import('../instance/InstanceConfig'));
+const InstanceConcurrencyPage = React.lazy(() => import('../instance/InstanceConcurrency'));
+const InstanceHealthPage = React.lazy(() => import('../instance/InstanceHealthPage'));
+const RunRoot = React.lazy(() => import('../runs/RunRoot'));
+const RunsRoot = React.lazy(() => import('../runs/RunsRoot'));
+const ScheduledRunListRoot = React.lazy(() => import('../runs/ScheduledRunListRoot'));
+const SnapshotRoot = React.lazy(() => import('../snapshots/SnapshotRoot'));
+const GuessJobLocationRoot = React.lazy(() => import('../workspace/GuessJobLocationRoot'));
 
-export const ContentRoot = memo(() => {
+export const ContentRoot = React.memo(() => {
   const {pathname} = useLocation();
-  const main = useRef<HTMLDivElement>(null);
+  const main = React.useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     main.current?.scrollTo({top: 0});
   }, [pathname]);
 
@@ -39,64 +34,76 @@ export const ContentRoot = memo(() => {
       <ErrorBoundary region="page" resetErrorOnChange={[pathname]}>
         <Switch>
           <Route path="/asset-groups(/?.*)">
-            <AssetsGlobalGraphRoot />
+            <React.Suspense fallback={<div />}>
+              <AssetsGroupsGlobalGraphRoot />
+            </React.Suspense>
           </Route>
           <Route path="/assets(/?.*)">
-            <AssetFeatureProvider>
-              <AssetsOverviewRoot
-                headerBreadcrumbs={[{text: 'Assets', href: '/assets'}]}
-                documentTitlePrefix="Assets"
-              />
-            </AssetFeatureProvider>
+            <React.Suspense fallback={<div />}>
+              <AssetFeatureProvider>
+                <AssetsCatalogRoot />
+              </AssetFeatureProvider>
+            </React.Suspense>
           </Route>
-          <Route path="/runs/b/:backfillId" key="1">
-            <RunsFeedBackfillPage />
+          <Route path="/runs" exact>
+            <React.Suspense fallback={<div />}>
+              <RunsRoot />
+            </React.Suspense>
           </Route>
-          ,
-          <Route path={['/runs', '/runs/scheduled', '/backfills']} exact key="2">
-            <RunsFeedRoot />
+          <Route path="/runs/scheduled" exact>
+            <React.Suspense fallback={<div />}>
+              <ScheduledRunListRoot />
+            </React.Suspense>
           </Route>
           <Route path="/runs/:runId" exact>
-            <RunRoot />
+            <React.Suspense fallback={<div />}>
+              <RunRoot />
+            </React.Suspense>
           </Route>
           <Route path="/snapshots/:pipelinePath/:tab?">
-            <SnapshotRoot />
+            <React.Suspense fallback={<div />}>
+              <SnapshotRoot />
+            </React.Suspense>
           </Route>
           <Route path="/health">
-            <InstanceHealthPage />
+            <React.Suspense fallback={<div />}>
+              <InstanceHealthPage />
+            </React.Suspense>
           </Route>
           <Route path="/concurrency">
-            <InstanceConcurrencyPage />
+            <React.Suspense fallback={<div />}>
+              <InstanceConcurrencyPage />
+            </React.Suspense>
           </Route>
           <Route path="/config">
-            <InstanceConfig />
+            <React.Suspense fallback={<div />}>
+              <InstanceConfig />
+            </React.Suspense>
           </Route>
           <Route path="/locations" exact>
-            <Redirect to="/deployment/locations" />
+            <React.Suspense fallback={<div />}>
+              <CodeLocationsPage />
+            </React.Suspense>
           </Route>
           <Route path="/locations">
-            <WorkspaceRoot />
+            <React.Suspense fallback={<div />}>
+              <WorkspaceRoot />
+            </React.Suspense>
           </Route>
           <Route path="/guess/:jobPath">
-            <GuessJobLocationRoot />
+            <React.Suspense fallback={<div />}>
+              <GuessJobLocationRoot />
+            </React.Suspense>
           </Route>
           <Route path="/overview">
-            <OverviewRoot />
+            <React.Suspense fallback={<div />}>
+              <OverviewRoot />
+            </React.Suspense>
           </Route>
-          <Route path="/jobs">
-            <JobsRoot />
-          </Route>
-          <Route path="/automation">
-            <MergedAutomationRoot />
-          </Route>
-          <Route path="/deployment">
-            <SettingsRoot />
-          </Route>
-          <Route path="/integrations">
-            <IntegrationsRoot />
-          </Route>
-          <Route path="*" isNestingRoute>
-            <FallthroughRoot />
+          <Route path="*">
+            <React.Suspense fallback={<div />}>
+              <FallthroughRoot />
+            </React.Suspense>
           </Route>
         </Switch>
       </ErrorBoundary>

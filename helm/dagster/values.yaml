@@ -1,3 +1,4 @@
+# yamllint disable rule:line-length
 # README:
 # - If using a fixed tag for images, changing the image pull policy to anything other than "Always"
 #   will use a cached/stale image.
@@ -80,9 +81,6 @@ dagsterWebserver:
   # Set to -1 to disable.
   dbPoolRecycle: ~
 
-  # The maximum overflow size of the sqlalchemy pool. Set to -1 to disable.
-  dbPoolMaxOverflow: ~
-
   # The log level of the uvicorn web server, defaults to warning if not set
   logLevel: ~
 
@@ -154,28 +152,6 @@ dagsterWebserver:
   #     subPath: test_file.yaml
   volumeMounts: []
 
-  # Additional containers that should run as sidecars to the webserver. See:
-  # https://kubernetes.io/docs/concepts/workloads/pods/#how-pods-manage-multiple-containers
-  # For K8s versions after 1.29, prefer using extraPrependedInitContainers instead. See:
-  # https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
-  #
-  # Example:
-  # extraContainers:
-  #   - name: my-sidecar
-  #     image: busybox
-  extraContainers: []
-
-  # Additional init containers that should run before the webserver's init container, such as sidecars.
-  # For K8s versions after 1.29, see:
-  # https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
-  #
-  # Extra init containers are started **before** the connection to the database is tested. #
-  # Example:
-  # extraPrependedInitContainers:
-  #   - name: my-sidecar
-  #     image: busybox
-  extraPrependedInitContainers: []
-
   # Support Node, affinity and tolerations for webserver pod assignment. See:
   # https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
   # https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
@@ -187,12 +163,6 @@ dagsterWebserver:
   podSecurityContext: {}
   securityContext: {}
   resources: {}
-
-  # Configure initContainer resources separately from main container
-  initContainerResources: {}
-
-  # Enable the check-db-ready initContainer
-  checkDbReadyInitContainer: true
 
   # Override the default K8s scheduler
   # schedulerName: ~
@@ -237,7 +207,6 @@ computeLogManager:
   #   AzureBlobComputeLogManager,
   #   GCSComputeLogManager,
   #   S3ComputeLogManager,
-  #   LocalComputeLogManager,
   #   CustomComputeLogManager,
   # ]
   type: NoOpComputeLogManager
@@ -246,13 +215,11 @@ computeLogManager:
   #   azureBlobComputeLogManager:
   #     storageAccount: ~
   #     container: ~
-  #     secretCredential: ~
+  #     secretKey: ~
   #     defaultAzureCredential: ~
-  #     accessKeyOrSasToken: ~
   #     localDir: ~
   #     prefix: ~
   #     uploadInterval: ~
-  #     showUrlOnly: ~
   ##  Uncomment this configuration if the GCSComputeLogManager is selected
   #   gcsComputeLogManager:
   #     bucket: ~
@@ -272,10 +239,6 @@ computeLogManager:
   #     skipEmptyFiles: ~
   #     uploadInterval: ~
   #     uploadExtraArgs: {}
-  ##  Uncomment this configuration if the LocalComputeLogManager is selected
-  #   localComputeLogManager:
-  #     baseDir: ~
-  #     pollingTimeout: ~
   ##  Uncomment this configuration if the CustomComputeLogManager is selected.
   ##  Using this setting requires a custom webserver image that defines the user specified
   ##  compute log manager in an installed python module.
@@ -345,9 +308,9 @@ dagster-user-deployments:
       #   - "define_demo_execution_repo"
       #
       # The `dagsterApiGrpcArgs` key can also be replaced with `codeServerArgs` to use a new
-      # experimental `dagster code-server start` command instead of `dagster api grpc`, which can
-      # reload its definitions from within the Dagster UI without needing to restart the user code
-      # deployment pod.
+      # experimental `dagster code-server start` command instead of `dagster api grpc`, which takes
+      # identical arguments but can reload its definitions from within the Dagster UI without
+      # needing to restart the user code deployment pod.
       dagsterApiGrpcArgs:
         - "--python-file"
         - "/example_project/example_repo/repo.py"
@@ -418,22 +381,6 @@ dagster-user-deployments:
       #     subPath: test_file.yaml
       volumeMounts: []
 
-      # Init containers to run before the main container. See:
-      # https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
-      initContainers: []
-
-      # Additional containers (i.e. sidecars) to run alongside the main container. See:
-      # https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
-      #
-      # Example:
-      #
-      # sidecarContainers:
-      #   - name: my-sidecar
-      #     image: ...
-      #     volumeMounts: []
-      #     env: []
-      sidecarContainers: []
-
       annotations: {}
       nodeSelector: {}
       affinity: {}
@@ -456,8 +403,7 @@ dagster-user-deployments:
         periodSeconds: 20
         timeoutSeconds: 10
         successThreshold: 1
-        # Allow roughly 300 seconds to start up by default
-        failureThreshold: 1
+        failureThreshold: 15  # Allow roughly 300 seconds to start up by default
 
       # As of 0.14.0, liveness probes are disabled by default. If you want to enable them, it's recommended to also
       # enable startup probes.
@@ -465,12 +411,35 @@ dagster-user-deployments:
       startupProbe:
         enabled: false
 
-      # Strategy to follow when replacing old pods with new pods. See:
-      # https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
-      deploymentStrategy: {}
-
       service:
         annotations: {}
+
+####################################################################################################
+# Pipeline Run: Configuration for user code containers.
+#
+# `DAGSTER_K8S_PIPELINE_RUN_IMAGE` environment variable will point to the image specified below.
+# The run config for the celery executor can set `job_image` to fetch from environment variable
+# `DAGSTER_K8S_PIPELINE_RUN_IMAGE`, so that celery workers will launch k8s jobs with said image.
+#
+####################################################################################################
+pipelineRun:
+  image:
+    # When a tag is not supplied for a Dagster provided image,
+    # it will default as the Helm chart version.
+    repository: "docker.io/dagster/user-code-example"
+    tag: ~
+    pullPolicy: Always
+
+  # Additional environment variables to set.
+  # A Kubernetes ConfigMap will be created with these environment variables. See:
+  # https://kubernetes.io/docs/concepts/configuration/configmap/
+  #
+  # Example:
+  #
+  # env:
+  #   ENV_ONE: one
+  #   ENV_TWO: two
+  env: {}
 
 ####################################################################################################
 # Scheduler: Configuration for the scheduler
@@ -481,19 +450,15 @@ scheduler:
   #   CustomScheduler,
   #  ]
   type: DagsterDaemonScheduler
-  config: {}
-    ## This configuration will only be used if the DagsterDaemonScheduler is selected.
-    # daemonScheduler:
-    #   maxCatchupRuns: 5
-    #   maxTickRetries: 0
 
-    ## This configuration will only be used if the CustomScheduler is selected.
-    ## Using this setting requires a custom webserver image that defines the user specified
-    ## scheduler in an installed python module.
-    #   customScheduler:
-    #     module: ~
-    #     class: ~
-    #     config: {}
+  config: {}
+  ## Uncomment this configuration will only be used if the CustomScheduler is selected.
+  ## Using this setting requires a custom webserver image that defines the user specified
+  ## scheduler in an installed python module.
+  #   customScheduler:
+  #     module: ~
+  #     class: ~
+  #     config: {}
 
 ####################################################################################################
 # Run Launcher: Configuration for run launcher
@@ -728,8 +693,6 @@ runLauncher:
       #     memory: 128Mi
       resources: {}
 
-      # Enable the check-db-ready initContainer
-      checkDbReadyInitContainer: true
       # Override the default K8s scheduler
       # schedulerName: ~
 
@@ -802,7 +765,6 @@ postgresql:
 
   # Used by init container to check that db is running. (Even if enabled:false)
   image:
-    registry: "docker.io"
     repository: "library/postgres"
     tag: "14.6"
     pullPolicy: IfNotPresent
@@ -927,8 +889,6 @@ flower:
   podSecurityContext: {}
   securityContext: {}
 
-  # Enable the check-db-ready initContainer
-  checkDbReadyInitContainer: true
   # Override the default K8s scheduler
   # schedulerName: ~
 
@@ -1099,7 +1059,7 @@ dagsterDaemon:
     tag: ~
     pullPolicy: Always
 
-  heartbeatTolerance: 1800
+  heartbeatTolerance: 300
 
   runCoordinator:
     # Whether or not to enable the run queue (or some other custom run coordinator). See
@@ -1142,12 +1102,10 @@ dagsterDaemon:
   # will either fail the run or attempt to resume the run with a new run worker.
   runMonitoring:
     enabled: true
-    # Timeout for runs to start (avoids runs hanging in STARTING)
+    # Timeout for runs to start (avoids runs hanging in STARTED)
     startTimeoutSeconds: 300
     # Timeout for runs to cancel (avoids runs hanging in CANCELING)
     # cancelTimeoutSeconds: 300
-    # Timeout for runs to finish (avoids runs hanging in RUNNING)
-    # maxRuntimeSeconds: 7200
     # How often to check on in progress runs
     pollIntervalSeconds: 120
     # [Experimental] Max number of times to attempt to resume a run with a new run worker instead
@@ -1186,21 +1144,6 @@ dagsterDaemon:
     # Uncomment to use a threadpool to submit runs from a single schedule tick in parallel. Can be
     # used to decrease latency when a schedule emits multiple run requests within a single tick.
     # numSubmitWorkers: 4
-
-    # Uncomment to configure the backfill daemon.
-    # Warning: Code deployments with version before 1.9.7 don't support this configuration and might fail.
-    # More details: https://github.com/dagster-io/dagster/pull/30189#issuecomment-2930805760
-    # backfills:
-    #   Whether to submit backfills using an asynchronous thread pool, allowing backfill runs
-    #   to be enqueued in parallel
-    #   useThreads: true
-    #   The max number of worker threads to use when submitting backfills. Can be tuned
-    #   to allow more backfills to run in parallel, but may require allocating more resources to the
-    #   daemon.
-    #   numWorkers: 4
-    #   Uncomment to use a threadpool to submit runs from backfills in parallel. Can be
-    #   used to decrease latency when a backfill enqueues many run requests.
-    #   numSubmitWorkers: 4
 
   # Additional environment variables to set.
   # These will be directly applied to the daemon container. See
@@ -1270,29 +1213,6 @@ dagsterDaemon:
   #     subPath: test_file.yaml
   volumeMounts: []
 
-  # Additional containers that should run as sidecars to the daemon. See:
-  # https://kubernetes.io/docs/concepts/workloads/pods/#how-pods-manage-multiple-containers
-  # For K8s versions after 1.29, prefer using extraPrependedInitContainers instead. See:
-  # https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
-  #
-  # Example:
-  # extraContainers:
-  #   - name: my-sidecar
-  #     image: busybox
-  extraContainers: []
-
-  # Additional init containers that should run before to the daemon's init container, such as sidecars.
-  # For K8s versions after 1.29, see:
-  # https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
-  #
-  # Extra init containers are started **before** the connection to the database is tested.
-  #
-  # Example:
-  # extraPrependedInitContainers:
-  #   - name: my-sidecar
-  #     image: busybox
-  extraPrependedInitContainers: []
-
   annotations: {}
   nodeSelector: {}
   affinity: {}
@@ -1301,10 +1221,6 @@ dagsterDaemon:
   securityContext: {}
   resources: {}
 
-  # Configure initContainer resources separately from main container
-  initContainerResources: {}
-  # Enable the check-db-ready initContainer
-  checkDbReadyInitContainer: true
   # Override the default K8s scheduler
   # schedulerName: ~
 
@@ -1366,26 +1282,6 @@ extraManifests:
 migrate:
   enabled: false
 
-  # Additional containers that should be run as sidecars to the migration job. See:
-  # https://kubernetes.io/docs/concepts/workloads/pods/#how-pods-manage-multiple-containers
-  # For K8s versions after 1.29, prefer using initContainers to use native sidecars instead. See:
-  # https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
-  #
-  # Example:
-  # extraContainers:
-  #   - name: my-sidecar
-  #     image: busybox
-  extraContainers: []
-
-  # Init containers that should run before the main job container, such as native sidecars. See:
-  # https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
-  #
-  # Example:
-  # initContainers:
-  #   - name: my-sidecar
-  #     image: busybox
-  initContainers: []
-
 ####################################################################################################
 # As an open source project, we collect usage statistics to better understand how users engage
 # with Dagster and to inform development priorities.
@@ -1419,21 +1315,12 @@ retention:
   schedule:
     # For schedule ticks, specifies after how many days ticks can be removed.  This field can either
     # be a dict of tick types to integers, or an integer (applies to all tick types).  A value of -1
-    # indicates that ticks should be retained indefinitely.
+    # indicates that ticks should be retained indefinitely
     purgeAfterDays: -1
   sensor:
     # For sensor ticks, specifies after how many days ticks can be removed.  This field can either
     # be a dict of tick types to integers, or an integer (applies to all tick types).  A value of -1
-    # indicates that ticks should be retained indefinitely.
-    purgeAfterDays:
-      failure: -1
-      skipped: 7
-      started: -1
-      success: -1
-  autoMaterialize:
-    # For auto-materialization ticks, specifies after how many days ticks can be removed.  This
-    # field can either be a dict of tick types to integers, or an integer (applies to all tick
-    # types).  A value of -1 indicates that ticks should be retained indefinitely.
+    # indicates that ticks should be retained indefinitely
     purgeAfterDays:
       failure: -1
       skipped: 7
@@ -1450,27 +1337,3 @@ retention:
 #     run_tags:
 #       key: value
 additionalInstanceConfig: {}
-
-####################################################################################################
-# [DEPRECATED] Pipeline Run
-#
-# This config can now be set with dagster-user-deployments.
-####################################################################################################
-pipelineRun:
-  image:
-    # When a tag is not supplied for a Dagster provided image,
-    # it will default as the Helm chart version.
-    repository: "docker.io/dagster/user-code-example"
-    tag: ~
-    pullPolicy: Always
-
-  # Additional environment variables to set.
-  # A Kubernetes ConfigMap will be created with these environment variables. See:
-  # https://kubernetes.io/docs/concepts/configuration/configmap/
-  #
-  # Example:
-  #
-  # env:
-  #   ENV_ONE: one
-  #   ENV_TWO: two
-  env: {}

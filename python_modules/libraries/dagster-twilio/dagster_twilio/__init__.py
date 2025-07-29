@@ -1,10 +1,10 @@
-from dagster_shared.libraries import DagsterLibraryRegistry
+from dagster._core.libraries import DagsterLibraryRegistry
 
-from dagster_twilio.resources import (
+from .resources import (
     TwilioResource as TwilioResource,
     twilio_resource as twilio_resource,
 )
-from dagster_twilio.version import __version__
+from .version import __version__
 
 DagsterLibraryRegistry.register("dagster-twilio", __version__)
 

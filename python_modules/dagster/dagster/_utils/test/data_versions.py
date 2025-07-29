@@ -1,12 +1,9 @@
-from collections.abc import Mapping, Sequence
-from typing import Any, Optional, Union, cast, overload
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast, overload
 
 from typing_extensions import Literal
 
-from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView, TemporalContext
-from dagster._core.definitions.asset_selection import CoercibleToAssetSelection
-from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
-from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
+from dagster._core.definitions.asset_graph import AssetGraph
+from dagster._core.definitions.assets import AssetsDefinition
 from dagster._core.definitions.data_version import (
     CODE_VERSION_TAG,
     DATA_VERSION_TAG,
@@ -21,7 +18,6 @@ from dagster._core.definitions.source_asset import SourceAsset
 from dagster._core.execution.execute_in_process_result import ExecuteInProcessResult
 from dagster._core.instance import DagsterInstance
 from dagster._core.storage.io_manager import IOManager, io_manager
-from dagster._time import get_current_datetime
 
 
 class MaterializationTable:
@@ -50,17 +46,17 @@ def mock_io_manager():
 def get_mat_from_result(result: ExecuteInProcessResult, node_str: str) -> AssetMaterialization:
     mats = result.asset_materializations_for_node(node_str)
     assert all(isinstance(m, AssetMaterialization) for m in mats)
-    return cast("AssetMaterialization", mats[0])
+    return cast(AssetMaterialization, mats[0])
 
 
 def get_mats_from_result(
     result: ExecuteInProcessResult, assets: Sequence[AssetsDefinition]
 ) -> MaterializationTable:
-    mats: dict[AssetKey, AssetMaterialization] = {}
+    mats: Dict[AssetKey, AssetMaterialization] = {}
     for asset_def in assets:
         node_str = asset_def.node_def.name if asset_def.node_def else asset_def.key.path[-1]
         for mat in result.asset_materializations_for_node(node_str):
-            mats[mat.asset_key] = cast("AssetMaterialization", mat)
+            mats[mat.asset_key] = cast(AssetMaterialization, mat)
     return MaterializationTable(mats)
 
 
@@ -158,7 +154,7 @@ def materialize_asset(
     run_config: Optional[Union[RunConfig, Mapping[str, Any]]] = None,
     tags: Optional[Mapping[str, str]] = None,
 ) -> Union[AssetMaterialization, MaterializationTable]:
-    assets: list[Union[AssetsDefinition, SourceAsset]] = []
+    assets: List[Union[AssetsDefinition, SourceAsset]] = []
     for asset_def in all_assets:
         if isinstance(asset_def, SourceAsset):
             assets.append(asset_def)
@@ -190,7 +186,6 @@ def materialize_assets(
     partition_key: Optional[str] = None,
     run_config: Optional[Mapping[str, Any]] = None,
     tags: Optional[Mapping[str, str]] = None,
-    selection: Optional[CoercibleToAssetSelection] = None,
 ) -> MaterializationTable:
     result = materialize(
         assets,
@@ -199,7 +194,6 @@ def materialize_assets(
         partition_key=partition_key,
         run_config=run_config,
         tags=tags,
-        selection=selection,
     )
     return get_mats_from_result(result, assets)
 
@@ -208,7 +202,7 @@ def materialize_twice(
     all_assets: Sequence[Union[AssetsDefinition, SourceAsset]],
     asset_to_materialize: AssetsDefinition,
     instance: DagsterInstance,
-) -> tuple[AssetMaterialization, AssetMaterialization]:
+) -> Tuple[AssetMaterialization, AssetMaterialization]:
     mat1 = materialize_asset(all_assets, asset_to_materialize, instance)
     mat2 = materialize_asset(all_assets, asset_to_materialize, instance)
     return mat1, mat2
@@ -218,14 +212,7 @@ def get_stale_status_resolver(
     instance: DagsterInstance,
     assets: Sequence[Union[AssetsDefinition, SourceAsset]],
 ) -> CachingStaleStatusResolver:
-    asset_graph = AssetGraph.from_assets(assets)
-    asset_graph_view = AssetGraphView(
-        temporal_context=TemporalContext(effective_dt=get_current_datetime(), last_event_id=None),
-        instance=instance,
-        asset_graph=asset_graph,
-    )
     return CachingStaleStatusResolver(
         instance=instance,
         asset_graph=AssetGraph.from_assets(assets),
-        loading_context=asset_graph_view,
     )

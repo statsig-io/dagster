@@ -2,11 +2,15 @@
 import pandas as pd
 from upath import UPath
 
-from dagster import InputContext, OutputContext, UPathIOManager
+from dagster import (
+    InputContext,
+    OutputContext,
+    UPathIOManager,
+)
 
 
 class PandasParquetIOManager(UPathIOManager):
-    extension: str = ".parquet"  # pyright: ignore[reportIncompatibleVariableOverride]
+    extension: str = ".parquet"
 
     def dump_to_path(self, context: OutputContext, obj: pd.DataFrame, path: UPath):
         with path.open("wb") as file:

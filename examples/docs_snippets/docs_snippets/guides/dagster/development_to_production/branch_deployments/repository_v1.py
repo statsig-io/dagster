@@ -3,7 +3,7 @@ import os
 from dagster_snowflake_pandas import SnowflakePandasIOManager
 
 # start_repository
-# definitions.py
+# __init__.py
 from dagster import Definitions
 
 from ..assets import comments, items, stories

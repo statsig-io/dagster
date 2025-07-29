@@ -1,8 +1,7 @@
 import os
 import subprocess
 import uuid
-from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 import click
 import dagster._check as check
@@ -11,10 +10,10 @@ from dagster._config import post_process_config, validate_config
 from dagster._core.errors import DagsterInvalidConfigError
 from dagster._core.instance import DagsterInstance
 from dagster._utils import mkdir_p
-from dagster_shared.yaml_utils import load_yaml_from_path
+from dagster._utils.yaml_utils import load_yaml_from_path
 
-from dagster_celery.executor import CeleryExecutor, celery_executor
-from dagster_celery.make_app import make_app
+from .executor import CeleryExecutor, celery_executor
+from .make_app import make_app
 
 
 def create_worker_cli_group():
@@ -76,17 +75,17 @@ def get_config_dir(config_yaml=None):
 
     validated_config = get_validated_config(config_yaml)
     with open(config_path, "w", encoding="utf8") as fd:
-        if validated_config.get("broker"):
+        if "broker" in validated_config and validated_config["broker"]:
             fd.write(
                 "broker_url = '{broker_url}'\n".format(broker_url=str(validated_config["broker"]))
             )
-        if validated_config.get("backend"):
+        if "backend" in validated_config and validated_config["backend"]:
             fd.write(
                 "result_backend = '{result_backend}'\n".format(
                     result_backend=str(validated_config["backend"])
                 )
             )
-        if validated_config.get("config_source"):
+        if "config_source" in validated_config and validated_config["config_source"]:
             for key, value in validated_config["config_source"].items():
                 fd.write(f"{key} = {value!r}\n")
 
@@ -248,7 +247,7 @@ def status_command(
 def worker_list_command(config_yaml=None):
     app = get_app(config_yaml)
 
-    print(app.control.inspect(timeout=1).active())  # noqa: T201  # pyright: ignore[reportAttributeAccessIssue]
+    print(app.control.inspect(timeout=1).active())  # noqa: T201
 
 
 @click.command(
@@ -280,9 +279,9 @@ def worker_terminate_command(name="dagster", config_yaml=None, all_=False):
     app = get_app(config_yaml)
 
     if all_:
-        app.control.broadcast("shutdown")  # pyright: ignore[reportAttributeAccessIssue]
+        app.control.broadcast("shutdown")
     else:
-        app.control.broadcast(  # pyright: ignore[reportAttributeAccessIssue]
+        app.control.broadcast(
             "shutdown", destination=[host_format(default_nodename(get_worker_name(name)))]
         )
 

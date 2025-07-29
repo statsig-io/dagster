@@ -1,4 +1,5 @@
 import {Meta} from '@storybook/react';
+import * as React from 'react';
 
 import {Box} from '../Box';
 import {Button} from '../Button';

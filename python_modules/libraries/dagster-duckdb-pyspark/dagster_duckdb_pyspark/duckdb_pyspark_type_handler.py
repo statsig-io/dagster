@@ -1,12 +1,15 @@
-from collections.abc import Sequence
-from typing import Optional
+from typing import Optional, Sequence, Type
 
 import pyarrow as pa
 import pyspark
 import pyspark.sql
 from dagster import InputContext, MetadataValue, OutputContext, TableColumn, TableSchema
 from dagster._core.storage.db_io_manager import DbTypeHandler, TableSlice
-from dagster_duckdb.io_manager import DuckDbClient, DuckDBIOManager, build_duckdb_io_manager
+from dagster_duckdb.io_manager import (
+    DuckDbClient,
+    DuckDBIOManager,
+    build_duckdb_io_manager,
+)
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType
 
@@ -40,7 +43,7 @@ class DuckDBPySparkTypeHandler(DbTypeHandler[pyspark.sql.DataFrame]):
             def my_table() -> pyspark.sql.DataFrame:  # the name of the asset will be the table name
                 ...
 
-            Definitions(
+            defs = Definitions(
                 assets=[my_table],
                 resources={"io_manager": MyDuckDBIOManager(database="my_db.duckdb")}
             )
@@ -117,40 +120,17 @@ Examples:
         def my_table() -> pyspark.sql.DataFrame:  # the name of the asset will be the table name
             ...
 
-        Definitions(
-            assets=[my_table],
-            resources={"io_manager": duckdb_pyspark_io_manager.configured({"database": "my_db.duckdb"})}
-        )
-
-    You can set a default schema to store the assets using the ``schema`` configuration value of the DuckDB I/O
-    Manager. This schema will be used if no other schema is specified directly on an asset or op.
-
-    .. code-block:: python
-
-        Definitions(
-            assets=[my_table],
-            resources={"io_manager": duckdb_pyspark_io_manager.configured({"database": "my_db.duckdb", "schema": "my_schema"})}
-        )
-
-    On individual assets, you an also specify the schema where they should be stored using metadata or
-    by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-    take precedence.
-
-    .. code-block:: python
-
-            @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in duckdb
+        @repository
+        def my_repo():
+            return with_resources(
+                [my_table],
+                {"io_manager": duckdb_pyspark_io_manager.configured({"database": "my_db.duckdb"})}
             )
-            def my_table() -> pyspark.sql.DataFrame:
-                ...
 
-            @asset(
-                metadata={"schema": "my_schema"}  # will be used as the schema in duckdb
-            )
-            def my_other_table() -> pyspark.sql.DataFrame:
-                ...
-
-    For ops, the schema can be specified by including a "schema" entry in output metadata.
+    If you do not provide a schema, Dagster will determine a schema based on the assets and ops using
+    the I/O Manager. For assets, the schema will be determined from the asset key.
+    For ops, the schema can be specified by including a "schema" entry in output metadata. If "schema" is not provided
+    via config or on the asset/op, "public" will be used for the schema.
 
     .. code-block:: python
 
@@ -158,9 +138,8 @@ Examples:
             out={"my_table": Out(metadata={"schema": "my_schema"})}
         )
         def make_my_table() -> pyspark.sql.DataFrame:
+            # the returned value will be stored at my_schema.my_table
             ...
-
-    If none of these is provided, the schema will default to "public".
 
     To only use specific columns of a table as input to a downstream op or asset, add the metadata "columns" to the
     In or AssetIn.
@@ -196,40 +175,15 @@ class DuckDBPySparkIOManager(DuckDBIOManager):
             def my_table() -> pyspark.sql.DataFrame:  # the name of the asset will be the table name
                 ...
 
-            Definitions(
+            defs = Definitions(
                 assets=[my_table],
                 resources={"io_manager": DuckDBPySparkIOManager(database="my_db.duckdb")}
             )
 
-        You can set a default schema to store the assets using the ``schema`` configuration value of the DuckDB I/O
-        Manager. This schema will be used if no other schema is specified directly on an asset or op.
-
-        .. code-block:: python
-
-            Definitions(
-                assets=[my_table],
-                resources={"io_manager": DuckDBPySparkIOManager(database="my_db.duckdb", schema="my_schema")}
-            )
-
-        On individual assets, you an also specify the schema where they should be stored using metadata or
-        by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-        take precedence.
-
-        .. code-block:: python
-
-                @asset(
-                    key_prefix=["my_schema"]  # will be used as the schema in duckdb
-                )
-                def my_table() -> pyspark.sql.DataFrame:
-                    ...
-
-                @asset(
-                    metadata={"schema": "my_schema"}  # will be used as the schema in duckdb
-                )
-                def my_other_table() -> pyspark.sql.DataFrame:
-                    ...
-
-        For ops, the schema can be specified by including a "schema" entry in output metadata.
+        If you do not provide a schema, Dagster will determine a schema based on the assets and ops using
+        the I/O Manager. For assets, the schema will be determined from the asset key, as in the above example.
+        For ops, the schema can be specified by including a "schema" entry in output metadata. If "schema" is not provided
+        via config or on the asset/op, "public" will be used for the schema.
 
         .. code-block:: python
 
@@ -237,9 +191,8 @@ class DuckDBPySparkIOManager(DuckDBIOManager):
                 out={"my_table": Out(metadata={"schema": "my_schema"})}
             )
             def make_my_table() -> pyspark.sql.DataFrame:
+                # the returned value will be stored at my_schema.my_table
                 ...
-
-        If none of these is provided, the schema will default to "public".
 
         To only use specific columns of a table as input to a downstream op or asset, add the metadata "columns" to the
         In or AssetIn.
@@ -264,5 +217,5 @@ class DuckDBPySparkIOManager(DuckDBIOManager):
         return [DuckDBPySparkTypeHandler()]
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> Optional[Type]:
         return pyspark.sql.DataFrame

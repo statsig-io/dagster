@@ -1,10 +1,9 @@
 import pytest
-from dagster._core.utils import make_new_run_id
 from dagster_graphql import DagsterGraphQLClientError
 
-from dagster_graphql_tests.client_tests.conftest import MockClient, python_client_test_suite
+from .conftest import MockClient, python_client_test_suite
 
-RUN_ID = make_new_run_id()
+RUN_ID = "foo"
 
 
 @python_client_test_suite
@@ -30,7 +29,7 @@ def test_terminate_run_not_failure(mock_client: MockClient):
 
 @python_client_test_suite
 def test_terminate_run_not_found(mock_client: MockClient):
-    error_type, error_message = "RunNotFoundError", f"Run Id {RUN_ID} not found"
+    error_type, error_message = "RunNotFoundError", "Run Id foo not found"
     response = {"terminateRun": {"__typename": "RunNotFoundError", "runId": error_message}}
 
     with pytest.raises(DagsterGraphQLClientError) as e:

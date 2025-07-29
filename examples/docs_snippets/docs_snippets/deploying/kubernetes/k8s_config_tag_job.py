@@ -1,9 +1,9 @@
-from dagster import OpExecutionContext, job, op
+from dagster import job, op
 
 
 # fmt: off
 @op
-def my_op(context: OpExecutionContext):
+def my_op(context):
     context.log.info("running")
 
 # start_k8s_config

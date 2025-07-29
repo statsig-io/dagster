@@ -1,21 +1,14 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 
-const path = require('path');
-
 const {PHASE_DEVELOPMENT_SERVER} = require('next/constants');
-const {StatsWriterPlugin} = require('webpack-stats-plugin');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'export',
   productionBrowserSourceMaps: true,
   basePath: process.env.NEXT_PUBLIC_BASE_PATH,
-  transpilePackages: [
-    '@dagster-io/ui-components',
-    '@dagster-io/ui-core',
-    '@dagster-io/dg-docs-components',
-  ],
-  webpack: (config, {dev, isServer}) => {
+  transpilePackages: ['@dagster-io/ui-components', '@dagster-io/ui-core'],
+  webpack: (config, {isServer}) => {
     // Unset client-side javascript that only works server-side
     config.resolve.fallback = {fs: false, module: false};
 
@@ -41,20 +34,6 @@ const nextConfig = {
       ],
     });
 
-    // Output webpack stats JSON file only for client-side/production build
-    if (!dev && !isServer) {
-      config.plugins.push(
-        new StatsWriterPlugin({
-          filename: '../.next/webpack-stats.json',
-          stats: {
-            assets: true,
-            chunks: true,
-            modules: true,
-          },
-        }),
-      );
-    }
-
     return config;
   },
   compiler: {
@@ -62,6 +41,9 @@ const nextConfig = {
   },
   distDir: 'build',
   assetPrefix: 'BUILDTIME_ASSETPREFIX_REPLACE_ME',
+  experimental: {
+    appDir: false,
+  },
 };
 
 module.exports = (phase) => {

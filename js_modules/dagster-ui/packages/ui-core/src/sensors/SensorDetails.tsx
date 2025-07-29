@@ -1,62 +1,36 @@
 import {
   Box,
   Button,
-  FontFamily,
-  Icon,
   MetadataTableWIP,
   PageHeader,
-  Subtitle1,
   Tag,
-  Tooltip,
+  Heading,
+  FontFamily,
+  ButtonLink,
+  Icon,
+  Colors,
 } from '@dagster-io/ui-components';
-import {useState} from 'react';
-import {Link} from 'react-router-dom';
-import {SensorAlertDetails} from 'shared/sensors/SensorAlertDetails.oss';
-import styled from 'styled-components';
+import * as React from 'react';
+
+import {QueryRefreshCountdown, QueryRefreshState} from '../app/QueryRefresh';
+import {InstigationStatus, InstigationType, SensorType} from '../graphql/types';
+import {TickTag} from '../instigation/InstigationTick';
+import {RepositoryLink} from '../nav/RepositoryLink';
+import {TimestampDisplay} from '../schedules/TimestampDisplay';
+import {SensorDryRunDialog} from '../ticks/SensorDryRunDialog';
+import {RepoAddress} from '../workspace/types';
 
 import {EditCursorDialog} from './EditCursorDialog';
 import {SensorMonitoredAssets} from './SensorMonitoredAssets';
-import {SensorResetButton} from './SensorResetButton';
 import {SensorSwitch} from './SensorSwitch';
-import {usePermissionsForLocation} from '../app/Permissions';
-import {EvaluateTickButtonSensor} from '../ticks/EvaluateTickButtonSensor';
+import {SensorTargetList} from './SensorTargetList';
 import {SensorFragment} from './types/SensorFragment.types';
-import {QueryRefreshCountdown, QueryRefreshState} from '../app/QueryRefresh';
-import {AutomationTargetList} from '../automation/AutomationTargetList';
-import {AutomationAssetSelectionFragment} from '../automation/types/AutomationAssetSelectionFragment.types';
-import {InstigationStatus, SensorType} from '../graphql/types';
-import {RepositoryLink} from '../nav/RepositoryLink';
-import {TimestampDisplay} from '../schedules/TimestampDisplay';
-import {TickStatusTag} from '../ticks/TickStatusTag';
-import {RepoAddress} from '../workspace/types';
-
-const TIME_FORMAT = {showSeconds: true, showTimezone: false};
-
-/** Some cursors are persisted Python tuples, which come through as JSON. Examples:
- * {"__class__": "AirflowPollingSensorCursor", "dag_query_offset": 0, "end_date_gte": 1743134332.087687, "end_date_lte": null}
- * {"__class__": "RunStatusSensorCursor", "record_id": 1234, "update_timestamp": "1743134332.087687", "record_timestamp": null}
- *
- * For these, there are often empty / unused fields and we can pull just the cursor fields that are in use
- * into a compact table-ready presentation:
- *
- * end_date_gte=1743134332.087687
- */
-export const humanizeSensorCursor = (cursor: string | false | null) => {
-  if (cursor && cursor.startsWith('{"__class__"')) {
-    const cursorObj = JSON.parse(cursor);
-    delete cursorObj['__class__'];
-    return Object.entries(cursorObj)
-      .filter((pair) => pair[1] !== null && pair[1] !== 0)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(',');
-  }
-  return cursor;
-};
 
 export const humanizeSensorInterval = (minIntervalSeconds?: number) => {
   if (!minIntervalSeconds) {
     minIntervalSeconds = 30; // should query sensor interval config when available
   }
+  minIntervalSeconds = Math.max(30, minIntervalSeconds);
   if (minIntervalSeconds < 60 || minIntervalSeconds % 60) {
     return `~${minIntervalSeconds} sec`;
   }
@@ -75,33 +49,19 @@ export const humanizeSensorInterval = (minIntervalSeconds?: number) => {
   return `~${minIntervalSeconds / 86400} days`;
 };
 
-export const SensorDetails = ({
-  sensor,
-  repoAddress,
-  daemonHealth,
-  refreshState,
-  assetSelection,
-}: {
+export const SensorDetails: React.FC<{
   sensor: SensorFragment;
   repoAddress: RepoAddress;
   daemonHealth: boolean | null;
   refreshState: QueryRefreshState;
-  assetSelection: AutomationAssetSelectionFragment | null;
-}) => {
+}> = ({sensor, repoAddress, daemonHealth, refreshState}) => {
   const {
     name,
     sensorState: {status, ticks},
     metadata,
   } = sensor;
 
-  const {
-    permissions,
-    disabledReasons,
-    loading: loadingPermissions,
-  } = usePermissionsForLocation(repoAddress.location);
-  const {canUpdateSensorCursor} = permissions;
-
-  const [isCursorEditing, setCursorEditing] = useState(false);
+  const [isCursorEditing, setCursorEditing] = React.useState(false);
   const sensorSelector = {
     sensorName: sensor.name,
     repositoryName: repoAddress.name,
@@ -114,36 +74,55 @@ export const SensorDetails = ({
     sensor.sensorState.typeSpecificData.__typename === 'SensorData' &&
     sensor.sensorState.typeSpecificData.lastCursor;
 
+  const [showTestTickDialog, setShowTestTickDialog] = React.useState(false);
   const running = status === InstigationStatus.RUNNING;
 
   return (
     <>
       <PageHeader
         title={
-          <Subtitle1 style={{display: 'flex', flexDirection: 'row', gap: 4}}>
-            <Link to="/automation">Automation</Link>
-            <span>/</span>
-            {name}
-          </Subtitle1>
+          <Box flex={{direction: 'row', alignItems: 'center', gap: 12}}>
+            <Heading>{name}</Heading>
+            <SensorSwitch repoAddress={repoAddress} sensor={sensor} />
+          </Box>
         }
         icon="sensors"
         tags={
-          <Tag icon="sensors">
-            Sensor in <RepositoryLink repoAddress={repoAddress} />
-          </Tag>
+          <>
+            <Tag icon="sensors">
+              Sensor in <RepositoryLink repoAddress={repoAddress} />
+            </Tag>
+            {sensor.nextTick && daemonHealth && running ? (
+              <Tag icon="timer">
+                Next tick: <TimestampDisplay timestamp={sensor.nextTick.timestamp!} />
+              </Tag>
+            ) : null}
+          </>
         }
         right={
           <Box margin={{top: 4}} flex={{direction: 'row', alignItems: 'center', gap: 8}}>
             <QueryRefreshCountdown refreshState={refreshState} />
-            <EvaluateTickButtonSensor
-              cursor={cursor || ''}
-              name={sensor.name}
-              repoAddress={repoAddress}
-              jobName={sensor.targets?.[0]?.pipelineName || ''}
-              sensorType={sensor.sensorType}
-            />
+            {sensor.sensorType === SensorType.STANDARD ? (
+              <Button
+                onClick={() => {
+                  setShowTestTickDialog(true);
+                }}
+              >
+                Test Sensor
+              </Button>
+            ) : null}
           </Box>
         }
+      />
+      <SensorDryRunDialog
+        isOpen={showTestTickDialog}
+        onClose={() => {
+          setShowTestTickDialog(false);
+        }}
+        currentCursor={cursor || ''}
+        name={sensor.name}
+        repoAddress={repoAddress}
+        jobName={sensor.targets?.[0]?.pipelineName || ''}
       />
       <MetadataTableWIP>
         <tbody>
@@ -162,8 +141,8 @@ export const SensorDetails = ({
                     flex={{direction: 'row', gap: 8, alignItems: 'center'}}
                     style={{marginTop: '-2px'}}
                   >
-                    <TimestampDisplay timestamp={latestTick.timestamp} timeFormat={TIME_FORMAT} />
-                    <TickStatusTag tick={latestTick} tickResultType="runs" />
+                    <TimestampDisplay timestamp={latestTick.timestamp} />
+                    <TickTag tick={latestTick} instigationType={InstigationType.SENSOR} />
                   </Box>
                 </>
               ) : (
@@ -171,41 +150,34 @@ export const SensorDetails = ({
               )}
             </td>
           </tr>
-          {sensor.nextTick && daemonHealth && running && (
-            <tr>
-              <td>Next tick</td>
-              <td>
-                <TimestampDisplay timestamp={sensor.nextTick.timestamp!} timeFormat={TIME_FORMAT} />
-              </td>
-            </tr>
-          )}
-          {(sensor.targets && sensor.targets.length) || assetSelection ? (
+          {sensor.targets && sensor.targets.length ? (
             <tr>
               <td>Target</td>
-              <TargetCell>
-                <AutomationTargetList
-                  targets={sensor.targets}
-                  repoAddress={repoAddress}
-                  assetSelection={assetSelection || null}
-                  automationType={sensor.sensorType}
-                />
-              </TargetCell>
+              <td>
+                <SensorTargetList targets={sensor.targets} repoAddress={repoAddress} />
+              </td>
             </tr>
           ) : null}
           <tr>
+            <td>Cursor</td>
             <td>
-              <Box flex={{alignItems: 'center'}} style={{height: '32px'}}>
-                Running
+              <Box flex={{direction: 'row', gap: 8}}>
+                <span style={{fontFamily: FontFamily.monospace, fontSize: '16px'}}>
+                  {cursor ? cursor : 'None'}
+                </span>
+                <ButtonLink onClick={() => setCursorEditing(true)} style={{fontSize: '12px'}}>
+                  <Box flex={{direction: 'row', alignItems: 'flex-end', gap: 4}}>
+                    <Icon name="edit" color={Colors.Blue500} size={12} />
+                    <span>Edit</span>
+                  </Box>
+                </ButtonLink>
               </Box>
-            </td>
-            <td>
-              <Box
-                flex={{direction: 'row', gap: 12, alignItems: 'center'}}
-                style={{height: '32px'}}
-              >
-                <SensorSwitch repoAddress={repoAddress} sensor={sensor} />
-                {sensor.canReset && <SensorResetButton repoAddress={repoAddress} sensor={sensor} />}
-              </Box>
+              <EditCursorDialog
+                isOpen={isCursorEditing}
+                sensorSelector={sensorSelector}
+                cursor={cursor ? cursor : ''}
+                onClose={() => setCursorEditing(false)}
+              />
             </td>
           </tr>
           <tr>
@@ -220,50 +192,8 @@ export const SensorDetails = ({
               </td>
             </tr>
           ) : null}
-          {sensor.sensorType !== SensorType.AUTO_MATERIALIZE &&
-          sensor.sensorType !== SensorType.AUTOMATION ? (
-            <tr>
-              <td>
-                <Box flex={{alignItems: 'center'}} style={{height: '32px'}}>
-                  Cursor
-                </Box>
-              </td>
-              <td>
-                <Box flex={{direction: 'row', gap: 12, alignItems: 'center'}}>
-                  <span style={{fontFamily: FontFamily.monospace, fontSize: '14px'}}>
-                    {cursor ? humanizeSensorCursor(cursor) : 'None'}
-                  </span>
-                  <Tooltip
-                    canShow={!canUpdateSensorCursor}
-                    content={disabledReasons.canUpdateSensorCursor}
-                  >
-                    <Button
-                      icon={<Icon name="edit" />}
-                      disabled={!canUpdateSensorCursor || loadingPermissions}
-                      onClick={() => setCursorEditing(true)}
-                    >
-                      {cursor !== humanizeSensorCursor(cursor) ? 'View Raw / Edit' : 'Edit'}
-                    </Button>
-                  </Tooltip>
-                </Box>
-                <EditCursorDialog
-                  isOpen={isCursorEditing}
-                  sensorSelector={sensorSelector}
-                  cursor={cursor ? cursor : ''}
-                  onClose={() => setCursorEditing(false)}
-                />
-              </td>
-            </tr>
-          ) : null}
-          <SensorAlertDetails repoAddress={repoAddress} sensorName={name} />
         </tbody>
       </MetadataTableWIP>
     </>
   );
 };
-
-const TargetCell = styled.td`
-  button {
-    line-height: 20px;
-  }
-`;

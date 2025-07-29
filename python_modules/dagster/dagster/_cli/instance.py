@@ -3,8 +3,10 @@ import os
 import click
 
 import dagster._check as check
-from dagster._cli.utils import get_instance_for_cli
 from dagster._core.instance import DagsterInstance
+from dagster._core.storage.migration.bigint_migration import run_bigint_migration
+
+from .utils import get_instance_for_cli
 
 
 @click.group(name="instance")
@@ -89,7 +91,7 @@ def reindex_command():
 
 @instance_cli.group(name="concurrency")
 def concurrency_cli():
-    """Commands for working with the instance-wide op concurrency."""
+    """Commands for working with the instance-wide op concurrency (Experimental)."""
 
 
 @concurrency_cli.command(name="get", help="Get op concurrency limits")
@@ -125,7 +127,7 @@ def get_concurrency(key, **kwargs):
 
 def concurrency_print_key(instance: DagsterInstance, key: str):
     key_info = instance.event_log_storage.get_concurrency_info(key)
-    click.echo(f'"{key}": {len(key_info.claimed_slots)} / {key_info.slot_count} slots occupied')
+    click.echo(f'"{key}": {key_info.active_slot_count} / {key_info.slot_count} slots occupied')
 
 
 @concurrency_cli.command(name="set", help="Set op concurrency limits")
@@ -161,10 +163,6 @@ def check_concurrency_support(instance: DagsterInstance):
 
 
 def _run_bigint_migration():
-    from dagster._core.storage.migration.bigint_migration import (
-        run_bigint_migration,  # defer for perf
-    )
-
     with get_instance_for_cli() as instance:
         home = os.environ.get("DAGSTER_HOME")
         if not home:

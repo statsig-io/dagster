@@ -4,7 +4,7 @@ import * as Types from '../../graphql/types';
 
 export type TypeExplorerContainerQueryVariables = Types.Exact<{
   pipelineSelector: Types.PipelineSelector;
-  dagsterTypeName: Types.Scalars['String']['input'];
+  dagsterTypeName: Types.Scalars['String'];
 }>;
 
 export type TypeExplorerContainerQuery = {
@@ -37,20 +37,6 @@ export type TypeExplorerContainerQuery = {
                     description: string | null;
                   }
                 | {
-                    __typename: 'CodeReferencesMetadataEntry';
-                    label: string;
-                    description: string | null;
-                    codeReferences: Array<
-                      | {
-                          __typename: 'LocalFileCodeReference';
-                          filePath: string;
-                          lineNumber: number | null;
-                          label: string | null;
-                        }
-                      | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-                    >;
-                  }
-                | {
                     __typename: 'FloatMetadataEntry';
                     floatValue: number | null;
                     label: string;
@@ -60,14 +46,6 @@ export type TypeExplorerContainerQuery = {
                     __typename: 'IntMetadataEntry';
                     intValue: number | null;
                     intRepr: string;
-                    label: string;
-                    description: string | null;
-                  }
-                | {
-                    __typename: 'JobMetadataEntry';
-                    jobName: string;
-                    repositoryName: string | null;
-                    locationName: string;
                     label: string;
                     description: string | null;
                   }
@@ -103,31 +81,11 @@ export type TypeExplorerContainerQuery = {
                     description: string | null;
                   }
                 | {
-                    __typename: 'PoolMetadataEntry';
-                    pool: string;
-                    label: string;
-                    description: string | null;
-                  }
-                | {
                     __typename: 'PythonArtifactMetadataEntry';
                     module: string;
                     name: string;
                     label: string;
                     description: string | null;
-                  }
-                | {
-                    __typename: 'TableColumnLineageMetadataEntry';
-                    label: string;
-                    description: string | null;
-                    lineage: Array<{
-                      __typename: 'TableColumnLineageEntry';
-                      columnName: string;
-                      columnDeps: Array<{
-                        __typename: 'TableColumnDep';
-                        columnName: string;
-                        assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                      }>;
-                    }>;
                   }
                 | {
                     __typename: 'TableMetadataEntry';
@@ -143,7 +101,6 @@ export type TypeExplorerContainerQuery = {
                           name: string;
                           description: string | null;
                           type: string;
-                          tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                           constraints: {
                             __typename: 'TableColumnConstraints';
                             nullable: boolean;
@@ -166,7 +123,6 @@ export type TypeExplorerContainerQuery = {
                         name: string;
                         description: string | null;
                         type: string;
-                        tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                         constraints: {
                           __typename: 'TableColumnConstraints';
                           nullable: boolean;
@@ -180,12 +136,6 @@ export type TypeExplorerContainerQuery = {
                 | {
                     __typename: 'TextMetadataEntry';
                     text: string;
-                    label: string;
-                    description: string | null;
-                  }
-                | {
-                    __typename: 'TimestampMetadataEntry';
-                    timestamp: number;
                     label: string;
                     description: string | null;
                   }
@@ -1305,5 +1255,3 @@ export type TypeExplorerContainerQuery = {
     | {__typename: 'PipelineNotFoundError'}
     | {__typename: 'PythonError'};
 };
-
-export const TypeExplorerContainerQueryVersion = '40bdf55720a8542ddb727910ef82280a8e8e2300d3cc1fb9df11a7d8d957ee06';

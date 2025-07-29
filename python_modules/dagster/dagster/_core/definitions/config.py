@@ -1,5 +1,4 @@
-from collections.abc import Mapping
-from typing import Any, Callable, NamedTuple, Optional, Union, cast
+from typing import Any, Callable, Mapping, NamedTuple, Optional, Union, cast
 
 from typing_extensions import TypeAlias
 
@@ -12,11 +11,10 @@ from dagster._config import (
     resolve_defaults,
     validate_config,
 )
-from dagster._core.definitions.definition_config_schema import (
-    IDefinitionConfigSchema,
-    convert_user_facing_definition_config_schema,
-)
+from dagster._core.definitions.definition_config_schema import IDefinitionConfigSchema
 from dagster._core.errors import DagsterInvalidConfigError
+
+from .definition_config_schema import convert_user_facing_definition_config_schema
 
 ConfigMappingFn: TypeAlias = Callable[[Any], Any]
 
@@ -61,7 +59,7 @@ class ConfigMapping(
         config_schema: Optional[Any] = None,
         receive_processed_config_values: Optional[bool] = None,
     ):
-        return super().__new__(
+        return super(ConfigMapping, cls).__new__(
             cls,
             config_fn=check.callable_param(config_fn, "config_fn"),
             config_schema=convert_user_facing_definition_config_schema(config_schema),
@@ -95,7 +93,7 @@ class ConfigMapping(
         outer_config = outer_evr.value
         if not receive_processed_config_values:
             outer_config = resolve_defaults(
-                cast("ConfigType", self.config_schema.config_type),
+                cast(ConfigType, self.config_schema.config_type),
                 outer_config,
             ).value
 

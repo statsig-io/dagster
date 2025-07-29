@@ -3,7 +3,7 @@
 import * as Types from '../../graphql/types';
 
 export type RunRootQueryVariables = Types.Exact<{
-  runId: Types.Scalars['ID']['input'];
+  runId: Types.Scalars['ID'];
 }>;
 
 export type RunRootQuery = {
@@ -16,11 +16,9 @@ export type RunRootQuery = {
         parentPipelineSnapshotId: string | null;
         runConfigYaml: string;
         canTerminate: boolean;
-        allPools: Array<string> | null;
         hasReExecutePermission: boolean;
         hasTerminatePermission: boolean;
         hasDeletePermission: boolean;
-        hasRunMetricsEnabled: boolean;
         status: Types.RunStatus;
         mode: string;
         rootRunId: string | null;
@@ -40,6 +38,11 @@ export type RunRootQuery = {
           repositoryLocationName: string;
         } | null;
         tags: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
+        assets: Array<{
+          __typename: 'Asset';
+          id: string;
+          key: {__typename: 'AssetKey'; path: Array<string>};
+        }>;
         assetSelection: Array<{__typename: 'AssetKey'; path: Array<string>}> | null;
         assetCheckSelection: Array<{
           __typename: 'AssetCheckhandle';
@@ -49,7 +52,6 @@ export type RunRootQuery = {
         executionPlan: {
           __typename: 'ExecutionPlan';
           artifactsPersisted: boolean;
-          assetSelection: Array<string>;
           steps: Array<{
             __typename: 'ExecutionStep';
             key: string;
@@ -60,8 +62,23 @@ export type RunRootQuery = {
             }>;
           }>;
         } | null;
+        stepStats: Array<{
+          __typename: 'RunStepStats';
+          stepKey: string;
+          status: Types.StepEventStatus | null;
+          startTime: number | null;
+          endTime: number | null;
+          attempts: Array<{
+            __typename: 'RunMarker';
+            startTime: number | null;
+            endTime: number | null;
+          }>;
+          markers: Array<{
+            __typename: 'RunMarker';
+            startTime: number | null;
+            endTime: number | null;
+          }>;
+        }>;
       }
     | {__typename: 'RunNotFoundError'};
 };
-
-export const RunRootQueryVersion = '422484009a32e9f23d5fa1563b6a8d168c9df8cb8bdac1252947ef2e16f37897';

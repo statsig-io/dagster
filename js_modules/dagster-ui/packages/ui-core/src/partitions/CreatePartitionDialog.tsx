@@ -1,3 +1,4 @@
+import {gql, useMutation} from '@apollo/client';
 import {
   Box,
   Button,
@@ -11,20 +12,20 @@ import {
   TextInput,
   Tooltip,
 } from '@dagster-io/ui-components';
-import {useCallback, useMemo, useState} from 'react';
+import * as React from 'react';
 import styled from 'styled-components';
 
-import {gql, useMutation} from '../apollo-client';
-import {
-  AddDynamicPartitionMutation,
-  AddDynamicPartitionMutationVariables,
-} from './types/CreatePartitionDialog.types';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
 import {invalidatePartitions} from '../assets/PartitionSubscribers';
 import {testId} from '../testing/testId';
 import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
 import {RepoAddress} from '../workspace/types';
+
+import {
+  AddDynamicPartitionMutation,
+  AddDynamicPartitionMutationVariables,
+} from './types/CreatePartitionDialog.types';
 
 // Keep in sync with the backend which currently has 2 definitions:
 // INVALID_PARTITION_SUBSTRINGS and INVALID_STATIC_PARTITIONS_KEY_CHARACTERS
@@ -40,6 +41,7 @@ const INVALID_PARITION_SUBSTRINGS = [
   '\t',
   '\v',
   '\0',
+  '|',
   ',',
   '[',
   ']',
@@ -56,6 +58,7 @@ const INVALID_PARTITION_SUBSTRINGS_READABLE = [
   '\\t',
   '\\v',
   '\\0',
+  '|',
   '","',
   '[',
   ']',
@@ -64,29 +67,29 @@ const INVALID_PARTITION_SUBSTRINGS_READABLE = [
 
 export const CreatePartitionDialog = ({
   isOpen,
-  dynamicPartitionsDefinitionName,
+  partitionDefinitionName,
   close,
   repoAddress,
   refetch,
   onCreated,
 }: {
   isOpen: boolean;
-  dynamicPartitionsDefinitionName?: string | null;
+  partitionDefinitionName?: string | null;
   close: () => void;
   repoAddress: RepoAddress;
   refetch?: () => Promise<void>;
   onCreated: (partitionName: string) => void;
 }) => {
-  const [partitionName, setPartitionName] = useState('');
+  const [partitionName, setPartitionName] = React.useState('');
 
   const [createPartition] = useMutation<
     AddDynamicPartitionMutation,
     AddDynamicPartitionMutationVariables
   >(CREATE_PARTITION_MUTATION);
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSaving, setIsSaving] = React.useState(false);
 
-  const isValidPartitionName = useMemo(() => {
+  const isValidPartitionName = React.useMemo(() => {
     return (
       partitionName.length === 0 ||
       !INVALID_PARITION_SUBSTRINGS.some((s) => partitionName.includes(s))
@@ -117,7 +120,7 @@ export const CreatePartitionDialog = ({
     const result = await createPartition({
       variables: {
         repositorySelector: repoAddressToSelector(repoAddress),
-        partitionsDefName: dynamicPartitionsDefinitionName || '',
+        partitionsDefName: partitionDefinitionName || '',
         partitionKey: partitionName,
       },
 
@@ -175,10 +178,10 @@ export const CreatePartitionDialog = ({
           <Icon name="add_circle" size={24} />
           <div>
             Add a partition
-            {dynamicPartitionsDefinitionName ? (
+            {partitionDefinitionName ? (
               <>
                 {' '}
-                for <Mono>{dynamicPartitionsDefinitionName}</Mono>
+                for <Mono>{partitionDefinitionName}</Mono>
               </>
             ) : (
               ''
@@ -203,8 +206,8 @@ export const CreatePartitionDialog = ({
                   handleSave();
                 }
               }}
-              strokeColor={isValidPartitionName ? undefined : Colors.accentRed()}
-              ref={useCallback((inputElement: HTMLInputElement) => {
+              strokeColor={isValidPartitionName ? undefined : Colors.Red500}
+              ref={React.useCallback((inputElement: HTMLInputElement) => {
                 if (inputElement) {
                   inputElement.focus();
                 }

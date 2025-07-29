@@ -1,14 +1,23 @@
 from enum import Enum as PythonEnum
 
-import dagster as dg
 import pytest
-from dagster import Enum
+from dagster import (
+    DagsterInvalidConfigError,
+    DagsterInvalidDefinitionError,
+    Enum,
+    EnumValue,
+    Field,
+    GraphDefinition,
+    Int,
+    job,
+    op,
+)
 from dagster._config import Enum as ConfigEnum
 from dagster._config.validate import validate_config
 
 
 def define_test_enum_type():
-    return ConfigEnum(name="TestEnum", enum_values=[dg.EnumValue("VALUE_ONE")])
+    return ConfigEnum(name="TestEnum", enum_values=[EnumValue("VALUE_ONE")])
 
 
 def test_config_enums():
@@ -30,10 +39,10 @@ def test_config_enum_error():
 def test_enum_in_job_execution():
     called = {}
 
-    @dg.op(
+    @op(
         config_schema={
-            "int_field": dg.Int,
-            "enum_field": dg.Enum("AnEnum", [dg.EnumValue("ENUM_VALUE")]),
+            "int_field": Int,
+            "enum_field": Enum("AnEnum", [EnumValue("ENUM_VALUE")]),
         }
     )
     def config_me(context):
@@ -41,7 +50,7 @@ def test_enum_in_job_execution():
         assert context.op_config["enum_field"] == "ENUM_VALUE"
         called["yup"] = True
 
-    job_def = dg.GraphDefinition(name="enum_in_job", node_defs=[config_me]).to_job()
+    job_def = GraphDefinition(name="enum_in_job", node_defs=[config_me]).to_job()
 
     result = job_def.execute_in_process(
         {"ops": {"config_me": {"config": {"int_field": 2, "enum_field": "ENUM_VALUE"}}}},
@@ -50,7 +59,7 @@ def test_enum_in_job_execution():
     assert result.success
     assert called["yup"]
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
         job_def.execute_in_process(
             {"ops": {"config_me": {"config": {"int_field": 2, "enum_field": "NOPE"}}}},
         )
@@ -67,24 +76,22 @@ class NativeEnum(PythonEnum):
 
 
 def test_native_enum_dagster_enum():
-    dagster_enum = dg.Enum(
+    dagster_enum = Enum(
         "DagsterNativeEnum",
         [
-            dg.EnumValue(config_value="FOO", python_value=NativeEnum.FOO),
-            dg.EnumValue(config_value="BAR", python_value=NativeEnum.BAR),
+            EnumValue(config_value="FOO", python_value=NativeEnum.FOO),
+            EnumValue(config_value="BAR", python_value=NativeEnum.BAR),
         ],
     )
 
     called = {}
 
-    @dg.op(config_schema=dagster_enum)
+    @op(config_schema=dagster_enum)
     def dagster_enum_me(context):
         assert context.op_config == NativeEnum.BAR
         called["yup"] = True
 
-    job_def = dg.GraphDefinition(
-        name="native_enum_dagster_job", node_defs=[dagster_enum_me]
-    ).to_job()
+    job_def = GraphDefinition(name="native_enum_dagster_job", node_defs=[dagster_enum_me]).to_job()
 
     result = job_def.execute_in_process({"ops": {"dagster_enum_me": {"config": "BAR"}}})
     assert result.success
@@ -95,14 +102,12 @@ def test_native_enum_dagster_enum_from_classmethod():
     dagster_enum = Enum.from_python_enum(NativeEnum)
     called = {}
 
-    @dg.op(config_schema=dagster_enum)
+    @op(config_schema=dagster_enum)
     def dagster_enum_me(context):
         assert context.op_config == NativeEnum.BAR
         called["yup"] = True
 
-    job_def = dg.GraphDefinition(
-        name="native_enum_dagster_job", node_defs=[dagster_enum_me]
-    ).to_job()
+    job_def = GraphDefinition(name="native_enum_dagster_job", node_defs=[dagster_enum_me]).to_job()
 
     result = job_def.execute_in_process({"ops": {"dagster_enum_me": {"config": "BAR"}}})
     assert result.success
@@ -112,16 +117,15 @@ def test_native_enum_dagster_enum_from_classmethod():
 def test_native_enum_not_allowed_as_default_value():
     dagster_enum = Enum.from_python_enum(NativeEnum)
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError) as exc_info:
+    with pytest.raises(DagsterInvalidDefinitionError) as exc_info:
 
-        @dg.op(
-            config_schema=dg.Field(dagster_enum, is_required=False, default_value=NativeEnum.BAR)
-        )
+        @op(config_schema=Field(dagster_enum, is_required=False, default_value=NativeEnum.BAR))
         def _enum_direct(_):
             pass
 
     assert (
-        str(exc_info.value) == "You have passed into a python enum value as the default value into "
+        str(exc_info.value)
+        == "You have passed into a python enum value as the default value into "
         "of a config enum type NativeEnum. You must pass in the underlying string "
         "represention as the default value. One of ['FOO', 'BAR']."
     )
@@ -132,12 +136,12 @@ def test_list_enum_with_default_value():
 
     called = {}
 
-    @dg.op(config_schema=dg.Field([dagster_enum], is_required=False, default_value=["BAR"]))
+    @op(config_schema=Field([dagster_enum], is_required=False, default_value=["BAR"]))
     def enum_list(context):
         assert context.op_config == [NativeEnum.BAR]
         called["yup"] = True
 
-    @dg.job
+    @job
     def enum_list_job():
         enum_list()
 
@@ -152,12 +156,12 @@ def test_dict_enum_with_default():
 
     called = {}
 
-    @dg.op(config_schema={"enum": dg.Field(dagster_enum, is_required=False, default_value="BAR")})
+    @op(config_schema={"enum": Field(dagster_enum, is_required=False, default_value="BAR")})
     def enum_dict(context):
         assert context.op_config["enum"] == NativeEnum.BAR
         called["yup"] = True
 
-    @dg.job
+    @job
     def enum_dict_job():
         enum_dict()
 
@@ -170,13 +174,9 @@ def test_dict_enum_with_default():
 def test_list_enum_with_bad_default_value():
     dagster_enum = Enum.from_python_enum(NativeEnum)
 
-    with pytest.raises(dg.DagsterInvalidConfigError) as exc_info:
+    with pytest.raises(DagsterInvalidConfigError) as exc_info:
 
-        @dg.op(
-            config_schema=dg.Field(
-                [dagster_enum], is_required=False, default_value=[NativeEnum.BAR]
-            )
-        )
+        @op(config_schema=Field([dagster_enum], is_required=False, default_value=[NativeEnum.BAR]))
         def _bad_enum_list(_):
             pass
 
@@ -191,18 +191,19 @@ def test_list_enum_with_bad_default_value():
 def test_dict_enum_with_bad_default():
     dagster_enum = Enum.from_python_enum(NativeEnum)
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError) as exc_info:
+    with pytest.raises(DagsterInvalidDefinitionError) as exc_info:
 
-        @dg.op(
+        @op(
             config_schema={
-                "enum": dg.Field(dagster_enum, is_required=False, default_value=NativeEnum.BAR)
+                "enum": Field(dagster_enum, is_required=False, default_value=NativeEnum.BAR)
             }
         )
         def _enum_bad_dict(_):
             pass
 
     assert (
-        str(exc_info.value) == "You have passed into a python enum value as the default value into "
+        str(exc_info.value)
+        == "You have passed into a python enum value as the default value into "
         "of a config enum type NativeEnum. You must pass in the underlying string "
         "represention as the default value. One of ['FOO', 'BAR']."
     )

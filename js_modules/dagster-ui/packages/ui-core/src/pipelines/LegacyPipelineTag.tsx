@@ -1,4 +1,5 @@
-import {Colors, FontFamily, Tooltip} from '@dagster-io/ui-components';
+import {Colors, Tooltip, FontFamily} from '@dagster-io/ui-components';
+import * as React from 'react';
 import styled from 'styled-components';
 
 export const LegacyPipelineTag = () => (
@@ -8,8 +9,8 @@ export const LegacyPipelineTag = () => (
 );
 
 const LegacyTag = styled.div`
-  background: ${Colors.backgroundLight()};
-  color: ${Colors.textLight()};
+  background: ${Colors.Gray10};
+  color: ${Colors.Gray600};
   font-family: ${FontFamily.default};
   font-size: 14px;
   border-radius: 7px;

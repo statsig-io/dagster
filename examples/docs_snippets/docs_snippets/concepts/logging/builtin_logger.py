@@ -6,11 +6,11 @@ from dagster import Definitions
 # start_builtin_logger_marker_0
 # demo_logger.py
 
-from dagster import job, op, OpExecutionContext
+from dagster import job, op
 
 
 @op
-def hello_logs(context: OpExecutionContext):
+def hello_logs(context):
     context.log.info("Hello, world!")
 
 
@@ -25,11 +25,11 @@ def demo_job():
 # start_builtin_logger_error_marker_0
 # demo_logger_error.py
 
-from dagster import job, op, OpExecutionContext
+from dagster import job, op
 
 
 @op
-def hello_logs_error(context: OpExecutionContext):
+def hello_logs_error(context):
     raise Exception("Somebody set up us the bomb")
 
 

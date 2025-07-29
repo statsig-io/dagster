@@ -1,13 +1,12 @@
-from collections.abc import Iterable
-from typing import Any, Optional
+from typing import Any, Iterable, List, Optional
 
 from dagster import Config, In, Nothing, Out, Output, op
-from dagster._core.storage.tags import COMPUTE_KIND_TAG
 from pydantic import Field
 
-from dagster_airbyte.resources import DEFAULT_POLL_INTERVAL_SECONDS, BaseAirbyteResource
 from dagster_airbyte.types import AirbyteOutput
 from dagster_airbyte.utils import _get_attempt, generate_materializations
+
+from .resources import DEFAULT_POLL_INTERVAL_SECONDS, BaseAirbyteResource
 
 
 class AirbyteSyncConfig(Config):
@@ -41,7 +40,7 @@ class AirbyteSyncConfig(Config):
             "be yielded when the op executes."
         ),
     )
-    asset_key_prefix: list[str] = Field(
+    asset_key_prefix: List[str] = Field(
         ["airbyte"],
         description=(
             "If provided and yield_materializations is True, these components will be used to "
@@ -61,7 +60,7 @@ class AirbyteSyncConfig(Config):
             " to see detailed information on this response."
         ),
     ),
-    tags={COMPUTE_KIND_TAG: "airbyte"},
+    tags={"kind": "airbyte"},
 )
 def airbyte_sync_op(
     context, config: AirbyteSyncConfig, airbyte: BaseAirbyteResource

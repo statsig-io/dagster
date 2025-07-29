@@ -1,35 +1,41 @@
-import dagster as dg
 import pytest
-from dagster._core.definitions.utils import check_valid_name
+from dagster._core.definitions.utils import (
+    check_valid_name,
+    config_from_files,
+    config_from_pkg_resources,
+    config_from_yaml_strings,
+)
+from dagster._core.errors import DagsterInvalidDefinitionError, DagsterInvariantViolationError
+from dagster._utils import file_relative_path
 
 
 def test_check_valid_name():
     assert check_valid_name("a") == "a"
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
+    with pytest.raises(DagsterInvalidDefinitionError):
         assert check_valid_name("has a space")
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
+    with pytest.raises(DagsterInvalidDefinitionError):
         assert check_valid_name("")
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
+    with pytest.raises(DagsterInvalidDefinitionError):
         assert check_valid_name("context")
 
 
 def test_config_from_files():
-    run_config = dg.config_from_files(
-        config_files=[dg.file_relative_path(__file__, "../definitions_tests/pass_env.yaml")]
+    run_config = config_from_files(
+        config_files=[file_relative_path(__file__, "../definitions_tests/pass_env.yaml")]
     )
 
     assert run_config == {"ops": {"can_fail": {"config": {"error": False}}}}
 
-    with pytest.raises(dg.DagsterInvariantViolationError):
-        dg.config_from_files(config_files=[dg.file_relative_path(__file__, "not_a_file.yaml")])
+    with pytest.raises(DagsterInvariantViolationError):
+        config_from_files(config_files=[file_relative_path(__file__, "not_a_file.yaml")])
 
-    with pytest.raises(dg.DagsterInvariantViolationError):
-        dg.config_from_files(
+    with pytest.raises(DagsterInvariantViolationError):
+        config_from_files(
             config_files=[
-                dg.file_relative_path(__file__, "./definitions_tests/test_repository_definition.py")
+                file_relative_path(__file__, "./definitions_tests/test_repository_definition.py")
             ]
         )
 
@@ -49,7 +55,7 @@ other: 4
 final: "result"
 """
 
-    run_config = dg.config_from_yaml_strings([a, b, c])
+    run_config = config_from_yaml_strings([a, b, c])
     assert run_config == {
         "foo": {"bar": 1, "one": "one"},
         "baz": 3,
@@ -58,11 +64,11 @@ final: "result"
     }
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError, match="Encountered error attempting to parse yaml"
+        DagsterInvariantViolationError, match="Encountered error attempting to parse yaml"
     ):
-        dg.config_from_yaml_strings(["--- `"])
+        config_from_yaml_strings(["--- `"])
 
-    run_config = dg.config_from_yaml_strings([])
+    run_config = config_from_yaml_strings([])
     assert run_config == {}
 
 
@@ -71,7 +77,7 @@ def test_config_from_pkg_resources():
         "dagster_tests.definitions_tests",
         "pass_env.yaml",
     )
-    run_config = dg.config_from_pkg_resources([good])
+    run_config = config_from_pkg_resources([good])
     assert run_config == {"ops": {"can_fail": {"config": {"error": False}}}}
 
     bad_defs = [
@@ -84,7 +90,7 @@ def test_config_from_pkg_resources():
 
     for bad_def in bad_defs:
         with pytest.raises(
-            dg.DagsterInvariantViolationError,
+            DagsterInvariantViolationError,
             match="Encountered error attempting to parse yaml",
         ):
-            dg.config_from_pkg_resources([bad_def])
+            config_from_pkg_resources([bad_def])

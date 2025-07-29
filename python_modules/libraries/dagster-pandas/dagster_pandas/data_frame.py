@@ -12,7 +12,7 @@ from dagster import (
     _check as check,
     dagster_type_loader,
 )
-from dagster._annotations import beta
+from dagster._annotations import experimental
 from dagster._config import Selector
 from dagster._core.definitions.metadata import normalize_metadata
 from dagster._utils import dict_without_keys
@@ -97,7 +97,7 @@ def _build_column_header(column_name, constraints):
     for constraint in constraints:
         if isinstance(constraint, ColumnDTypeInSetConstraint):
             dtypes_tuple = tuple(constraint.expected_dtype_set)
-            return header + f": `{dtypes_tuple if len(dtypes_tuple) > 1 else dtypes_tuple[0]}`"  # pyright: ignore[reportGeneralTypeIssues]
+            return header + f": `{dtypes_tuple if len(dtypes_tuple) > 1 else dtypes_tuple[0]}`"
         elif isinstance(constraint, ColumnDTypeFnConstraint):
             return header + f": Validator `{constraint.type_fn.__name__}`"
     return header
@@ -107,7 +107,10 @@ def create_dagster_pandas_dataframe_description(description, columns):
     title = "\n".join([description, "### Columns", ""])
     buildme = title
     for column in columns:
-        buildme += f"{_build_column_header(column.name, column.constraints)}\n{_construct_constraint_list(column.constraints)}\n"
+        buildme += "{}\n{}\n".format(
+            _build_column_header(column.name, column.constraints),
+            _construct_constraint_list(column.constraints),
+        )
     return buildme
 
 
@@ -122,9 +125,7 @@ def create_table_schema_metadata_from_dataframe(
     Returns:
         TableSchemaMetadataValue: returns an object with the TableSchema for the DataFrame.
     """
-    check.inst_param(
-        pandas_df, "pandas_df", pd.DataFrame, "Input must be a pandas DataFrame object"
-    )
+    check.inst(pandas_df, pd.DataFrame, "Input must be a pandas DataFrame object")
     return MetadataValue.table_schema(
         TableSchema(
             columns=[
@@ -135,7 +136,6 @@ def create_table_schema_metadata_from_dataframe(
     )
 
 
-@beta
 def create_dagster_pandas_dataframe_type(
     name,
     description=None,
@@ -190,7 +190,7 @@ def create_dagster_pandas_dataframe_type(
 
         return TypeCheck(
             success=True,
-            metadata=_execute_summary_stats(name, value, metadata_fn) if metadata_fn else None,  # pyright: ignore[reportArgumentType]
+            metadata=_execute_summary_stats(name, value, metadata_fn) if metadata_fn else None,
         )
 
     return DagsterType(
@@ -202,7 +202,7 @@ def create_dagster_pandas_dataframe_type(
     )
 
 
-@beta
+@experimental
 def create_structured_dataframe_type(
     name,
     description=None,

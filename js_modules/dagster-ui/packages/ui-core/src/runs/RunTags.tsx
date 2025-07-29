@@ -1,13 +1,13 @@
 import {Box} from '@dagster-io/ui-components';
-import {memo, useMemo} from 'react';
-import * as yaml from 'yaml';
+import * as React from 'react';
 
-import {DagsterTag, RunTag, TagType} from './RunTag';
-import {RunFilterToken} from './RunsFilterInput';
 import {showSharedToaster} from '../app/DomUtils';
 import {useCopyToClipboard} from '../app/browser';
 import {__ASSET_JOB_PREFIX} from '../asset-graph/Utils';
 import {TagAction} from '../ui/TagActions';
+
+import {DagsterTag, RunTag, TagType} from './RunTag';
+import {RunFilterToken} from './RunsFilterInput';
 
 // Sort these tags to the start of the list.
 const priorityTags = ['mode', DagsterTag.Backfill as string, DagsterTag.Partition as string];
@@ -21,17 +21,15 @@ const canAddTagToFilter = (key: string) => {
   return key !== DagsterTag.SolidSelection && key !== DagsterTag.OpSelection && key !== 'mode';
 };
 
-interface Props {
+export const RunTags: React.FC<{
   tags: TagType[];
   mode?: string | null;
   onAddTag?: (token: RunFilterToken) => void;
   onToggleTagPin?: (key: string) => void;
-}
-
-export const useCopyAction = () => {
+}> = React.memo(({tags, onAddTag, onToggleTagPin, mode}) => {
   const copy = useCopyToClipboard();
 
-  return useMemo(
+  const copyAction = React.useMemo(
     () => ({
       label: 'Copy tag',
       onClick: async (tag: TagType) => {
@@ -41,13 +39,8 @@ export const useCopyAction = () => {
     }),
     [copy],
   );
-};
 
-export const RunTags = memo((props: Props) => {
-  const {tags, onAddTag, onToggleTagPin, mode} = props;
-  const copyAction = useCopyAction();
-
-  const addToFilterAction = useMemo(
+  const addToFilterAction = React.useMemo(
     () =>
       onAddTag
         ? {
@@ -76,7 +69,7 @@ export const RunTags = memo((props: Props) => {
     return list.filter((item) => !!item);
   };
 
-  const displayedTags = useMemo(() => {
+  const displayedTags = React.useMemo(() => {
     const priority = [];
     const others = [];
     const copiedTags: TagType[] = tags.map(({key, value, pinned, link}) => ({
@@ -120,7 +113,6 @@ export const RunTags = memo((props: Props) => {
   const modeTag = mode ? (
     <RunTag tag={{key: 'mode', value: mode}} actions={actionsForTag({key: 'mode', value: mode})} />
   ) : null;
-
   return (
     <Box flex={{direction: 'row', wrap: 'wrap', gap: 4}}>
       {modeTag}
@@ -130,9 +122,3 @@ export const RunTags = memo((props: Props) => {
     </Box>
   );
 });
-
-export function tagsAsYamlString(displayedTags: TagType[]): string {
-  return yaml.stringify(
-    Object.fromEntries(displayedTags.map((d) => [d.originalKey || d.key, d.value])),
-  );
-}

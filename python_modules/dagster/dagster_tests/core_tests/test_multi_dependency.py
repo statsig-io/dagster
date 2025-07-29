@@ -1,37 +1,53 @@
-import dagster as dg
 import pytest
+from dagster import (
+    Any,
+    DagsterInvalidDefinitionError,
+    DependencyDefinition,
+    GraphDefinition,
+    In,
+    InputMapping,
+    Int,
+    List,
+    MultiDependencyDefinition,
+    Nothing,
+    Out,
+    OutputMapping,
+    graph,
+    job,
+    op,
+)
 from dagster._core.definitions.composition import MappedInputPlaceholder
 
 
 def test_simple_values():
-    @dg.op(ins={"numbers": dg.In(dg.List[dg.Int])})
+    @op(ins={"numbers": In(List[Int])})
     def sum_num(_context, numbers):
         # cant guarantee order
         assert set(numbers) == set([1, 2, 3])
         return sum(numbers)
 
-    @dg.op
+    @op
     def emit_1():
         return 1
 
-    @dg.op
+    @op
     def emit_2():
         return 2
 
-    @dg.op
+    @op
     def emit_3():
         return 3
 
-    foo_job = dg.GraphDefinition(
+    foo_job = GraphDefinition(
         name="input_test",
         node_defs=[emit_1, emit_2, emit_3, sum_num],
         dependencies={
             "sum_num": {
-                "numbers": dg.MultiDependencyDefinition(
+                "numbers": MultiDependencyDefinition(
                     [
-                        dg.DependencyDefinition("emit_1"),
-                        dg.DependencyDefinition("emit_2"),
-                        dg.DependencyDefinition("emit_3"),
+                        DependencyDefinition("emit_1"),
+                        DependencyDefinition("emit_2"),
+                        DependencyDefinition("emit_3"),
                     ]
                 )
             }
@@ -42,43 +58,43 @@ def test_simple_values():
     assert result.output_for_node("sum_num") == 6
 
 
-@dg.op(ins={"stuff": dg.In(dg.List[dg.Any])})
+@op(ins={"stuff": In(List[Any])})
 def collect(_context, stuff):
     assert set(stuff) == set([1, None, "one"])
     return stuff
 
 
-@dg.op
+@op
 def emit_num():
     return 1
 
 
-@dg.op
+@op
 def emit_none():
     pass
 
 
-@dg.op
+@op
 def emit_str():
     return "one"
 
 
-@dg.op(out=dg.Out(dg.Nothing))
+@op(out=Out(Nothing))
 def emit_nothing():
     pass
 
 
 def test_interleaved_values():
-    foo_job = dg.GraphDefinition(
+    foo_job = GraphDefinition(
         name="input_test",
         node_defs=[emit_num, emit_none, emit_str, collect],
         dependencies={
             "collect": {
-                "stuff": dg.MultiDependencyDefinition(
+                "stuff": MultiDependencyDefinition(
                     [
-                        dg.DependencyDefinition("emit_num"),
-                        dg.DependencyDefinition("emit_none"),
-                        dg.DependencyDefinition("emit_str"),
+                        DependencyDefinition("emit_num"),
+                        DependencyDefinition("emit_none"),
+                        DependencyDefinition("emit_str"),
                     ]
                 )
             }
@@ -89,7 +105,7 @@ def test_interleaved_values():
 
 
 def test_dsl():
-    @dg.job
+    @job
     def input_test():
         collect([emit_num(), emit_none(), emit_str()])
 
@@ -99,11 +115,11 @@ def test_dsl():
 
 
 def test_collect_one():
-    @dg.op
+    @op
     def collect_one(list_arg):
         assert list_arg == ["one"]
 
-    @dg.job
+    @job
     def multi_one():
         collect_one([emit_str()])
 
@@ -112,23 +128,23 @@ def test_collect_one():
 
 def test_fan_in_manual():
     # manually building up this guy
-    @dg.graph
+    @graph
     def _target_graph_dsl(str_in, none_in):
         num = emit_num()
         return collect([num, str_in, none_in])
 
     # base case works
-    _target_graph_manual = dg.GraphDefinition(
+    _target_graph_manual = GraphDefinition(
         name="manual_graph",
         node_defs=[emit_num, collect],
         input_mappings=[
-            dg.InputMapping(
+            InputMapping(
                 graph_input_name="str_in",
                 mapped_node_name="collect",
                 mapped_node_input_name="stuff",
                 fan_in_index=1,
             ),
-            dg.InputMapping(
+            InputMapping(
                 graph_input_name="none_in",
                 mapped_node_name="collect",
                 mapped_node_input_name="stuff",
@@ -136,7 +152,7 @@ def test_fan_in_manual():
             ),
         ],
         output_mappings=[
-            dg.OutputMapping(
+            OutputMapping(
                 graph_output_name="result",
                 mapped_node_name="collect",
                 mapped_node_output_name="result",
@@ -144,9 +160,9 @@ def test_fan_in_manual():
         ],
         dependencies={
             "collect": {
-                "stuff": dg.MultiDependencyDefinition(
+                "stuff": MultiDependencyDefinition(
                     [
-                        dg.DependencyDefinition("emit_num"),
+                        DependencyDefinition("emit_num"),
                         MappedInputPlaceholder,
                         MappedInputPlaceholder,
                     ]
@@ -156,20 +172,20 @@ def test_fan_in_manual():
     )
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="index 2 in the MultiDependencyDefinition is not a MappedInputPlaceholder",
     ):
-        _missing_placeholder = dg.GraphDefinition(
+        _missing_placeholder = GraphDefinition(
             name="manual_graph",
             node_defs=[emit_num, collect],
             input_mappings=[
-                dg.InputMapping(
+                InputMapping(
                     graph_input_name="str_in",
                     mapped_node_name="collect",
                     mapped_node_input_name="stuff",
                     fan_in_index=1,
                 ),
-                dg.InputMapping(
+                InputMapping(
                     graph_input_name="none_in",
                     mapped_node_name="collect",
                     mapped_node_input_name="stuff",
@@ -177,7 +193,7 @@ def test_fan_in_manual():
                 ),
             ],
             output_mappings=[
-                dg.OutputMapping(
+                OutputMapping(
                     graph_output_name="result",
                     mapped_node_name="collect",
                     mapped_node_output_name="result",
@@ -185,9 +201,9 @@ def test_fan_in_manual():
             ],
             dependencies={
                 "collect": {
-                    "stuff": dg.MultiDependencyDefinition(
+                    "stuff": MultiDependencyDefinition(
                         [
-                            dg.DependencyDefinition("emit_num"),
+                            DependencyDefinition("emit_num"),
                             MappedInputPlaceholder,
                         ]
                     )
@@ -195,20 +211,18 @@ def test_fan_in_manual():
             },
         )
 
-    with pytest.raises(
-        dg.DagsterInvalidDefinitionError, match="is not a MultiDependencyDefinition"
-    ):
-        _bad_target = dg.GraphDefinition(
+    with pytest.raises(DagsterInvalidDefinitionError, match="is not a MultiDependencyDefinition"):
+        _bad_target = GraphDefinition(
             name="manual_graph",
             node_defs=[emit_num, collect],
             input_mappings=[
-                dg.InputMapping(
+                InputMapping(
                     graph_input_name="str_in",
                     mapped_node_name="collect",
                     mapped_node_input_name="stuff",
                     fan_in_index=1,
                 ),
-                dg.InputMapping(
+                InputMapping(
                     graph_input_name="none_in",
                     mapped_node_name="collect",
                     mapped_node_input_name="stuff",
@@ -216,30 +230,30 @@ def test_fan_in_manual():
                 ),
             ],
             output_mappings=[
-                dg.OutputMapping(
+                OutputMapping(
                     graph_output_name="result",
                     mapped_node_name="collect",
                     mapped_node_output_name="result",
                 )
             ],
-            dependencies={"collect": {"stuff": dg.DependencyDefinition("emit_num")}},
+            dependencies={"collect": {"stuff": DependencyDefinition("emit_num")}},
         )
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="Unsatisfied MappedInputPlaceholder at index 3",
     ):
-        _missing_placeholder = dg.GraphDefinition(
+        _missing_placeholder = GraphDefinition(
             name="manual_graph",
             node_defs=[emit_num, collect],
             input_mappings=[
-                dg.InputMapping(
+                InputMapping(
                     graph_input_name="str_in",
                     mapped_node_name="collect",
                     mapped_node_input_name="stuff",
                     fan_in_index=1,
                 ),
-                dg.InputMapping(
+                InputMapping(
                     graph_input_name="none_in",
                     mapped_node_name="collect",
                     mapped_node_input_name="stuff",
@@ -247,7 +261,7 @@ def test_fan_in_manual():
                 ),
             ],
             output_mappings=[
-                dg.OutputMapping(
+                OutputMapping(
                     graph_output_name="result",
                     mapped_node_name="collect",
                     mapped_node_output_name="result",
@@ -255,9 +269,9 @@ def test_fan_in_manual():
             ],
             dependencies={
                 "collect": {
-                    "stuff": dg.MultiDependencyDefinition(
+                    "stuff": MultiDependencyDefinition(
                         [
-                            dg.DependencyDefinition("emit_num"),
+                            DependencyDefinition("emit_num"),
                             MappedInputPlaceholder,
                             MappedInputPlaceholder,
                             MappedInputPlaceholder,
@@ -269,16 +283,16 @@ def test_fan_in_manual():
 
 
 def test_nothing_deps():
-    dg.GraphDefinition(
+    GraphDefinition(
         name="input_test",
         node_defs=[emit_num, emit_nothing, emit_str, collect],
         dependencies={
             "collect": {
-                "stuff": dg.MultiDependencyDefinition(
+                "stuff": MultiDependencyDefinition(
                     [
-                        dg.DependencyDefinition("emit_num"),
-                        dg.DependencyDefinition("emit_nothing"),
-                        dg.DependencyDefinition("emit_str"),
+                        DependencyDefinition("emit_num"),
+                        DependencyDefinition("emit_nothing"),
+                        DependencyDefinition("emit_str"),
                     ]
                 )
             }

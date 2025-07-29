@@ -30,9 +30,7 @@ export const useCountdown = (config: Config) => {
   const token = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   const clearToken = React.useCallback(() => {
-    if (token.current) {
-      clearInterval(token.current);
-    }
+    token.current && clearInterval(token.current);
     token.current = null;
   }, []);
 
@@ -51,9 +49,7 @@ export const useCountdown = (config: Config) => {
   React.useEffect(() => {
     if (remainingTime === 0) {
       clearToken();
-      if (onComplete) {
-        onComplete();
-      }
+      onComplete && onComplete();
     }
   }, [clearToken, onComplete, remainingTime]);
 

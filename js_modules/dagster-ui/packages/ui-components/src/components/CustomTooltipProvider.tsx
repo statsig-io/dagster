@@ -1,15 +1,13 @@
-import {useEffect, useState} from 'react';
+import React from 'react';
 import styled from 'styled-components';
 
-import {Colors} from './Color';
-
 export const CustomTooltipProvider = () => {
-  const [state, setState] = useState<null | {
+  const [state, setState] = React.useState<null | {
     title: string;
     style: React.CSSProperties;
   }>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     document.addEventListener('mouseover', (ev) => {
       const el = ev.target;
       if (!(el instanceof Element)) {
@@ -71,12 +69,13 @@ const TooltipContainer = styled.div`
   position: absolute;
   top: 0;
   left: 0;
-  font-size: 12px;
-  padding: 4px 6px;
-  color: ${Colors.tooltipText()};
-  background: ${Colors.tooltipBackground()};
+  font-size: 11px;
+  padding: 3px;
+  color: #a88860;
+  background: #fffaf5;
+  border: 1px solid #dbc5ad;
   transform: translate(5px, 5px);
-  box-shadow: 1px 1px 3px ${Colors.shadowDefault()}};
+  box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
   z-index: 100;
   pointer-events: none;
   user-select: none;

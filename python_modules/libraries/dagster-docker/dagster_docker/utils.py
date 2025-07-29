@@ -6,7 +6,7 @@ from dagster import (
 from dagster._utils.merger import merge_dicts
 from docker_image import reference
 
-from dagster_docker.container_context import DOCKER_CONTAINER_CONTEXT_SCHEMA
+from .container_context import DOCKER_CONTAINER_CONTEXT_SCHEMA
 
 DOCKER_CONFIG_SCHEMA = merge_dicts(
     {

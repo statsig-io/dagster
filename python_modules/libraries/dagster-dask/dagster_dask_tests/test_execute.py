@@ -5,7 +5,13 @@ from threading import Thread
 
 import dagster_pandas as dagster_pd
 import pytest
-from dagster import file_relative_path, job, op, reconstructable
+from dagster import (
+    VersionStrategy,
+    file_relative_path,
+    job,
+    op,
+    reconstructable,
+)
 from dagster._core.definitions.input import In
 from dagster._core.definitions.job_definition import JobDefinition
 from dagster._core.events import DagsterEventType
@@ -156,13 +162,11 @@ def sleepy_dask_job() -> JobDefinition:
     return job_def
 
 
-@pytest.mark.skip(
-    """
+@pytest.mark.skip("""
     Fails because 'DagsterExecutionInterruptedError' is not actually raised-- there's a timeout
     instead. It's not clear that the test ever was working-- prior to conversion to op/job/graph
-    APIs, it appears to have been mistakenly not using the dask executor.
-    """
-)
+    APIs, it appears to have been mistakenly not using the dask executor. 
+    """)
 def test_dask_terminate():
     run_config = {
         "execution": {"config": {"cluster": {"local": {"timeout": 30}}}},
@@ -184,8 +188,8 @@ def test_dask_terminate():
             run_config=run_config,
         )
 
-        for event in execute_run_iterator(  # pyright: ignore[reportCallIssue]
-            i_job=reconstructable(sleepy_dask_job),  # pyright: ignore[reportCallIssue]
+        for event in execute_run_iterator(
+            i_job=reconstructable(sleepy_dask_job),
             dagster_run=dagster_run,
             instance=instance,
         ):
@@ -236,3 +240,38 @@ def test_existing_scheduler():
 @op
 def foo_op():
     return "foo"
+
+
+class BasicVersionStrategy(VersionStrategy):
+    def get_op_version(self, _):
+        return "foo"
+
+
+def foo_job() -> JobDefinition:
+    @job(
+        executor_def=dask_executor,
+        version_strategy=BasicVersionStrategy(),
+    )
+    def job_def():
+        foo_op()
+
+    return job_def
+
+
+def test_dask_executor_memoization():
+    with instance_for_test() as instance:
+        with execute_job(
+            reconstructable(foo_job),
+            instance=instance,
+            run_config={"execution": {"config": {"cluster": {"local": {"timeout": 30}}}}},
+        ) as result:
+            assert result.success
+            assert result.output_for_node("foo_op") == "foo"
+
+        with execute_job(
+            reconstructable(foo_job),
+            instance=instance,
+            run_config={"execution": {"config": {"cluster": {"local": {"timeout": 30}}}}},
+        ) as result:
+            assert result.success
+            assert len(result.all_node_events) == 0

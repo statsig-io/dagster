@@ -1,6 +1,7 @@
+import * as React from 'react';
 import styled from 'styled-components';
 
-import {Colors} from './Color';
+import {Colors} from './Colors';
 import {Group} from './Group';
 import {Icon, IconWrapper} from './Icon';
 import {Tooltip} from './Tooltip';
@@ -8,7 +9,7 @@ import {secondsToCountdownTime} from './secondsToCountdownTime';
 
 interface Props {
   refreshing: boolean;
-  seconds?: number;
+  seconds: number;
   onRefresh: () => void;
   dataDescription?: string;
 }
@@ -18,28 +19,20 @@ export const RefreshableCountdown = (props: Props) => {
   return (
     <Group direction="row" spacing={8} alignItems="center">
       <span
-        style={{
-          color: Colors.textLight(),
-          fontVariantNumeric: 'tabular-nums',
-          whiteSpace: 'nowrap',
-        }}
+        style={{color: Colors.Gray400, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap'}}
       >
-        {refreshing
-          ? `Refreshing ${dataDescription}…`
-          : seconds === undefined
-            ? null
-            : secondsToCountdownTime(seconds)}
+        {refreshing ? `Refreshing ${dataDescription}…` : secondsToCountdownTime(seconds)}
       </span>
       <Tooltip content={<span style={{whiteSpace: 'nowrap'}}>Refresh now</span>} position="top">
         <RefreshButton onClick={onRefresh}>
-          <Icon name="refresh" color={Colors.accentGray()} />
+          <Icon name="refresh" color={Colors.Gray400} />
         </RefreshButton>
       </Tooltip>
     </Group>
   );
 };
 
-export const RefreshButton = styled.button`
+const RefreshButton = styled.button`
   border: none;
   cursor: pointer;
   padding: 8px;
@@ -54,7 +47,7 @@ export const RefreshButton = styled.button`
     transition: color 100ms linear;
 
     &:hover {
-      color: ${Colors.accentGrayHover()};
+      color: ${Colors.Dark};
     }
   }
 `;

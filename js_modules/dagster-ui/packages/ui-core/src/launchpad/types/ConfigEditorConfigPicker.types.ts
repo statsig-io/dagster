@@ -2,6 +2,96 @@
 
 import * as Types from '../../graphql/types';
 
+export type ConfigPartitionsQueryVariables = Types.Exact<{
+  repositorySelector: Types.RepositorySelector;
+  partitionSetName: Types.Scalars['String'];
+  assetKeys?: Types.InputMaybe<Array<Types.AssetKeyInput> | Types.AssetKeyInput>;
+}>;
+
+export type ConfigPartitionsQuery = {
+  __typename: 'Query';
+  partitionSetOrError:
+    | {
+        __typename: 'PartitionSet';
+        id: string;
+        partitionsOrError:
+          | {__typename: 'Partitions'; results: Array<{__typename: 'Partition'; name: string}>}
+          | {
+              __typename: 'PythonError';
+              message: string;
+              stack: Array<string>;
+              errorChain: Array<{
+                __typename: 'ErrorChainLink';
+                isExplicitLink: boolean;
+                error: {__typename: 'PythonError'; message: string; stack: Array<string>};
+              }>;
+            };
+      }
+    | {__typename: 'PartitionSetNotFoundError'}
+    | {__typename: 'PythonError'};
+  assetNodes: Array<{
+    __typename: 'AssetNode';
+    id: string;
+    partitionDefinition: {
+      __typename: 'PartitionDefinition';
+      name: string | null;
+      type: Types.PartitionDefinitionType;
+    } | null;
+  }>;
+};
+
+export type ConfigPartitionResultFragment = {__typename: 'Partition'; name: string};
+
+export type ConfigPartitionSelectionQueryVariables = Types.Exact<{
+  repositorySelector: Types.RepositorySelector;
+  partitionSetName: Types.Scalars['String'];
+  partitionName: Types.Scalars['String'];
+}>;
+
+export type ConfigPartitionSelectionQuery = {
+  __typename: 'Query';
+  partitionSetOrError:
+    | {
+        __typename: 'PartitionSet';
+        id: string;
+        partition: {
+          __typename: 'Partition';
+          name: string;
+          solidSelection: Array<string> | null;
+          mode: string;
+          runConfigOrError:
+            | {__typename: 'PartitionRunConfig'; yaml: string}
+            | {
+                __typename: 'PythonError';
+                message: string;
+                stack: Array<string>;
+                errorChain: Array<{
+                  __typename: 'ErrorChainLink';
+                  isExplicitLink: boolean;
+                  error: {__typename: 'PythonError'; message: string; stack: Array<string>};
+                }>;
+              };
+          tagsOrError:
+            | {
+                __typename: 'PartitionTags';
+                results: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
+              }
+            | {
+                __typename: 'PythonError';
+                message: string;
+                stack: Array<string>;
+                errorChain: Array<{
+                  __typename: 'ErrorChainLink';
+                  isExplicitLink: boolean;
+                  error: {__typename: 'PythonError'; message: string; stack: Array<string>};
+                }>;
+              };
+        } | null;
+      }
+    | {__typename: 'PartitionSetNotFoundError'}
+    | {__typename: 'PythonError'};
+};
+
 export type ConfigEditorGeneratorPipelineFragment = {
   __typename: 'Pipeline';
   id: string;

@@ -2,22 +2,23 @@ from gzip import GzipFile
 from typing import Any, Optional
 
 import click
-from dagster import DagsterInstance
+from dagster import (
+    DagsterInstance,
+)
 from dagster._core.debug import DebugRunPayload
 from dagster._core.workspace.context import (
     BaseWorkspaceRequestContext,
     IWorkspaceProcessContext,
     WorkspaceRequestContext,
 )
-from dagster._core.workspace.workspace import CurrentWorkspace
-from dagster_shared.serdes import deserialize_value
+from dagster._serdes.serdes import deserialize_value
 
-from dagster_webserver.cli import (
+from .cli import (
     DEFAULT_WEBSERVER_HOST,
     DEFAULT_WEBSERVER_PORT,
     host_dagster_ui_with_workspace_process_context,
 )
-from dagster_webserver.version import __version__
+from .version import __version__
 
 
 class WebserverDebugWorkspaceProcessContext(IWorkspaceProcessContext):
@@ -35,7 +36,7 @@ class WebserverDebugWorkspaceProcessContext(IWorkspaceProcessContext):
     def create_request_context(self, source: Optional[Any] = None) -> BaseWorkspaceRequestContext:
         return WorkspaceRequestContext(
             instance=self._instance,
-            current_workspace=CurrentWorkspace(code_location_entries={}),
+            workspace_snapshot={},
             process_context=self,
             version=__version__,
             source=source,
@@ -84,7 +85,9 @@ def webserver_debug_command(input_files, port):
             debug_payload = deserialize_value(blob, DebugRunPayload)
 
             click.echo(
-                f"\trun_id: {debug_payload.dagster_run.run_id} \n\tdagster version: {debug_payload.version}"
+                "\trun_id: {} \n\tdagster version: {}".format(
+                    debug_payload.dagster_run.run_id, debug_payload.version
+                )
             )
             debug_payloads.append(debug_payload)
 

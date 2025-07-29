@@ -6,7 +6,7 @@ See the BigQuery Python API documentation for reference:
 
 from dagster import Array, Bool, Field, IntSource, String, StringSource
 
-from dagster_gcp.bigquery.types import (
+from .types import (
     BQCreateDisposition,
     BQEncoding,
     BQPriority,

@@ -1,15 +1,15 @@
-import dagster as dg
 import pytest
 from dagster._check import ParameterCheckError
+from dagster._core.definitions.data_version import DataVersion
 
 
 def test_data_version_construction():
-    ver = dg.DataVersion("foo")
+    ver = DataVersion("foo")
     assert ver.value == "foo"
 
     with pytest.raises(ParameterCheckError):
-        dg.DataVersion(100)  # pyright: ignore[reportArgumentType]
+        DataVersion(100)
 
 
 def test_data_version_equality():
-    assert dg.DataVersion("foo") == dg.DataVersion("foo")
+    assert DataVersion("foo") == DataVersion("foo")

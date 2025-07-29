@@ -1,6 +1,6 @@
 import threading
 from functools import lru_cache
-from typing import Any, Optional, Union
+from typing import Any, Optional, Tuple, Union
 
 import sqlalchemy as db
 from alembic.command import downgrade, stamp, upgrade
@@ -25,7 +25,7 @@ SqlAlchemyQuery: TypeAlias = Any
 # Stand-in for a typed row object, which is only available in sqlalchemy 2+
 SqlAlchemyRow: TypeAlias = Any
 
-AlembicVersion: TypeAlias = tuple[Optional[str], Optional[Union[str, tuple[str, ...]]]]
+AlembicVersion: TypeAlias = Tuple[Optional[str], Optional[Union[str, Tuple[str, ...]]]]
 
 
 @lru_cache(maxsize=3)  # run, event, and schedule storages
@@ -76,16 +76,6 @@ def check_alembic_revision(alembic_config: Config, conn: Connection) -> AlembicV
         head_revision = script.as_revision_number("head")
 
     return (db_revision, head_revision)
-
-
-def safe_commit(conn: Connection) -> None:
-    """Commits to a connection if it is in a transaction. Supports compatibility across SQLAlchemy versions,
-    since older versions (1.3) have autocommit on transactions, instead of explicit commits.
-    """
-    if not conn.in_transaction():
-        return
-    if hasattr(conn, "commit"):
-        conn.commit()  # type: ignore
 
 
 def run_migrations_offline(
@@ -176,19 +166,19 @@ def compile_datetime_and_add_precision_mysql(_element, _compiler, **_kw) -> str:
     return f"DATETIME({MYSQL_DATE_PRECISION})"
 
 
-class get_sql_current_timestamp(db.sql.expression.FunctionElement):
+class get_current_timestamp(db.sql.expression.FunctionElement):
     """Like CURRENT_TIMESTAMP, but has the same semantics on MySQL, Postgres, and Sqlite."""
 
     type = db.types.DateTime()  # type: ignore
 
 
-@compiles(get_sql_current_timestamp, "mysql")
-def compiles_get_sql_current_timestamp_mysql(_element, _compiler, **_kw) -> str:
+@compiles(get_current_timestamp, "mysql")
+def compiles_get_current_timestamp_mysql(_element, _compiler, **_kw) -> str:
     return f"CURRENT_TIMESTAMP({MYSQL_DATE_PRECISION})"
 
 
-@compiles(get_sql_current_timestamp)
-def compiles_get_sql_current_timestamp_default(_element, _compiler, **_kw) -> str:
+@compiles(get_current_timestamp)
+def compiles_get_current_timestamp_default(_element, _compiler, **_kw) -> str:
     return "CURRENT_TIMESTAMP"
 
 
@@ -215,20 +205,5 @@ def add_precision_to_mysql_FLOAT(_element, _compiler, **_kw) -> str:
     return f"FLOAT({MYSQL_FLOAT_PRECISION})"
 
 
-class LongText(db.Text):
-    """Allows customization of certain fields to map to LONGTEXT in MySQL.  For Postgres, all text
-    fields are mapped to TEXT, which is unbounded in length, so the distinction is not neccessary.
-    In MySQL, however, TEXT is limited to 64KB, so LONGTEXT (4GB) is required for certain fields.
-    """
-
-    pass
-
-
-@compiles(LongText, "mysql")
-def compile_longtext_mysql(_element, _compiler, **_kw) -> str:
-    return "LONGTEXT"
-
-
 class MySQLCompatabilityTypes:
     UniqueText = db.String(512)
-    LongText = LongText

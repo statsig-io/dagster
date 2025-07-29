@@ -1,26 +1,26 @@
 # ruff: isort: skip_file
 
 
-import dagster as dg
+from dagster import graph, op
 
 
-@dg.op
+@op
 def my_op():
     pass
 
 
 # start_graph_one
-@dg.op
-def return_one(context: dg.OpExecutionContext):
+@op
+def return_one(context):
     return 1
 
 
-@dg.op
-def add_one(context: dg.OpExecutionContext, number: int):
+@op
+def add_one(context, number: int):
     return number + 1
 
 
-@dg.graph
+@graph
 def one_plus_one():
     add_one(return_one())
 
@@ -29,7 +29,7 @@ def one_plus_one():
 
 
 # start_multiple_usage_graph
-@dg.graph
+@graph
 def multiple_usage():
     add_one(add_one(return_one()))
 
@@ -38,7 +38,7 @@ def multiple_usage():
 
 
 # start_alias_graph
-@dg.graph
+@graph
 def alias():
     add_one.alias("second_addition")(add_one(return_one()))
 

@@ -1,12 +1,13 @@
-import {useMemo} from 'react';
+import * as React from 'react';
+
+import {useDocumentTitle} from '../hooks/useDocumentTitle';
 
 import {ExplorerPath} from './PipelinePathUtils';
-import {useDocumentTitle} from '../hooks/useDocumentTitle';
 
 export const useJobTitle = (explorerPath: ExplorerPath, isJob: boolean) => {
   const {pipelineName} = explorerPath;
 
-  const value = useMemo(() => {
+  const value = React.useMemo(() => {
     if (isJob) {
       return `Job: ${pipelineName}`;
     }

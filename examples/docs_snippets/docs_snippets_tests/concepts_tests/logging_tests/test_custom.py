@@ -16,6 +16,7 @@ def test_json_logger():
             __file__,
             "../../../docs_snippets/concepts/logging/config_custom_logger.yaml",
         ),
+        "r",
         encoding="utf8",
     ) as fd:
         run_config = yaml.safe_load(fd.read())

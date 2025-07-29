@@ -1,5 +1,4 @@
-from collections.abc import Mapping
-from typing import ContextManager, Optional, cast  # noqa: UP035
+from typing import ContextManager, Mapping, Optional, cast
 
 import dagster._check as check
 import sqlalchemy as db
@@ -23,19 +22,21 @@ from dagster._core.storage.sql import (
 )
 from dagster._daemon.types import DaemonHeartbeat
 from dagster._serdes import ConfigurableClass, ConfigurableClassData, serialize_value
-from dagster._time import datetime_from_timestamp
+from dagster._utils import utc_datetime_from_timestamp
 from sqlalchemy.engine import Connection
 
-from dagster_mysql.utils import (
+from ..utils import (
     create_mysql_connection,
     mysql_alembic_config,
     mysql_isolation_level,
     mysql_url_from_config,
+    parse_mysql_version,
     retry_mysql_connection_fn,
     retry_mysql_creation_fn,
 )
 
 MINIMUM_MYSQL_BUCKET_VERSION = "8.0.0"
+MINIMUM_MYSQL_INTERSECT_VERSION = "8.0.31"
 
 
 class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
@@ -89,9 +90,7 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
             RunStorageSqlMetadata.create_all(conn)
             stamp_alembic_rev(mysql_alembic_config(__file__), conn)
 
-    def optimize_for_webserver(
-        self, statement_timeout: int, pool_recycle: int, max_overflow: int
-    ) -> None:
+    def optimize_for_webserver(self, statement_timeout: int, pool_recycle: int) -> None:
         # When running in dagster-webserver, hold 1 open connection
         # https://github.com/dagster-io/dagster/issues/3719
         self._engine = create_engine(
@@ -99,7 +98,6 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
             isolation_level=mysql_isolation_level(),
             pool_size=1,
             pool_recycle=pool_recycle,
-            max_overflow=max_overflow,
         )
 
     @property
@@ -117,10 +115,10 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
         if not row:
             return None
 
-        return cast("str", row[0])
+        return cast(str, row[0])
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_config_value(
         cls, inst_data: Optional[ConfigurableClassData], config_value: MySqlStorageConfig
     ) -> "MySQLRunStorage":
         return MySQLRunStorage(inst_data=inst_data, mysql_url=mysql_url_from_config(config_value))
@@ -148,28 +146,36 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
         with self.connect() as conn:
             run_alembic_upgrade(alembic_config, conn)
 
-    def has_built_index(self, migration_name: str) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def has_built_index(self, migration_name: str) -> None:
         if migration_name not in self._index_migration_cache:
-            self._index_migration_cache[migration_name] = super().has_built_index(migration_name)
+            self._index_migration_cache[migration_name] = super(
+                MySQLRunStorage, self
+            ).has_built_index(migration_name)
         return self._index_migration_cache[migration_name]
 
     def mark_index_built(self, migration_name: str) -> None:
-        super().mark_index_built(migration_name)
+        super(MySQLRunStorage, self).mark_index_built(migration_name)
         if migration_name in self._index_migration_cache:
             del self._index_migration_cache[migration_name]
+
+    @property
+    def supports_intersect(self) -> bool:
+        return parse_mysql_version(self._mysql_version) >= parse_mysql_version(  # type: ignore
+            MINIMUM_MYSQL_INTERSECT_VERSION
+        )
 
     def add_daemon_heartbeat(self, daemon_heartbeat: DaemonHeartbeat) -> None:
         with self.connect() as conn:
             conn.execute(
                 db_dialects.mysql.insert(DaemonHeartbeatsTable)
                 .values(
-                    timestamp=datetime_from_timestamp(daemon_heartbeat.timestamp),
+                    timestamp=utc_datetime_from_timestamp(daemon_heartbeat.timestamp),
                     daemon_type=daemon_heartbeat.daemon_type,
                     daemon_id=daemon_heartbeat.daemon_id,
                     body=serialize_value(daemon_heartbeat),
                 )
                 .on_duplicate_key_update(
-                    timestamp=datetime_from_timestamp(daemon_heartbeat.timestamp),
+                    timestamp=utc_datetime_from_timestamp(daemon_heartbeat.timestamp),
                     daemon_id=daemon_heartbeat.daemon_id,
                     body=serialize_value(daemon_heartbeat),
                 )

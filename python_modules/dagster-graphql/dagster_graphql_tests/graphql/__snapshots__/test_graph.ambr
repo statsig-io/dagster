@@ -1,4 +1,3 @@
-# serializer version: 1
 # name: TestGraphs.test_basic_graphs[0]
   dict({
     'graphOrError': dict({

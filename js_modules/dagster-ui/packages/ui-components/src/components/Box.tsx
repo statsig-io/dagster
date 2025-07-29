@@ -1,10 +1,11 @@
 import styled, {css} from 'styled-components';
 
-import {Colors} from './Color';
-import {BorderSetting, BorderSide, DirectionalSpacing, FlexProperties} from './types';
 import {assertUnreachable} from '../util/assertUnreachable';
 
-export interface Props {
+import {Colors} from './Colors';
+import {BorderSetting, BorderSide, DirectionalSpacing, FlexProperties} from './types';
+
+interface Props {
   background?: string | null;
   border?: BorderSide | BorderSetting | null;
   flex?: FlexProperties | null;
@@ -49,8 +50,8 @@ const directionalSpacingToCSS = (property: string, spacing: DirectionalSpacing) 
 
 const borderSettingToCSS = (border: BorderSide | BorderSetting) => {
   const borderValue =
-    typeof border === 'string' ? {side: border, width: 1, color: Colors.keylineDefault()} : border;
-  const {side, width = 1, color = Colors.keylineDefault()} = borderValue;
+    typeof border === 'string' ? {side: border, width: 1, color: Colors.KeylineGray} : border;
+  const {side, width = 1, color = Colors.KeylineGray} = borderValue;
 
   switch (side) {
     case 'all':

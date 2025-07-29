@@ -4,23 +4,12 @@ import tarfile
 from io import BytesIO
 
 import click
-from dagster_shared.scaffold import should_skip_scaffolded_file
+import requests
+
+from .generate import _should_skip_file
 
 # Examples aren't that can't be downloaded from the dagster project CLI
-EXAMPLES_TO_IGNORE = [
-    "components_yaml_checks_dsl",
-    "deploy_k8s_beta",
-    "docs_beta_snippets",
-    "docs_projects",
-    "docs_snippets",
-    "experimental",
-    "use_case_repository",
-    "airlift-mwaa-example",
-    "starlift-demo",
-    "pyproject.toml",
-    "README.md",
-    "temp_pins.txt",
-]
+EXAMPLES_TO_IGNORE = ["docs_snippets", "experimental", "temp_pins.txt"]
 # Hardcoded list of available examples. The list is tested against the examples folder in this mono
 # repo to make sure it's up-to-date.
 AVAILABLE_EXAMPLES = [
@@ -30,31 +19,25 @@ AVAILABLE_EXAMPLES = [
     "assets_pandas_pyspark",
     "assets_pandas_type_metadata",
     "assets_smoke_test",
-    "deploy_docker",
-    "deploy_ecs",
-    "deploy_k8s",
-    "development_to_production",
-    "feature_graph_backed_assets",
-    "getting_started_etl_tutorial",
-    "google_drive_factory",
-    "oss-metadata-to-plus",
-    "project_analytics",
-    "project_dagster_university_start",
-    "project_du_dbt_starter",
-    "project_fully_featured",
     "quickstart_aws",
     "quickstart_etl",
     "quickstart_gcp",
     "quickstart_snowflake",
     "tutorial",
     "tutorial_notebook_assets",
+    "deploy_docker",
+    "deploy_ecs",
+    "deploy_k8s",
+    "development_to_production",
+    "feature_graph_backed_assets",
+    "project_dagster_university_start",
+    "project_fully_featured",
+    "project_analytics",
+    "with_airflow",
     "with_great_expectations",
-    "with_openai",
     "with_pyspark",
     "with_pyspark_emr",
     "with_wandb",
-    "airlift-federation-tutorial",
-    "airlift-migration-tutorial",
 ]
 
 
@@ -73,9 +56,6 @@ def _get_url_for_version(version: str) -> str:
 
 
 def download_example_from_github(path: str, example: str, version: str):
-    # defer for import performance
-    import requests
-
     if example not in AVAILABLE_EXAMPLES:
         click.echo(
             click.style(
@@ -98,7 +78,7 @@ def download_example_from_github(path: str, example: str, version: str):
             if tarinfo.name.startswith(path_to_selected_example)
         ]
         for member in subdir_and_files:
-            if should_skip_scaffolded_file(member.name):
+            if _should_skip_file(member.name):
                 continue
 
             dest = member.name.replace(path_to_selected_example, path)

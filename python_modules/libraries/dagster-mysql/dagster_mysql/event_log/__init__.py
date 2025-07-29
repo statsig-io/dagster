@@ -1,1 +1,1 @@
-from dagster_mysql.event_log.event_log import MySQLEventLogStorage as MySQLEventLogStorage
+from .event_log import MySQLEventLogStorage as MySQLEventLogStorage

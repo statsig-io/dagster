@@ -1,4 +1,4 @@
-from typing import AbstractSet, Optional, Union  # noqa: UP035
+from typing import AbstractSet, Dict, Optional, Union
 
 from dagster._utils.cached_method import cached_method
 
@@ -37,7 +37,7 @@ class FakeGCSBucket:
         from unittest import mock
 
         self.name = name
-        self.blobs: dict[str, FakeGCSBlob] = {}
+        self.blobs: Dict[str, FakeGCSBlob] = {}
         self.mock_extras = mock.MagicMock()
 
     def blob(self, blob_name: str, *args, **kwargs):
@@ -57,7 +57,7 @@ class FakeGCSClient:
     def __init__(self):
         from unittest import mock
 
-        self.buckets: dict[str, FakeGCSBucket] = {}
+        self.buckets: Dict[str, FakeGCSBucket] = {}
         self.mock_extras = mock.MagicMock()
 
     def bucket(self, bucket_name: str, *args, **kwargs):
@@ -70,7 +70,8 @@ class FakeGCSClient:
 
     def list_buckets(self, *args, **kwargs):
         self.mock_extras.list_buckets(*args, **kwargs)
-        yield from self.buckets.values()
+        for bucket in self.buckets.values():
+            yield bucket
 
     def list_blobs(
         self,

@@ -4,157 +4,116 @@ import re
 import sys
 import tempfile
 import time
-from collections.abc import Mapping
-from typing import Any
+from typing import Any, Mapping
 
-import dagster as dg
 import pytest
 from dagster import (
-    DagsterEvent,
     DagsterEventType,
+    DefaultRunLauncher,
     _check as check,
+    _seven,
+    file_relative_path,
+    repository,
 )
+from dagster._core.definitions import op
 from dagster._core.errors import DagsterLaunchFailedError
-from dagster._core.execution.plan.objects import StepSuccessData
 from dagster._core.instance import DagsterInstance
 from dagster._core.storage.dagster_run import DagsterRunStatus
 from dagster._core.storage.tags import GRPC_INFO_TAG
 from dagster._core.test_utils import (
     environ,
+    instance_for_test,
     poll_for_event,
     poll_for_finished_run,
     poll_for_step_start,
 )
-from dagster._core.utils import make_new_run_id
 from dagster._core.workspace.context import WorkspaceProcessContext, WorkspaceRequestContext
 from dagster._core.workspace.load_target import PythonFileTarget
 from dagster._grpc.client import DagsterGrpcClient
 from dagster._grpc.types import CancelExecutionRequest
-from dagster_shared import seven
 
 
-@dg.op
+@op
 def noop_op(_):
     pass
 
 
-@dg.job
+from dagster import job
+
+
+@job
 def noop_job():
     pass
 
 
-@dg.op(
-    retry_policy=dg.RetryPolicy(
-        max_retries=2,
-    )
-)
+@op
 def crashy_op(_):
     os._exit(1)
 
 
-@dg.job
+@job
 def crashy_job():
     crashy_op()
 
 
-@dg.op
+@op
 def exity_op(_):
     sys.exit(1)
 
 
-@dg.job
+@job
 def exity_job():
     exity_op()
 
 
-class SleepyOpConfig(dg.Config):
-    raise_keyboard_interrupt: bool = False
-    crash_after_termination: bool = False
-
-
-@dg.op
-def sleepy_op(config: SleepyOpConfig):
-    assert not (config.raise_keyboard_interrupt and config.crash_after_termination)
-
+@op
+def sleepy_op(_):
     while True:
-        try:
-            time.sleep(0.1)
-
-        except dg.DagsterExecutionInterruptedError:
-            if config.raise_keyboard_interrupt:
-                # simulates a custom signal handler that has overridden ours
-                # to raise a normal KeyboardInterrupt
-                raise KeyboardInterrupt
-            elif config.crash_after_termination:
-                # simulates a crash after termination was initiated
-                os._exit(1)
-            else:
-                raise
+        time.sleep(0.1)
 
 
-@dg.job
+@job
 def sleepy_job():
     sleepy_op()
 
 
-@dg.op
+@op
 def slow_sudop(_):
     time.sleep(4)
 
 
-@dg.job
+@job
 def slow_job():
     slow_sudop()
 
 
-@dg.op
+@op
 def return_one(_):
     return 1
 
 
-@dg.op
+@op
 def multiply_by_2(_, num):
     return num * 2
 
 
-@dg.op
+@op
 def multiply_by_3(_, num):
     return num * 3
 
 
-@dg.op
+@op
 def add(_, num1, num2):
     return num1 + num2
 
 
-@dg.op
-def op_that_emits_duplicate_step_success_event(context):
-    # emits a duplicate step success event which will mess up the execution
-    # machinery and fail the run worker
-
-    # Wait for the other op to start so that it will be terminated mid-execution
-    poll_for_step_start(context.instance, context.dagster_run.run_id, message="sleepy_op")
-
-    yield DagsterEvent.step_success_event(
-        context._step_execution_context,  # noqa
-        StepSuccessData(duration_ms=50.0),
-    )
-    yield dg.Output(5)
-
-
-@dg.job
-def job_that_fails_run_worker():
-    sleepy_op()
-    op_that_emits_duplicate_step_success_event()
-
-
-@dg.job
+@job
 def math_diamond():
     one = return_one()
     add(multiply_by_2(one), multiply_by_3(one))
 
 
-@dg.repository
+@repository
 def nope():
     return [
         noop_job,
@@ -163,7 +122,6 @@ def nope():
         sleepy_job,
         slow_job,
         math_diamond,
-        job_that_fails_run_worker,
     ]
 
 
@@ -194,13 +152,15 @@ def test_successful_run(
     workspace: WorkspaceRequestContext,
     run_config: Mapping[str, Any],
 ):
-    remote_job = workspace.get_code_location("test").get_repository("nope").get_full_job("noop_job")
+    external_job = (
+        workspace.get_code_location("test").get_repository("nope").get_full_external_job("noop_job")
+    )
 
     dagster_run = instance.create_run_for_job(
         job_def=noop_job,
         run_config=run_config,
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
     run_id = dagster_run.run_id
 
@@ -221,11 +181,12 @@ def test_successful_run(
 def test_successful_run_from_pending(
     instance: DagsterInstance, pending_workspace: WorkspaceRequestContext
 ):
-    run_id = make_new_run_id()
     code_location = pending_workspace.get_code_location("test2")
-    remote_job = code_location.get_repository("pending").get_full_job("my_cool_asset_job")
-    remote_execution_plan = code_location.get_execution_plan(
-        remote_job=remote_job,
+    external_job = code_location.get_repository("pending").get_full_external_job(
+        "my_cool_asset_job"
+    )
+    external_execution_plan = code_location.get_external_execution_plan(
+        external_job=external_job,
         run_config={},
         step_keys_to_execute=None,
         known_state=None,
@@ -246,7 +207,7 @@ def test_successful_run_from_pending(
 
     created_run = instance.create_run(
         job_name="my_cool_asset_job",
-        run_id=run_id,
+        run_id="xyzabc",
         run_config=None,
         resolved_op_selection=None,
         step_keys_to_execute=None,
@@ -254,17 +215,14 @@ def test_successful_run_from_pending(
         tags=None,
         root_run_id=None,
         parent_run_id=None,
-        job_snapshot=remote_job.job_snapshot,
-        execution_plan_snapshot=remote_execution_plan.execution_plan_snapshot,
-        parent_job_snapshot=remote_job.parent_job_snapshot,
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        job_snapshot=external_job.job_snapshot,
+        execution_plan_snapshot=external_execution_plan.execution_plan_snapshot,
+        parent_job_snapshot=external_job.parent_job_snapshot,
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
         asset_selection=None,
         op_selection=None,
         asset_check_selection=None,
-        asset_graph=code_location.get_repository(
-            remote_job.repository_handle.repository_name
-        ).asset_graph,
     )
 
     run_id = created_run.run_id
@@ -303,7 +261,7 @@ def test_invalid_instance_run():
         wrong_run_storage_dir = os.path.join(temp_dir, "wrong", "")
 
         with environ({"RUN_STORAGE_ENV": correct_run_storage_dir}):
-            with dg.instance_for_test(
+            with instance_for_test(
                 temp_dir=temp_dir,
                 overrides={
                     "run_storage": {
@@ -318,7 +276,7 @@ def test_invalid_instance_run():
                     with WorkspaceProcessContext(
                         instance,
                         PythonFileTarget(
-                            python_file=dg.file_relative_path(
+                            python_file=file_relative_path(
                                 __file__, "test_default_run_launcher.py"
                             ),
                             attribute="nope",
@@ -327,27 +285,28 @@ def test_invalid_instance_run():
                         ),
                     ) as workspace_process_context:
                         workspace = workspace_process_context.create_request_context()
-                        remote_job = (
+                        external_job = (
                             workspace.get_code_location("test")
                             .get_repository("nope")
-                            .get_full_job("noop_job")
+                            .get_full_external_job("noop_job")
                         )
 
                         run = instance.create_run_for_job(
                             job_def=noop_job,
-                            remote_job_origin=remote_job.get_remote_origin(),
-                            job_code_origin=remote_job.get_python_origin(),
+                            external_job_origin=external_job.get_external_origin(),
+                            job_code_origin=external_job.get_python_origin(),
                         )
                         with pytest.raises(
                             DagsterLaunchFailedError,
                             match=re.escape(
-                                f"gRPC server could not load run {run.run_id} in order to execute it"
+                                "gRPC server could not load run {run_id} in order to execute it"
+                                .format(run_id=run.run_id)
                             ),
                         ):
                             instance.launch_run(run_id=run.run_id, workspace=workspace)
 
                         failed_run = instance.get_run_by_id(run.run_id)
-                        assert failed_run.status == DagsterRunStatus.FAILURE  # pyright: ignore[reportOptionalMemberAccess]
+                        assert failed_run.status == DagsterRunStatus.FAILURE
 
 
 @pytest.mark.parametrize(
@@ -355,7 +314,7 @@ def test_invalid_instance_run():
     run_configs(),
 )
 @pytest.mark.skipif(
-    seven.IS_WINDOWS,
+    _seven.IS_WINDOWS,
     reason="Crashy jobs leave resources open on windows, causing filesystem contention",
 )
 def test_crashy_run(
@@ -363,15 +322,17 @@ def test_crashy_run(
     workspace: WorkspaceRequestContext,
     run_config: Mapping[str, Any],
 ):
-    remote_job = (
-        workspace.get_code_location("test").get_repository("nope").get_full_job("crashy_job")
+    external_job = (
+        workspace.get_code_location("test")
+        .get_repository("nope")
+        .get_full_external_job("crashy_job")
     )
 
     run = instance.create_run_for_job(
         job_def=crashy_job,
         run_config=run_config,
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
 
     run_id = run.run_id
@@ -399,43 +360,10 @@ def test_crashy_run(
 
     assert _message_exists(event_records, message)
 
-    if run_config is None:
-        # verify the step retried once before failing
-        run_logs = instance.all_logs(run_id)
-        _check_event_log_contains(
-            run_logs,
-            [
-                (
-                    "STEP_UP_FOR_RETRY",
-                    'Execution of step "crashy_op" failed and has requested a retry.',
-                ),
-                (
-                    "STEP_RESTARTED",
-                    'Started re-execution (attempt # 2) of step "crashy_op"',
-                ),
-                (
-                    "ENGINE_EVENT",
-                    "Multiprocess executor: child process for step crashy_op unexpectedly exited",
-                ),
-                (
-                    "STEP_UP_FOR_RETRY",
-                    'Execution of step "crashy_op" failed and has requested a retry.',
-                ),
-                (
-                    "STEP_RESTARTED",
-                    'Started re-execution (attempt # 3) of step "crashy_op"',
-                ),
-                (
-                    "STEP_FAILURE",
-                    'Execution of step "crashy_op" failed.',
-                ),
-            ],
-        )
-
 
 @pytest.mark.parametrize("run_config", run_configs())
 @pytest.mark.skipif(
-    seven.IS_WINDOWS,
+    _seven.IS_WINDOWS,
     reason="Crashy jobs leave resources open on windows, causing filesystem contention",
 )
 def test_exity_run(
@@ -443,15 +371,17 @@ def test_exity_run(
     workspace: WorkspaceRequestContext,
     run_config: Mapping[str, Any],
 ):
-    remote_job = (
-        workspace.get_code_location("test").get_repository("nope").get_full_job("exity_job")
+    external_job = (
+        workspace.get_code_location("test")
+        .get_repository("nope")
+        .get_full_external_job("exity_job")
     )
 
     run = instance.create_run_for_job(
         job_def=exity_job,
         run_config=run_config,
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
 
     run_id = run.run_id
@@ -481,35 +411,23 @@ def test_exity_run(
 
 @pytest.mark.parametrize(
     "run_config",
-    [
-        None,  # multiprocess
-        {"execution": {"config": {"in_process": {}}}},  # in-process
-        {  # raise KeyboardInterrupt on termination
-            "ops": {"sleepy_op": {"config": {"raise_keyboard_interrupt": True}}}
-        },
-        pytest.param(
-            {  # crash on termination
-                "ops": {"sleepy_op": {"config": {"crash_after_termination": True}}}
-            },
-            marks=pytest.mark.skipif(
-                seven.IS_WINDOWS, reason="Crashes manifest differently on windows"
-            ),
-        ),
-    ],
+    run_configs(),
 )
 def test_terminated_run(
     instance: DagsterInstance,
     workspace: WorkspaceRequestContext,
     run_config: Mapping[str, Any],
 ):
-    remote_job = (
-        workspace.get_code_location("test").get_repository("nope").get_full_job("sleepy_job")
+    external_job = (
+        workspace.get_code_location("test")
+        .get_repository("nope")
+        .get_full_external_job("sleepy_job")
     )
     run = instance.create_run_for_job(
         job_def=sleepy_job,
         run_config=run_config,
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
 
     run_id = run.run_id
@@ -527,9 +445,6 @@ def test_terminated_run(
     terminated_run = poll_for_finished_run(instance, run_id, timeout=30)
     terminated_run = instance.get_run_by_id(run_id)
     assert terminated_run and terminated_run.status == DagsterRunStatus.CANCELED
-
-    # termination is a no-op once run is finished
-    assert not launcher.terminate(run_id)
 
     poll_for_event(
         instance,
@@ -564,24 +479,6 @@ def test_terminated_run(
                 ("ENGINE_EVENT", "Process for run exited"),
             ],
         )
-    elif (
-        run_config.get("ops", {})
-        .get("sleepy_op", {})
-        .get("config", {})
-        .get("crash_after_termination")
-    ):
-        _check_event_log_contains(
-            run_logs,
-            [
-                ("PIPELINE_CANCELING", "Sending run termination request."),
-                ("STEP_FAILURE", 'Execution of step "sleepy_op" failed.'),
-                (
-                    "PIPELINE_CANCELED",
-                    "Run failed after it was requested to be terminated.",
-                ),
-                ("ENGINE_EVENT", "Process for run exited"),
-            ],
-        )
     else:
         _check_event_log_contains(
             run_logs,
@@ -603,14 +500,16 @@ def test_cleanup_after_force_terminate(
     workspace: WorkspaceRequestContext,
     run_config: Mapping[str, Any],
 ):
-    remote_job = (
-        workspace.get_code_location("test").get_repository("nope").get_full_job("sleepy_job")
+    external_job = (
+        workspace.get_code_location("test")
+        .get_repository("nope")
+        .get_full_external_job("sleepy_job")
     )
     run = instance.create_run_for_job(
         job_def=sleepy_job,
         run_config=run_config,
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
 
     run_id = run.run_id
@@ -645,7 +544,8 @@ def test_cleanup_after_force_terminate(
         if any(
             [
                 "Computational resources were cleaned up after the run was forcibly marked as"
-                " canceled." in str(event)
+                " canceled."
+                in str(event)
                 for event in logs
             ]
         ):
@@ -701,15 +601,17 @@ def test_single_op_selection_execution(
     workspace: WorkspaceRequestContext,
     run_config: Mapping[str, Any],
 ):
-    remote_job = (
-        workspace.get_code_location("test").get_repository("nope").get_full_job("math_diamond")
+    external_job = (
+        workspace.get_code_location("test")
+        .get_repository("nope")
+        .get_full_external_job("math_diamond")
     )
     run = instance.create_run_for_job(
         job_def=math_diamond,
         run_config=run_config,
         op_selection=["return_one"],
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
     run_id = run.run_id
 
@@ -737,16 +639,18 @@ def test_multi_op_selection_execution(
     workspace: WorkspaceRequestContext,
     run_config: Mapping[str, Any],
 ):
-    remote_job = (
-        workspace.get_code_location("test").get_repository("nope").get_full_job("math_diamond")
+    external_job = (
+        workspace.get_code_location("test")
+        .get_repository("nope")
+        .get_full_external_job("math_diamond")
     )
 
     run = instance.create_run_for_job(
         job_def=math_diamond,
         run_config=run_config,
         op_selection=["return_one", "multiply_by_2"],
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
     run_id = run.run_id
 
@@ -768,54 +672,6 @@ def test_multi_op_selection_execution(
     }
 
 
-@pytest.mark.skipif(
-    seven.IS_WINDOWS,
-    reason="Failure sequence manifests differently on windows",
-)
-def test_job_that_fails_run_worker(
-    instance: DagsterInstance,
-    workspace: WorkspaceRequestContext,
-):
-    remote_job = (
-        workspace.get_code_location("test")
-        .get_repository("nope")
-        .get_full_job("job_that_fails_run_worker")
-    )
-    run = instance.create_run_for_job(
-        job_def=job_that_fails_run_worker,
-        run_config={},
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
-    )
-    run_id = run.run_id
-
-    run = instance.get_run_by_id(run_id)
-    assert run and run.status == DagsterRunStatus.NOT_STARTED
-
-    instance.launch_run(run.run_id, workspace)
-    finished_run = poll_for_finished_run(instance, run_id)
-    assert finished_run.status == DagsterRunStatus.FAILURE
-
-    run_logs = instance.all_logs(run_id)
-    _check_event_log_contains(
-        run_logs,
-        [
-            (
-                "ENGINE_EVENT",
-                "Unexpected exception while steps were still in-progress - terminating running steps:",
-            ),
-            (
-                "STEP_FAILURE",
-                'Execution of step "sleepy_op" failed.',
-            ),
-            (
-                "PIPELINE_FAILURE",
-                'Execution of run for "job_that_fails_run_worker" failed. An exception was thrown during execution.',
-            ),
-        ],
-    )
-
-
 @pytest.mark.parametrize(
     "run_config",
     run_configs(),
@@ -825,14 +681,16 @@ def test_engine_events(
     workspace: WorkspaceRequestContext,
     run_config: Mapping[str, Any],
 ):
-    remote_job = (
-        workspace.get_code_location("test").get_repository("nope").get_full_job("math_diamond")
+    external_job = (
+        workspace.get_code_location("test")
+        .get_repository("nope")
+        .get_full_external_job("math_diamond")
     )
     run = instance.create_run_for_job(
         job_def=math_diamond,
         run_config=run_config,
-        remote_job_origin=remote_job.get_remote_origin(),
-        job_code_origin=remote_job.get_python_origin(),
+        external_job_origin=external_job.get_external_origin(),
+        job_code_origin=external_job.get_python_origin(),
     )
     run_id = run.run_id
 
@@ -899,8 +757,8 @@ def test_engine_events(
 
 
 def test_not_initialized():
-    run_launcher = dg.DefaultRunLauncher()
-    run_id = make_new_run_id()
+    run_launcher = DefaultRunLauncher()
+    run_id = "dummy"
 
     assert run_launcher.join() is None
     assert run_launcher.terminate(run_id) is False

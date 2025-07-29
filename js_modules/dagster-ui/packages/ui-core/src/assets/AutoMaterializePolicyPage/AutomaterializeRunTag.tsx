@@ -1,19 +1,23 @@
+import {gql, useQuery} from '@apollo/client';
 import {Tag} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 
-import {RunStatusOnlyQuery, RunStatusOnlyQueryVariables} from './types/AutomaterializeRunTag.types';
-import {gql, useQuery} from '../../apollo-client';
 import {RunStatusTagWithID} from '../../runs/RunStatusTag';
+
+import {RunStatusOnlyQuery, RunStatusOnlyQueryVariables} from './types/AutomaterializeRunTag.types';
 
 interface Props {
   runId: string;
 }
 
 export const AutomaterializeRunTag = ({runId}: Props) => {
-  const queryResult = useQuery<RunStatusOnlyQuery, RunStatusOnlyQueryVariables>(RUN_STATUS_ONLY, {
-    variables: {runId},
-  });
-  const {data, loading} = queryResult;
+  const {data, loading} = useQuery<RunStatusOnlyQuery, RunStatusOnlyQueryVariables>(
+    RUN_STATUS_ONLY,
+    {
+      variables: {runId},
+    },
+  );
 
   if (loading && !data) {
     return <Tag icon="spinner">Loading</Tag>;

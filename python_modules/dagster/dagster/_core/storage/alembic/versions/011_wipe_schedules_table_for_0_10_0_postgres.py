@@ -5,7 +5,6 @@ Revises: 375e95bad550
 Create Date: 2021-01-11 22:20:01.253271
 
 """
-
 from alembic import op
 from dagster._core.storage.migration.utils import get_currently_upgrading_instance, has_table
 from sqlalchemy import inspect
@@ -28,7 +27,7 @@ def upgrade():
 
     instance = get_currently_upgrading_instance()
     if instance.scheduler:
-        instance.scheduler.wipe(instance)  # pyright: ignore[reportAttributeAccessIssue]
+        instance.scheduler.wipe(instance)
 
     #   No longer dropping the "schedules" table here, since
     #   the 0.10.0 migration checks for the presence of the "schedules"

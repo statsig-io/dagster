@@ -1,10 +1,9 @@
 import json
 import os
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from time import sleep
-from typing import AbstractSet, Any, Optional, Union  # noqa: UP035
+from typing import AbstractSet, Any, Mapping, Optional, Union
 
 from typing_extensions import TypedDict
 
@@ -18,13 +17,13 @@ _SOURCE_ASSETS: Mapping[str, Any] = {
 }
 
 
-class AssetInfo(TypedDict):
+class AssetSpec(TypedDict):
     key: str
     code_version: str
     dependencies: AbstractSet[str]
 
 
-class SourceAssetInfo(TypedDict):
+class SourceAssetSpec(TypedDict):
     key: str
 
 
@@ -47,7 +46,7 @@ class ExternalSystem:
         self._db = _Database(storage_path)
 
     def materialize(
-        self, asset_spec: AssetInfo, provenance_spec: Optional[ProvenanceSpec]
+        self, asset_spec: AssetSpec, provenance_spec: Optional[ProvenanceSpec]
     ) -> MaterializeResult:
         """Recompute an asset if its provenance is missing or stale.
 
@@ -56,7 +55,7 @@ class ExternalSystem:
         dependencies to determine whether something has changed and the asset should be recomputed.
 
         Args:
-            asset_spec (AssetInfo):
+            asset_spec (AssetSpec):
                 A dictionary containing an asset key, code version, and data dependencies.
             provenance_spec (ProvenanceSpec):
                 A dictionary containing provenance info for the last materialization of the
@@ -84,11 +83,11 @@ class ExternalSystem:
             is_memoized = True
         return {"data_version": record.data_version, "is_memoized": is_memoized}
 
-    def observe(self, asset_spec: Union[AssetInfo, SourceAssetInfo]) -> ObserveResult:
+    def observe(self, asset_spec: Union[AssetSpec, SourceAssetSpec]) -> ObserveResult:
         """Observe an asset or source asset, returning its current data version.
 
         Args:
-            asset_spec (Union[AssetInfo, SourceAssetInfo]):
+            asset_spec (Union[AssetSpec, SourceAssetSpec]):
                 A dictionary containing an asset key.
 
         Returns (ObserveResult):
@@ -96,7 +95,7 @@ class ExternalSystem:
         """
         return {"data_version": self._db.get(asset_spec["key"]).data_version}
 
-    def _is_provenance_stale(self, asset_spec: AssetInfo, provenance_spec: ProvenanceSpec) -> bool:
+    def _is_provenance_stale(self, asset_spec: AssetSpec, provenance_spec: ProvenanceSpec) -> bool:
         # did code change?
         if provenance_spec["code_version"] != asset_spec["code_version"]:
             return True
@@ -152,7 +151,7 @@ class _Database:
         return f"{self.storage_path}/{key}.json"
 
     def get(self, key: str) -> _DatabaseRecord:
-        with open(self.asset_path(key)) as fd:
+        with open(self.asset_path(key), "r") as fd:
             return _DatabaseRecord(**json.load(fd))
 
     def has(self, key: str) -> bool:

@@ -1,5 +1,5 @@
 CLIENT_SUBMIT_PIPELINE_RUN_MUTATION = """
-mutation GraphQLClientSubmitRun($executionParams: ExecutionParams!) {
+mutation($executionParams: ExecutionParams!) {
   launchPipelineExecution(executionParams: $executionParams) {
     __typename
 
@@ -38,15 +38,12 @@ mutation GraphQLClientSubmitRun($executionParams: ExecutionParams!) {
     ... on PythonError {
       message
     }
-    ... on UnauthorizedError {
-      message
-    }
   }
 }
 """
 
 CLIENT_GET_REPO_LOCATIONS_NAMES_AND_PIPELINES_QUERY = """
-query GraphQLClientGetJobNames {
+query {
   repositoriesOrError {
     __typename
     ... on RepositoryConnection {
@@ -68,7 +65,7 @@ query GraphQLClientGetJobNames {
 """
 
 RELOAD_REPOSITORY_LOCATION_MUTATION = """
-mutation GraphQLClientReloadCodeLocation($repositoryLocationName: String!) {
+mutation ($repositoryLocationName: String!) {
    reloadRepositoryLocation(repositoryLocationName: $repositoryLocationName) {
       __typename
       ... on WorkspaceLocationEntry {
@@ -97,7 +94,7 @@ mutation GraphQLClientReloadCodeLocation($repositoryLocationName: String!) {
 """
 
 GET_PIPELINE_RUN_STATUS_QUERY = """
-query GraphQLClientGetRunStatus($runId: ID!) {
+query($runId: ID!) {
   pipelineRunOrError(runId: $runId) {
     __typename
     ... on PipelineRun {
@@ -114,7 +111,7 @@ query GraphQLClientGetRunStatus($runId: ID!) {
 """
 
 SHUTDOWN_REPOSITORY_LOCATION_MUTATION = """
-mutation GraphQLClientShutdownCodeLocation($repositoryLocationName: String!) {
+mutation ($repositoryLocationName: String!) {
    shutdownRepositoryLocation(repositoryLocationName: $repositoryLocationName) {
       __typename
       ... on PythonError {
@@ -128,7 +125,7 @@ mutation GraphQLClientShutdownCodeLocation($repositoryLocationName: String!) {
 """
 
 TERMINATE_RUN_JOB_MUTATION = """
-mutation GraphQLClientTerminateRun($runId: String!) {
+mutation TerminateRun($runId: String!) {
   terminateRun(runId: $runId){
     __typename
     ... on TerminateRunSuccess{
@@ -145,38 +142,6 @@ mutation GraphQLClientTerminateRun($runId: String!) {
     ... on PythonError {
       message
       stack
-    }
-  }
-}
-"""
-
-TERMINATE_RUNS_JOB_MUTATION = """
-mutation GraphQLClientTerminateRuns($runIds: [String!]!) {
-  terminateRuns(runIds: $runIds) {
-    __typename
-    ... on TerminateRunsResult {
-      terminateRunResults {
-        __typename
-        ... on TerminateRunSuccess {
-          run  {
-            runId
-          }
-        }
-        ... on TerminateRunFailure {
-          message
-        }
-        ... on RunNotFoundError {
-          runId
-          message
-        }
-        ... on UnauthorizedError {
-          message
-        }
-        ... on PythonError {
-          message
-          stack
-        }
-      }
     }
   }
 }

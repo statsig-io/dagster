@@ -1,45 +1,59 @@
-import dagster as dg
 import pytest
+from dagster import (
+    DynamicOut,
+    DynamicOutput,
+    Field,
+    Out,
+    Output,
+    ReexecutionOptions,
+    execute_job,
+    graph,
+    job,
+    op,
+    reconstructable,
+)
+from dagster._core.errors import DagsterExecutionStepNotFoundError
 from dagster._core.execution.api import create_execution_plan
 from dagster._core.execution.plan.state import KnownExecutionState
+from dagster._core.test_utils import instance_for_test
 from dagster._utils.merger import merge_dicts
 
 
-@dg.op(tags={"third": "3"})
+@op(tags={"third": "3"})
 def multiply_by_two(context, y):
     context.log.info("multiply_by_two is returning " + str(y * 2))
     return y * 2
 
 
-@dg.op(tags={"second": "2"})
+@op(tags={"second": "2"})
 def multiply_inputs(context, y, ten):
     context.log.info("multiply_inputs is returning " + str(y * ten))
     return y * ten
 
 
-@dg.op
+@op
 def emit_ten(_):
     return 10
 
 
-@dg.op
+@op
 def echo(_, x: int) -> int:
     return x
 
 
-@dg.op(
+@op(
     config_schema={
-        "range": dg.Field(int, is_required=False, default_value=3),
+        "range": Field(int, is_required=False, default_value=3),
     }
 )
 def num_range(context) -> int:
     return context.op_config["range"]
 
 
-@dg.op(
-    out=dg.DynamicOut(),
+@op(
+    out=DynamicOut(),
     config_schema={
-        "fail": dg.Field(bool, is_required=False, default_value=False),
+        "fail": Field(bool, is_required=False, default_value=False),
     },
     tags={"first": "1"},
 )
@@ -48,21 +62,21 @@ def emit(context, num: int = 3):
         raise Exception("FAILURE")
 
     for i in range(num):
-        yield dg.DynamicOutput(value=i, mapping_key=str(i))
+        yield DynamicOutput(value=i, mapping_key=str(i))
 
 
-@dg.op
+@op
 def sum_numbers(_, nums):
     return sum(nums)
 
 
-@dg.op(out=dg.DynamicOut())
+@op(out=DynamicOut())
 def dynamic_echo(_, nums):
     for x in nums:
-        yield dg.DynamicOutput(value=x, mapping_key=str(x))
+        yield DynamicOutput(value=x, mapping_key=str(x))
 
 
-@dg.job
+@job
 def dynamic_job():
     numbers = emit(num_range())
     dynamic = numbers.map(lambda num: multiply_by_two(multiply_inputs(num, emit_ten())))
@@ -70,7 +84,7 @@ def dynamic_job():
     echo(n)  # test transitive downstream of collect
 
 
-@dg.job
+@job
 def fan_repeat():
     one = emit(num_range()).map(multiply_by_two)
     two = dynamic_echo(one.collect()).map(multiply_by_two).map(echo)
@@ -116,9 +130,9 @@ def _run_configs():
     _run_configs(),
 )
 def test_map(run_config):
-    with dg.instance_for_test() as instance:
-        with dg.execute_job(
-            dg.reconstructable(dynamic_job),
+    with instance_for_test() as instance:
+        with execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=run_config,
         ) as result:
@@ -147,9 +161,9 @@ def test_map(run_config):
     _run_configs(),
 )
 def test_map_empty(run_config):
-    with dg.instance_for_test() as instance:
-        with dg.execute_job(
-            dg.reconstructable(dynamic_job),
+    with instance_for_test() as instance:
+        with execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=merge_dicts({"ops": {"num_range": {"config": {"range": 0}}}}, run_config),
         ) as result:
@@ -162,9 +176,9 @@ def test_map_empty(run_config):
     _run_configs(),
 )
 def test_map_selection(run_config):
-    with dg.instance_for_test() as instance:
-        with dg.execute_job(
-            dg.reconstructable(dynamic_job),
+    with instance_for_test() as instance:
+        with execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=merge_dicts({"ops": {"emit": {"inputs": {"num": 2}}}}, run_config),
             op_selection=["emit*", "emit_ten"],
@@ -176,12 +190,12 @@ def test_map_selection(run_config):
 def test_composite_wrapping():
     # regression test from user report
 
-    @dg.graph
+    @graph
     def do_multiple_steps(z):
         output = echo(z)
         return echo(output)
 
-    @dg.job
+    @job
     def shallow():
         emit().map(do_multiple_steps)
 
@@ -193,19 +207,19 @@ def test_composite_wrapping():
         "2": 2,
     }
 
-    @dg.graph
+    @graph
     def inner(x):
         return echo(x)
 
-    @dg.graph
+    @graph
     def middle(y):
         return inner(y)
 
-    @dg.graph
+    @graph
     def outer(z):
         return middle(z)
 
-    @dg.job
+    @job
     def deep():
         emit().map(outer)
 
@@ -233,19 +247,19 @@ def test_tags():
 
 
 def test_full_reexecute():
-    with dg.instance_for_test() as instance:
-        result_1 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+    with instance_for_test() as instance:
+        result_1 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=_in_proc_cfg(),
         )
         assert result_1.success
 
-        result_2 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+        result_2 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=_in_proc_cfg(),
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 parent_run_id=result_1.run_id,
             ),
         )
@@ -257,30 +271,30 @@ def test_full_reexecute():
     _run_configs(),
 )
 def test_partial_reexecute(run_config):
-    with dg.instance_for_test() as instance:
-        result_1 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+    with instance_for_test() as instance:
+        result_1 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=run_config,
         )
         assert result_1.success
 
-        result_2 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+        result_2 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=run_config,
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 parent_run_id=result_1.run_id,
                 step_selection=["sum_numbers*"],
             ),
         )
         assert result_2.success
 
-        result_3 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+        result_3 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=run_config,
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 parent_run_id=result_1.run_id,
                 step_selection=["multiply_by_two[1]*"],
             ),
@@ -293,17 +307,17 @@ def test_partial_reexecute(run_config):
     _run_configs(),
 )
 def test_fan_out_in_out_in(run_config):
-    with dg.instance_for_test() as instance:
-        with dg.execute_job(
-            dg.reconstructable(fan_repeat),
+    with instance_for_test() as instance:
+        with execute_job(
+            reconstructable(fan_repeat),
             instance=instance,
             run_config=run_config,
         ) as result:
             assert result.success
             assert result.output_for_node("sum_numbers") == 24  # (0, 1, 2) x 2 x 2 x 2 = (0, 8, 16)
 
-        with dg.execute_job(
-            dg.reconstructable(fan_repeat),
+        with execute_job(
+            reconstructable(fan_repeat),
             instance=instance,
             run_config={"ops": {"num_range": {"config": {"range": 0}}}},
         ) as empty_result:
@@ -312,30 +326,30 @@ def test_fan_out_in_out_in(run_config):
 
 
 def test_select_dynamic_step_and_downstream():
-    with dg.instance_for_test() as instance:
-        result_1 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+    with instance_for_test() as instance:
+        result_1 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=_in_proc_cfg(),
         )
         assert result_1.success
 
-        result_2 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+        result_2 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=_in_proc_cfg(),
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 parent_run_id=result_1.run_id,
                 step_selection=["+multiply_inputs[?]"],
             ),
         )
         assert result_2.success
 
-        with dg.execute_job(
-            dg.reconstructable(dynamic_job),
+        with execute_job(
+            reconstructable(dynamic_job),
             run_config=_in_proc_cfg(),
             instance=instance,
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 parent_run_id=result_1.run_id,
                 step_selection=["emit*"],
             ),
@@ -351,10 +365,10 @@ def test_select_dynamic_step_and_downstream():
             assert "multiply_by_two[2]" in keys_3
             assert result_3.output_for_node("double_total") == 120
 
-        result_4 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+        result_4 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 parent_run_id=result_1.run_id,
                 step_selection=["emit+"],
             ),
@@ -367,10 +381,10 @@ def test_select_dynamic_step_and_downstream():
         assert "multiply_inputs[2]" in keys_4
         assert "multiply_by_two[0]" not in keys_4
 
-        result_5 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+        result_5 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 parent_run_id=result_1.run_id,
                 step_selection=["emit", "multiply_inputs[?]"],
             ),
@@ -385,9 +399,9 @@ def test_select_dynamic_step_and_downstream():
 
 
 def test_bad_step_selection():
-    with dg.instance_for_test() as instance:
-        result_1 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+    with instance_for_test() as instance:
+        result_1 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=_in_proc_cfg(),
         )
@@ -395,11 +409,11 @@ def test_bad_step_selection():
 
         # this exact error could be improved, but it should fail if you try to select
         # both the dynamic outputting step key and something resolved by it in the previous run
-        with pytest.raises(dg.DagsterExecutionStepNotFoundError):
-            dg.execute_job(
-                dg.reconstructable(dynamic_job),
+        with pytest.raises(DagsterExecutionStepNotFoundError):
+            execute_job(
+                reconstructable(dynamic_job),
                 instance=instance,
-                reexecution_options=dg.ReexecutionOptions(
+                reexecution_options=ReexecutionOptions(
                     parent_run_id=result_1.run_id,
                     step_selection=["emit", "multiply_by_two[1]"],
                 ),
@@ -407,16 +421,16 @@ def test_bad_step_selection():
 
 
 def define_real_dynamic_job():
-    @dg.op(config_schema=list, out=dg.DynamicOut(int))
+    @op(config_schema=list, out=DynamicOut(int))
     def generate_subtasks(context):
         for num in context.op_config:
-            yield dg.DynamicOutput(num, mapping_key=str(num))
+            yield DynamicOutput(num, mapping_key=str(num))
 
-    @dg.op
+    @op
     def subtask(input_number: int):
         return input_number
 
-    @dg.job
+    @job
     def real_dynamic_job():
         generate_subtasks().map(subtask)
 
@@ -424,20 +438,20 @@ def define_real_dynamic_job():
 
 
 def test_select_dynamic_step_with_non_static_mapping():
-    with dg.instance_for_test() as instance:
-        result_0 = dg.execute_job(
-            dg.reconstructable(define_real_dynamic_job),
+    with instance_for_test() as instance:
+        result_0 = execute_job(
+            reconstructable(define_real_dynamic_job),
             instance=instance,
             run_config={"ops": {"generate_subtasks": {"config": [0, 2, 4]}}},
         )
         assert result_0.success
 
         # Should generate dynamic steps using the outs in current run
-        result_1 = dg.execute_job(
-            dg.reconstructable(define_real_dynamic_job),
+        result_1 = execute_job(
+            reconstructable(define_real_dynamic_job),
             instance=instance,
             run_config={"ops": {"generate_subtasks": {"config": [0, 1, 2, 3, 4]}}},
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 step_selection=["generate_subtasks+"],
                 parent_run_id=result_0.run_id,
             ),
@@ -452,11 +466,11 @@ def test_select_dynamic_step_with_non_static_mapping():
         assert "subtask[4]" in keys_1
 
         # Should generate dynamic steps using the outs in current run
-        result_2 = dg.execute_job(
-            dg.reconstructable(define_real_dynamic_job),
+        result_2 = execute_job(
+            reconstructable(define_real_dynamic_job),
             instance=instance,
             run_config={"ops": {"generate_subtasks": {"config": [1, 2, 3]}}},
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 parent_run_id=result_0.run_id,
                 step_selection=["+subtask[?]"],
             ),
@@ -476,9 +490,9 @@ def test_select_dynamic_step_with_non_static_mapping():
     _run_configs(),
 )
 def test_map_fail(run_config):
-    with dg.instance_for_test() as instance:
-        result = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+    with instance_for_test() as instance:
+        result = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=merge_dicts({"ops": {"emit": {"config": {"fail": True}}}}, run_config),
             raise_on_error=False,
@@ -491,9 +505,9 @@ def test_map_fail(run_config):
     _run_configs(),
 )
 def test_map_reexecute_after_fail(run_config):
-    with dg.instance_for_test() as instance:
-        result_1 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+    with instance_for_test() as instance:
+        result_1 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=merge_dicts(
                 run_config,
@@ -503,11 +517,11 @@ def test_map_reexecute_after_fail(run_config):
         )
         assert not result_1.success
 
-        result_2 = dg.execute_job(
-            dg.reconstructable(dynamic_job),
+        result_2 = execute_job(
+            reconstructable(dynamic_job),
             instance=instance,
             run_config=run_config,
-            reexecution_options=dg.ReexecutionOptions(
+            reexecution_options=ReexecutionOptions(
                 parent_run_id=result_1.run_id,
             ),
         )
@@ -515,11 +529,11 @@ def test_map_reexecute_after_fail(run_config):
 
 
 def test_multi_collect():
-    @dg.op
+    @op
     def fan_in(_, x, y):
         return x + y
 
-    @dg.job
+    @job
     def double():
         nums_1 = emit()
         nums_2 = emit()
@@ -531,27 +545,27 @@ def test_multi_collect():
 
 
 def test_fan_in_skips():
-    @dg.op(
+    @op(
         out={
-            "nums": dg.Out(),
-            "empty": dg.Out(),
-            "skip": dg.Out(is_required=False),
+            "nums": Out(),
+            "empty": Out(),
+            "skip": Out(is_required=False),
         }
     )
     def fork_logic():
-        yield dg.Output([1, 2, 3], output_name="nums")
-        yield dg.Output([], output_name="empty")
+        yield Output([1, 2, 3], output_name="nums")
+        yield Output([], output_name="empty")
 
-    @dg.op(out=dg.DynamicOut(int))
+    @op(out=DynamicOut(int))
     def emit_dyn(vector):
         for i in vector:
-            yield dg.DynamicOutput(value=i, mapping_key=f"input_{i}")
+            yield DynamicOutput(value=i, mapping_key=f"input_{i}")
 
-    @dg.op
+    @op
     def total(items):
         return sum(items)
 
-    @dg.job
+    @job
     def dyn_fork():
         nums, empty, skip = fork_logic()
         total.alias("grand_total")(
@@ -579,21 +593,21 @@ def test_fan_in_skips():
 
 
 def test_collect_optional():
-    @dg.op(out=dg.Out(is_required=False))
+    @op(out=Out(is_required=False))
     def optional_out_op():
         if False:
             yield None
 
-    @dg.op(out=dg.DynamicOut())
+    @op(out=DynamicOut())
     def dynamic_out_op(_in):
-        yield dg.DynamicOutput("a", "a")
+        yield DynamicOutput("a", "a")
 
-    @dg.op
+    @op
     def collect_op(_in):
         # this assert gets hit
         assert False
 
-    @dg.job
+    @job
     def job1():
         echo(collect_op(dynamic_out_op(optional_out_op()).collect()))
 
@@ -605,20 +619,20 @@ def test_collect_optional():
 
 
 def test_non_required_dynamic_collect_skips():
-    @dg.op(out=dg.DynamicOut(is_required=False))
+    @op(out=DynamicOut(is_required=False))
     def producer():
         if False:
-            yield dg.DynamicOutput("yay")
+            yield DynamicOutput("yay")
 
-    @dg.op
+    @op
     def consumer1(item):
         pass
 
-    @dg.op
+    @op
     def consumer2(items):
         pass
 
-    @dg.job()
+    @job()
     def my_job():
         items = producer()
         items.map(consumer1)

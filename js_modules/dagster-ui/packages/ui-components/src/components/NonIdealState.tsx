@@ -1,10 +1,8 @@
 import * as React from 'react';
-import {CSSProperties} from 'react';
-import styled from 'styled-components';
 
 import {Box} from './Box';
-import {Colors} from './Color';
-import {Icon, IconName} from './Icon';
+import {Colors} from './Colors';
+import {IconName, Icon} from './Icon';
 import {Spinner} from './Spinner';
 import {Subheading} from './Text';
 
@@ -17,37 +15,35 @@ export type NonIdealStateProps = React.DetailedHTMLProps<
   description?: React.ReactNode;
   action?: React.ReactNode;
   shrinkable?: boolean;
-  maxWidth?: CSSProperties['maxWidth'];
 };
 
-export const NonIdealState = ({
+export const NonIdealState: React.FC<NonIdealStateProps> = ({
   title,
   description,
   icon,
   action,
   shrinkable,
-  maxWidth = 500,
-}: NonIdealStateProps) => {
+}) => {
   const singleContentElement = [title, description, action].filter(Boolean).length === 1;
 
   return (
-    <NonIdealStateWrapper
+    <Box
       flex={{gap: 20, alignItems: singleContentElement ? 'center' : 'flex-start'}}
-      background={Colors.backgroundLight()}
+      background={Colors.Gray50}
       padding={24}
       style={{
         margin: 'auto',
         borderRadius: 8,
         width: shrinkable ? 'initial' : 'max-content',
-        maxWidth,
+        maxWidth: 500,
       }}
     >
       {icon === 'spinner' ? (
         <Spinner purpose="section" />
       ) : icon === 'no-results' ? (
-        <Icon name="search" size={48} color={Colors.accentGray()} />
+        <Icon name="search" size={48} color={Colors.Gray400} />
       ) : icon ? (
-        <Icon name={icon} size={48} color={Colors.accentGray()} />
+        <Icon name={icon} size={48} color={Colors.Gray400} />
       ) : null}
       <Box
         flex={{
@@ -58,12 +54,10 @@ export const NonIdealState = ({
           grow: 1,
         }}
       >
-        {title && <Subheading style={{color: Colors.textDefault()}}>{title}</Subheading>}
-        {description && <div style={{color: Colors.textDefault()}}>{description}</div>}
+        {title && <Subheading style={{color: Colors.Gray900}}>{title}</Subheading>}
+        {description && <div style={{color: Colors.Gray500}}>{description}</div>}
         {action}
       </Box>
-    </NonIdealStateWrapper>
+    </Box>
   );
 };
-
-export const NonIdealStateWrapper = styled(Box)``;

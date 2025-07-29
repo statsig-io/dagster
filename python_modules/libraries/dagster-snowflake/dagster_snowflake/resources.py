@@ -1,10 +1,8 @@
 import base64
 import sys
 import warnings
-from collections.abc import Iterator, Mapping, Sequence
 from contextlib import closing, contextmanager
-from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Union
 
 import dagster._check as check
 from cryptography.hazmat.backends import default_backend
@@ -19,12 +17,7 @@ from dagster._annotations import public
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
 from dagster._core.storage.event_log.sql_event_log import SqlDbConnection
 from dagster._utils.cached_method import cached_method
-from pydantic import Field, model_validator, validator
-
-from dagster_snowflake.constants import (
-    SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER,
-    SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER_SQLALCHEMY,
-)
+from pydantic import Field, root_validator, validator
 
 try:
     import snowflake.connector
@@ -132,8 +125,8 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             "Raw private key to use. See the `Snowflake documentation"
             " <https://docs.snowflake.com/en/user-guide/key-pair-auth.html>`__ for details."
             " Alternately, set private_key_path and private_key_password. To avoid issues with"
-            " newlines in the keys, you can optionally base64 encode the key. You can retrieve"
-            " the base64 encoded key with this shell command: ``cat rsa_key.p8 | base64``"
+            " newlines in the keys, you can base64 encode the key. You can retrieve the base64"
+            " encoded key with this shell command: ``cat rsa_key.p8 | base64``"
         ),
     )
 
@@ -235,7 +228,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             "Indicate alternative database connection engine. Permissible option is "
             "'sqlalchemy' otherwise defaults to use the Snowflake Connector for Python."
         ),
-        is_required=False,  # type: ignore
+        is_required=False,
     )
 
     cache_column_metadata: Optional[str] = Field(
@@ -259,15 +252,6 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         default=None,
         description="Optional parameter to specify the authentication mechanism to use.",
     )
-    additional_snowflake_connection_args: Optional[dict[str, Any]] = Field(
-        default=None,
-        description=(
-            "Additional keyword arguments to pass to the snowflake.connector.connect function. For a full list of"
-            " available arguments, see the `Snowflake documentation"
-            " <https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-connect>`__."
-            " This config will be ignored if using the sqlalchemy connector."
-        ),
-    )
 
     @validator("paramstyle")
     def validate_paramstyle(cls, v: Optional[str]) -> Optional[str]:
@@ -281,13 +265,13 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
 
     @validator("connector")
     def validate_connector(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in ["sqlalchemy", "adbc"]:
+        if v is not None and v != "sqlalchemy":
             raise ValueError(
-                "Snowflake Resource: 'connector' configuration value must be None, sqlalchemy or adbc."
+                "Snowflake Resource: 'connector' configuration value must be None or sqlalchemy."
             )
         return v
 
-    @model_validator(mode="before")
+    @root_validator
     def validate_authentication(cls, values):
         auths_set = 0
         auths_set += 1 if values.get("password") is not None else 0
@@ -347,16 +331,12 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ):
             conn_args["private_key"] = self._snowflake_private_key(self._resolved_config_dict)
 
-        conn_args["application"] = SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER
-
-        if self._resolved_config_dict.get("additional_snowflake_connection_args") is not None:
-            conn_args.update(self._resolved_config_dict["additional_snowflake_connection_args"])
         return conn_args
 
     @property
     @cached_method
     def _sqlalchemy_connection_args(self) -> Mapping[str, Any]:
-        conn_args: dict[str, Any] = {
+        conn_args: Dict[str, Any] = {
             k: self._resolved_config_dict.get(k)
             for k in (
                 "account",
@@ -371,7 +351,6 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             )
             if self._resolved_config_dict.get(k) is not None
         }
-        conn_args["application"] = SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER_SQLALCHEMY
 
         return conn_args
 
@@ -391,81 +370,6 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
 
         return sqlalchemy_engine_args
 
-    @property
-    @cached_method
-    def _adbc_connection_args(self) -> Mapping[str, Any]:
-        config = self._resolved_config_dict
-        adbc_engine_args = {}
-
-        if config.get("account"):
-            adbc_engine_args["adbc.snowflake.sql.account"] = config["account"]
-        if config.get("user"):
-            adbc_engine_args["username"] = config["user"]
-        if config.get("password"):
-            adbc_engine_args["password"] = config["password"]
-        if config.get("database"):
-            adbc_engine_args["adbc.snowflake.sql.db"] = config["database"]
-        if config.get("schema"):
-            adbc_engine_args["adbc.snowflake.sql.schema"] = config["schema"]
-        if config.get("role"):
-            adbc_engine_args["adbc.snowflake.sql.role"] = config["role"]
-        if config.get("warehouse"):
-            adbc_engine_args["adbc.snowflake.sql.warehouse"] = config["warehouse"]
-
-        if config.get("authenticator"):
-            auth_mapping = {
-                "snowflake": "auth_snowflake",
-                "oauth": "auth_oauth",
-                "externalbrowser": "auth_ext_browser",
-                "okta": "auth_okta",
-                "jwt": "auth_jwt",
-                "snowflake_jwt": "auth_jwt",
-            }
-            auth_type = auth_mapping.get(config["authenticator"].lower(), config["authenticator"])
-            adbc_engine_args["adbc.snowflake.sql.auth_type"] = auth_type
-
-        if config.get("private_key") or config.get("private_key_path"):
-            # ADBC expects the raw private key value as bytes for jwt_private_key_pkcs8_value
-            adbc_engine_args["adbc.snowflake.sql.auth_type"] = "auth_jwt"
-            if config.get("private_key"):
-                adbc_engine_args["adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_value"] = (
-                    config["private_key"]
-                )
-            elif config.get("private_key_path"):
-                adbc_engine_args["adbc.snowflake.sql.client_option.jwt_private_key"] = config[
-                    "private_key_path"
-                ]
-
-            if config.get("private_key_password"):
-                adbc_engine_args[
-                    "adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_password"
-                ] = config["private_key_password"]
-
-        if config.get("login_timeout"):
-            adbc_engine_args["adbc.snowflake.sql.client_option.login_timeout"] = (
-                f"{config['login_timeout']}s"
-            )
-        if config.get("network_timeout"):
-            adbc_engine_args["adbc.snowflake.sql.client_option.request_timeout"] = (
-                f"{config['network_timeout']}s"
-            )
-        if config.get("client_session_keep_alive") is not None:
-            adbc_engine_args["adbc.snowflake.sql.client_option.keep_session_alive"] = str(
-                config["client_session_keep_alive"]
-            ).lower()
-
-        adbc_engine_args["adbc.snowflake.sql.client_option.app_name"] = (
-            SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER
-        )
-
-        if config.get("additional_snowflake_connection_args"):
-            for key, value in config["additional_snowflake_connection_args"].items():
-                # Allow direct ADBC option names to be passed through
-                if key.startswith("adbc.snowflake."):
-                    adbc_engine_args[key] = value  # noqa: PERF403
-
-        return adbc_engine_args
-
     def _snowflake_private_key(self, config) -> bytes:
         # If the user has defined a path to a private key, we will use that.
         if config.get("private_key_path", None) is not None:
@@ -473,7 +377,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             with open(config.get("private_key_path"), "rb") as key:
                 private_key = key.read()
         else:
-            private_key = config.get("private_key", None).encode()
+            private_key = config.get("private_key", None)
 
         kwargs = {}
         if config.get("private_key_password", None) is not None:
@@ -485,9 +389,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             p_key = serialization.load_pem_private_key(
                 private_key, backend=default_backend(), **kwargs
             )
-
-        # key fails to load, possibly indicating key is base64 encoded
-        except ValueError:
+        except TypeError:
             try:
                 private_key = base64.b64decode(private_key)
                 p_key = serialization.load_pem_private_key(
@@ -551,15 +453,6 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             yield conn
             conn.close()
             engine.dispose()
-        elif self.connector == "adbc":
-            import adbc_driver_snowflake.dbapi
-
-            conn = adbc_driver_snowflake.dbapi.connect(
-                db_kwargs=self._adbc_connection_args,  # pyright: ignore[reportArgumentType]
-            )
-
-            yield conn
-            conn.close()
         else:
             conn = snowflake.connector.connect(**self._connection_args)
 
@@ -665,6 +558,9 @@ class SnowflakeConnection:
 
         with self.get_connection() as conn:
             with closing(conn.cursor()) as cursor:
+                if sys.version_info[0] < 3:
+                    sql = sql.encode("utf-8")
+
                 self.log.info("Executing query: " + sql)
                 parameters = dict(parameters) if isinstance(parameters, Mapping) else parameters
                 cursor.execute(sql, parameters)
@@ -715,7 +611,7 @@ class SnowflakeConnection:
         if not fetch_results and use_pandas_result:
             check.failed("If use_pandas_result is True, fetch_results must also be True.")
 
-        results: list[Any] = []
+        results: List[Any] = []
         with self.get_connection() as conn:
             with closing(conn.cursor()) as cursor:
                 for raw_sql in sql_queries:
@@ -816,63 +712,3 @@ def snowflake_resource(context) -> SnowflakeConnection:
     return SnowflakeConnection(
         config=context, log=context.log, snowflake_connection_resource=snowflake_resource
     )
-
-
-def fetch_last_updated_timestamps(
-    *,
-    snowflake_connection: Union[SqlDbConnection, snowflake.connector.SnowflakeConnection],
-    schema: str,
-    tables: Sequence[str],
-    database: Optional[str] = None,
-    ignore_missing_tables: Optional[bool] = False,
-) -> Mapping[str, datetime]:
-    """Fetch the last updated times of a list of tables in Snowflake.
-
-    If the underlying query to fetch the last updated time returns no results, a ValueError will be raised.
-
-    Args:
-        snowflake_connection (Union[SqlDbConnection, SnowflakeConnection]): A connection to Snowflake.
-            Accepts either a SnowflakeConnection or a sqlalchemy connection object,
-            which are the two types of connections emittable from the snowflake resource.
-        schema (str): The schema of the tables to fetch the last updated time for.
-        tables (Sequence[str]): A list of table names to fetch the last updated time for.
-        database (Optional[str]): The database of the table. Only required if the connection
-            has not been set with a database.
-        ignore_missing_tables (Optional[bool]): If True, tables not found in Snowflake
-            will be excluded from the result.
-
-    Returns:
-        Mapping[str, datetime]: A dictionary of table names to their last updated time in UTC.
-    """
-    check.invariant(len(tables) > 0, "Must provide at least one table name to query upon.")
-    # Table names in snowflake's information schema are stored in uppercase
-    uppercase_tables = [table.upper() for table in tables]
-    tables_str = ", ".join([f"'{table_name}'" for table_name in uppercase_tables])
-    fully_qualified_table_name = (
-        f"{database}.information_schema.tables" if database else "information_schema.tables"
-    )
-
-    query = f"""
-    SELECT table_name, CONVERT_TIMEZONE('UTC', last_altered) AS last_altered
-    FROM {fully_qualified_table_name}
-    WHERE table_schema = '{schema}' AND table_name IN ({tables_str});
-    """
-    result = snowflake_connection.cursor().execute(query)
-    if not result:
-        raise ValueError("No results returned from Snowflake update time query.")
-
-    result_mapping = {table_name: last_altered for table_name, last_altered in result}
-    result_correct_case = {}
-    for table_name in tables:
-        if table_name.upper() not in result_mapping:
-            if ignore_missing_tables:
-                continue
-            raise ValueError(f"Table {table_name} could not be found.")
-        last_altered = result_mapping[table_name.upper()]
-        check.invariant(
-            isinstance(last_altered, datetime),
-            "Expected last_altered to be a datetime, but it was not.",
-        )
-        result_correct_case[table_name] = last_altered
-
-    return result_correct_case

@@ -1,39 +1,35 @@
 import {
   Button,
-  Dialog,
   DialogBody,
   DialogFooter,
-  ExternalAnchorButton,
+  Dialog,
   Icon,
+  ExternalAnchorButton,
 } from '@dagster-io/ui-components';
-import {useContext, useEffect, useMemo, useState} from 'react';
+import * as React from 'react';
 
 import {AppContext} from '../app/AppContext';
 
-export const NotebookButton = ({
-  path,
-  repoLocation,
-  label,
-}: {
+export const NotebookButton: React.FC<{
   path?: string;
   repoLocation: string;
   label?: string;
-}) => {
-  const {rootServerURI} = useContext(AppContext);
-  const [open, setOpen] = useState(false);
+}> = ({path, repoLocation, label}) => {
+  const {rootServerURI} = React.useContext(AppContext);
+  const [open, setOpen] = React.useState(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const onOpen = () => setOpen(true);
     document.addEventListener('show-kind-info', onOpen);
     return () => document.removeEventListener('show-kind-info', onOpen);
   }, []);
 
   const value = path || '';
-  const url = useMemo(() => {
+  const url = React.useMemo(() => {
     try {
       const url = new URL(value);
       return url.toString();
-    } catch {
+    } catch (e) {
       // Not a full valid URL
       return null;
     }
@@ -71,7 +67,7 @@ export const NotebookButton = ({
             src={`${rootServerURI}/notebook?path=${encodeURIComponent(
               path,
             )}&repoLocName=${repoLocation}`}
-            sandbox="allow-scripts"
+            sandbox=""
             style={{border: 0, background: 'white'}}
             seamless={true}
             width="100%"

@@ -2,22 +2,22 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import dagster._check as check
 import graphene
-from dagster._core.remote_representation import RepresentedJob
-from dagster._core.remote_representation.external_data import DEFAULT_MODE_NAME
+from dagster._core.host_representation import RepresentedJob
+from dagster._core.host_representation.external_data import DEFAULT_MODE_NAME
 from dagster._core.snap.snap_to_yaml import default_values_yaml_from_type_snap
 
-from dagster_graphql.implementation.run_config_schema import resolve_is_run_config_valid
-from dagster_graphql.implementation.utils import capture_error
-from dagster_graphql.schema.config_types import GrapheneConfigType, to_config_type
-from dagster_graphql.schema.errors import (
+from ..implementation.run_config_schema import resolve_is_run_config_valid
+from ..implementation.utils import capture_error
+from .config_types import GrapheneConfigType, to_config_type
+from .errors import (
     GrapheneInvalidSubsetError,
     GrapheneModeNotFoundError,
     GraphenePipelineNotFoundError,
     GraphenePythonError,
 )
-from dagster_graphql.schema.pipelines.config_result import GraphenePipelineConfigValidationResult
-from dagster_graphql.schema.runs import GrapheneRunConfigData, parse_run_config_input
-from dagster_graphql.schema.util import ResolveInfo, non_null_list
+from .pipelines.config_result import GraphenePipelineConfigValidationResult
+from .runs import GrapheneRunConfigData, parse_run_config_input
+from .util import ResolveInfo, non_null_list
 
 if TYPE_CHECKING:
     from dagster._config.snap import ConfigSchemaSnapshot
@@ -72,9 +72,7 @@ class GrapheneRunConfigSchema(graphene.ObjectType):
         return sorted(
             list(
                 map(
-                    lambda key: to_config_type(
-                        self._represented_job.config_schema_snapshot.get_config_snap, key
-                    ),
+                    lambda key: to_config_type(self._represented_job.config_schema_snapshot, key),
                     self._represented_job.config_schema_snapshot.all_config_keys,
                 )
             ),
@@ -83,7 +81,7 @@ class GrapheneRunConfigSchema(graphene.ObjectType):
 
     def resolve_rootConfigType(self, _graphene_info: ResolveInfo):
         return to_config_type(
-            self._represented_job.config_schema_snapshot.get_config_snap,
+            self._represented_job.config_schema_snapshot,
             self._represented_job.get_mode_def_snap(  # type: ignore  # (possible none)
                 self._mode or DEFAULT_MODE_NAME
             ).root_config_key,

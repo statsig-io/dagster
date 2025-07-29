@@ -1,7 +1,6 @@
 import pytest
-from dagster._cli.workspace.cli_target import WorkspaceOpts, workspace_opts_to_load_target
+from dagster._cli.workspace import get_workspace_process_context_from_kwargs
 from dagster._core.test_utils import instance_for_test
-from dagster._core.workspace.context import WorkspaceProcessContext
 from dagster_webserver import app
 from starlette.testclient import TestClient
 
@@ -30,13 +29,11 @@ SMOKE_TEST_QUERY = """
 )
 def test_smoke_app(gen_instance):
     with gen_instance() as instance:
-        with WorkspaceProcessContext(
+        with get_workspace_process_context_from_kwargs(
             instance,
             version="",
             read_only=False,
-            workspace_load_target=workspace_opts_to_load_target(
-                WorkspaceOpts(module_name=("dagster_webserver_tests.toy.bar_repo",))
-            ),
+            kwargs=dict(module_name=("dagster_webserver_tests.toy.bar_repo",), definition="bar"),
         ) as workspace_process_context:
             asgi_app = app.create_app_from_workspace_process_context(workspace_process_context)
             client = TestClient(asgi_app)

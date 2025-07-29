@@ -1,41 +1,29 @@
-import {
-  Box,
-  Button,
-  Dialog,
-  DialogFooter,
-  FontFamily,
-  SpinnerWithText,
-} from '@dagster-io/ui-components';
-import {useMemo} from 'react';
+import {Button, DialogFooter, Dialog, FontFamily} from '@dagster-io/ui-components';
+import * as React from 'react';
 
-import {gql, useQuery} from '../../apollo-client';
-import {
-  BackfillPartitionsDialogContentQuery,
-  BackfillPartitionsDialogContentQueryVariables,
-} from './types/BackfillPartitionsRequestedDialog.types';
 import {TruncatedTextWithFullTextOnHover} from '../../nav/getLeftNavItemsForOption';
 import {VirtualizedItemListForDialog} from '../../ui/VirtualizedItemListForDialog';
 
-const COLLATOR = new Intl.Collator(navigator.language, {sensitivity: 'base', numeric: true});
+import {BackfillTableFragment} from './types/BackfillTable.types';
 
+const COLLATOR = new Intl.Collator(navigator.language, {sensitivity: 'base', numeric: true});
 interface Props {
-  backfillId?: string;
+  backfill?: BackfillTableFragment;
   onClose: () => void;
 }
-
-export const BackfillPartitionsRequestedDialog = ({backfillId, onClose}: Props) => {
+export const BackfillPartitionsRequestedDialog = ({backfill, onClose}: Props) => {
   return (
     <Dialog
-      isOpen={!!backfillId}
+      isOpen={!!backfill}
       title={
         <span>
           Partitions requested for backfill:{' '}
-          <span style={{fontFamily: FontFamily.monospace}}>{backfillId}</span>
+          <span style={{fontSize: '18px', fontFamily: FontFamily.monospace}}>{backfill?.id}</span>
         </span>
       }
       onClose={onClose}
     >
-      <DialogContent backfillId={backfillId} />
+      <DialogContent partitionNames={backfill?.partitionNames || []} />
       <DialogFooter topBorder>
         <Button onClick={onClose}>Done</Button>
       </DialogFooter>
@@ -43,56 +31,28 @@ export const BackfillPartitionsRequestedDialog = ({backfillId, onClose}: Props) 
   );
 };
 
+interface DialogContentProps {
+  partitionNames: string[];
+}
+
 // Separate component so that we can delay sorting until render.
-const DialogContent = (props: {backfillId: string | undefined}) => {
-  const queryResult = useQuery<
-    BackfillPartitionsDialogContentQuery,
-    BackfillPartitionsDialogContentQueryVariables
-  >(BACKFILL_PARTTIONS_DIALOG_CONTENT_QUERY, {
-    skip: !props.backfillId,
-    variables: {
-      backfillId: props.backfillId ?? '',
-    },
-  });
+const DialogContent = (props: DialogContentProps) => {
+  const {partitionNames} = props;
 
-  const {data, loading} = queryResult;
-
-  const sorted = useMemo(() => {
-    const names =
-      data?.partitionBackfillOrError.__typename === 'PartitionBackfill'
-        ? data.partitionBackfillOrError.partitionNames
-        : null;
-
-    return [...(names || [])].sort((a, b) => COLLATOR.compare(a, b));
-  }, [data]);
+  const sorted = React.useMemo(() => {
+    return [...(partitionNames || [])].sort((a, b) => COLLATOR.compare(a, b));
+  }, [partitionNames]);
 
   return (
     <div style={{height: '340px', overflow: 'hidden'}}>
-      {loading ? (
-        <Box style={{padding: 64}} flex={{alignItems: 'center', justifyContent: 'center'}}>
-          <SpinnerWithText label="Loading requested partitions…" />
-        </Box>
-      ) : (
-        <VirtualizedItemListForDialog
-          items={sorted}
-          renderItem={(partitionName) => (
-            <div key={partitionName}>
-              <TruncatedTextWithFullTextOnHover text={partitionName} />
-            </div>
-          )}
-        />
-      )}
+      <VirtualizedItemListForDialog
+        items={sorted}
+        renderItem={(partitionName) => (
+          <div key={partitionName}>
+            <TruncatedTextWithFullTextOnHover text={partitionName} />
+          </div>
+        )}
+      />
     </div>
   );
 };
-
-const BACKFILL_PARTTIONS_DIALOG_CONTENT_QUERY = gql`
-  query BackfillPartitionsDialogContentQuery($backfillId: String!) {
-    partitionBackfillOrError(backfillId: $backfillId) {
-      ... on PartitionBackfill {
-        id
-        partitionNames
-      }
-    }
-  }
-`;

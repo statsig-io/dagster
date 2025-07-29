@@ -1,62 +1,52 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
-def get_version() -> tuple[str, str]:
-    version: dict[str, str] = {}
-    dbt_core_version: dict[str, str] = {}
-
+def get_version() -> str:
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_dbt/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
-    with open(Path(__file__).parent / "dagster_dbt/dbt_core_version.py", encoding="utf8") as fp:
-        exec(fp.read(), dbt_core_version)
-
-    return version["__version__"], dbt_core_version["DBT_CORE_VERSION_UPPER_BOUND"]
+    return version["__version__"]
 
 
-dagster_dbt_version, DBT_CORE_VERSION_UPPER_BOUND = get_version()
+ver = get_version()
 # dont pin dev installs to avoid pip dep resolver issues
-pin = "" if dagster_dbt_version == "1!0+dev" else f"=={dagster_dbt_version}"
+pin = "" if ver == "1!0+dev" else f"=={ver}"
 setup(
     name="dagster-dbt",
-    version=dagster_dbt_version,
+    version=ver,
     author="Dagster Labs",
     author_email="hello@dagsterlabs.com",
     license="Apache-2.0",
     description="A Dagster integration for dbt",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-dbt",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: 3.13",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
     packages=find_packages(exclude=["dagster_dbt_tests*"]),
     include_package_data=True,
-    python_requires=">=3.9,<3.14",
     install_requires=[
-        f"dagster{pin}",
+        "dagster==1.4.16",
         # Follow the version support constraints for dbt Core: https://docs.getdbt.com/docs/dbt-versions/core
-        f"dbt-core>=1.7,<{DBT_CORE_VERSION_UPPER_BOUND}",
+        "dbt-core<1.7",
         "Jinja2",
         "networkx",
         "orjson",
         "requests",
         "rich",
-        "sqlglot[rs]",
         "typer>=0.9.0",
-        "packaging",
     ],
     extras_require={
         "test": [
-            "pytest-rerunfailures",
-            "pytest-order",
-            "dbt-duckdb<1.9.2",  # concurrency issues
+            "dbt-duckdb",
             "dagster-duckdb",
             "dagster-duckdb-pandas",
         ]
@@ -65,10 +55,7 @@ setup(
         "console_scripts": [
             "dagster-dbt-cloud = dagster_dbt.cloud.cli:app",
             "dagster-dbt = dagster_dbt.cli.app:app",
-        ],
-        "dagster_dg_cli.registry_modules": [
-            "dagster_dbt = dagster_dbt",
-        ],
+        ]
     },
     zip_safe=False,
 )

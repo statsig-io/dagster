@@ -1,9 +1,16 @@
-import {ButtonLink, Caption, Colors, Group} from '@dagster-io/ui-components';
+import {gql, useLazyQuery} from '@apollo/client';
+import {ButtonLink, Colors, Group, Caption} from '@dagster-io/ui-components';
 import qs from 'qs';
-import {memo, useCallback, useMemo} from 'react';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 
-import {gql, useLazyQuery} from '../apollo-client';
+import {assertUnreachable} from '../app/Util';
+import {RunStatus} from '../graphql/types';
+import {StatusTable} from '../instigation/InstigationUtils';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
+import {RepoAddress} from '../workspace/types';
+import {workspacePathFromAddress} from '../workspace/workspacePath';
+
 import {
   SchedulePartitionStatusFragment,
   SchedulePartitionStatusQuery,
@@ -11,12 +18,6 @@ import {
   SchedulePartitionStatusResultFragment,
 } from './types/SchedulePartitionStatus.types';
 import {ScheduleFragment} from './types/ScheduleUtils.types';
-import {assertUnreachable} from '../app/Util';
-import {RunStatus} from '../graphql/types';
-import {StatusTable} from '../instigation/InstigationUtils';
-import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext/util';
-import {RepoAddress} from '../workspace/types';
-import {workspacePathFromAddress} from '../workspace/workspacePath';
 
 const RUN_STATUSES = ['Succeeded', 'Failed', 'Missing', 'Pending'];
 
@@ -41,20 +42,17 @@ const calculateDisplayStatus = (partition: SchedulePartitionStatusResultFragment
   }
 };
 
-interface Props {
+export const SchedulePartitionStatus: React.FC<{
   repoAddress: RepoAddress;
   schedule: ScheduleFragment;
-}
-
-export const SchedulePartitionStatus = memo((props: Props) => {
-  const {repoAddress, schedule} = props;
+}> = React.memo(({repoAddress, schedule}) => {
   const repo = useRepository(repoAddress);
   const {name: scheduleName, partitionSet, pipelineName} = schedule;
 
   const partitionSetName = partitionSet?.name;
   const isJob = isThisThingAJob(repo, pipelineName);
 
-  const partitionPath = useMemo(() => {
+  const partitionPath = React.useMemo(() => {
     const query = partitionSetName
       ? qs.stringify(
           {
@@ -81,11 +79,11 @@ export const SchedulePartitionStatus = memo((props: Props) => {
     },
   });
 
-  const onClick = useCallback(() => retrievePartitionStatus(), [retrievePartitionStatus]);
+  const onClick = React.useCallback(() => retrievePartitionStatus(), [retrievePartitionStatus]);
 
   const loadable = () => {
     if (loading) {
-      return <Caption style={{color: Colors.textLight()}}>Loading…</Caption>;
+      return <Caption style={{color: Colors.Gray400}}>Loading…</Caption>;
     }
 
     if (!data) {
@@ -106,7 +104,7 @@ export const SchedulePartitionStatus = memo((props: Props) => {
       );
     }
 
-    return <Caption style={{color: Colors.textRed()}}>Partition set not found!</Caption>;
+    return <Caption style={{color: Colors.Red700}}>Partition set not found!</Caption>;
   };
 
   return (
@@ -117,17 +115,14 @@ export const SchedulePartitionStatus = memo((props: Props) => {
   );
 });
 
-const RetrievedSchedulePartitionStatus = ({
-  schedule,
-  partitionURL,
-}: {
+const RetrievedSchedulePartitionStatus: React.FC<{
   schedule: SchedulePartitionStatusFragment;
   partitionURL: string;
-}) => {
+}> = ({schedule, partitionURL}) => {
   const {partitionSet} = schedule;
 
   if (!partitionSet || partitionSet.partitionStatusesOrError.__typename !== 'PartitionStatuses') {
-    return <span style={{color: Colors.textLight()}}>None</span>;
+    return <span style={{color: Colors.Gray300}}>None</span>;
   }
 
   const partitions = partitionSet.partitionStatusesOrError.results;
@@ -154,7 +149,7 @@ const RetrievedSchedulePartitionStatus = ({
                 {status === 'Failed' || status === 'Missing' ? (
                   <Link
                     to={`${partitionURL}?showFailuresAndGapsOnly=true`}
-                    style={{color: Colors.textDefault()}}
+                    style={{color: Colors.Gray900}}
                   >
                     {(partitionsByType as any)[status].length}
                   </Link>

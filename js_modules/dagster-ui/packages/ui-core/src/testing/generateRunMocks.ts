@@ -14,15 +14,11 @@ export const generateRunMocks = (runCount: number, range: [number, number]) => {
           ? RunStatus.STARTED
           : faker.random.arrayElement([RunStatus.SUCCESS, RunStatus.FAILURE]);
 
-      const startTime = startDate.getTime();
       return {
         id: faker.datatype.uuid(),
-        creationTime: startTime,
-        startTime,
         status,
+        startTime: startDate.getTime(),
         endTime,
-        automation: null,
-        externalJobSource: null,
       };
     });
 };

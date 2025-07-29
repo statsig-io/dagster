@@ -1,68 +1,82 @@
+import {gql, useLazyQuery, useMutation} from '@apollo/client';
 import {
-  Box,
   Button,
-  Colors,
-  Dialog,
-  DialogBody,
-  DialogFooter,
   Icon,
-  JoinedButtons,
-  Menu,
   MenuDivider,
   MenuExternalLink,
   MenuItem,
+  Menu,
   Popover,
   Tooltip,
+  DialogFooter,
+  Dialog,
+  JoinedButtons,
+  DialogBody,
+  Box,
+  Colors,
+  StyledRawCodeMirror,
 } from '@dagster-io/ui-components';
-import uniq from 'lodash/uniq';
 import * as React from 'react';
-import {Link} from 'react-router-dom';
-import {RunMetricsDialog} from 'shared/runs/RunMetricsDialog.oss';
+import {Link, useHistory} from 'react-router-dom';
 import styled from 'styled-components';
+
+import {AppContext} from '../app/AppContext';
+import {showSharedToaster} from '../app/DomUtils';
+import {DEFAULT_DISABLED_REASON} from '../app/Permissions';
+import {useCopyToClipboard} from '../app/browser';
+import {ReexecutionStrategy} from '../graphql/types';
+import {NO_LAUNCH_PERMISSION_MESSAGE} from '../launchpad/LaunchRootExecutionButton';
+import {getPipelineSnapshotLink} from '../pipelines/PipelinePathUtils';
+import {AnchorButton} from '../ui/AnchorButton';
+import {MenuLink} from '../ui/MenuLink';
+import {isThisThingAJob} from '../workspace/WorkspaceContext';
+import {useRepositoryForRunWithParentSnapshot} from '../workspace/useRepositoryForRun';
+import {workspacePathFromRunDetails} from '../workspace/workspacePath';
 
 import {DeletionDialog} from './DeletionDialog';
 import {ReexecutionDialog} from './ReexecutionDialog';
-import {RunConfigDialog} from './RunConfigDialog';
 import {doneStatuses, failedStatuses} from './RunStatuses';
-import {RunTags, tagsAsYamlString} from './RunTags';
-import {RunsQueryRefetchContext} from './RunUtils';
+import {RunTags} from './RunTags';
+import {
+  LAUNCH_PIPELINE_REEXECUTION_MUTATION,
+  RunsQueryRefetchContext,
+  getReexecutionVariables,
+  handleLaunchResult,
+} from './RunUtils';
 import {RunFilterToken} from './RunsFilterInput';
 import {TerminationDialog} from './TerminationDialog';
 import {
   PipelineEnvironmentQuery,
   PipelineEnvironmentQueryVariables,
 } from './types/RunActionsMenu.types';
+import {RunTableRunFragment} from './types/RunTable.types';
+import {
+  LaunchPipelineReexecutionMutation,
+  LaunchPipelineReexecutionMutationVariables,
+} from './types/RunUtils.types';
 import {useJobAvailabilityErrorForRun} from './useJobAvailabilityErrorForRun';
-import {useJobReexecution} from './useJobReExecution';
-import {gql, useLazyQuery} from '../apollo-client';
-import {DagsterTag} from './RunTag';
-import {AppContext} from '../app/AppContext';
-import {DEFAULT_DISABLED_REASON} from '../app/Permissions';
-import {ReexecutionStrategy} from '../graphql/types';
-import {getPipelineSnapshotLink} from '../pipelines/PipelinePathUtils';
-import {AnchorButton} from '../ui/AnchorButton';
-import {CopyButton} from '../ui/CopyButton';
-import {MenuLink} from '../ui/MenuLink';
-import {isThisThingAJob} from '../workspace/WorkspaceContext/util';
-import {useRepositoryForRunWithParentSnapshot} from '../workspace/useRepositoryForRun';
-import {workspacePipelineLinkForRun} from '../workspace/workspacePath';
-import {RunActionsMenuRunFragment} from './types/RunActionsMenuRunFragment.types';
 
-interface Props {
-  run: RunActionsMenuRunFragment;
+export const RunActionsMenu: React.FC<{
+  run: RunTableRunFragment;
+  additionalActionsForRun?: (run: RunTableRunFragment) => React.ReactNode[];
   onAddTag?: (token: RunFilterToken) => void;
-  anchorLabel?: React.ReactNode;
-}
-
-export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) => {
+}> = React.memo(({run, onAddTag, additionalActionsForRun}) => {
   const {refetch} = React.useContext(RunsQueryRefetchContext);
   const [visibleDialog, setVisibleDialog] = React.useState<
-    'none' | 'terminate' | 'delete' | 'config' | 'tags' | 'metrics'
+    'none' | 'terminate' | 'delete' | 'config' | 'tags'
   >('none');
 
   const {rootServerURI} = React.useContext(AppContext);
+  const history = useHistory();
 
-  const reexecute = useJobReexecution({onCompleted: refetch});
+  const copyConfig = useCopyToClipboard();
+
+  const [reexecute] = useMutation<
+    LaunchPipelineReexecutionMutation,
+    LaunchPipelineReexecutionMutationVariables
+  >(LAUNCH_PIPELINE_REEXECUTION_MUTATION, {
+    onCompleted: refetch,
+  });
 
   const [loadEnv, {called, loading, data}] = useLazyQuery<
     PipelineEnvironmentQuery,
@@ -82,7 +96,7 @@ export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) =
   const pipelineRun =
     data?.pipelineRunOrError?.__typename === 'Run' ? data?.pipelineRunOrError : null;
   const runConfigYaml = pipelineRun?.runConfigYaml;
-  const runMetricsEnabled = run.hasRunMetricsEnabled;
+
   const repoMatch = useRepositoryForRunWithParentSnapshot(pipelineRun);
   const jobError = useJobAvailabilityErrorForRun({
     ...run,
@@ -107,24 +121,15 @@ export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) =
     return {disabled: false};
   }, [run.hasReExecutePermission, jobError, infoReady]);
 
-  const jobLink = workspacePipelineLinkForRun({
-    run,
-    repositoryName: repoMatch?.match.repository.name,
-    repositoryLocationName: repoMatch?.match.repositoryLocation.name,
-    isJob,
-  });
-
   return (
     <>
-      {reexecute.launchpadElement}
       <JoinedButtons>
-        <AnchorButton to={`/runs/${run.id}`}>{anchorLabel ?? 'View run'}</AnchorButton>
+        <AnchorButton to={`/runs/${run.id}`}>View run</AnchorButton>
         <Popover
           content={
             <Menu>
               <MenuItem
                 tagName="button"
-                style={{minWidth: 200}}
                 text={loading ? 'Loading configuration...' : 'View configuration...'}
                 disabled={!runConfigYaml}
                 icon="open_in_new"
@@ -157,7 +162,7 @@ export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) =
                 >
                   <MenuItem
                     tagName="button"
-                    icon="history"
+                    icon="job"
                     text="View snapshot"
                     onClick={() => setVisibleDialog('tags')}
                   />
@@ -166,21 +171,32 @@ export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) =
               <MenuDivider />
               <>
                 <Tooltip
-                  content={jobLink.disabledReason || OPEN_LAUNCHPAD_UNKNOWN}
+                  content={
+                    run.hasReExecutePermission
+                      ? OPEN_LAUNCHPAD_UNKNOWN
+                      : NO_LAUNCH_PERMISSION_MESSAGE
+                  }
                   position="left"
-                  disabled={infoReady && !jobLink.disabledReason}
+                  disabled={infoReady && run.hasReExecutePermission}
                   targetTagName="div"
                 >
                   <MenuLink
-                    text={jobLink.label}
-                    disabled={!infoReady || !!jobLink.disabledReason}
-                    icon={jobLink.icon}
-                    to={jobLink.to}
+                    text="Open in Launchpad..."
+                    disabled={!infoReady || !run.hasReExecutePermission}
+                    icon="edit"
+                    to={workspacePathFromRunDetails({
+                      id: run.id,
+                      pipelineName: run.pipelineName,
+                      repositoryName: repoMatch?.match.repository.name,
+                      repositoryLocationName: repoMatch?.match.repositoryLocation.name,
+                      isJob,
+                    })}
                   />
                 </Tooltip>
                 <Tooltip
-                  content={reexecutionDisabledState.message || 'Shift-click to adjust tags.'}
+                  content={reexecutionDisabledState.message || ''}
                   position="left"
+                  canShow={reexecutionDisabledState.disabled}
                   targetTagName="div"
                 >
                   <MenuItem
@@ -188,8 +204,25 @@ export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) =
                     text="Re-execute"
                     disabled={reexecutionDisabledState.disabled}
                     icon="refresh"
-                    onClick={async (e) => {
-                      await reexecute.onClick(run, ReexecutionStrategy.ALL_STEPS, e.shiftKey);
+                    onClick={async () => {
+                      if (repoMatch && runConfigYaml) {
+                        const result = await reexecute({
+                          variables: getReexecutionVariables({
+                            run: {...run, runConfigYaml},
+                            style: {type: 'all'},
+                            repositoryLocationName: repoMatch.match.repositoryLocation.name,
+                            repositoryName: repoMatch.match.repository.name,
+                          }),
+                        });
+                        handleLaunchResult(
+                          run.pipelineName,
+                          result.data?.launchPipelineReexecution,
+                          history,
+                          {
+                            behavior: 'open',
+                          },
+                        );
+                      }
                     }}
                   />
                 </Tooltip>
@@ -201,6 +234,7 @@ export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) =
                     onClick={() => setVisibleDialog('terminate')}
                   />
                 )}
+                {additionalActionsForRun?.(run)}
                 <MenuDivider />
               </>
               <MenuExternalLink
@@ -209,15 +243,6 @@ export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) =
                 download
                 href={`${rootServerURI}/download_debug/${run.id}`}
               />
-              {runMetricsEnabled && RunMetricsDialog ? (
-                <MenuItem
-                  tagName="button"
-                  icon="asset_plot"
-                  text="View container metrics"
-                  intent="none"
-                  onClick={() => setVisibleDialog('metrics')}
-                />
-              ) : null}
               {run.hasDeletePermission ? (
                 <MenuItem
                   tagName="button"
@@ -247,13 +272,6 @@ export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) =
           selectedRuns={{[run.id]: run.canTerminate}}
         />
       ) : null}
-      {runMetricsEnabled && RunMetricsDialog ? (
-        <RunMetricsDialog
-          runId={run.id}
-          isOpen={visibleDialog === 'metrics'}
-          onClose={closeDialogs}
-        />
-      ) : null}
       {run.hasDeletePermission ? (
         <DeletionDialog
           isOpen={visibleDialog === 'delete'}
@@ -278,31 +296,49 @@ export const RunActionsMenu = React.memo(({run, onAddTag, anchorLabel}: Props) =
           />
         </DialogBody>
         <DialogFooter topBorder>
-          <CopyButton value={() => tagsAsYamlString(run.tags)}>Copy tags</CopyButton>
           <Button intent="primary" onClick={closeDialogs}>
             Close
           </Button>
         </DialogFooter>
       </Dialog>
-      <RunConfigDialog
+      <Dialog
         isOpen={visibleDialog === 'config'}
+        title="Config"
+        canOutsideClickClose
+        canEscapeKeyClose
         onClose={closeDialogs}
-        mode={run.mode}
-        runConfigYaml={runConfigYaml || ''}
-        isJob={isJob}
-      />
+      >
+        <StyledRawCodeMirror
+          value={runConfigYaml || ''}
+          options={{readOnly: true, lineNumbers: true, mode: 'yaml'}}
+        />
+        <DialogFooter topBorder>
+          <Button
+            intent="none"
+            onClick={async () => {
+              copyConfig(runConfigYaml || '');
+              await showSharedToaster({
+                intent: 'success',
+                icon: 'copy_to_clipboard_done',
+                message: 'Copied!',
+              });
+            }}
+          >
+            Copy config
+          </Button>
+          <Button intent="primary" onClick={closeDialogs}>
+            OK
+          </Button>
+        </DialogFooter>
+      </Dialog>
     </>
   );
 });
 
-interface RunBulkActionsMenuProps {
-  selected: RunActionsMenuRunFragment[];
+export const RunBulkActionsMenu: React.FC<{
+  selected: RunTableRunFragment[];
   clearSelection: () => void;
-  notice?: React.ReactNode;
-}
-
-export const RunBulkActionsMenu = React.memo((props: RunBulkActionsMenuProps) => {
-  const {selected, clearSelection, notice} = props;
+}> = React.memo(({selected, clearSelection}) => {
   const {refetch} = React.useContext(RunsQueryRefetchContext);
 
   const [visibleDialog, setVisibleDialog] = React.useState<
@@ -314,7 +350,7 @@ export const RunBulkActionsMenu = React.memo((props: RunBulkActionsMenuProps) =>
   }, [selected]);
 
   const canDeleteAny = React.useMemo(() => {
-    return selected.some((run) => run.hasDeletePermission);
+    return selected.some((run) => run.hasTerminatePermission);
   }, [selected]);
 
   const canReexecuteAny = React.useMemo(() => {
@@ -324,30 +360,32 @@ export const RunBulkActionsMenu = React.memo((props: RunBulkActionsMenuProps) =>
   const disabled = !canTerminateAny && !canDeleteAny;
 
   const terminatableRuns = selected.filter(
-    (r) => !doneStatuses.has(r.status) && r.hasTerminatePermission,
+    (r) => !doneStatuses.has(r?.status) && r.hasTerminatePermission,
   );
   const terminateableIDs = terminatableRuns.map((r) => r.id);
-  const terminateableMap = Object.fromEntries(terminatableRuns.map((r) => [r.id, r.canTerminate]));
+  const terminateableMap = terminatableRuns.reduce(
+    (accum, run) => ({...accum, [run.id]: run.canTerminate}),
+    {},
+  );
 
   const deleteableIDs = selected.map((run) => run.id);
-  const deletionMap = Object.fromEntries(selected.map((r) => [r.id, r.canTerminate]));
+  const deletionMap = selected.reduce((accum, run) => ({...accum, [run.id]: run.canTerminate}), {});
 
   const reexecuteFromFailureRuns = selected.filter(
-    (r) => failedStatuses.has(r.status) && r.hasReExecutePermission,
+    (r) => failedStatuses.has(r?.status) && r.hasReExecutePermission,
   );
-  const reexecuteFromFailureMap = Object.fromEntries(
-    reexecuteFromFailureRuns.map((r) => [r.id, r.id]),
-  );
-  const selectedRunBackfillIds = uniq(
-    selected
-      .map((r) => r.tags.find((t) => t.key === DagsterTag.Backfill)?.value ?? '')
-      .filter(Boolean),
+  const reexecuteFromFailureMap = reexecuteFromFailureRuns.reduce(
+    (accum, run) => ({...accum, [run.id]: run.id}),
+    {},
   );
 
   const reexecutableRuns = selected.filter(
-    (r) => doneStatuses.has(r.status) && r.hasReExecutePermission,
+    (r) => doneStatuses.has(r?.status) && r.hasReExecutePermission,
   );
-  const reexecutableMap = Object.fromEntries(reexecutableRuns.map((r) => [r.id, r.id]));
+  const reexecutableMap = reexecutableRuns.reduce(
+    (accum, run) => ({...accum, [run.id]: run.id}),
+    {},
+  );
 
   const closeDialogs = () => {
     setVisibleDialog('none');
@@ -364,7 +402,6 @@ export const RunBulkActionsMenu = React.memo((props: RunBulkActionsMenuProps) =>
         disabled={disabled || selected.length === 0}
         content={
           <Menu>
-            {notice}
             {canTerminateAny ? (
               <MenuItem
                 icon="cancel"
@@ -444,7 +481,6 @@ export const RunBulkActionsMenu = React.memo((props: RunBulkActionsMenuProps) =>
         onClose={closeDialogs}
         onComplete={onComplete}
         selectedRuns={reexecuteFromFailureMap}
-        selectedRunBackfillIds={selectedRunBackfillIds}
         reexecutionStrategy={ReexecutionStrategy.FROM_FAILURE}
       />
       <ReexecutionDialog
@@ -452,7 +488,6 @@ export const RunBulkActionsMenu = React.memo((props: RunBulkActionsMenuProps) =>
         onClose={closeDialogs}
         onComplete={onComplete}
         selectedRuns={reexecutableMap}
-        selectedRunBackfillIds={selectedRunBackfillIds}
         reexecutionStrategy={ReexecutionStrategy.ALL_STEPS}
       />
     </>
@@ -463,7 +498,7 @@ const OPEN_LAUNCHPAD_UNKNOWN =
   'Launchpad is unavailable because the pipeline is not present in the current repository.';
 
 // Avoid fetching envYaml and parentPipelineSnapshotId on load in Runs page, they're slow.
-export const PIPELINE_ENVIRONMENT_QUERY = gql`
+const PIPELINE_ENVIRONMENT_QUERY = gql`
   query PipelineEnvironmentQuery($runId: ID!) {
     pipelineRunOrError(runId: $runId) {
       ... on Run {
@@ -478,7 +513,6 @@ export const PIPELINE_ENVIRONMENT_QUERY = gql`
           repositoryName
           repositoryLocationName
         }
-        hasRunMetricsEnabled
       }
     }
   }
@@ -487,8 +521,8 @@ export const PIPELINE_ENVIRONMENT_QUERY = gql`
 const SlashShortcut = styled.div`
   border-radius: 4px;
   padding: 0px 6px;
-  background: ${Colors.backgroundLight()};
-  color: ${Colors.textLight()};
+  background: ${Colors.Gray100};
+  color: ${Colors.Gray500};
 `;
 
 const LinkNoUnderline = styled(Link)`

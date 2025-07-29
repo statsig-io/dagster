@@ -1,11 +1,10 @@
 import os
 
-from dagster_shared.utils import get_boolean_string_value
-
 import dagster._check as check
-from dagster._config.config_type import ScalarUnion
-from dagster._config.errors import PostProcessingError
-from dagster._config.field_utils import Selector
+
+from .config_type import ScalarUnion
+from .errors import PostProcessingError
+from .field_utils import Selector
 
 VALID_STRING_SOURCE_TYPES = (str, dict)
 
@@ -24,7 +23,7 @@ def _ensure_env_variable(var):
 
 class StringSourceType(ScalarUnion):
     def __init__(self):
-        super().__init__(
+        super(StringSourceType, self).__init__(
             scalar_type=str,
             non_scalar_schema=Selector({"env": str}),
             _key="StringSourceType",
@@ -43,7 +42,7 @@ class StringSourceType(ScalarUnion):
 
 class IntSourceType(ScalarUnion):
     def __init__(self):
-        super().__init__(
+        super(IntSourceType, self).__init__(
             scalar_type=int,
             non_scalar_schema=Selector({"env": str}),
             _key="IntSourceType",
@@ -70,7 +69,7 @@ class IntSourceType(ScalarUnion):
 
 class BoolSourceType(ScalarUnion):
     def __init__(self):
-        super().__init__(
+        super(BoolSourceType, self).__init__(
             scalar_type=bool,
             non_scalar_schema=Selector({"env": str}),
             _key="BoolSourceType",
@@ -88,10 +87,12 @@ class BoolSourceType(ScalarUnion):
         check.invariant(key == "env", "Only valid key is env")
         value = _ensure_env_variable(cfg)
         try:
-            return get_boolean_string_value(value)
+            return bool(value)
         except ValueError as e:
             raise PostProcessingError(
-                f'Value "{value}" stored in env variable "{cfg}" cannot be coerced into an bool.'
+                (
+                    'Value "{value}" stored in env variable "{var}" cannot be coerced into an bool.'
+                ).format(value=value, var=cfg)
             ) from e
 
 

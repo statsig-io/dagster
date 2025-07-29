@@ -11,8 +11,6 @@ setup(
         "seaborn",
         "pandera",
         "pandas",
-        "pyarrow",
-        "pandera>=0.24.0",
     ],
     extras_require={"dev": ["dagster-webserver", "pytest"]},
 )

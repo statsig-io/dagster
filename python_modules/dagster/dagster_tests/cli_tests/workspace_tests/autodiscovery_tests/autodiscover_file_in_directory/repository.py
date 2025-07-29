@@ -1,7 +1,9 @@
-import dagster as dg
-from autodiscover_src.jobs import hello_world_job  # type: ignore
+# type: ignore
+
+from autodiscover_src.jobs import hello_world_job
+from dagster import repository
 
 
-@dg.repository
+@repository
 def hello_world_repository():
     return [hello_world_job]

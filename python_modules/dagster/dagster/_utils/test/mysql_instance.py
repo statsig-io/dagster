@@ -120,7 +120,9 @@ class TestMySQLInstance:
             TestMySQLInstance.dagster_mysql_installed(),
             "dagster_mysql must be installed to test with mysql",
         )
-        from dagster_mysql.schedule_storage.schedule_storage import MySQLScheduleStorage
+        from dagster_mysql.schedule_storage.schedule_storage import (
+            MySQLScheduleStorage,
+        )
 
         storage = MySQLScheduleStorage.create_clean_storage(conn_string)
         assert storage
@@ -227,7 +229,7 @@ def is_mysql_running(service_name):
 
 class MySQLDockerError(Exception):
     def __init__(self, message, subprocess_error):
-        super().__init__(check.opt_str_param(message, "message"))
+        super(MySQLDockerError, self).__init__(check.opt_str_param(message, "message"))
         self.subprocess_error = check.inst_param(
             subprocess_error, "subprocess_error", subprocess.CalledProcessError
         )

@@ -9,21 +9,27 @@ function getAbsolutePath(value) {
 }
 
 const config = {
-  stories: ['../src/**/*.stories.tsx'],
+  stories: ['../src/**/*.stories.mdx', '../src/**/*.stories.@(js|jsx|ts|tsx)'],
   addons: [
-    getAbsolutePath('@storybook/addon-themes'),
     getAbsolutePath('@storybook/addon-links'),
     getAbsolutePath('@storybook/addon-essentials'),
-    getAbsolutePath('@chromatic-com/storybook'),
+    getAbsolutePath('@storybook/addon-mdx-gfm'),
   ],
   framework: {
-    name: getAbsolutePath('@storybook/nextjs'),
+    name: getAbsolutePath('@storybook/react-webpack5'),
     options: {},
   },
+  // https://github.com/hipstersmoothie/react-docgen-typescript-plugin/issues/78#issuecomment-1409224863
   typescript: {
-    reactDocgen: false,
+    reactDocgen: 'react-docgen-typescript-plugin',
   },
-  docs: {},
+  // https://storybook.js.org/docs/react/configure/webpack#bundle-splitting
+  features: {
+    storyStoreV7: true,
+  },
+  docs: {
+    autodocs: true,
+  },
   env: (config) => ({
     ...config,
     STORYBOOK: true,

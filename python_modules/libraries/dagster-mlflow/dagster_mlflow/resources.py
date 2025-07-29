@@ -2,7 +2,6 @@
 class. This resource provides an easy way to configure mlflow for logging various
 things from dagster runs.
 """
-
 import atexit
 import sys
 from itertools import islice
@@ -11,11 +10,8 @@ from typing import Any, Optional
 
 import mlflow
 from dagster import Field, Noneable, Permissive, StringSource, resource
-from dagster._annotations import beta
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
-from dagster._utils.backoff import backoff
 from mlflow.entities.run_status import RunStatus
-from mlflow.exceptions import MlflowException
 
 CONFIG_SCHEMA = {
     "experiment_name": Field(StringSource, is_required=True, description="MlFlow experiment name."),
@@ -30,12 +26,6 @@ CONFIG_SCHEMA = {
         default_value=None,
         is_required=False,
         description="Mlflow run ID of parent run if this is a nested run.",
-    ),
-    "mlflow_run_id": Field(
-        Noneable(str),
-        default_value=None,
-        is_required=False,
-        description="Mlflow run ID to use for this run.",
     ),
     "env": Field(Permissive(), description="Environment variables for mlflow setup."),
     "env_to_tag": Field(
@@ -55,7 +45,7 @@ class MlflowMeta(type):
     """
 
     def __new__(cls, name, bases, attrs):
-        class_cls = super().__new__(cls, name, bases, attrs)
+        class_cls = super(MlflowMeta, cls).__new__(cls, name, bases, attrs)
         for attr in (attr for attr in dir(mlflow) if attr not in dir(class_cls)):
             mlflow_attribute = getattr(mlflow, attr)
             if callable(mlflow_attribute):
@@ -65,7 +55,6 @@ class MlflowMeta(type):
         return class_cls
 
 
-@beta
 class MlFlow(metaclass=MlflowMeta):
     """Class for setting up an mlflow resource for dagster runs.
     This takes care of all the configuration required to use mlflow tracking and the complexities of
@@ -84,7 +73,6 @@ class MlFlow(metaclass=MlflowMeta):
         if self.tracking_uri:
             mlflow.set_tracking_uri(self.tracking_uri)
         self.parent_run_id = resource_config.get("parent_run_id")
-        self.mlflow_run_id = resource_config.get("mlflow_run_id")
         self.experiment_name = resource_config["experiment_name"]
         self.env_tags_to_log = resource_config.get("env_to_tag") or []
         self.extra_tags = resource_config.get("extra_tags")
@@ -109,12 +97,8 @@ class MlFlow(metaclass=MlflowMeta):
         active run is set to it. This way a single Dagster run outputs data
         to the same Mlflow run, even when multiprocess executors are used.
         """
-        # If already set in self then use that mlflow_run_id, else search for the run
-        if self.mlflow_run_id is None:
-            run_id = self._get_current_run_id()
-            self.mlflow_run_id = run_id
-        else:
-            run_id = self.mlflow_run_id
+        # Get the run id
+        run_id = self._get_current_run_id()
         self._set_active_run(run_id=run_id)
         self._set_all_tags()
 
@@ -143,17 +127,10 @@ class MlFlow(metaclass=MlflowMeta):
         dagster_run_id = dagster_run_id or self.dagster_run_id
         if experiment:
             # Check if a run with this dagster run id has already been started
-            # in mlflow, will get an empty dataframe if not.
-            # Note: Search requests have a lower rate limit than others, so we
-            # need to limit/retry searches where possible.
-            current_run_df = backoff(
-                mlflow.search_runs,
-                retry_on=(MlflowException,),
-                kwargs={
-                    "experiment_ids": [experiment.experiment_id],
-                    "filter_string": f"tags.dagster_run_id='{dagster_run_id}'",
-                },
-                max_retries=3,
+            # in mlflow, will get an empty dataframe if not
+            current_run_df = mlflow.search_runs(
+                experiment_ids=[experiment.experiment_id],
+                filter_string=f"tags.dagster_run_id='{dagster_run_id}'",
             )
             if not current_run_df.empty:
                 return current_run_df.run_id.values[0]
@@ -175,8 +152,6 @@ class MlFlow(metaclass=MlflowMeta):
     def _start_run(self, **kwargs):
         """Catches the Mlflow exception if a run is already active."""
         try:
-            # If a run_id is passed, mlflow will generally not start a new run
-            # and instead, it will just be set as the active run
             run = mlflow.start_run(**kwargs)
             self.log.info(
                 f"Starting a new mlflow run with id {run.info.run_id} "
@@ -244,7 +219,6 @@ class MlFlow(metaclass=MlflowMeta):
             yield {k: params[k] for k in islice(it, size)}
 
 
-@beta
 @dagster_maintained_resource
 @resource(config_schema=CONFIG_SCHEMA)
 def mlflow_tracking(context):
@@ -284,10 +258,6 @@ def mlflow_tracking(context):
 
                             # if want to run a nested run, provide parent_run_id
                             "parent_run_id": an_existing_mlflow_run_id,
-
-                            # if you want to resume a run or avoid creating a new run in the resource init,
-                            # provide mlflow_run_id
-                            "mlflow_run_id": an_existing_mlflow_run_id,
 
                             # env variables to pass to mlflow
                             "env": {

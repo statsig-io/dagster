@@ -1,15 +1,16 @@
-import {Caption, Colors} from '@dagster-io/ui-components';
+import {gql, useQuery} from '@apollo/client';
+import {Colors, Caption} from '@dagster-io/ui-components';
 import qs from 'qs';
-import {useMemo} from 'react';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 
-import {gql, useQuery} from '../apollo-client';
+import {StepEventStatus} from '../graphql/types';
+import {failedStatuses, inProgressStatuses} from '../runs/RunStatuses';
+
 import {
   StepSummaryForRunQuery,
   StepSummaryForRunQueryVariables,
 } from './types/StepSummaryForRun.types';
-import {StepEventStatus} from '../graphql/types';
-import {failedStatuses, inProgressStatuses} from '../runs/RunStatuses';
 
 interface Props {
   runId: string;
@@ -17,18 +18,17 @@ interface Props {
 
 export const StepSummaryForRun = (props: Props) => {
   const {runId} = props;
-  const queryResult = useQuery<StepSummaryForRunQuery, StepSummaryForRunQueryVariables>(
+  const {data} = useQuery<StepSummaryForRunQuery, StepSummaryForRunQueryVariables>(
     STEP_SUMMARY_FOR_RUN_QUERY,
     {
       variables: {runId},
     },
   );
-  const {data} = queryResult;
 
   const run = data?.pipelineRunOrError;
   const status = run?.__typename === 'Run' ? run.status : null;
 
-  const relevantSteps = useMemo(() => {
+  const relevantSteps = React.useMemo(() => {
     if (run?.__typename !== 'Run') {
       return [];
     }
@@ -58,13 +58,13 @@ export const StepSummaryForRun = (props: Props) => {
         ? qs.stringify({focusedTime: Math.floor(step.endTime * 1000)}, {addQueryPrefix: true})
         : '';
       return (
-        <Caption color={Colors.textLight()}>
+        <Caption color={Colors.Gray500}>
           Failed at <Link to={`/runs/${runId}${query}`}>{step.stepKey}</Link>
         </Caption>
       );
     }
     return (
-      <Caption color={Colors.textLight()}>
+      <Caption color={Colors.Gray500}>
         Failed at <Link to={`/runs/${runId}`}>{stepCount} steps</Link>
       </Caption>
     );
@@ -77,13 +77,13 @@ export const StepSummaryForRun = (props: Props) => {
         ? qs.stringify({focusedTime: Math.floor(step.endTime * 1000)}, {addQueryPrefix: true})
         : '';
       return (
-        <Caption color={Colors.textLight()}>
+        <Caption color={Colors.Gray500}>
           In progress at <Link to={`/runs/${runId}${query}`}>{step.stepKey}</Link>
         </Caption>
       );
     }
     return (
-      <Caption color={Colors.textLight()}>
+      <Caption color={Colors.Gray500}>
         In progress at <Link to={`/runs/${runId}`}>{stepCount} steps</Link>
       </Caption>
     );

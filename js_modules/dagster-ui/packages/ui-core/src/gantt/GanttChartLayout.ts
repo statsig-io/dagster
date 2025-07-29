@@ -1,5 +1,7 @@
 import {Colors} from '@dagster-io/ui-components';
 
+import {IRunMetadataDict, IStepAttempt, IStepState} from '../runs/RunMetadataProvider';
+
 import {
   BOX_DOT_WIDTH_CUTOFF,
   BOX_SPACING_X,
@@ -13,8 +15,7 @@ import {
   IGanttNode,
   LEFT_INSET,
 } from './Constants';
-import {dynamicKeyWithoutIndex, isDynamicStep, isPlannedDynamicStep} from './DynamicStepSupport';
-import {IRunMetadataDict, IStepAttempt, IStepState} from '../runs/RunMetadataProvider';
+import {isDynamicStep, isPlannedDynamicStep, dynamicKeyWithoutIndex} from './DynamicStepSupport';
 
 export interface BuildLayoutParams {
   nodes: IGanttNode[];
@@ -194,7 +195,6 @@ const ensureSubtreeAfterParentInArray = (
 
 const addChildren = (boxes: GanttChartBox[], box: GanttChartBox, params: BuildLayoutParams) => {
   const seen: string[] = [];
-  const seenSet: Set<string> = new Set();
   const added: GanttChartBox[] = [];
 
   for (const out of box.node.outputs) {
@@ -204,7 +204,7 @@ const addChildren = (boxes: GanttChartBox[], box: GanttChartBox, params: BuildLa
         continue;
       }
 
-      if (seenSet.has(depNode.name)) {
+      if (seen.includes(depNode.name)) {
         continue;
       }
 
@@ -219,7 +219,6 @@ const addChildren = (boxes: GanttChartBox[], box: GanttChartBox, params: BuildLa
       }
 
       seen.push(depNode.name);
-      seenSet.add(depNode.name);
 
       const depBoxIdx = boxes.findIndex((r) => r.node === depNode);
       let depBox: GanttChartBox;
@@ -255,21 +254,21 @@ const addChildren = (boxes: GanttChartBox[], box: GanttChartBox, params: BuildLa
 };
 
 const TextColorForStates = {
-  [IStepState.RUNNING]: Colors.textBlue(),
-  [IStepState.RETRY_REQUESTED]: Colors.accentWhite(),
-  [IStepState.SUCCEEDED]: Colors.accentWhite(),
-  [IStepState.FAILED]: Colors.accentWhite(),
-  [IStepState.SKIPPED]: Colors.accentWhite(),
-  [IStepState.UNKNOWN]: Colors.accentWhite(),
+  [IStepState.RUNNING]: Colors.Blue700,
+  [IStepState.RETRY_REQUESTED]: Colors.White,
+  [IStepState.SUCCEEDED]: Colors.White,
+  [IStepState.FAILED]: Colors.White,
+  [IStepState.SKIPPED]: Colors.White,
+  [IStepState.UNKNOWN]: Colors.White,
 };
 
 const BackgroundColorForStates = {
-  [IStepState.RUNNING]: Colors.backgroundBlue(),
-  [IStepState.RETRY_REQUESTED]: Colors.accentYellow(),
-  [IStepState.SUCCEEDED]: Colors.accentGreen(),
-  [IStepState.FAILED]: Colors.accentRed(),
-  [IStepState.SKIPPED]: Colors.accentGray(),
-  [IStepState.UNKNOWN]: Colors.accentGrayHover(),
+  [IStepState.RUNNING]: Colors.Blue100,
+  [IStepState.RETRY_REQUESTED]: Colors.Yellow500,
+  [IStepState.SUCCEEDED]: Colors.Green500,
+  [IStepState.FAILED]: Colors.Red500,
+  [IStepState.SKIPPED]: Colors.Gray500,
+  [IStepState.UNKNOWN]: Colors.Gray400,
 };
 
 export const boxStyleFor = (
@@ -290,16 +289,16 @@ export const boxStyleFor = (
   // Step has started and has state? Return state color.
   if (state && state !== IStepState.PREPARING) {
     return {
-      color: TextColorForStates[state] || Colors.accentReversed(),
-      background: BackgroundColorForStates[state] || Colors.backgroundLight(),
+      color: TextColorForStates[state] || Colors.White,
+      background: BackgroundColorForStates[state] || Colors.Gray400,
     };
   }
 
   // Step has not started, use "hypothetical dotted box".
   return {
-    color: Colors.textLight(),
-    background: Colors.backgroundDefault(),
-    border: `1.5px dotted ${Colors.accentGray()}`,
+    color: Colors.Gray600,
+    background: Colors.White,
+    border: `1.5px dotted ${Colors.Gray500}`,
   };
 };
 

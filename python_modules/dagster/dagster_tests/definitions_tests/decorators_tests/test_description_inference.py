@@ -1,8 +1,8 @@
-import dagster as dg
+from dagster import graph, job, op, resource
 
 
 def test_description_inference():
-    decorators = [dg.job, dg.op, dg.graph, dg.resource]
+    decorators = [job, op, graph, resource]
     for decorator in decorators:
 
         @decorator
@@ -11,4 +11,4 @@ def test_description_inference():
             multiline description.
             """
 
-        assert my_thing.description == "\n".join(["Here is some", "multiline description."])  # pyright: ignore[reportFunctionMemberAccess]
+        assert my_thing.description == "\n".join(["Here is some", "multiline description."])

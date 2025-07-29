@@ -1,9 +1,9 @@
 import pandas as pd
 from dagster_duckdb import DuckDBResource
 
-from dagster import AssetSpec, Definitions, asset
+from dagster import Definitions, SourceAsset, asset
 
-iris_harvest_data = AssetSpec(key="iris_harvest_data")
+iris_harvest_data = SourceAsset(key="iris_harvest_data")
 
 
 @asset

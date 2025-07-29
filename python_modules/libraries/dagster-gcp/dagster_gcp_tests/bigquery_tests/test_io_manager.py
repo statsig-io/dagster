@@ -1,22 +1,40 @@
 import base64
 import os
+import uuid
+from contextlib import contextmanager
 from datetime import datetime
+from typing import Iterator
 
 import pytest
-from dagster import InputContext, OutputContext, asset, materialize
-from dagster._core.definitions.partitions.utils import TimeWindow
+from dagster import InputContext, OutputContext, TimeWindow, asset, materialize
 from dagster._core.storage.db_io_manager import DbTypeHandler, TablePartitionDimension, TableSlice
 from dagster_gcp.bigquery.io_manager import (
     BigQueryClient,
     _get_cleanup_statement,
     build_bigquery_io_manager,
 )
+from google.cloud import bigquery
 
-from dagster_gcp_tests.bigquery_tests.conftest import (
-    IS_BUILDKITE,
-    SHARED_BUILDKITE_BQ_CONFIG,
-    temporary_bigquery_table,
-)
+IS_BUILDKITE = os.getenv("BUILDKITE") is not None
+
+SHARED_BUILDKITE_BQ_CONFIG = {
+    "project": os.getenv("GCP_PROJECT_ID"),
+}
+
+
+@contextmanager
+def temporary_bigquery_table(schema_name: str, column_str: str) -> Iterator[str]:
+    bq_client = bigquery.Client(
+        project=SHARED_BUILDKITE_BQ_CONFIG["project"],
+    )
+    table_name = "test_io_manager_" + str(uuid.uuid4()).replace("-", "_")
+    bq_client.query(f"create table {schema_name}.{table_name} ({column_str})").result()
+    try:
+        yield table_name
+    finally:
+        bq_client.query(
+            f"drop table {SHARED_BUILDKITE_BQ_CONFIG['project']}.{schema_name}.{table_name}"
+        ).result()
 
 
 def test_get_select_statement():
@@ -223,7 +241,7 @@ def test_authenticate_via_config():
         passed = False
 
         try:
-            with open(old_gcp_creds_file) as f:
+            with open(old_gcp_creds_file, "r") as f:
                 gcp_creds = f.read()
 
             bq_io_manager = build_bigquery_io_manager([FakeHandler()]).configured(

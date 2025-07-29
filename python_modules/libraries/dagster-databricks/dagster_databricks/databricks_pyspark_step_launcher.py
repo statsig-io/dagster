@@ -6,8 +6,7 @@ import sys
 import tempfile
 import time
 import zlib
-from collections.abc import Iterator, Mapping, Sequence
-from typing import Any, Optional, cast
+from typing import Any, Dict, Iterator, Mapping, Optional, Sequence, cast
 
 from dagster import (
     Bool,
@@ -18,15 +17,10 @@ from dagster import (
     _check as check,
     resource,
 )
-from dagster._core.definitions.metadata import MetadataValue, RawMetadataValue
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
-from dagster._core.definitions.step_launcher import (
-    StepLauncher,
-    StepRunRef,
-    _step_launcher_supersession,
-)
-from dagster._core.errors import DagsterInvariantViolationError, raise_execution_interrupts
-from dagster._core.events import DagsterEvent, DagsterEventType, EngineEventData
+from dagster._core.definitions.step_launcher import StepLauncher, StepRunRef
+from dagster._core.errors import raise_execution_interrupts
+from dagster._core.events import DagsterEvent
 from dagster._core.events.log import EventLogEntry
 from dagster._core.execution.context.init import InitResourceContext
 from dagster._core.execution.context.system import StepExecutionContext
@@ -40,11 +34,15 @@ from dagster._serdes import deserialize_value
 from dagster._utils.backoff import backoff
 from dagster_pyspark.utils import build_pyspark_zip
 from databricks.sdk.core import DatabricksError
-from databricks.sdk.service import iam
+from databricks.sdk.service import jobs
 
 from dagster_databricks import databricks_step_main
-from dagster_databricks.configs import (
-    define_azure_credentials,
+from dagster_databricks.databricks import (
+    DEFAULT_RUN_MAX_WAIT_TIME_SEC,
+    DatabricksJobRunner,
+)
+
+from .configs import (
     define_databricks_env_variables,
     define_databricks_permissions,
     define_databricks_secrets_config,
@@ -52,7 +50,6 @@ from dagster_databricks.configs import (
     define_databricks_submit_run_config,
     define_oauth_credentials,
 )
-from dagster_databricks.databricks import DEFAULT_RUN_MAX_WAIT_TIME_SEC, DatabricksJobRunner
 
 CODE_ZIP_NAME = "code.zip"
 PICKLED_CONFIG_FILE_NAME = "config.pkl"
@@ -77,8 +74,8 @@ DAGSTER_SYSTEM_ENV_VARS = {
         "run_config": define_databricks_submit_run_config(),
         "permissions": define_databricks_permissions(),
         "databricks_host": Field(
-            Noneable(StringSource),
-            default_value=None,
+            StringSource,
+            is_required=True,
             description="Databricks host, e.g. uksouth.azuredatabricks.com",
         ),
         "databricks_token": Field(
@@ -87,7 +84,6 @@ DAGSTER_SYSTEM_ENV_VARS = {
             description="Databricks access token",
         ),
         "oauth_credentials": define_oauth_credentials(),
-        "azure_credentials": define_azure_credentials(),
         "env_variables": define_databricks_env_variables(),
         "secrets_to_env_variables": define_databricks_secrets_config(),
         "storage": define_databricks_storage_config(),
@@ -174,7 +170,6 @@ DAGSTER_SYSTEM_ENV_VARS = {
         ),
     }
 )
-@_step_launcher_supersession
 def databricks_pyspark_step_launcher(
     context: InitResourceContext,
 ) -> "DatabricksPySparkStepLauncher":
@@ -194,20 +189,18 @@ def databricks_pyspark_step_launcher(
     return DatabricksPySparkStepLauncher(**context.resource_config)
 
 
-@_step_launcher_supersession
 class DatabricksPySparkStepLauncher(StepLauncher):
     def __init__(
         self,
         run_config: Mapping[str, Any],
         permissions: Mapping[str, Any],
-        databricks_host: Optional[str],
+        databricks_host: str,
         secrets_to_env_variables: Sequence[Mapping[str, Any]],
         staging_prefix: str,
         wait_for_logs: bool,
         max_completion_wait_time_seconds: int,
         databricks_token: Optional[str] = None,
         oauth_credentials: Optional[Mapping[str, str]] = None,
-        azure_credentials: Optional[Mapping[str, str]] = None,
         env_variables: Optional[Mapping[str, str]] = None,
         storage: Optional[Mapping[str, Any]] = None,
         poll_interval_sec: int = 5,
@@ -219,16 +212,19 @@ class DatabricksPySparkStepLauncher(StepLauncher):
         self.run_config = check.mapping_param(run_config, "run_config")
         self.permissions = check.mapping_param(permissions, "permissions")
         self.databricks_host = check.str_param(databricks_host, "databricks_host")
+
+        check.invariant(
+            databricks_token is not None or oauth_credentials is not None,
+            "Must provide either databricks_token or oauth_credentials",
+        )
+        check.invariant(
+            databricks_token is None or oauth_credentials is None,
+            "Must provide either databricks_token or oauth_credentials, but cannot provide both",
+        )
         self.databricks_token = check.opt_str_param(databricks_token, "databricks_token")
         oauth_credentials = check.opt_mapping_param(
             oauth_credentials,
             "oauth_credentials",
-            key_type=str,
-            value_type=str,
-        )
-        azure_credentials = check.opt_mapping_param(
-            azure_credentials,
-            "azure_credentials",
             key_type=str,
             value_type=str,
         )
@@ -261,9 +257,6 @@ class DatabricksPySparkStepLauncher(StepLauncher):
             token=databricks_token,
             oauth_client_id=oauth_credentials.get("client_id"),
             oauth_client_secret=oauth_credentials.get("client_secret"),
-            azure_client_id=azure_credentials.get("azure_client_id"),
-            azure_client_secret=azure_credentials.get("azure_client_secret"),
-            azure_tenant_id=azure_credentials.get("azure_tenant_id"),
             poll_interval_sec=poll_interval_sec,
             max_wait_time_sec=max_completion_wait_time_seconds,
         )
@@ -294,7 +287,7 @@ class DatabricksPySparkStepLauncher(StepLauncher):
             with raise_execution_interrupts():
                 yield from self.step_events_iterator(step_context, step_key, databricks_run_id)
         except:
-            # if execution is interrupted before the step is completed, cancel the run
+            # if executon is interrupted before the step is completed, cancel the run
             self.databricks_runner.client.workspace_client.jobs.cancel_run(databricks_run_id)
             raise
         finally:
@@ -329,25 +322,6 @@ class DatabricksPySparkStepLauncher(StepLauncher):
                 f" {step_key}. Check the databricks console for more info."
             )
 
-    def get_databricks_run_dagster_event(
-        self, context: StepExecutionContext, databricks_run_id: int
-    ) -> DagsterEvent:
-        metadata: dict[str, RawMetadataValue] = {"step_key": context.node_handle.name}
-        run = self.databricks_runner.client.workspace_client.jobs.get_run(
-            databricks_run_id
-        ).as_dict()
-        run_page_url = run.get("run_page_url")
-        if run_page_url:
-            metadata["databricks_run_url"] = MetadataValue.url(run_page_url)
-        return DagsterEvent.from_step(
-            event_type=DagsterEventType.ENGINE_EVENT,
-            message=f"Waiting for Databricks run {databricks_run_id} to complete...",
-            step_context=context,
-            event_specific_data=EngineEventData(
-                metadata=metadata,
-            ),
-        )
-
     def step_events_iterator(
         self, step_context: StepExecutionContext, step_key: str, databricks_run_id: int
     ) -> Iterator[DagsterEvent]:
@@ -364,7 +338,7 @@ class DatabricksPySparkStepLauncher(StepLauncher):
         processed_events = 0
         start_poll_time = time.time()
         done = False
-        yield self.get_databricks_run_dagster_event(step_context, databricks_run_id)
+        step_context.log.info("Waiting for Databricks run %s to complete..." % databricks_run_id)
         while not done:
             with raise_execution_interrupts():
                 if self.verbose_logs:
@@ -405,7 +379,7 @@ class DatabricksPySparkStepLauncher(StepLauncher):
             if not serialized_records:
                 return []
             return cast(
-                "Sequence[EventLogEntry]",
+                Sequence[EventLogEntry],
                 deserialize_value(pickle.loads(gzip.decompress(serialized_records))),
             )
 
@@ -425,7 +399,7 @@ class DatabricksPySparkStepLauncher(StepLauncher):
             raise
 
     def _grant_permissions(
-        self, log: DagsterLogManager, databricks_run_id: int, request_retries: int = 6
+        self, log: DagsterLogManager, databricks_run_id: int, request_retries: int = 3
     ) -> None:
         client = self.databricks_runner.client.workspace_client
         # Retrieve run info
@@ -434,19 +408,14 @@ class DatabricksPySparkStepLauncher(StepLauncher):
             run_info = client.jobs.get_run(databricks_run_id)
             # if a new job cluster is created, the cluster_instance key may not be immediately present in the run response
             try:
-                if run_info.tasks is not None and run_info.tasks[0].cluster_instance is not None:
-                    cluster_id = run_info.tasks[0].cluster_instance.cluster_id
-                else:
-                    raise DagsterInvariantViolationError(
-                        f"run_info {run_info} doesn't contain cluster_id"
-                    )
+                cluster_id = run_info.cluster_instance.cluster_id
                 break
             except:
                 log.warning(
                     f"Failed to retrieve cluster info for databricks_run_id {databricks_run_id}. "
                     f"Retrying {i} of {request_retries} times."
                 )
-                time.sleep(10)
+                time.sleep(5)
         if not cluster_id:
             log.warning(
                 f"Failed to retrieve cluster info for databricks_run_id {databricks_run_id} "
@@ -457,12 +426,9 @@ class DatabricksPySparkStepLauncher(StepLauncher):
         # Update job permissions
         if "job_permissions" in self.permissions:
             job_permissions = self._format_permissions(self.permissions["job_permissions"])
-            job_id = check.not_none(
-                run_info.job_id,  # pyright: ignore[reportPossiblyUnboundVariable]
-                f"Databricks run {databricks_run_id} has null job_id",
-            )
+            job_id = run_info.job_id  # type: ignore  # (??)
             log.debug(f"Updating job permissions with following json: {job_permissions}")
-            client.permissions.update("jobs", str(job_id), access_control_list=job_permissions)
+            client.permissions.update("jobs", job_id, access_control_list=job_permissions)
             log.info("Successfully updated cluster permissions")
 
         # Update cluster permissions
@@ -481,12 +447,14 @@ class DatabricksPySparkStepLauncher(StepLauncher):
 
     def _format_permissions(
         self, input_permissions: Mapping[str, Sequence[Mapping[str, str]]]
-    ) -> list[iam.AccessControlRequest]:
+    ) -> Sequence[Mapping[str, str]]:
         access_control_list = []
         for permission, accessors in input_permissions.items():
             access_control_list.extend(
                 [
-                    iam.AccessControlRequest.from_dict({"permission_level": permission, **accessor})
+                    jobs.JobAccessControlRequest.from_dict(
+                        {"permission_level": permission, **accessor}
+                    )
                     for accessor in accessors
                 ]
             )
@@ -552,7 +520,7 @@ class DatabricksPySparkStepLauncher(StepLauncher):
             overwrite=True,
         )
 
-    def get_dagster_env_variables(self) -> dict[str, str]:
+    def get_dagster_env_variables(self) -> Dict[str, str]:
         out = {}
         if self.add_dagster_env_variables:
             for var in DAGSTER_SYSTEM_ENV_VARS:

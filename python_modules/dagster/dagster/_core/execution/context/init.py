@@ -1,9 +1,7 @@
-import asyncio
-from collections.abc import Mapping
-from typing import Any, Optional, Union
+from typing import Any, Mapping, Optional, Union
 
 import dagster._check as check
-from dagster._annotations import deprecated, public
+from dagster._annotations import public
 from dagster._core.definitions.resource_definition import (
     IContainsGenerator,
     ResourceDefinition,
@@ -34,21 +32,17 @@ class InitResourceContext:
         self,
         resource_config: Any,
         resources: Resources,
-        resource_def: Optional[ResourceDefinition],
-        all_resource_defs: Mapping[str, ResourceDefinition],
+        resource_def: Optional[ResourceDefinition] = None,
         instance: Optional[DagsterInstance] = None,
         dagster_run: Optional[DagsterRun] = None,
         log_manager: Optional[DagsterLogManager] = None,
-        event_loop: Optional[asyncio.AbstractEventLoop] = None,
     ):
         self._resource_config = resource_config
         self._resource_def = resource_def
-        self._all_resource_defs = all_resource_defs
         self._log_manager = log_manager
         self._instance = instance
         self._resources = resources
         self._dagster_run = dagster_run
-        self._event_loop = event_loop
 
     @public
     @property
@@ -61,14 +55,14 @@ class InitResourceContext:
 
     @public
     @property
-    def resource_def(self) -> ResourceDefinition:
+    def resource_def(self) -> Optional[ResourceDefinition]:
         """The definition of the resource currently being constructed."""
-        return check.not_none(self._resource_def)
+        return self._resource_def
 
     @public
     @property
     def resources(self) -> Resources:
-        """The resources that are available to the resource that we are initializing."""
+        """The resources that are available to the resource that we are initalizing."""
         return self._resources
 
     @public
@@ -77,17 +71,6 @@ class InitResourceContext:
         """The Dagster instance configured for the current execution context."""
         return self._instance
 
-    @public
-    @property
-    def run(self) -> Optional[DagsterRun]:
-        """The dagster run to use. When initializing resources outside of execution context, this will be None."""
-        return self._dagster_run
-
-    @deprecated(
-        breaking_version="a future release",
-        subject="InitResourceContext.dagster_run",
-        additional_warn_text="You have called the deprecated method dagster_run on InitResourceContext. Use context.run instead.",
-    )
     @property
     def dagster_run(self) -> Optional[DagsterRun]:
         """The dagster run to use. When initializing resources outside of execution context, this will be None."""
@@ -106,11 +89,7 @@ class InitResourceContext:
         """The log manager for this run of the job."""
         return self._log_manager
 
-    @deprecated(
-        breaking_version="a future release",
-        subject="InitResourceContext.run_id",
-        additional_warn_text="You have called the deprecated method run_id on InitResourceContext. Use context.run.run_id instead.",
-    )
+    @public
     @property
     def run_id(self) -> Optional[str]:
         """The id for this run of the job or pipeline. When initializing resources outside of
@@ -118,24 +97,15 @@ class InitResourceContext:
         """
         return self.dagster_run.run_id if self.dagster_run else None
 
-    @property
-    def all_resource_defs(self) -> Mapping[str, ResourceDefinition]:
-        return self._all_resource_defs
-
     def replace_config(self, config: Any) -> "InitResourceContext":
         return InitResourceContext(
             resource_config=config,
             resources=self.resources,
             instance=self.instance,
             resource_def=self.resource_def,
-            all_resource_defs=self.all_resource_defs,
             dagster_run=self.dagster_run,
             log_manager=self.log,
         )
-
-    @property
-    def event_loop(self) -> Optional[asyncio.AbstractEventLoop]:
-        return self._event_loop
 
 
 class UnboundInitResourceContext(InitResourceContext):
@@ -172,7 +142,6 @@ class UnboundInitResourceContext(InitResourceContext):
 
         if isinstance(resources, Resources):
             check.failed("Should not have a Resources object directly from this initialization")
-        self._raw_resources = resources
 
         self._resource_defs = wrap_resources_for_execution(
             check.opt_mapping_param(resources, "resources")
@@ -183,11 +152,10 @@ class UnboundInitResourceContext(InitResourceContext):
         self._resources_contain_cm = isinstance(resources, IContainsGenerator)
 
         self._cm_scope_entered = False
-        super().__init__(
+        super(UnboundInitResourceContext, self).__init__(
             resource_config=resource_config,
             resources=resources,
             resource_def=None,
-            all_resource_defs={},
             instance=instance,
             dagster_run=None,
             log_manager=initialize_console_manager(None),
@@ -213,9 +181,9 @@ class UnboundInitResourceContext(InitResourceContext):
         return self._resource_config
 
     @property
-    def resource_def(self) -> Optional[ResourceDefinition]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def resource_def(self) -> Optional[ResourceDefinition]:
         raise DagsterInvariantViolationError(
-            "UnboundInitResourceContext has not been bound to resource definition."
+            "UnboundInitLoggerContext has not been validated against a logger definition."
         )
 
     @property
@@ -245,13 +213,6 @@ class UnboundInitResourceContext(InitResourceContext):
     @property
     def run_id(self) -> Optional[str]:
         return None
-
-    def replace_config(self, config: Any) -> "UnboundInitResourceContext":
-        return UnboundInitResourceContext(
-            resource_config=config,
-            resources=self._raw_resources,
-            instance=self.instance,
-        )
 
 
 def build_init_resource_context(

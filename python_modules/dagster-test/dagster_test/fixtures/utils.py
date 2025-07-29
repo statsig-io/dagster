@@ -25,8 +25,7 @@ def sigterm_handler():
 def retrying_requests():
     session = requests.Session()
     session.mount(
-        "http://",
-        requests.adapters.HTTPAdapter(max_retries=Retry(total=5, backoff_factor=1)),  # pyright: ignore[reportAttributeAccessIssue]
+        "http://", requests.adapters.HTTPAdapter(max_retries=Retry(total=5, backoff_factor=1))
     )
     yield session
 

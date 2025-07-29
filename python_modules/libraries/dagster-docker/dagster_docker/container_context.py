@@ -1,5 +1,4 @@
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, cast
+from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Optional, Sequence, cast
 
 from dagster import (
     Array,
@@ -14,7 +13,7 @@ from dagster._core.errors import DagsterInvalidConfigError
 from dagster._core.storage.dagster_run import DagsterRun
 
 if TYPE_CHECKING:
-    from dagster_docker import DockerRunLauncher
+    from . import DockerRunLauncher
 
 DOCKER_CONTAINER_CONTEXT_SCHEMA = {
     "registry": Field(
@@ -80,7 +79,7 @@ class DockerContainerContext(
         networks: Optional[Sequence[str]] = None,
         container_kwargs: Optional[Mapping[str, Any]] = None,
     ):
-        return super().__new__(
+        return super(DockerContainerContext, cls).__new__(
             cls,
             registry=check.opt_nullable_mapping_param(registry, "registry"),
             env_vars=check.opt_sequence_param(env_vars, "env_vars", of_type=str),
@@ -155,7 +154,7 @@ class DockerContainerContext(
                 run_docker_container_context,
             )
 
-        processed_context_value = cast("Mapping[str, Any]", processed_container_context.value)
+        processed_context_value = cast(Mapping[str, Any], processed_container_context.value)
 
         return shared_container_context.merge(
             DockerContainerContext(

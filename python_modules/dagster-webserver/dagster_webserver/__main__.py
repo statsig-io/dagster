@@ -1,3 +1,3 @@
-from dagster_webserver.cli import main  # pragma: no cover
+from .cli import main  # pragma: no cover
 
 main()  # pragma: no cover

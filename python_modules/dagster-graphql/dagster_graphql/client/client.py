@@ -1,30 +1,25 @@
-from collections.abc import Iterable, Mapping, Sequence
 from itertools import chain
-from typing import Any, Optional, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Union
 
 import dagster._check as check
 import requests.exceptions
 from dagster import DagsterRunStatus
-from dagster._annotations import deprecated, public
-from dagster._core.definitions.asset_key import AssetKey, CoercibleToAssetKey
+from dagster._annotations import experimental, public
 from dagster._core.definitions.run_config import RunConfig, convert_config_input
-from dagster._utils.tags import normalize_tags
+from dagster._core.definitions.utils import validate_tags
 from gql import Client, gql
 from gql.transport import Transport
-from gql.transport.exceptions import TransportServerError
 from gql.transport.requests import RequestsHTTPTransport
-from requests.auth import AuthBase
 
-from dagster_graphql.client.client_queries import (
+from .client_queries import (
     CLIENT_GET_REPO_LOCATIONS_NAMES_AND_PIPELINES_QUERY,
     CLIENT_SUBMIT_PIPELINE_RUN_MUTATION,
     GET_PIPELINE_RUN_STATUS_QUERY,
     RELOAD_REPOSITORY_LOCATION_MUTATION,
     SHUTDOWN_REPOSITORY_LOCATION_MUTATION,
     TERMINATE_RUN_JOB_MUTATION,
-    TERMINATE_RUNS_JOB_MUTATION,
 )
-from dagster_graphql.client.utils import (
+from .utils import (
     DagsterGraphQLClientError,
     InvalidOutputErrorInfo,
     JobInfo,
@@ -35,6 +30,7 @@ from dagster_graphql.client.utils import (
 )
 
 
+@experimental
 class DagsterGraphQLClient:
     """Official Dagster Python Client for GraphQL.
 
@@ -51,7 +47,7 @@ class DagsterGraphQLClient:
 
     Args:
         hostname (str): Hostname for the Dagster GraphQL API, like `localhost` or
-            `YOUR_ORG_HERE.dagster.cloud`.
+            `dagster.YOUR_ORG_HERE`.
         port_number (Optional[int]): Port number to connect to on the host.
             Defaults to None.
         transport (Optional[Transport], optional): A custom transport to use to connect to the
@@ -74,8 +70,7 @@ class DagsterGraphQLClient:
         transport: Optional[Transport] = None,
         use_https: bool = False,
         timeout: int = 300,
-        headers: Optional[dict[str, str]] = None,
-        auth: Optional[AuthBase] = None,
+        headers: Optional[Dict[str, str]] = None,
     ):
         self._hostname = check.str_param(hostname, "hostname")
         self._port_number = check.opt_int_param(port_number, "port_number")
@@ -92,7 +87,7 @@ class DagsterGraphQLClient:
             "transport",
             Transport,
             default=RequestsHTTPTransport(
-                url=self._url, use_json=True, timeout=timeout, headers=headers, auth=auth
+                url=self._url, use_json=True, timeout=timeout, headers=headers
             ),
         )
         try:
@@ -105,22 +100,16 @@ class DagsterGraphQLClient:
                 + "correctly?"
             ) from exc
 
-    def _execute(self, query: str, variables: Optional[dict[str, Any]] = None):
+    def _execute(self, query: str, variables: Optional[Dict[str, Any]] = None):
         try:
             return self._client.execute(gql(query), variable_values=variables)
-        except TransportServerError as exc:
-            raise DagsterGraphQLClientError(
-                f"Server error with code {exc.code}\nand message {exc}\n"
-                f"occured during execution of query \n{query}\n with variables"
-                f" \n{variables}\n"
-            ) from exc
         except Exception as exc:  # catch generic Exception from the gql client
             raise DagsterGraphQLClientError(
                 f"Exception occured during execution of query \n{query}\n with variables"
                 f" \n{variables}\n"
             ) from exc
 
-    def _get_repo_locations_and_names_with_pipeline(self, job_name: str) -> list[JobInfo]:
+    def _get_repo_locations_and_names_with_pipeline(self, job_name: str) -> List[JobInfo]:
         res_data = self._execute(CLIENT_GET_REPO_LOCATIONS_NAMES_AND_PIPELINES_QUERY)
         query_res = res_data["repositoriesOrError"]
         repo_connection_status = query_res["__typename"]
@@ -140,7 +129,6 @@ class DagsterGraphQLClient:
         preset: Optional[str] = None,
         tags: Optional[Mapping[str, str]] = None,
         op_selection: Optional[Sequence[str]] = None,
-        asset_selection: Optional[Sequence[CoercibleToAssetKey]] = None,
         is_using_job_op_graph_apis: Optional[bool] = False,
     ):
         check.opt_str_param(repository_location_name, "repository_location_name")
@@ -156,7 +144,7 @@ class DagsterGraphQLClient:
             "Either a mode and run_config or a preset must be specified in order to "
             f"submit the pipeline {pipeline_name} for execution",
         )
-        tags = normalize_tags(tags)
+        tags = validate_tags(tags)
 
         pipeline_or_job = "Job" if is_using_job_op_graph_apis else "Pipeline"
 
@@ -179,21 +167,13 @@ class DagsterGraphQLClient:
                     f" name {pipeline_name}.\n\tchoose one of: {job_info_lst}"
                 )
 
-        asset_key_input = None
-        if asset_selection is not None:
-            asset_key_input = [
-                AssetKey.from_coercible(coercible).to_graphql_input()
-                for coercible in asset_selection
-            ]
-
-        variables: dict[str, Any] = {
+        variables: Dict[str, Any] = {
             "executionParams": {
                 "selector": {
                     "repositoryLocationName": repository_location_name,
                     "repositoryName": repository_name,
                     "pipelineName": pipeline_name,
                     "solidSelection": op_selection,
-                    "assetSelection": asset_key_input,
                 }
             }
         }
@@ -209,7 +189,7 @@ class DagsterGraphQLClient:
                 ),
             }
 
-        res_data: dict[str, Any] = self._execute(CLIENT_SUBMIT_PIPELINE_RUN_MUTATION, variables)
+        res_data: Dict[str, Any] = self._execute(CLIENT_SUBMIT_PIPELINE_RUN_MUTATION, variables)
         query_result = res_data["launchPipelineExecution"]
         query_result_type = query_result["__typename"]
         if (
@@ -232,7 +212,7 @@ class DagsterGraphQLClient:
             raise DagsterGraphQLClientError(query_result_type, query_result["errors"])
         else:
             # query_result_type is a ConflictingExecutionParamsError, a PresetNotFoundError
-            # a PipelineNotFoundError, a RunConflict, an UnauthorizedError or a PythonError
+            # a PipelineNotFoundError, a RunConflict, or a PythonError
             raise DagsterGraphQLClientError(query_result_type, query_result["message"])
 
     @public
@@ -241,10 +221,9 @@ class DagsterGraphQLClient:
         job_name: str,
         repository_location_name: Optional[str] = None,
         repository_name: Optional[str] = None,
-        run_config: Optional[Union[RunConfig, Mapping[str, Any]]] = None,
-        tags: Optional[dict[str, Any]] = None,
+        run_config: Optional[Dict[str, Any]] = None,
+        tags: Optional[Dict[str, Any]] = None,
         op_selection: Optional[Sequence[str]] = None,
-        asset_selection: Optional[Sequence[CoercibleToAssetKey]] = None,
     ) -> str:
         """Submits a job with attached configuration for execution.
 
@@ -256,14 +235,12 @@ class DagsterGraphQLClient:
             repository_name (Optional[str]): The name of the repository where the job is located.
                 If omitted, the client will try to infer the repository from the available options
                 on the Dagster deployment. Defaults to None.
-            run_config (Optional[Union[RunConfig, Mapping[str, Any]]]): This is the run config to execute the job with.
+            run_config (Optional[Dict[str, Any]]): This is the run config to execute the job with.
                 Note that runConfigData is any-typed in the GraphQL type system. This type is used when passing in
                 an arbitrary object for run config. However, it must conform to the constraints of the config
                 schema for this job. If it does not, the client will throw a DagsterGraphQLClientError with a message of
                 JobConfigValidationInvalid. Defaults to None.
             tags (Optional[Dict[str, Any]]): A set of tags to add to the job execution.
-            op_selection (Optional[Sequence[str]]): A list of ops to execute.
-            asset_selection (Optional[Sequence[CoercibleToAssetKey]]): A list of asset keys to execute.
 
         Raises:
             DagsterGraphQLClientError("InvalidStepError", invalid_step_key): the job has an invalid step
@@ -288,7 +265,6 @@ class DagsterGraphQLClient:
             preset=None,
             tags=tags,
             op_selection=op_selection,
-            asset_selection=asset_selection,
             is_using_job_op_graph_apis=True,
         )
 
@@ -308,10 +284,10 @@ class DagsterGraphQLClient:
         """
         check.str_param(run_id, "run_id")
 
-        res_data: dict[str, dict[str, Any]] = self._execute(
+        res_data: Dict[str, Dict[str, Any]] = self._execute(
             GET_PIPELINE_RUN_STATUS_QUERY, {"runId": run_id}
         )
-        query_result: dict[str, Any] = res_data["pipelineRunOrError"]
+        query_result: Dict[str, Any] = res_data["pipelineRunOrError"]
         query_result_type: str = query_result["__typename"]
         if query_result_type == "PipelineRun" or query_result_type == "Run":
             return DagsterRunStatus(query_result["status"])
@@ -335,12 +311,12 @@ class DagsterGraphQLClient:
         """
         check.str_param(repository_location_name, "repository_location_name")
 
-        res_data: dict[str, dict[str, Any]] = self._execute(
+        res_data: Dict[str, Dict[str, Any]] = self._execute(
             RELOAD_REPOSITORY_LOCATION_MUTATION,
             {"repositoryLocationName": repository_location_name},
         )
 
-        query_result: dict[str, Any] = res_data["reloadRepositoryLocation"]
+        query_result: Dict[str, Any] = res_data["reloadRepositoryLocation"]
         query_result_type: str = query_result["__typename"]
         if query_result_type == "WorkspaceLocationEntry":
             location_or_error_type = query_result["locationOrLoadError"]["__typename"]
@@ -360,7 +336,6 @@ class DagsterGraphQLClient:
                 message=query_result["message"],
             )
 
-    @deprecated(breaking_version="2.0")
     @public
     def shutdown_repository_location(
         self, repository_location_name: str
@@ -380,12 +355,12 @@ class DagsterGraphQLClient:
         """
         check.str_param(repository_location_name, "repository_location_name")
 
-        res_data: dict[str, dict[str, Any]] = self._execute(
+        res_data: Dict[str, Dict[str, Any]] = self._execute(
             SHUTDOWN_REPOSITORY_LOCATION_MUTATION,
             {"repositoryLocationName": repository_location_name},
         )
 
-        query_result: dict[str, Any] = res_data["shutdownRepositoryLocation"]
+        query_result: Dict[str, Any] = res_data["shutdownRepositoryLocation"]
         query_result_type: str = query_result["__typename"]
         if query_result_type == "ShutdownRepositoryLocationSuccess":
             return ShutdownRepositoryLocationInfo(status=ShutdownRepositoryLocationStatus.SUCCESS)
@@ -408,11 +383,11 @@ class DagsterGraphQLClient:
         """
         check.str_param(run_id, "run_id")
 
-        res_data: dict[str, dict[str, Any]] = self._execute(
+        res_data: Dict[str, Dict[str, Any]] = self._execute(
             TERMINATE_RUN_JOB_MUTATION, {"runId": run_id}
         )
 
-        query_result: dict[str, Any] = res_data["terminateRun"]
+        query_result: Dict[str, Any] = res_data["terminateRun"]
         query_result_type: str = query_result["__typename"]
         if query_result_type == "TerminateRunSuccess":
             return
@@ -421,39 +396,3 @@ class DagsterGraphQLClient:
             raise DagsterGraphQLClientError("RunNotFoundError", f"Run Id {run_id} not found")
         else:
             raise DagsterGraphQLClientError(query_result_type, query_result["message"])
-
-    def terminate_runs(self, run_ids: list[str]):
-        """Terminates a list of pipeline runs. This method it is useful when you would like to stop a list of pipeline runs
-        based on a external event.
-
-        Args:
-            run_ids (List[str]): The list run ids of the pipeline runs to terminate
-        """
-        check.list_param(run_ids, "run_ids", of_type=str)
-
-        res_data: dict[str, dict[str, Any]] = self._execute(
-            TERMINATE_RUNS_JOB_MUTATION,
-            {"runIds": run_ids},
-        )
-
-        query_result: dict[str, Any] = res_data["terminateRuns"]
-        run_query_result: list[dict[str, Any]] = query_result["terminateRunResults"]
-
-        errors = []
-        for run_result in run_query_result:
-            if run_result["__typename"] == "TerminateRunSuccess":
-                continue
-            elif run_result["__typename"] == "RunNotFoundError":
-                errors.append(("RunNotFoundError", run_result["message"]))
-            else:
-                errors.append((run_result["__typename"], run_result["message"]))
-
-        if errors:
-            if len(errors) < len(run_ids):
-                raise DagsterGraphQLClientError(
-                    "TerminateRunsError", f"Some runs could not be terminated: {errors}"
-                )
-            elif len(errors) == len(run_ids):
-                raise DagsterGraphQLClientError(
-                    "TerminateRunsError", f"All run terminations failed: {errors}"
-                )

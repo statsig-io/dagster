@@ -1,114 +1,94 @@
+import {RefetchQueriesFunction} from '@apollo/client';
 import {
   Box,
   Button,
-  Checkbox,
   Colors,
   Icon,
-  Menu,
   MenuItem,
-  NonIdealState,
+  Menu,
   Popover,
+  Tooltip,
+  Checkbox,
+  NonIdealState,
 } from '@dagster-io/ui-components';
 import groupBy from 'lodash/groupBy';
 import * as React from 'react';
-import {useContext, useMemo} from 'react';
-import {AssetWipeDialog} from 'shared/assets/AssetWipeDialog.oss';
-import {useCatalogExtraDropdownOptions} from 'shared/assets/catalog/useCatalogExtraDropdownOptions.oss';
 
+import {useUnscopedPermissions} from '../app/Permissions';
+import {QueryRefreshCountdown, QueryRefreshState} from '../app/QueryRefresh';
+import {AssetGroupSelector, AssetKeyInput} from '../graphql/types';
+import {useSelectionReducer} from '../hooks/useSelectionReducer';
+import {testId} from '../testing/testId';
+import {VirtualizedAssetTable} from '../workspace/VirtualizedAssetTable';
+
+import {AssetWipeDialog} from './AssetWipeDialog';
 import {LaunchAssetExecutionButton} from './LaunchAssetExecutionButton';
 import {AssetTableFragment} from './types/AssetTableFragment.types';
 import {AssetViewType} from './useAssetView';
-import {RefetchQueriesFunction} from '../apollo-client';
-import {CloudOSSContext} from '../app/CloudOSSContext';
-import {useUnscopedPermissions} from '../app/Permissions';
-import {QueryRefreshCountdown, RefreshState} from '../app/QueryRefresh';
-import {useSelectionReducer} from '../hooks/useSelectionReducer';
-import {InvalidSelectionQueryNotice} from '../pipelines/GraphNotices';
-import {SyntaxError} from '../selection/CustomErrorListener';
-import {VirtualizedAssetTable} from '../workspace/VirtualizedAssetTable';
 
 type Asset = AssetTableFragment;
-
-type AssetWithDefinition = AssetTableFragment & {
-  definition: NonNullable<AssetTableFragment['definition']>;
-};
 
 interface Props {
   view: AssetViewType;
   assets: Asset[];
-  refreshState: RefreshState;
+  refreshState: QueryRefreshState;
   actionBarComponents: React.ReactNode;
-  belowActionBarComponents?: React.ReactNode;
   prefixPath: string[];
   displayPathForAsset: (asset: Asset) => string[];
-  assetSelection: string;
-  isLoading: boolean;
-  onChangeAssetSelection: (selection: string) => void;
-  errorState?: SyntaxError[];
+  requery?: RefetchQueriesFunction;
+  searchPath: string;
+  searchGroups: AssetGroupSelector[];
 }
 
-export const AssetTable = ({
+export const AssetTable: React.FC<Props> = ({
   assets,
   actionBarComponents,
-  belowActionBarComponents,
   refreshState,
   prefixPath,
   displayPathForAsset,
-  assetSelection,
+  requery,
+  searchPath,
+  searchGroups,
   view,
-  isLoading,
-  onChangeAssetSelection,
-  errorState,
-}: Props) => {
-  const groupedByDisplayKey = useMemo(
-    () => groupBy(assets, (a) => JSON.stringify(displayPathForAsset(a))),
-    [assets, displayPathForAsset],
-  );
-  const displayKeys = useMemo(() => Object.keys(groupedByDisplayKey).sort(), [groupedByDisplayKey]);
+}) => {
+  const [toWipe, setToWipe] = React.useState<AssetKeyInput[] | undefined>();
+
+  const groupedByDisplayKey = groupBy(assets, (a) => JSON.stringify(displayPathForAsset(a)));
+  const displayKeys = Object.keys(groupedByDisplayKey).sort();
 
   const [{checkedIds: checkedDisplayKeys}, {onToggleFactory, onToggleAll}] =
     useSelectionReducer(displayKeys);
 
-  const checkedAssets = useMemo(() => {
-    const assets: Asset[] = [];
-    displayKeys.forEach((displayKey) => {
-      if (checkedDisplayKeys.has(displayKey)) {
-        groupedByDisplayKey[displayKey]?.forEach((asset) => {
-          assets.push(asset);
-        });
-      }
-    });
-    return assets;
-  }, [checkedDisplayKeys, displayKeys, groupedByDisplayKey]);
-
-  const extraDropdownOptions = useCatalogExtraDropdownOptions(
-    useMemo(
-      () => ({
-        scope: {selected: checkedAssets.map((a) => ({assetKey: a.key}))},
-      }),
-      [checkedAssets],
-    ),
-  );
+  const checkedAssets: Asset[] = [];
+  displayKeys.forEach((displayKey) => {
+    if (checkedDisplayKeys.has(displayKey)) {
+      checkedAssets.push(...(groupedByDisplayKey[displayKey] || []));
+    }
+  });
 
   const content = () => {
-    if (!assets.length && !isLoading) {
-      if (errorState?.length) {
-        return (
-          <Box padding={{top: 64}}>
-            <InvalidSelectionQueryNotice errors={errorState} />
-          </Box>
-        );
-      }
-      if (assetSelection) {
+    if (!assets.length) {
+      if (searchPath) {
         return (
           <Box padding={{top: 64}}>
             <NonIdealState
               icon="search"
               title="No matching assets"
               description={
-                <div>
-                  No assets matching <strong>{assetSelection}</strong> were found
-                </div>
+                searchGroups.length ? (
+                  <div>
+                    No assets matching <strong>{searchPath}</strong> were found in{' '}
+                    {searchGroups.length === 1 ? (
+                      <strong>{searchGroups[0]?.groupName}</strong>
+                    ) : (
+                      'the selected asset groups'
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    No assets matching <strong>{searchPath}</strong> were found
+                  </div>
+                )
               }
             />
           </Box>
@@ -117,7 +97,24 @@ export const AssetTable = ({
 
       return (
         <Box padding={{top: 20}}>
-          <NonIdealState icon="search" title="No assets" description="No assets were found" />
+          <NonIdealState
+            icon="search"
+            title="No assets"
+            description={
+              searchGroups.length ? (
+                <div>
+                  No assets were found in{' '}
+                  {searchGroups.length === 1 ? (
+                    <strong>{searchGroups[0]?.groupName}</strong>
+                  ) : (
+                    'the selected asset groups'
+                  )}
+                </div>
+              ) : (
+                'No assets were found'
+              )
+            }
+          />
         </Box>
       );
     }
@@ -141,11 +138,9 @@ export const AssetTable = ({
         groups={groupedByDisplayKey}
         checkedDisplayKeys={checkedDisplayKeys}
         onToggleFactory={onToggleFactory}
-        onRefresh={() => refreshState.refetch()}
         showRepoColumn
         view={view}
-        isLoading={isLoading}
-        onChangeAssetSelection={onChangeAssetSelection}
+        onWipe={(assetKeys: AssetKeyInput[]) => setToWipe(assetKeys)}
       />
     );
   };
@@ -153,66 +148,64 @@ export const AssetTable = ({
   return (
     <>
       <Box flex={{direction: 'column'}} style={{height: '100%', overflow: 'hidden'}}>
-        <div
-          style={{
-            padding: '12px 24px',
-            position: 'sticky',
-            top: 0,
-            zIndex: 1,
-            background: Colors.backgroundDefault(),
-            alignItems: 'flex-start',
-            gap: 12,
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) auto',
-          }}
+        <Box
+          background={Colors.White}
+          flex={{alignItems: 'center', gap: 12}}
+          padding={{vertical: 8, left: 24, right: 12}}
+          style={{position: 'sticky', top: 0, zIndex: 1}}
         >
-          <div>{actionBarComponents}</div>
-          <Box
-            style={{justifySelf: 'flex-end'}}
-            flex={{gap: 12, direction: 'row-reverse', alignItems: 'center'}}
-          >
-            <QueryRefreshCountdown refreshState={refreshState} />
-            <Box flex={{alignItems: 'center', gap: 8}}>
+          {actionBarComponents}
+          <div style={{flex: 1}} />
+          <QueryRefreshCountdown refreshState={refreshState} />
+          <Box flex={{alignItems: 'center', gap: 8}}>
+            {checkedAssets.some((c) => !c.definition) ? (
+              <Tooltip content="One or more selected assets are not software-defined and cannot be launched directly.">
+                <Button
+                  intent="primary"
+                  data-testid={testId('materialize-button')}
+                  icon={<Icon name="materialization" />}
+                  disabled
+                >
+                  {checkedAssets.length > 1
+                    ? `Materialize (${checkedAssets.length.toLocaleString()})`
+                    : 'Materialize'}
+                </Button>
+              </Tooltip>
+            ) : (
               <LaunchAssetExecutionButton
-                scope={{
-                  selected: checkedAssets
-                    .filter((a): a is AssetWithDefinition => !!a.definition)
-                    .map((a) => ({...a.definition, assetKey: a.key})),
-                }}
-                additionalDropdownOptions={extraDropdownOptions}
+                scope={{selected: checkedAssets.map((a) => ({...a.definition!, assetKey: a.key}))}}
               />
-              <MoreActionsDropdown
-                selected={checkedAssets}
-                clearSelection={() => onToggleAll(false)}
-              />
-            </Box>
+            )}
+            <MoreActionsDropdown
+              selected={checkedAssets}
+              clearSelection={() => onToggleAll(false)}
+            />
           </Box>
-        </div>
-        {belowActionBarComponents}
+        </Box>
         {content()}
       </Box>
+      <AssetWipeDialog
+        assetKeys={toWipe || []}
+        isOpen={!!toWipe}
+        onClose={() => setToWipe(undefined)}
+        onComplete={() => setToWipe(undefined)}
+        requery={requery}
+      />
     </>
   );
 };
 
-interface MoreActionsDropdownProps {
+const MoreActionsDropdown: React.FC<{
   selected: Asset[];
   clearSelection: () => void;
   requery?: RefetchQueriesFunction;
-}
-
-const MoreActionsDropdown = React.memo((props: MoreActionsDropdownProps) => {
-  const {selected, clearSelection, requery} = props;
+}> = React.memo(({selected, clearSelection, requery}) => {
   const [showBulkWipeDialog, setShowBulkWipeDialog] = React.useState<boolean>(false);
   const {
     permissions: {canWipeAssets},
   } = useUnscopedPermissions();
 
-  const {
-    featureContext: {canSeeWipeMaterializationAction},
-  } = useContext(CloudOSSContext);
-
-  if (!canWipeAssets || !canSeeWipeMaterializationAction) {
+  if (!canWipeAssets) {
     return null;
   }
 
@@ -227,9 +220,7 @@ const MoreActionsDropdown = React.memo((props: MoreActionsDropdownProps) => {
             <MenuItem
               text="Wipe materializations"
               onClick={() => setShowBulkWipeDialog(true)}
-              icon={
-                <Icon name="delete" color={disabled ? Colors.textDisabled() : Colors.accentRed()} />
-              }
+              icon={<Icon name="delete" color={disabled ? Colors.Gray600 : Colors.Red500} />}
               disabled={disabled}
               intent="danger"
             />
@@ -243,6 +234,7 @@ const MoreActionsDropdown = React.memo((props: MoreActionsDropdownProps) => {
         isOpen={showBulkWipeDialog}
         onClose={() => setShowBulkWipeDialog(false)}
         onComplete={() => {
+          setShowBulkWipeDialog(false);
           clearSelection();
         }}
         requery={requery}

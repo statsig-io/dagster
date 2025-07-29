@@ -1,14 +1,11 @@
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
-from typing import AbstractSet, Callable, Optional, cast  # noqa: UP035
-
-from dagster_shared.error import DagsterError
+from typing import AbstractSet, Callable, List, Optional, Sequence, Set, cast
 
 import dagster._check as check
 from dagster._core.definitions import AssetCheckEvaluation, JobDefinition, NodeHandle
 from dagster._core.definitions.events import AssetMaterialization, AssetObservation
 from dagster._core.definitions.utils import DEFAULT_OUTPUT
-from dagster._core.errors import DagsterInvariantViolationError
+from dagster._core.errors import DagsterError, DagsterInvariantViolationError
 from dagster._core.events import (
     AssetObservationData,
     DagsterEvent,
@@ -49,7 +46,7 @@ class ExecutionResult(ABC):
     @property
     def all_node_events(self) -> Sequence[DagsterEvent]:
         """List[DagsterEvent]: All dagster events from the execution."""
-        step_events: list[DagsterEvent] = []
+        step_events: List[DagsterEvent] = []
 
         for node_name in self.job_def.graph.node_dict.keys():
             handle = NodeHandle.from_string(node_name)
@@ -65,7 +62,7 @@ class ExecutionResult(ABC):
         def _is_event_from_node(event: DagsterEvent) -> bool:
             if not event.is_step_event:
                 return False
-            node_handle = cast("NodeHandle", event.node_handle)
+            node_handle = cast(NodeHandle, event.node_handle)
             return node_handle.is_or_descends_from(handle)
 
         return self.filter_events(_is_event_from_node)
@@ -133,8 +130,8 @@ class ExecutionResult(ABC):
     def is_node_untouched(self, node_str: str) -> bool:
         return len(self.events_for_node(node_str)) == 0
 
-    def get_run_failure_event(self) -> DagsterEvent:
-        """Returns a DagsterEvent with type DagsterEventType.RUN_FAILURE if it ocurred during
+    def get_job_failure_event(self) -> DagsterEvent:
+        """Returns a DagsterEvent with type DagsterEventType.PIPELINE_FAILURE if it ocurred during
         execution.
         """
         events = self.filter_events(
@@ -146,8 +143,8 @@ class ExecutionResult(ABC):
 
         return events[0]
 
-    def get_run_success_event(self) -> DagsterEvent:
-        """Returns a DagsterEvent with type DagsterEventType.RUN_SUCCESS if it ocurred during
+    def get_job_success_event(self) -> DagsterEvent:
+        """Returns a DagsterEvent with type DagsterEventType.PIPELINE_SUCCESS if it ocurred during
         execution.
         """
         events = self.filter_events(
@@ -161,14 +158,14 @@ class ExecutionResult(ABC):
 
     def asset_materializations_for_node(self, node_name: str) -> Sequence[AssetMaterialization]:
         return [
-            cast("StepMaterializationData", event.event_specific_data).materialization
+            cast(StepMaterializationData, event.event_specific_data).materialization
             for event in self.events_for_node(node_name)
             if event.event_type_value == DagsterEventType.ASSET_MATERIALIZATION.value
         ]
 
     def asset_observations_for_node(self, node_name: str) -> Sequence[AssetObservation]:
         return [
-            cast("AssetObservationData", event.event_specific_data).asset_observation
+            cast(AssetObservationData, event.event_specific_data).asset_observation
             for event in self.events_for_node(node_name)
             if event.event_type_value == DagsterEventType.ASSET_OBSERVATION.value
         ]
@@ -176,15 +173,9 @@ class ExecutionResult(ABC):
     def get_asset_materialization_events(self) -> Sequence[DagsterEvent]:
         return [event for event in self.all_events if event.is_step_materialization]
 
-    def get_asset_materialization_planned_events(self) -> Sequence[DagsterEvent]:
-        return [event for event in self.all_events if event.is_asset_materialization_planned]
-
-    def get_asset_observation_events(self) -> Sequence[DagsterEvent]:
-        return [event for event in self.all_events if event.is_asset_observation]
-
     def get_asset_check_evaluations(self) -> Sequence[AssetCheckEvaluation]:
         return [
-            cast("AssetCheckEvaluation", event.event_specific_data)
+            cast(AssetCheckEvaluation, event.event_specific_data)
             for event in self.all_events
             if event.event_type_value == DagsterEventType.ASSET_CHECK_EVALUATION.value
         ]
@@ -202,7 +193,7 @@ class ExecutionResult(ABC):
         failure_events = self.filter_events(
             lambda event: event.is_step_failure or event.is_resource_init_failure
         )
-        keys: set[str] = set()
+        keys: Set[str] = set()
         for event in failure_events:
             if event.step_key:
                 keys.add(event.step_key)
@@ -225,7 +216,7 @@ class ExecutionResult(ABC):
             )
         )
         return [
-            cast("StepExpectationResultData", event.event_specific_data).expectation_result
+            cast(StepExpectationResultData, event.event_specific_data).expectation_result
             for event in expectation_result_events
         ]
 

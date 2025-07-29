@@ -1,12 +1,14 @@
 import {Box, Caption, Colors, Icon, MiddleTruncate, Mono, Tooltip} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
-import {succinctType} from './ResourceRoot';
-import {HeaderCell, HeaderRow, Row, RowCell} from '../ui/VirtualizedTable';
+import {HeaderCell, Row, RowCell} from '../ui/VirtualizedTable';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
-import {ResourceEntryFragment} from './types/WorkspaceResourcesQuery.types';
+
+import {succinctType} from './ResourceRoot';
+import {ResourceEntryFragment} from './types/WorkspaceResourcesRoot.types';
 
 const TEMPLATE_COLUMNS = '1.5fr 1fr 1fr';
 
@@ -44,7 +46,7 @@ export const VirtualizedResourceRow = (props: ResourceRowProps) => {
         <RowCell>
           <Box flex={{direction: 'column', gap: 4}}>
             <Box flex={{direction: 'row', gap: 4, alignItems: 'center'}}>
-              <Icon name="resource" color={Colors.accentGray()} />
+              <Icon name="resource" color={Colors.Gray400} />
 
               <span style={{fontWeight: 500}}>
                 <Link to={workspacePathFromAddress(repoAddress, `/resources/${name}`)}>
@@ -61,7 +63,7 @@ export const VirtualizedResourceRow = (props: ResourceRowProps) => {
             >
               <Caption
                 style={{
-                  color: Colors.textLight(),
+                  color: Colors.Gray500,
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -85,11 +87,20 @@ export const VirtualizedResourceRow = (props: ResourceRowProps) => {
 
 export const VirtualizedResourceHeader = () => {
   return (
-    <HeaderRow templateColumns={TEMPLATE_COLUMNS} sticky>
+    <Box
+      border="top-and-bottom"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: TEMPLATE_COLUMNS,
+        height: '32px',
+        fontSize: '12px',
+        color: Colors.Gray600,
+      }}
+    >
       <HeaderCell>Name</HeaderCell>
       <HeaderCell>Type</HeaderCell>
       <HeaderCell>Uses</HeaderCell>
-    </HeaderRow>
+    </Box>
   );
 };
 

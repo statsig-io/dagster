@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: dict[str, str] = {}
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagstermill/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -23,15 +24,15 @@ setup(
     license="Apache-2.0",
     packages=find_packages(exclude=["dagstermill_tests*"]),
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.9,<3.14",
     install_requires=[
-        f"dagster{pin}",
+        "dagster==1.4.16",
         # ipykernel 5.4.0 and 5.4.1 broke papermill
         # see https://github.com/dagster-io/dagster/issues/3401,
         # https://github.com/nteract/papermill/issues/519,

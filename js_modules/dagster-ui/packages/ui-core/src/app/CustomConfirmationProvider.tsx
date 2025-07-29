@@ -1,7 +1,5 @@
-import {Button, Dialog, DialogBody, DialogFooter} from '@dagster-io/ui-components';
+import {Button, DialogBody, DialogFooter, Dialog} from '@dagster-io/ui-components';
 import * as React from 'react';
-
-import {testId} from '../testing/testId';
 
 interface ConfirmationOptions {
   catchOnCancel?: boolean;
@@ -20,7 +18,7 @@ interface ConfirmationDialogProps extends ConfirmationOptions {
   onClose: () => void;
 }
 
-const ConfirmationDialog = ({
+const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   open,
   icon,
   title,
@@ -29,13 +27,13 @@ const ConfirmationDialog = ({
   description,
   onSubmit,
   onClose,
-}: ConfirmationDialogProps) => {
+}) => {
   return (
-    <Dialog icon={title ? (icon ?? 'info') : icon} onClose={onClose} title={title} isOpen={open}>
+    <Dialog icon={title ? icon ?? 'info' : icon} onClose={onClose} title={title} isOpen={open}>
       <DialogBody>{description}</DialogBody>
       <DialogFooter topBorder>
         <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={onSubmit} intent={intent} data-testid={testId('confirm-button-ok')}>
+        <Button onClick={onSubmit} intent={intent}>
           {buttonText}
         </Button>
       </DialogFooter>

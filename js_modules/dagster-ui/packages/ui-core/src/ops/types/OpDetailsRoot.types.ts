@@ -3,7 +3,7 @@
 import * as Types from '../../graphql/types';
 
 export type UsedSolidDetailsQueryVariables = Types.Exact<{
-  name: Types.Scalars['String']['input'];
+  name: Types.Scalars['String'];
   repositorySelector: Types.RepositorySelector;
 }>;
 
@@ -22,7 +22,6 @@ export type UsedSolidDetailsQuery = {
                 name: string;
                 description: string | null;
                 id: string;
-                pools: Array<string>;
                 metadata: Array<{__typename: 'MetadataItemDefinition'; key: string; value: string}>;
                 inputDefinitions: Array<{
                   __typename: 'InputDefinition';
@@ -101,7 +100,6 @@ export type UsedSolidDetailsQuery = {
                 __typename: 'SolidDefinition';
                 name: string;
                 description: string | null;
-                pools: Array<string>;
                 metadata: Array<{__typename: 'MetadataItemDefinition'; key: string; value: string}>;
                 inputDefinitions: Array<{
                   __typename: 'InputDefinition';
@@ -722,5 +720,3 @@ export type UsedSolidDetailsQuery = {
       }
     | {__typename: 'RepositoryNotFoundError'};
 };
-
-export const UsedSolidDetailsQueryVersion = '9f501125e94979298e2b290f5c8dac2fd8aa0e0d4a5d9f6dfde007186a707665';

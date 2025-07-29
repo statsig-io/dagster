@@ -1,15 +1,15 @@
+import {useQuery} from '@apollo/client';
 import {
-  Alert,
   Box,
-  Caption,
+  Spinner,
   Colors,
   Icon,
-  MenuItem,
-  Select,
-  Spinner,
   Tag,
-  TextInput,
   useViewport,
+  Select,
+  MenuItem,
+  Caption,
+  TextInput,
 } from '@dagster-io/ui-components';
 import {useVirtualizer} from '@tanstack/react-virtual';
 import * as React from 'react';
@@ -17,56 +17,53 @@ import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
-import {FIFTEEN_SECONDS, RefreshState, useRefreshAtInterval} from '../app/QueryRefresh';
+import {FIFTEEN_SECONDS, useQueryRefreshAtInterval} from '../app/QueryRefresh';
 import {useTrackPageView} from '../app/analytics';
-import {useAssetsBaseData} from '../asset-data/AssetBaseDataProvider';
 import {StatusCase, buildAssetNodeStatusContent} from '../asset-graph/AssetNodeStatusContent';
-import {displayNameForAssetKey} from '../asset-graph/Utils';
-import {groupAssetsByStatus} from '../asset-graph/util';
+import {displayNameForAssetKey, toGraphId} from '../asset-graph/Utils';
+import {useLiveDataForAssetKeys} from '../asset-graph/useLiveDataForAssetKeys';
 import {partitionCountString} from '../assets/AssetNodePartitionCounts';
-import {useAllAssets} from '../assets/AssetsCatalogTable';
+import {ASSET_CATALOG_TABLE_QUERY} from '../assets/AssetsCatalogTable';
 import {assetDetailsPathForKey} from '../assets/assetDetailsPathForKey';
-import {AssetCatalogTableQuery} from '../assets/types/AssetsCatalogTable.types';
+import {
+  AssetCatalogTableQuery,
+  AssetCatalogTableQueryVariables,
+} from '../assets/types/AssetsCatalogTable.types';
 import {useDocumentTitle} from '../hooks/useDocumentTitle';
 import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
 import {RepositoryLink} from '../nav/RepositoryLink';
-import {Container, HeaderCell, HeaderRow, Inner, Row, RowCell} from '../ui/VirtualizedTable';
+import {Container, HeaderCell, Inner, Row, RowCell} from '../ui/VirtualizedTable';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
 type Props = {
-  Header: React.ComponentType<{refreshState: RefreshState}>;
-  TabButton: React.ComponentType<{selected: 'timeline' | 'assets'}>;
+  Header: React.FC<{refreshState: ReturnType<typeof useQueryRefreshAtInterval>}>;
+  TabButton: React.FC<{selected: 'timeline' | 'assets'}>;
 };
 export const OverviewAssetsRoot = ({Header, TabButton}: Props) => {
   useTrackPageView();
   useDocumentTitle('Overview | Assets');
 
-  const {assets, query, error, loading} = useAllAssets();
-  const refreshState = useRefreshAtInterval<any>({
-    refresh: query,
-    intervalMs: FIFTEEN_SECONDS,
-    leading: true,
-  });
+  const query = useQuery<AssetCatalogTableQuery, AssetCatalogTableQueryVariables>(
+    ASSET_CATALOG_TABLE_QUERY,
+    {
+      notifyOnNetworkStatusChange: true,
+    },
+  );
+  const refreshState = useQueryRefreshAtInterval(query, FIFTEEN_SECONDS);
 
   const groupedAssetsUnfiltered = React.useMemo(() => {
-    if (assets) {
+    if (query.data?.assetsOrError.__typename === 'AssetConnection') {
+      const assets = query.data.assetsOrError.nodes;
       return groupAssets(assets);
     }
     return [];
-  }, [assets]);
+  }, [query.data?.assetsOrError]);
 
   const [searchValue, setSearchValue] = useQueryPersistedState<string>({
     queryKey: 'q',
+    decode: (qs) => (qs.searchQuery ? JSON.parse(qs.searchQuery) : ''),
     encode: (searchQuery) => ({searchQuery: searchQuery ? JSON.stringify(searchQuery) : undefined}),
-    decode: (qs) => {
-      if (typeof qs.searchQuery === 'string') {
-        try {
-          return JSON.parse(qs.searchQuery);
-        } catch {}
-      }
-      return '';
-    },
   });
 
   const groupedAssets = React.useMemo(() => {
@@ -81,12 +78,6 @@ export const OverviewAssetsRoot = ({Header, TabButton}: Props) => {
     });
   }, [groupedAssetsUnfiltered, searchValue]);
 
-  const orderedAssets = React.useMemo(
-    () => groupedAssets.flatMap((group) => group.assets.map((asset) => asset.key)) ?? [],
-    [groupedAssets],
-  );
-  useAssetsBaseData(orderedAssets, 'OverviewAssetsRoot');
-
   const parentRef = React.useRef<HTMLDivElement | null>(null);
 
   const rowVirtualizer = useVirtualizer({
@@ -100,7 +91,8 @@ export const OverviewAssetsRoot = ({Header, TabButton}: Props) => {
   const items = rowVirtualizer.getVirtualItems();
 
   function content() {
-    if (loading) {
+    const result = query.data?.assetsOrError;
+    if (!query.data && query.loading) {
       return (
         <Box
           flex={{alignItems: 'center', justifyContent: 'center', direction: 'column', grow: 1}}
@@ -110,13 +102,13 @@ export const OverviewAssetsRoot = ({Header, TabButton}: Props) => {
         </Box>
       );
     }
-    if (error) {
+    if (result?.__typename === 'PythonError') {
       return (
         <Box
           flex={{alignItems: 'center', justifyContent: 'center', direction: 'column', grow: 1}}
           style={{width: '100%'}}
         >
-          <PythonErrorInfo error={error} />
+          <PythonErrorInfo error={result} />
         </Box>
       );
     }
@@ -151,18 +143,6 @@ export const OverviewAssetsRoot = ({Header, TabButton}: Props) => {
               setSearchValue(e.target.value);
             }}
             placeholder="Filter asset groups…"
-          />
-        </Box>
-        <Box padding={{horizontal: 24, vertical: 16}} border="top">
-          <Alert
-            intent="info"
-            title="This Assets tab will be removed in an upcoming release."
-            description={
-              <>
-                Use the <Link to="/asset-groups">global asset lineage page</Link> to view grouped
-                asset status details.
-              </>
-            }
           />
         </Box>
       </div>
@@ -206,15 +186,30 @@ function groupAssets(assets: Assets) {
 
 const TEMPLATE_COLUMNS = '5fr 1fr 1fr 1fr 1fr';
 
-const VirtualHeaderRow = () => (
-  <HeaderRow templateColumns={TEMPLATE_COLUMNS} sticky>
-    <HeaderCell>Group name</HeaderCell>
-    <HeaderCell>Missing</HeaderCell>
-    <HeaderCell>Failed/Overdue</HeaderCell>
-    <HeaderCell>In progress</HeaderCell>
-    <HeaderCell>Materialized</HeaderCell>
-  </HeaderRow>
-);
+function VirtualHeaderRow() {
+  return (
+    <Box
+      border="top-and-bottom"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: TEMPLATE_COLUMNS,
+        height: '32px',
+        fontSize: '12px',
+        color: Colors.Gray600,
+        position: 'sticky',
+        top: 0,
+        zIndex: 1,
+        background: Colors.White,
+      }}
+    >
+      <HeaderCell>Group name</HeaderCell>
+      <HeaderCell>Missing</HeaderCell>
+      <HeaderCell>Failed/Overdue</HeaderCell>
+      <HeaderCell>In progress</HeaderCell>
+      <HeaderCell>Materialized</HeaderCell>
+    </Box>
+  );
+}
 
 const UNGROUPED_ASSETS = 'Ungrouped Assets';
 type RowProps = {
@@ -228,10 +223,75 @@ function VirtualRow({height, start, group}: RowProps) {
     [group.assets],
   );
 
-  const {liveDataByNode} = useAssetsBaseData(assetKeys);
+  const {liveDataByNode} = useLiveDataForAssetKeys(assetKeys, true);
 
   const statuses = React.useMemo(() => {
-    return groupAssetsByStatus(group.assets, liveDataByNode);
+    type assetType = (typeof group)['assets'][0];
+    type StatusesType = {asset: assetType; status: ReturnType<typeof buildAssetNodeStatusContent>};
+    const statuses = {
+      successful: [] as StatusesType[],
+      failed: [] as StatusesType[],
+      inprogress: [] as StatusesType[],
+      missing: [] as StatusesType[],
+      loading: false,
+    };
+    if (!Object.keys(liveDataByNode).length) {
+      statuses.loading = true;
+      return statuses;
+    }
+    Object.keys(liveDataByNode).forEach((key) => {
+      const assetLiveData = liveDataByNode[key];
+      const asset = group.assets.find((asset) => toGraphId(asset.key) === key);
+      if (!asset?.definition) {
+        console.warn('Expected a definition for asset with key', key);
+        return;
+      }
+      const status = buildAssetNodeStatusContent({
+        assetKey: {path: JSON.parse(key)},
+        definition: asset.definition,
+        liveData: assetLiveData,
+        expanded: true,
+      });
+      switch (status.case) {
+        case StatusCase.LOADING:
+          statuses.loading = true;
+          break;
+        case StatusCase.SOURCE_OBSERVING:
+          statuses.inprogress.push({asset, status});
+          break;
+        case StatusCase.SOURCE_OBSERVED:
+          statuses.successful.push({asset, status});
+          break;
+        case StatusCase.SOURCE_NEVER_OBSERVED:
+          statuses.missing.push({asset, status});
+          break;
+        case StatusCase.SOURCE_NO_STATE:
+          statuses.missing.push({asset, status});
+          break;
+        case StatusCase.MATERIALIZING:
+          statuses.inprogress.push({asset, status});
+          break;
+        case StatusCase.LATE_OR_FAILED:
+          statuses.failed.push({asset, status});
+          break;
+        case StatusCase.NEVER_MATERIALIZED:
+          statuses.missing.push({asset, status});
+          break;
+        case StatusCase.MATERIALIZED:
+          statuses.successful.push({asset, status});
+          break;
+        case StatusCase.PARTITIONS_FAILED:
+          statuses.failed.push({asset, status});
+          break;
+        case StatusCase.PARTITIONS_MISSING:
+          statuses.missing.push({asset, status});
+          break;
+        case StatusCase.PARTITIONS_MATERIALIZED:
+          statuses.successful.push({asset, status});
+          break;
+      }
+    });
+    return statuses;
   }, [liveDataByNode, group.assets]);
 
   const repo = group.assets.find((asset) => asset.definition?.repository)?.definition?.repository;
@@ -240,7 +300,6 @@ function VirtualRow({height, start, group}: RowProps) {
   const {containerProps, viewport} = useViewport();
 
   const isBatchStillLoading = assetKeys.length !== Object.keys(liveDataByNode).length;
-  const zeroOrBlank = isBatchStillLoading ? '' : '0';
 
   return (
     <Row $height={height} $start={start}>
@@ -290,7 +349,7 @@ function VirtualRow({height, start, group}: RowProps) {
                     style={{
                       width: '12px',
                       height: '12px',
-                      border: `2px solid ${Colors.borderDefault()}`,
+                      border: `2px solid ${Colors.Gray500}`,
                       borderRadius: '50%',
                     }}
                   />
@@ -299,7 +358,7 @@ function VirtualRow({height, start, group}: RowProps) {
               </Tag>
             </SelectOnHover>
           ) : (
-            zeroOrBlank
+            0
           )}
         </Cell>
         <Cell>
@@ -331,7 +390,7 @@ function VirtualRow({height, start, group}: RowProps) {
               </Tag>
             </SelectOnHover>
           ) : (
-            zeroOrBlank
+            0
           )}
         </Cell>
         <Cell>
@@ -351,7 +410,7 @@ function VirtualRow({height, start, group}: RowProps) {
               </Tag>
             </SelectOnHover>
           ) : (
-            zeroOrBlank
+            0
           )}
         </Cell>
         <Cell>
@@ -370,7 +429,7 @@ function VirtualRow({height, start, group}: RowProps) {
                 <Box flex={{direction: 'row', alignItems: 'center', gap: 6}}>
                   <div
                     style={{
-                      backgroundColor: Colors.accentGreen(),
+                      backgroundColor: Colors.Green500,
                       width: '10px',
                       height: '10px',
                       borderRadius: '50%',
@@ -381,7 +440,7 @@ function VirtualRow({height, start, group}: RowProps) {
               </Tag>
             </SelectOnHover>
           ) : (
-            zeroOrBlank
+            0
           )}
         </Cell>
       </RowGrid>
@@ -394,13 +453,13 @@ const RowGrid = styled(Box)`
   grid-template-columns: ${TEMPLATE_COLUMNS};
   height: 100%;
   > * {
-    vertical-align: middle;
+    padding-top: 26px 0px;
   }
 `;
 
 const Cell = ({children}: {children: React.ReactNode}) => {
   return (
-    <RowCell style={{color: Colors.textDefault()}}>
+    <RowCell style={{color: Colors.Gray900}}>
       <Box flex={{direction: 'row', alignItems: 'center', grow: 1}}>{children}</Box>
     </RowCell>
   );
@@ -410,7 +469,7 @@ const RepositoryLinkWrapper = styled.div<{maxWidth?: number}>`
   font-size: 12px;
   pointer-events: none;
   a {
-    color: ${Colors.textLight()};
+    color: ${Colors.Gray600};
     pointer-events: none;
     max-width: ${({maxWidth}) => (maxWidth ? 'unset' : `${maxWidth}px`)};
   }
@@ -457,7 +516,7 @@ function SelectOnHover({
                       {displayNameForAssetKey(item.asset.key)}
                     </div>
                     {count && count > 0 ? (
-                      <Caption style={{color: Colors.textLight()}}>
+                      <Caption style={{color: Colors.Gray700}}>
                         {partitionCountString(count)} {adjective}
                       </Caption>
                     ) : null}

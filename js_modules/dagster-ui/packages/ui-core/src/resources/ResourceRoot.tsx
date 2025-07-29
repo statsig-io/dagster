@@ -1,3 +1,4 @@
+import {gql, useQuery} from '@apollo/client';
 import {
   Alert,
   Box,
@@ -14,32 +15,32 @@ import {
   PageHeader,
   SplitPanelContainer,
   Subheading,
-  Subtitle1,
   Table,
   Tag,
   Tooltip,
 } from '@dagster-io/ui-components';
 import * as React from 'react';
 import {Link, useParams, useRouteMatch} from 'react-router-dom';
+import styled from 'styled-components';
 
-import {ResourceTabs} from './ResourceTabs';
-import {gql, useQuery} from '../apollo-client';
-import {
-  ResourceDetailsFragment,
-  ResourceRootQuery,
-  ResourceRootQueryVariables,
-} from './types/ResourceRoot.types';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
 import {useTrackPageView} from '../app/analytics';
 import {AssetLink} from '../assets/AssetLink';
 import {useDocumentTitle} from '../hooks/useDocumentTitle';
 import {RepositoryLink} from '../nav/RepositoryLink';
+import {SidebarSection} from '../pipelines/SidebarComponents';
 import {Loading} from '../ui/Loading';
-import {Markdown} from '../ui/Markdown';
 import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
+
+import {ResourceTabs} from './ResourceTabs';
+import {
+  ResourceRootQuery,
+  ResourceRootQueryVariables,
+  ResourceDetailsFragment,
+} from './types/ResourceRoot.types';
 
 interface Props {
   repoAddress: RepoAddress;
@@ -73,20 +74,13 @@ const resourceDisplayName = (
 
 const SectionHeader = (props: {children: React.ReactNode}) => {
   return (
-    <Box padding={{left: 24, vertical: 16}} background={Colors.backgroundLight()} border="all">
+    <Box padding={{left: 24, vertical: 16}} background={Colors.Gray50} border="all">
       {props.children}
     </Box>
   );
 };
 
-// Strip leading tabs from the lines produced for the resource description, since they
-// break markdown formatting.
-const removeLeadingTabs = (input: string) => {
-  const lines = input.split('\n');
-  return lines.map((line) => line.replace(/^    /, '')).join('\n');
-};
-
-export const ResourceRoot = (props: Props) => {
+export const ResourceRoot: React.FC<Props> = (props) => {
   useTrackPageView();
 
   const {repoAddress} = props;
@@ -124,12 +118,7 @@ export const ResourceRoot = (props: Props) => {
   return (
     <Page style={{height: '100%', overflow: 'hidden'}}>
       <PageHeader
-        title={<Subtitle1>{displayName}</Subtitle1>}
-        tags={
-          <Tag icon="resource">
-            Resource in <RepositoryLink repoAddress={repoAddress} />
-          </Tag>
-        }
+        title={<Heading>{displayName}</Heading>}
         tabs={
           <ResourceTabs repoAddress={repoAddress} resourceName={resourceName} numUses={numUses} />
         }
@@ -150,7 +139,7 @@ export const ResourceRoot = (props: Props) => {
                     <div>Could not load resource.</div>
                     {message && (
                       <ButtonLink
-                        color={Colors.linkDefault()}
+                        color={Colors.Link}
                         underline="always"
                         onClick={() => {
                           showCustomAlert({
@@ -173,7 +162,7 @@ export const ResourceRoot = (props: Props) => {
           return (
             <div style={{height: '100%', display: 'flex'}}>
               <SplitPanelContainer
-                identifier="resource-explorer"
+                identifier="explorer"
                 firstInitialPercent={50}
                 firstMinSize={400}
                 first={
@@ -193,34 +182,36 @@ export const ResourceRoot = (props: Props) => {
                   </Box>
                 }
                 second={
-                  <Box padding={{bottom: 48}} style={{overflowY: 'auto'}}>
-                    <Box
-                      flex={{gap: 4, direction: 'column'}}
-                      margin={{left: 24, right: 12, vertical: 16}}
-                    >
-                      <Heading>{displayName}</Heading>
-                      <Tooltip content={topLevelResourceDetailsOrError.resourceType || ''}>
-                        <Mono>{resourceTypeSuccinct}</Mono>
-                      </Tooltip>
-                    </Box>
-                    <Box
-                      border="top-and-bottom"
-                      background={Colors.backgroundLight()}
-                      padding={{vertical: 8, horizontal: 24}}
-                      style={{fontSize: '12px', fontWeight: 500}}
-                    >
-                      Description
-                    </Box>
-                    <Box padding={{horizontal: 24, vertical: 16}}>
+                  <RightInfoPanel>
+                    <RightInfoPanelContent>
+                      <Box
+                        flex={{gap: 4, direction: 'column'}}
+                        margin={{left: 24, right: 12, vertical: 16}}
+                      >
+                        <Heading>{displayName}</Heading>
+
+                        <Tooltip content={topLevelResourceDetailsOrError.resourceType || ''}>
+                          <Mono>{resourceTypeSuccinct}</Mono>
+                        </Tooltip>
+                      </Box>
+
+                      <SidebarSection title="Definition">
+                        <Box padding={{vertical: 16, horizontal: 24}}>
+                          <Tag icon="resource">
+                            Resource in{' '}
+                            <RepositoryLink repoAddress={repoAddress} showRefresh={false} />
+                          </Tag>
+                        </Box>
+                      </SidebarSection>
                       {topLevelResourceDetailsOrError.description ? (
-                        <Markdown>
-                          {removeLeadingTabs(topLevelResourceDetailsOrError.description)}
-                        </Markdown>
-                      ) : (
-                        'None'
-                      )}
-                    </Box>
-                  </Box>
+                        <SidebarSection title="Description">
+                          <Box padding={{vertical: 16, horizontal: 24}}>
+                            {topLevelResourceDetailsOrError.description}
+                          </Box>
+                        </SidebarSection>
+                      ) : null}
+                    </RightInfoPanelContent>
+                  </RightInfoPanel>
                 }
               />
             </div>
@@ -231,10 +222,10 @@ export const ResourceRoot = (props: Props) => {
   );
 };
 
-const ResourceConfig = (props: {
+const ResourceConfig: React.FC<{
   resourceDetails: ResourceDetailsFragment;
   repoAddress: RepoAddress;
-}) => {
+}> = (props) => {
   const {resourceDetails, repoAddress} = props;
 
   const configuredValues = Object.fromEntries(
@@ -324,9 +315,7 @@ const ResourceConfig = (props: {
                     <td>
                       <Box flex={{direction: 'column', gap: 4, alignItems: 'flex-start'}}>
                         <strong>{field.name}</strong>
-                        <div style={{fontSize: 12, color: Colors.textLight()}}>
-                          {field.description}
-                        </div>
+                        <div style={{fontSize: 12, color: Colors.Gray700}}>{field.description}</div>
                       </Box>
                     </td>
                     <td>{remapName(field.configTypeKey)}</td>
@@ -353,11 +342,11 @@ const ResourceConfig = (props: {
   );
 };
 
-const ResourceUses = (props: {
+const ResourceUses: React.FC<{
   resourceDetails: ResourceDetailsFragment;
   repoAddress: RepoAddress;
   numUses: number;
-}) => {
+}> = (props) => {
   const {resourceDetails, repoAddress, numUses} = props;
 
   if (numUses === 0) {
@@ -387,18 +376,15 @@ const ResourceUses = (props: {
               </tr>
             </thead>
             <tbody>
-              {parentResources.map((ref) => {
+              {parentResources.map((resource) => {
                 return (
-                  ref.resource && (
-                    <tr key={ref.resource.name}>
+                  resource.resource && (
+                    <tr key={resource.name}>
                       <td>
                         <ResourceEntry
-                          url={workspacePathFromAddress(
-                            repoAddress,
-                            `/resources/${ref.resource.name}`,
-                          )}
-                          name={resourceDisplayName(ref.resource) || ''}
-                          description={ref.resource.description || undefined}
+                          url={workspacePathFromAddress(repoAddress, `/resources/${resource.name}`)}
+                          name={resourceDisplayName(resource.resource) || ''}
+                          description={resource.resource.description || undefined}
                         />
                       </td>
                     </tr>
@@ -449,7 +435,7 @@ const ResourceUses = (props: {
             <tbody>
               {resourceDetails.jobsOpsUsing.map((jobOps) => {
                 return (
-                  <tr key={jobOps.jobName}>
+                  <tr key={jobOps.job.name}>
                     <td>
                       <Box
                         flex={{
@@ -460,10 +446,12 @@ const ResourceUses = (props: {
                         }}
                         style={{maxWidth: '100%'}}
                       >
-                        <Icon name="job" color={Colors.accentGray()} />
+                        <Icon name="job" color={Colors.Gray400} />
 
-                        <Link to={workspacePathFromAddress(repoAddress, `/jobs/${jobOps.jobName}`)}>
-                          <MiddleTruncate text={jobOps.jobName} />
+                        <Link
+                          to={workspacePathFromAddress(repoAddress, `/jobs/${jobOps.job.name}`)}
+                        >
+                          <MiddleTruncate text={jobOps.job.name} />
                         </Link>
                       </Box>
                     </td>
@@ -477,7 +465,7 @@ const ResourceUses = (props: {
                         }}
                         style={{maxWidth: '100%'}}
                       >
-                        {jobOps.opHandleIDs.map((opHandleID) => (
+                        {jobOps.opsUsing.map((op) => (
                           <Box
                             flex={{
                               direction: 'row',
@@ -486,17 +474,17 @@ const ResourceUses = (props: {
                               gap: 8,
                             }}
                             style={{maxWidth: '100%'}}
-                            key={opHandleID}
+                            key={op.handleID}
                           >
-                            <Icon name="op" color={Colors.accentGray()} />
+                            <Icon name="op" color={Colors.Gray400} />
 
                             <Link
                               to={workspacePathFromAddress(
                                 repoAddress,
-                                `/jobs/${jobOps.jobName}/${opHandleID.split('.').join('/')}`,
+                                `/jobs/${jobOps.job.name}/${op.handleID.split('.').join('/')}`,
                               )}
                             >
-                              <MiddleTruncate text={opHandleID} />
+                              <MiddleTruncate text={op.solid.name} />
                             </Link>
                           </Box>
                         ))}
@@ -513,12 +501,12 @@ const ResourceUses = (props: {
         {
           name: 'Schedules',
           objects: resourceDetails.schedulesUsing,
-          icon: <Icon name="schedule" color={Colors.accentGray()} />,
+          icon: <Icon name="schedule" color={Colors.Gray400} />,
         },
         {
           name: 'Sensors',
           objects: resourceDetails.sensorsUsing,
-          icon: <Icon name="sensors" color={Colors.accentGray()} />,
+          icon: <Icon name="sensors" color={Colors.Gray400} />,
         },
       ]
         .filter(({objects}) => objects.length > 0)
@@ -570,13 +558,17 @@ const ResourceUses = (props: {
   );
 };
 
-const ResourceEntry = (props: {name: string; url?: string; description?: string}) => {
+const ResourceEntry: React.FC<{
+  name: string;
+  url?: string;
+  description?: string;
+}> = (props) => {
   const {url, name, description} = props;
 
   return (
     <Box flex={{direction: 'column'}}>
       <Box flex={{direction: 'row', alignItems: 'center', gap: 4}} style={{maxWidth: '100%'}}>
-        <Icon name="resource" color={Colors.accentBlue()} />
+        <Icon name="resource" color={Colors.Blue700} />
         <div style={{maxWidth: '100%', whiteSpace: 'nowrap', fontWeight: 500}}>
           {url ? (
             <Link to={url} style={{overflow: 'hidden'}}>
@@ -591,6 +583,22 @@ const ResourceEntry = (props: {name: string; url?: string; description?: string}
     </Box>
   );
 };
+
+const RightInfoPanel = styled.div`
+  position: relative;
+
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: ${Colors.White};
+`;
+
+const RightInfoPanelContent = styled.div`
+  flex: 1;
+  overflow-y: auto;
+`;
 
 const RESOURCE_DETAILS_FRAGMENT = gql`
   fragment ResourceDetailsFragment on ResourceDetails {
@@ -631,8 +639,16 @@ const RESOURCE_DETAILS_FRAGMENT = gql`
     schedulesUsing
     sensorsUsing
     jobsOpsUsing {
-      jobName
-      opHandleIDs
+      job {
+        id
+        name
+      }
+      opsUsing {
+        handleID
+        solid {
+          name
+        }
+      }
     }
     resourceType
   }

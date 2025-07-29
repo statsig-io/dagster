@@ -1,24 +1,13 @@
-import {Box, Page, PageHeader, Subtitle1, Tabs, Tag} from '@dagster-io/ui-components';
-import React, {useCallback, useMemo} from 'react';
+import {gql, useQuery} from '@apollo/client';
+import {Page, PageHeader, Heading, Box, Tag, Tabs} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {useHistory, useParams} from 'react-router-dom';
-import {AssetGlobalLineageLink} from 'shared/assets/AssetPageHeader.oss';
 
-import {AssetsCatalogTable} from './AssetsCatalogTable';
-import {useAutoMaterializeSensorFlag} from './AutoMaterializeSensorFlag';
-import {AutomaterializeDaemonStatusTag} from './AutomaterializeDaemonStatusTag';
-import {assetDetailsPathForKey} from './assetDetailsPathForKey';
-import {gql, useQuery} from '../apollo-client';
-import {
-  AssetGroupMetadataQuery,
-  AssetGroupMetadataQueryVariables,
-} from './types/AssetGroupRoot.types';
 import {useTrackPageView} from '../app/analytics';
 import {AssetGraphExplorer} from '../asset-graph/AssetGraphExplorer';
-import {AssetGraphViewType} from '../asset-graph/Utils';
 import {AssetLocation} from '../asset-graph/useFindAssetLocation';
 import {AssetGroupSelector} from '../graphql/types';
 import {useDocumentTitle} from '../hooks/useDocumentTitle';
-import {useOpenInNewTab} from '../hooks/useOpenInNewTab';
 import {RepositoryLink} from '../nav/RepositoryLink';
 import {
   ExplorerPath,
@@ -30,18 +19,24 @@ import {ReloadAllButton} from '../workspace/ReloadAllButton';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
+import {AssetGlobalLineageLink} from './AssetPageHeader';
+import {AssetsCatalogTable} from './AssetsCatalogTable';
+import {AutomaterializeDaemonStatusTag} from './AutomaterializeDaemonStatusTag';
+import {assetDetailsPathForKey} from './assetDetailsPathForKey';
+import {
+  AssetGroupMetadataQuery,
+  AssetGroupMetadataQueryVariables,
+} from './types/AssetGroupRoot.types';
+
 interface AssetGroupRootParams {
   groupName: string;
   prefixPath: string;
   0: string;
 }
 
-export const AssetGroupRoot = ({
+export const AssetGroupRoot: React.FC<{repoAddress: RepoAddress; tab: 'lineage' | 'list'}> = ({
   repoAddress,
   tab,
-}: {
-  repoAddress: RepoAddress;
-  tab: 'lineage' | 'list';
 }) => {
   useTrackPageView();
 
@@ -49,10 +44,9 @@ export const AssetGroupRoot = ({
   const history = useHistory();
 
   useDocumentTitle(`Asset Group: ${groupName}`);
-  const openInNewTab = useOpenInNewTab();
 
   const groupPath = workspacePathFromAddress(repoAddress, `/asset-groups/${groupName}`);
-  const groupSelector = useMemo(
+  const groupSelector = React.useMemo(
     () => ({
       groupName,
       repositoryLocationName: repoAddress.location,
@@ -61,50 +55,40 @@ export const AssetGroupRoot = ({
     [groupName, repoAddress],
   );
 
-  const onChangeExplorerPath = useCallback(
+  const onChangeExplorerPath = React.useCallback(
     (path: ExplorerPath, mode: 'push' | 'replace') => {
-      history[mode]({
-        pathname: `${groupPath}/${explorerPathToString(path)}`,
-        search: history.location.search,
-      });
+      history[mode](`${groupPath}/${explorerPathToString(path)}`);
     },
     [groupPath, history],
   );
 
-  const onNavigateToSourceAssetNode = useCallback(
-    (e: Pick<React.MouseEvent<any>, 'metaKey'>, node: AssetLocation) => {
-      let path;
+  const onNavigateToSourceAssetNode = React.useCallback(
+    (node: AssetLocation) => {
       if (node.groupName && node.repoAddress) {
-        path = workspacePathFromAddress(
-          node.repoAddress,
-          `/asset-groups/${node.groupName}/lineage/${node.assetKey.path
-            .map(encodeURIComponent)
-            .join('/')}`,
+        history.push(
+          workspacePathFromAddress(
+            node.repoAddress,
+            `/asset-groups/${node.groupName}/lineage/${node.assetKey.path
+              .map(encodeURIComponent)
+              .join('/')}`,
+          ),
         );
       } else {
-        path = assetDetailsPathForKey(node.assetKey, {view: 'definition'});
-      }
-      if (e.metaKey) {
-        openInNewTab(path);
-      } else {
-        history.push(path);
+        history.push(assetDetailsPathForKey(node.assetKey, {view: 'definition'}));
       }
     },
-    [history, openInNewTab],
-  );
-
-  const fetchOptions = React.useMemo(() => ({groupSelector, loading: false}), [groupSelector]);
-
-  const lineageOptions = React.useMemo(
-    () => ({preferAssetRendering: true, explodeComposites: true}),
-    [],
+    [history],
   );
 
   return (
     <Page style={{display: 'flex', flexDirection: 'column', paddingBottom: 0}}>
       <PageHeader
-        title={<Subtitle1>{groupName}</Subtitle1>}
-        right={<ReloadAllButton label="Reload definitions" />}
+        title={<Heading>{groupName}</Heading>}
+        right={
+          <div style={{marginBottom: -8}}>
+            <ReloadAllButton label="Reload definitions" />
+          </div>
+        }
         tags={<AssetGroupTags groupSelector={groupSelector} repoAddress={repoAddress} />}
         tabs={
           <Box
@@ -121,12 +105,11 @@ export const AssetGroupRoot = ({
       />
       {tab === 'lineage' ? (
         <AssetGraphExplorer
-          fetchOptions={fetchOptions}
-          options={lineageOptions}
+          fetchOptions={{groupSelector}}
+          options={{preferAssetRendering: true, explodeComposites: true}}
           explorerPath={explorerPathFromString(path || 'lineage/')}
           onChangeExplorerPath={onChangeExplorerPath}
           onNavigateToSourceAssetNode={onNavigateToSourceAssetNode}
-          viewType={AssetGraphViewType.GROUP}
         />
       ) : (
         <AssetsCatalogTable
@@ -141,53 +124,34 @@ export const AssetGroupRoot = ({
   );
 };
 
-export const ASSET_GROUP_METADATA_QUERY = gql`
+const ASSET_GROUP_METADATA_QUERY = gql`
   query AssetGroupMetadataQuery($selector: AssetGroupSelector!) {
     assetNodes(group: $selector) {
       id
-      automationCondition {
-        __typename
+      autoMaterializePolicy {
+        policyType
       }
     }
   }
 `;
 
-export const AssetGroupTags = ({
+const AssetGroupTags: React.FC<{groupSelector: AssetGroupSelector; repoAddress: RepoAddress}> = ({
   repoAddress,
   groupSelector,
-}: {
-  groupSelector: AssetGroupSelector;
-  repoAddress: RepoAddress;
 }) => {
-  const automaterializeSensorsFlagState = useAutoMaterializeSensorFlag();
-  const queryResult = useQuery<AssetGroupMetadataQuery, AssetGroupMetadataQueryVariables>(
+  const {data} = useQuery<AssetGroupMetadataQuery, AssetGroupMetadataQueryVariables>(
     ASSET_GROUP_METADATA_QUERY,
     {variables: {selector: groupSelector}},
   );
-  const {data} = queryResult;
-
-  const sensorTag = () => {
-    const assetNodes = data?.assetNodes;
-    if (!assetNodes || assetNodes.length === 0) {
-      return null;
-    }
-
-    if (
-      automaterializeSensorsFlagState === 'has-global-amp' &&
-      assetNodes.some((a) => !!a.automationCondition)
-    ) {
-      return <AutomaterializeDaemonStatusTag />;
-    }
-
-    return null;
-  };
 
   return (
     <>
       <Tag icon="asset_group">
         Asset Group in <RepositoryLink repoAddress={repoAddress} />
       </Tag>
-      {sensorTag()}
+      {data?.assetNodes?.some((a) => !!a.autoMaterializePolicy) && (
+        <AutomaterializeDaemonStatusTag />
+      )}
     </>
   );
 };

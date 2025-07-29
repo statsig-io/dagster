@@ -2,17 +2,19 @@ import * as React from 'react';
 import styled from 'styled-components';
 
 import {Box} from './Box';
+import {Colors} from './Colors';
 import {Table, TableProps} from './Table';
 
 export type MetadataTableRow = {key: string; label?: React.ReactNode; value: React.ReactNode};
 
 interface Props {
+  dark?: boolean;
   rows: (MetadataTableRow | null | undefined)[];
-  spacing?: 0 | 2 | 4;
+  spacing: 0 | 2 | 4;
 }
 
 export const MetadataTable = (props: Props) => {
-  const {rows, spacing = 4} = props;
+  const {rows, spacing, dark = false} = props;
 
   return (
     <StyledTable>
@@ -26,7 +28,7 @@ export const MetadataTable = (props: Props) => {
             <tr key={key}>
               <td>
                 <Box padding={{vertical: spacing, right: 32}}>
-                  <MetadataKey>{label ?? key}</MetadataKey>
+                  <MetadataKey $dark={dark}>{label ?? key}</MetadataKey>
                 </Box>
               </td>
               <td>
@@ -40,18 +42,23 @@ export const MetadataTable = (props: Props) => {
   );
 };
 
+MetadataTable.defaultProps = {
+  spacing: 4,
+};
+
 export const StyledTable = styled.table`
   border-spacing: 0;
   td {
     vertical-align: top;
   }
 
-  td .bp5-control {
+  td .bp4-control {
     margin-bottom: 0;
   }
 `;
 
-const MetadataKey = styled.div`
+const MetadataKey = styled.div<{$dark: boolean}>`
+  color: ${({$dark}) => ($dark ? Colors.Gray200 : Colors.Gray600)};
   font-weight: 400;
 `;
 

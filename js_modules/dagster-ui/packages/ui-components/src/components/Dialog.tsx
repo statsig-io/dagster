@@ -4,10 +4,10 @@ import * as React from 'react';
 import styled, {createGlobalStyle} from 'styled-components';
 
 import {Box} from './Box';
-import {Colors} from './Color';
+import {Colors} from './Colors';
 import {ErrorBoundary} from './ErrorBoundary';
-import {Icon, IconName} from './Icon';
-import {UnstyledButton} from './UnstyledButton';
+import {Group} from './Group';
+import {IconName, Icon} from './Icon';
 
 interface Props
   extends Omit<
@@ -20,52 +20,33 @@ interface Props
 }
 
 export const Dialog = (props: Props) => {
-  const {icon, title, children, isCloseButtonShown, onClose, ...rest} = props;
+  const {icon, title, children, ...rest} = props;
   return (
     <BlueprintDialog
       {...rest}
-      portalClassName={`dagster-portal${props.portalClassName ? ` ${props.portalClassName}` : ''}`}
+      portalClassName="dagster-portal"
       backdropClassName="dagster-backdrop"
-      className={`dagster-dialog${props.className ? ` ${props.className}` : ''}`}
-      onClose={onClose}
+      className="dagster-dialog"
     >
-      {title ? (
-        <DialogHeader
-          icon={icon}
-          label={title}
-          isCloseButtonShown={isCloseButtonShown}
-          onClose={onClose}
-        />
-      ) : null}
+      {title ? <DialogHeader icon={icon} label={title} /> : null}
       <ErrorBoundary region="dialog">{children}</ErrorBoundary>
     </BlueprintDialog>
   );
 };
 
 interface HeaderProps {
-  label: React.ReactNode;
   icon?: IconName;
-  isCloseButtonShown?: boolean;
-  onClose?: Props['onClose'];
+  label: React.ReactNode;
 }
 
-export const DialogHeader = (props: HeaderProps) => {
-  const {icon, label, isCloseButtonShown, onClose} = props;
+export const DialogHeader: React.FC<HeaderProps> = (props) => {
+  const {icon, label} = props;
   return (
-    <Box
-      background={Colors.backgroundDefault()}
-      padding={{vertical: 16, horizontal: 20}}
-      border="bottom"
-    >
-      <Box flex={{direction: 'row', gap: 8, alignItems: 'center'}}>
-        {icon ? <Icon name={icon} color={Colors.accentPrimary()} /> : null}
+    <Box background={Colors.White} padding={{vertical: 16, horizontal: 20}} border="bottom">
+      <Group direction="row" spacing={8} alignItems="center">
+        {icon ? <Icon name={icon} color={Colors.Gray800} /> : null}
         <DialogHeaderText>{label}</DialogHeaderText>
-        {isCloseButtonShown ? (
-          <UnstyledButton onClick={onClose}>
-            <Icon name="close" />
-          </UnstyledButton>
-        ) : null}
-      </Box>
+      </Group>
     </Box>
   );
 };
@@ -76,7 +57,7 @@ interface BodyProps {
 
 export const DialogBody = ({children, ...rest}: BodyProps) => {
   return (
-    <Box padding={{vertical: 16, horizontal: 20}} background={Colors.backgroundDefault()} {...rest}>
+    <Box padding={{vertical: 16, horizontal: 20}} background={Colors.White} {...rest}>
       {children}
     </Box>
   );
@@ -88,12 +69,16 @@ interface DialogFooterProps {
   left?: React.ReactNode;
 }
 
-export const DialogFooter = ({children, left, topBorder}: DialogFooterProps) => {
+export const DialogFooter: React.FC<DialogFooterProps> = ({
+  children,
+  left,
+  topBorder,
+}: DialogFooterProps) => {
   return (
     <Box
       padding={{bottom: 16, top: topBorder ? 16 : 8, horizontal: 20}}
       border={topBorder ? 'top' : null}
-      background={Colors.backgroundDefault()}
+      background={Colors.White}
       flex={{direction: 'row', alignItems: 'center', justifyContent: 'space-between'}}
     >
       <div>{left}</div>
@@ -112,20 +97,20 @@ export const DialogHeaderText = styled.div`
 `;
 
 export const GlobalDialogStyle = createGlobalStyle`
-  .dagster-portal .bp5-overlay-backdrop {
-    background-color: ${Colors.dialogBackground()};
+  .dagster-portal .bp4-overlay-backdrop {
+    background-color: ${Colors.WashGray};
   }
 
-  .dagster-portal .bp5-dialog-container {
+  .dagster-portal .bp4-dialog-container {
     display: grid;
     grid-template-rows: minmax(40px, 1fr) auto minmax(40px, 2fr);
     grid-template-columns: 40px 8fr 40px;
   }
 
-  .dagster-portal .bp5-dialog {
-    background-color: ${Colors.backgroundDefault()};
+  .dagster-portal .bp4-dialog {
+    background-color: ${Colors.White};
     border-radius: 4px;
-    box-shadow: ${Colors.shadowDefault()} 0px 2px 12px;
+    box-shadow: rgba(0, 0, 0, 0.12) 0px 2px 12px;
     grid-row: 2;
     grid-column: 2;
     margin: 0 auto;
@@ -133,24 +118,24 @@ export const GlobalDialogStyle = createGlobalStyle`
     padding: 0;
   }
 
-  .dagster-portal .bp5-dialog > :first-child {
+  .dagster-portal .bp4-dialog > :first-child {
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
   }
 
-  .dagster-portal .bp5-dialog > :last-child {
+  .dagster-portal .bp4-dialog > :last-child {
     border-bottom-right-radius: 4px;
     border-bottom-left-radius: 4px;
   }
 
-  .dagster-portal .bp5-dialog-container.bp5-overlay-enter > .bp5-dialog,
-  .dagster-portal .bp5-dialog-container.bp5-overlay-appear > .bp5-dialog {
+  .dagster-portal .bp4-dialog-container.bp4-overlay-enter > .bp4-dialog,
+  .dagster-portal .bp4-dialog-container.bp4-overlay-appear > .bp4-dialog {
     opacity: 0;
     transform:scale(0.95);
   }
 
-  .dagster-portal .bp5-dialog-container.bp5-overlay-enter-active > .bp5-dialog,
-  .dagster-portal .bp5-dialog-container.bp5-overlay-appear-active > .bp5-dialog {
+  .dagster-portal .bp4-dialog-container.bp4-overlay-enter-active > .bp4-dialog,
+  .dagster-portal .bp4-dialog-container.bp4-overlay-appear-active > .bp4-dialog {
     opacity: 1;
     transform: scale(1);
     transition-delay: 0;
@@ -159,12 +144,12 @@ export const GlobalDialogStyle = createGlobalStyle`
     transition-timing-function: ease-in-out;
   }
 
-  .dagster-portal .bp5-dialog-container.bp5-overlay-exit > .bp5-dialog {
+  .dagster-portal .bp4-dialog-container.bp4-overlay-exit > .bp4-dialog {
     opacity: 1;
     transform: scale(1);
   }
 
-  .dagster-portal .bp5-dialog-container.bp5-overlay-exit-active > .bp5-dialog {
+  .dagster-portal .bp4-dialog-container.bp4-overlay-exit-active > .bp4-dialog {
     opacity: 0;
     transform: scale(0.95);
     transition-delay:0;

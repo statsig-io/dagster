@@ -1,129 +1,87 @@
-import {MouseEvent, ReactNode} from 'react';
-import {ExternalToast, toast} from 'sonner';
+// eslint-disable-next-line no-restricted-imports
+import {IToasterProps, ToasterInstance, ToastProps} from '@blueprintjs/core';
+import React from 'react';
+import {createGlobalStyle} from 'styled-components';
 
-import {BaseButton} from './BaseButton';
-import {Box} from './Box';
-import {Colors} from './Color';
-import {Icon, IconName} from './Icon';
-import styles from './css/Toaster.module.css';
+import {Colors} from './Colors';
+import {IconName, Icon} from './Icon';
+import {createToaster} from './createToaster';
 
-export {Toaster, toast} from 'sonner';
+export const GlobalToasterStyle = createGlobalStyle`
+  .dagster-toaster {
+    .bp4-toast {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 22px;
+      color: ${Colors.White};
+      background-color: ${Colors.Gray700};
+    }
 
-type Intent = 'success' | 'warning' | 'danger' | 'primary' | 'none';
+    .bp4-button-group {
+      padding: 2px;
+    }
+  
+    .bp4-toast-message {
+      display: flex;
+      align-items: center;
+      padding: 6px;
+      gap: 8px;
+    }
 
-export type ToastConfig = {
-  intent: Intent;
-  message: ReactNode;
-  icon?: IconName;
-  timeout?: number;
-  action?:
-    | {
-        type: 'button';
-        text: string;
-        onClick: (e: MouseEvent<HTMLButtonElement>) => void;
+    .bp4-toast.bp4-intent-primary,
+    .bp4-toast.bp4-intent-primary .bp4-button {
+      background-color: ${Colors.Gray700} !important;
+    }
+
+    .bp4-toast.bp4-intent-success,
+    .bp4-toast.bp4-intent-success .bp4-button {
+      background-color: ${Colors.Blue500} !important;
+    }
+
+    .bp4-toast.bp4-intent-warning,
+    .bp4-toast.bp4-intent-warning .bp4-button {
+      background-color: ${Colors.Gray700} !important;
+
+      .bp4-icon-cross {
+        color: ${Colors.Gray300} !important;
       }
-    | {type: 'custom'; element: ReactNode};
-};
+    }
 
-export const showToast = async (config: ToastConfig, sonnerConfig: ExternalToast = {}) => {
-  const {intent, message, icon, timeout, action} = config;
-  return toast.custom(
-    (id) => {
-      return (
-        <Toast
-          id={id}
-          intent={intent}
-          message={message}
-          icon={icon}
-          timeout={timeout}
-          action={action}
-        />
+    .bp4-toast.bp4-intent-danger,
+    .bp4-toast.bp4-intent-danger .bp4-button {
+      background-color: ${Colors.Red500} !important;
+    }
+  }
+`;
+
+// Patch the Blueprint Toaster to take a Dagster iconName instead of a Blueprint iconName
+export type DToasterShowProps = Omit<ToastProps, 'icon'> & {icon?: IconName};
+export type DToasterShowFn = (props: DToasterShowProps, key?: string) => string;
+export type DToaster = Omit<ToasterInstance, 'show'> & {show: DToasterShowFn};
+
+const setup = (instance: ToasterInstance): DToaster => {
+  const show = instance.show;
+  const showWithDagsterIcon: DToasterShowFn = ({icon, ...rest}, key) => {
+    if (icon && typeof icon === 'string') {
+      rest.message = (
+        <>
+          <Icon name={icon} color={Colors.White} />
+          {rest.message}
+        </>
       );
-    },
-    {duration: timeout, ...sonnerConfig},
-  );
-};
-
-interface ToastProps extends ToastConfig {
-  id: string | number;
-}
-
-const Toast = (props: ToastProps) => {
-  const {id, intent, message, icon, action} = props;
-  const {backgroundColor, icon: iconFromIntent} = intentToStyles[intent];
-  const iconName = icon ?? iconFromIntent;
-
-  const actionElement = () => {
-    if (!action) {
-      return null;
     }
-
-    if (action.type === 'custom') {
-      return action.element;
-    }
-
-    return (
-      <BaseButton
-        fillColor={Colors.backgroundGray()}
-        fillColorHover={Colors.backgroundGrayHover()}
-        textColor={Colors.textDefault()}
-        strokeColor={Colors.backgroundGray()}
-        strokeColorHover={Colors.backgroundGrayHover()}
-        label={action.text}
-        className={styles.toastButton}
-        onClick={(e) => {
-          if (action.onClick) {
-            action.onClick(e);
-          }
-          toast.dismiss(id);
-        }}
-      />
-    );
+    return show.apply(instance, [rest, key]);
   };
 
-  return (
-    <div className={styles.toastContainer}>
-      <Box
-        padding={16}
-        background={backgroundColor}
-        border={{side: 'all', width: 1, color: backgroundColor}}
-        flex={{direction: 'row', alignItems: 'center', gap: 8}}
-        className={styles.toastInner}
-      >
-        <Box flex={{direction: 'row', alignItems: 'flex-start', gap: 8}}>
-          {iconName ? <Icon name={iconName} color={Colors.accentPrimary()} /> : null}
-          <div className={styles.toastMessage}>{message}</div>
-        </Box>
-        {actionElement()}
-      </Box>
-    </div>
-  );
+  return Object.assign(instance, {show: showWithDagsterIcon}) as DToaster;
 };
 
-type ToastStyleForIntent = {
-  backgroundColor: string;
-  icon: IconName;
+const asyncCreate = async (props?: IToasterProps, container?: HTMLElement): Promise<DToaster> => {
+  const instance = await createToaster({...props, className: 'dagster-toaster'}, container);
+  return setup(instance);
 };
 
-const intentToStyles: Record<Intent, ToastStyleForIntent> = {
-  success: {
-    backgroundColor: Colors.backgroundBlue(),
-    icon: 'success',
-  },
-  warning: {
-    backgroundColor: Colors.backgroundYellow(),
-    icon: 'warning',
-  },
-  danger: {
-    backgroundColor: Colors.backgroundRed(),
-    icon: 'error',
-  },
-  primary: {
-    backgroundColor: Colors.backgroundBlue(),
-    icon: 'info',
-  },
-  none: {
-    backgroundColor: Colors.backgroundGray(),
-    icon: 'info',
-  },
+export const Toaster = {
+  asyncCreate,
 };

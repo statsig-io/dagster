@@ -133,7 +133,7 @@ def test_bad_config():
     for config_fragment, error_message in configs_and_expected_errors:
         config = {"ops": {"test": {"config": {"query_job_config": config_fragment}}}}
         result = validate_config(env_type, config)
-        assert error_message in result.errors[0].message  # pyright: ignore[reportOptionalSubscript]
+        assert error_message in result.errors[0].message
 
     configs_and_expected_validation_errors = [
         (
@@ -149,7 +149,7 @@ def test_bad_config():
     for config_fragment, error_message in configs_and_expected_validation_errors:
         config = {"ops": {"test": {"config": {"query_job_config": config_fragment}}}}
         result = process_config(env_type, config)
-        assert error_message in result.errors[0].message  # pyright: ignore[reportOptionalSubscript]
+        assert error_message in result.errors[0].message
 
 
 @pytest.mark.integration
@@ -168,7 +168,7 @@ def test_create_delete_dataset():
 
     with pytest.raises(
         google.api_core.exceptions.Conflict,
-        match=f"Already Exists: Dataset {client.project}:{dataset}",
+        match="Already Exists: Dataset %s:%s" % (client.project, dataset),
     ):
         create_dataset.execute_in_process(
             run_config={"ops": {"create_op": {"config": {"dataset": dataset, "exists_ok": False}}}}
@@ -193,7 +193,7 @@ def test_create_delete_dataset():
     # Delete non-existent with "not_found_ok" False should fail
     with pytest.raises(
         google.api_core.exceptions.NotFound,
-        match=f"Not found: Dataset {client.project}:{dataset}",
+        match="Not found: Dataset %s:%s" % (client.project, dataset),
     ):
         result = delete_dataset.execute_in_process(
             run_config={
@@ -208,13 +208,13 @@ def test_create_delete_dataset():
 @pytest.mark.skip
 def test_pd_df_load():
     dataset = get_dataset()
-    table = "{}.{}".format(dataset, "df")
+    table = "%s.%s" % (dataset, "df")
 
     test_df = pd.DataFrame({"num1": [1, 3], "num2": [2, 4]})
 
     create_op = bq_create_dataset.alias("create_op")
     load_op = import_df_to_bq.alias("load_op")
-    query_op = bq_op_for_queries([f"SELECT num1, num2 FROM {table}"]).alias("query_op")
+    query_op = bq_op_for_queries(["SELECT num1, num2 FROM %s" % table]).alias("query_op")
     delete_op = bq_delete_dataset.alias("delete_op")
 
     @op(
@@ -256,7 +256,8 @@ def test_pd_df_load():
             )
         assert (
             "loading data to BigQuery from pandas DataFrames requires either pyarrow or fastparquet"
-            " to be installed" in str(exc_info.value.user_exception)
+            " to be installed"
+            in str(exc_info.value.user_exception)
         )
 
         @job(resource_defs={"bigquery": bigquery_resource})
@@ -277,11 +278,14 @@ def test_pd_df_load():
 @pytest.mark.skip
 def test_gcs_load():
     dataset = get_dataset()
-    table = "{}.{}".format(dataset, "df")
+    table = "%s.%s" % (dataset, "df")
 
     create_op = bq_create_dataset.alias("create_op")
     query_op = bq_op_for_queries(
-        [f"SELECT string_field_0, string_field_1 FROM {table} ORDER BY string_field_0 ASC LIMIT 1"]
+        [
+            "SELECT string_field_0, string_field_1 FROM %s ORDER BY string_field_0 ASC LIMIT 1"
+            % table
+        ]
     ).alias("query_op")
     delete_op = bq_delete_dataset.alias("delete_op")
 

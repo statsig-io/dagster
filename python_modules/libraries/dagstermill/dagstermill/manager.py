@@ -1,9 +1,7 @@
 import os
 import pickle
 import uuid
-from asyncio import AbstractEventLoop
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, AbstractSet, Any, Optional, cast  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Any, Mapping, Optional, cast
 
 from dagster import (
     AssetMaterialization,
@@ -16,7 +14,6 @@ from dagster import (
     TypeCheck,
     _check as check,
 )
-from dagster._annotations import beta
 from dagster._core.definitions.dependency import NodeHandle
 from dagster._core.definitions.events import RetryRequested
 from dagster._core.definitions.graph_definition import GraphDefinition
@@ -30,6 +27,7 @@ from dagster._core.execution.api import create_execution_plan, scoped_job_contex
 from dagster._core.execution.plan.outputs import StepOutputHandle
 from dagster._core.execution.plan.plan import ExecutionPlan
 from dagster._core.execution.plan.state import KnownExecutionState
+from dagster._core.execution.plan.step import ExecutionStep
 from dagster._core.execution.resources_init import (
     get_required_resource_keys_to_init,
     resource_initialization_event_generator,
@@ -44,13 +42,12 @@ from dagster._loggers import colored_console_logger
 from dagster._serdes import unpack_value
 from dagster._utils import EventGenerationManager
 
-from dagstermill.context import DagstermillExecutionContext, DagstermillRuntimeExecutionContext
-from dagstermill.errors import DagstermillError
-from dagstermill.serialize import PICKLE_PROTOCOL
+from .context import DagstermillExecutionContext, DagstermillRuntimeExecutionContext
+from .errors import DagstermillError
+from .serialize import PICKLE_PROTOCOL
 
 if TYPE_CHECKING:
     from dagster._core.definitions.node_definition import NodeDefinition
-    from dagster._core.execution.plan.step import ExecutionStep
 
 
 class DagstermillResourceEventGenerationManager(EventGenerationManager):
@@ -63,10 +60,14 @@ class DagstermillResourceEventGenerationManager(EventGenerationManager):
         return iter(())
 
     def teardown(self):
-        return [teardown_event for teardown_event in super().generate_teardown_events()]
+        return [
+            teardown_event
+            for teardown_event in super(
+                DagstermillResourceEventGenerationManager, self
+            ).generate_teardown_events()
+        ]
 
 
-@beta
 class Manager:
     def __init__(self):
         self.job = None
@@ -86,7 +87,6 @@ class Manager:
         resource_keys_to_init: Optional[AbstractSet[str]],
         instance: Optional[DagsterInstance],
         emit_persistent_events: Optional[bool],
-        event_loop: Optional[AbstractEventLoop],
     ):
         """Drop-in replacement for
         `dagster._core.execution.resources_init.resource_initialization_manager`.  It uses a
@@ -101,7 +101,6 @@ class Manager:
             resource_keys_to_init=resource_keys_to_init,
             instance=instance,
             emit_persistent_events=emit_persistent_events,
-            event_loop=event_loop,
         )
         self.resource_manager = DagstermillResourceEventGenerationManager(
             generator, ScopedResourcesBuilder
@@ -196,9 +195,9 @@ class Manager:
                 op_name=op.name,
                 node_handle=node_handle,
                 step_context=cast(
-                    "StepExecutionContext",
+                    StepExecutionContext,
                     job_context.for_step(
-                        cast("ExecutionStep", execution_plan.get_step_by_key(step_key)),
+                        cast(ExecutionStep, execution_plan.get_step_by_key(step_key)),
                         known_state=known_state,
                     ),
                 ),
@@ -312,18 +311,18 @@ class Manager:
         # deferred import for perf
         import scrapbook
 
-        if not self.op_def.has_output(output_name):  # pyright: ignore[reportOptionalMemberAccess]
+        if not self.op_def.has_output(output_name):
             raise DagstermillError(
-                f"Op {self.op_def.name} does not have output named {output_name}.Expected one of"  # pyright: ignore[reportOptionalMemberAccess]
-                f" {[str(output_def.name) for output_def in self.op_def.output_defs]}"  # pyright: ignore[reportOptionalMemberAccess]
+                f"Op {self.op_def.name} does not have output named {output_name}.Expected one of"
+                f" {[str(output_def.name) for output_def in self.op_def.output_defs]}"
             )
 
         # pass output value cross process boundary using io manager
-        step_context = self.context._step_context  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue,reportOptionalMemberAccess]
+        step_context = self.context._step_context  # noqa: SLF001
         # Note: yield_result currently does not support DynamicOutput
 
         # dagstermill assets do not support yielding additional results within the notebook:
-        if len(step_context.job_def.asset_layer.executable_asset_keys) > 0:  # pyright: ignore[reportArgumentType]
+        if len(step_context.job_def.asset_layer.asset_keys) > 0:
             raise DagstermillError(
                 "dagstermill assets do not currently support dagstermill.yield_result"
             )
@@ -370,7 +369,7 @@ class Manager:
         import scrapbook
 
         event_id = f"event-{uuid.uuid4()}"
-        out_file_path = os.path.join(self.marshal_dir, event_id)  # pyright: ignore[reportCallIssue,reportArgumentType]
+        out_file_path = os.path.join(self.marshal_dir, event_id)
         with open(out_file_path, "wb") as fd:
             fd.write(pickle.dumps(dagster_event, PICKLE_PROTOCOL))
 

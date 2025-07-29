@@ -1,3 +1,5 @@
+from typing import List
+
 from dagster import AssetIn, asset
 
 
@@ -10,8 +12,8 @@ from dagster import AssetIn, asset
         }
     },
 )
-def create_my_first_list() -> list[int]:
-    """Example writing a simple Python list into a W&B Artifact.
+def create_my_first_list() -> List[int]:
+    """Example writing a simple Python list into an W&B Artifact.
 
     The list is pickled in the Artifact. We configure the Artifact type with the
     metadata object.
@@ -32,7 +34,7 @@ def create_my_first_list() -> list[int]:
         }
     },
 )
-def create_my_final_list(my_first_list: list[int]) -> list[int]:
+def create_my_final_list(my_first_list: List[int]) -> List[int]:
     """Example downloading an Artifact and creating a new one.
 
     Args:

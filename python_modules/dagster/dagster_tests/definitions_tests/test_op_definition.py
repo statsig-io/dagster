@@ -1,19 +1,17 @@
-import sys
-
-import dagster as dg
 import pytest
+from dagster import DagsterInvariantViolationError, In, Nothing, OpDefinition, Out, Output, job, op
 
 
 def test_op_def_direct():
     def the_op_fn(_, inputs):
         assert inputs["x"] == 5
-        yield dg.Output(inputs["x"] + 1, output_name="the_output")
+        yield Output(inputs["x"] + 1, output_name="the_output")
 
-    op_def = dg.OpDefinition(
-        the_op_fn, "the_op", ins={"x": dg.In(dagster_type=int)}, outs={"the_output": dg.Out(int)}
+    op_def = OpDefinition(
+        the_op_fn, "the_op", ins={"x": In(dagster_type=int)}, outs={"the_output": Out(int)}
     )
 
-    @dg.job
+    @job
     def the_job(x):
         op_def(x)
 
@@ -25,13 +23,13 @@ def test_multi_out_implicit_none():
     #
     # non-optional Nothing
     #
-    @dg.op(out={"a": dg.Out(dg.Nothing), "b": dg.Out(dg.Nothing)})
+    @op(out={"a": Out(Nothing), "b": Out(Nothing)})
     def implicit():
         pass
 
     implicit()
 
-    @dg.job
+    @job
     def implicit_job():
         implicit()
 
@@ -41,22 +39,22 @@ def test_multi_out_implicit_none():
     #
     # optional (fails)
     #
-    @dg.op(out={"a": dg.Out(dg.Nothing), "b": dg.Out(dg.Nothing, is_required=False)})
+    @op(out={"a": Out(Nothing), "b": Out(Nothing, is_required=False)})
     def optional():
         pass
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match="has multiple outputs, but only one output was returned",
     ):
         optional()
 
-    @dg.job
+    @job
     def optional_job():
         optional()
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match="has multiple outputs, but only one output was returned",
     ):
         optional_job.execute_in_process()
@@ -64,32 +62,22 @@ def test_multi_out_implicit_none():
     #
     # untyped (fails)
     #
-    @dg.op(out={"a": dg.Out(), "b": dg.Out()})
+    @op(out={"a": Out(), "b": Out()})
     def untyped():
         pass
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match="has multiple outputs, but only one output was returned",
     ):
         untyped()
 
-    @dg.job
+    @job
     def untyped_job():
         untyped()
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match="has multiple outputs, but only one output was returned",
     ):
         untyped_job.execute_in_process()
-
-
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="| operator Python 3.10 or higher")
-def test_pipe_union_optional():
-    # union is not yet supported, but you can express optional as union of T and None
-    @dg.op
-    def pipe_union(thing: str | None) -> str | None:  # type: ignore
-        return thing
-
-    assert pipe_union

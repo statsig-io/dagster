@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterator
+from typing import Iterator
 
 import pytest
 from dagster._utils import file_relative_path

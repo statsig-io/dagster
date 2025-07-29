@@ -1,4 +1,4 @@
-## Using Dagster with Types and Metadata Example [UNMAINTAINED]
+## Using Dagster with Types and Metadata Example
 
 The example builds a small graph of software-defined assets that compute bollinger bands for S&P 500 prices.
 

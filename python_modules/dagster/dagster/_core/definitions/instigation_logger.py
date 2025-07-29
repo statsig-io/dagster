@@ -1,19 +1,14 @@
 import json
 import logging
-import sys
-import threading
-import traceback
-from collections.abc import Mapping, Sequence
 from contextlib import ExitStack
-from typing import IO, Any, Optional
+from typing import IO, Any, List, Mapping, Optional, Sequence
 
-from dagster_shared import seven
-
+from dagster import _seven
 from dagster._core.instance import DagsterInstance
-from dagster._core.log_manager import LOG_RECORD_METADATA_ATTR
-from dagster._core.storage.compute_log_manager import ComputeIOType, ComputeLogManager
+from dagster._core.log_manager import DAGSTER_META_KEY
+from dagster._core.storage.captured_log_manager import CapturedLogManager
+from dagster._core.storage.compute_log_manager import ComputeIOType
 from dagster._core.utils import coerce_valid_log_level
-from dagster._utils.error import serializable_error_info_from_exc_info
 from dagster._utils.log import create_console_logger
 
 
@@ -23,35 +18,26 @@ class DispatchingLogHandler(logging.Handler):
     implemented as loggers rather than log handlers.
     """
 
-    def __init__(self, downstream_loggers: list[logging.Logger]):
-        # Setting up a local thread context here to allow the DispatchingLogHandler
-        # to be used in multi threading environments where the handler is called by
-        # different threads with different log messages in parallel.
-        self._local_thread_context = threading.local()
-        self._local_thread_context.should_capture = True
+    def __init__(self, downstream_loggers: List[logging.Logger]):
+        self._should_capture = True
         self._downstream_loggers = [*downstream_loggers]
         super().__init__()
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if not hasattr(self._local_thread_context, "should_capture"):
-            # Since only the "main" thread gets an initialized
-            # "_local_thread_context.should_capture" variable through the __init__()
-            # we need to set a default value for all other threads here.
-            self._local_thread_context.should_capture = True
-        return self._local_thread_context.should_capture
+        return self._should_capture
 
     def emit(self, record: logging.LogRecord):
         """For any received record, add metadata, and have handlers handle it."""
         try:
-            self._local_thread_context.should_capture = False
+            self._should_capture = False
             for logger in self._downstream_loggers:
                 logger.handle(record)
         finally:
-            self._local_thread_context.should_capture = True
+            self._should_capture = True
 
 
 class CapturedLogHandler(logging.Handler):
-    """Persist logging records to an IO stream controlled by the ComputeLogManager."""
+    """Persist logging records to an IO stream controlled by the CapturedLogManager."""
 
     def __init__(self, write_stream: IO):
         self._write_stream = write_stream
@@ -64,18 +50,7 @@ class CapturedLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord):
         self._has_logged = True
-
-        record_dict = record.__dict__
-        exc_info = record_dict.get("exc_info")
-        if exc_info:
-            record_dict["exc_info"] = "".join(traceback.format_exception(*exc_info))
-
-        try:
-            self._write_stream.write(seven.json.dumps(record_dict) + "\n")
-        except Exception:
-            sys.stderr.write(
-                f"Exception writing to logger event stream: {serializable_error_info_from_exc_info(sys.exc_info())}\n"
-            )
+        self._write_stream.write(_seven.json.dumps(record.__dict__) + "\n")
 
 
 class InstigationLogger(logging.Logger):
@@ -91,73 +66,57 @@ class InstigationLogger(logging.Logger):
 
     def __init__(
         self,
-        log_key: Optional[Sequence[str]] = None,
+        log_key: Optional[List[str]] = None,
         instance: Optional[DagsterInstance] = None,
         repository_name: Optional[str] = None,
-        instigator_name: Optional[str] = None,
+        name: Optional[str] = None,
         level: int = logging.NOTSET,
-        logger_name: str = "dagster",
-        console_logger: Optional[logging.Logger] = None,
     ):
-        super().__init__(name=logger_name, level=coerce_valid_log_level(level))
+        super().__init__(name="dagster", level=coerce_valid_log_level(level))
         self._log_key = log_key
         self._instance = instance
         self._repository_name = repository_name
-        self._instigator_name = instigator_name
+        self._name = name
         self._exit_stack = ExitStack()
         self._capture_handler = None
-        if console_logger is None:
-            console_logger = create_console_logger("dagster", logging.INFO)
-        self.addHandler(DispatchingLogHandler([console_logger]))
+        self.addHandler(DispatchingLogHandler([create_console_logger("dagster", logging.INFO)]))
 
     def __enter__(self):
         if (
             self._log_key
             and self._instance
-            and isinstance(self._instance.compute_log_manager, ComputeLogManager)
+            and isinstance(self._instance.compute_log_manager, CapturedLogManager)
         ):
-            try:
-                write_stream = self._exit_stack.enter_context(
-                    self._instance.compute_log_manager.open_log_stream(
-                        self._log_key, ComputeIOType.STDERR
-                    )
+            write_stream = self._exit_stack.enter_context(
+                self._instance.compute_log_manager.open_log_stream(
+                    self._log_key, ComputeIOType.STDERR
                 )
-            except Exception:
-                sys.stderr.write(
-                    f"Exception initializing logger write stream: {serializable_error_info_from_exc_info(sys.exc_info())}\n"
-                )
-                write_stream = None
-
+            )
             if write_stream:
                 self._capture_handler = CapturedLogHandler(write_stream)
                 self.addHandler(self._capture_handler)
         return self
 
     def __exit__(self, _exception_type, _exception_value, _traceback):
-        try:
-            self._exit_stack.close()
-        except Exception:
-            sys.stderr.write(
-                f"Exception closing logger write stream: {serializable_error_info_from_exc_info(sys.exc_info())}\n"
-            )
+        self._exit_stack.close()
 
-    def _annotate_record(self, record: logging.LogRecord) -> logging.LogRecord:
-        if self._repository_name and self._instigator_name:
+    def _annotate_record(self, record) -> logging.LogRecord:
+        if self._repository_name and self._name:
             message = record.getMessage()
             setattr(
                 record,
-                LOG_RECORD_METADATA_ATTR,
+                DAGSTER_META_KEY,
                 {
                     "repository_name": self._repository_name,
-                    "name": self._instigator_name,
+                    "name": self._name,
                     "orig_message": message,
                 },
             )
-            record.msg = " - ".join([self._repository_name, self._instigator_name, message])
+            record.msg = " - ".join([self._repository_name, self._name, message])
             record.args = tuple()
         return record
 
-    def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func, extra, sinfo):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func, extra, sinfo):
         record = super().makeRecord(name, level, fn, lno, msg, args, exc_info, func, extra, sinfo)
         return self._annotate_record(record)
 
@@ -168,6 +127,9 @@ class InstigationLogger(logging.Logger):
 def get_instigation_log_records(
     instance: DagsterInstance, log_key: Sequence[str]
 ) -> Sequence[Mapping[str, Any]]:
+    if not isinstance(instance.compute_log_manager, CapturedLogManager):
+        return []
+
     log_data = instance.compute_log_manager.get_log_data(log_key)
     raw_logs = log_data.stderr.decode("utf-8") if log_data.stderr else ""
 
@@ -177,7 +139,7 @@ def get_instigation_log_records(
             continue
 
         try:
-            records.append(seven.json.loads(line))
+            records.append(_seven.json.loads(line))
         except json.JSONDecodeError:
             continue
     return records

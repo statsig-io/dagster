@@ -2,26 +2,42 @@
 
 # Makefile oddities:
 # - Commands must start with literal tab characters (\t), not spaces.
-# - Multi-command rules (like `ruff` below) by default terminate as soon as a command has a non-0
+# - Multi-command rules (like `black` below) by default terminate as soon as a command has a non-0
 #   exit status. Prefix the command with "-" to instruct make to continue to the next command
 #   regardless of the preceding command's exit status.
+
+# NOTE: See pyproject.toml [tool.black] for majority of black config. Only include/exclude options
+# and format targets should be specified here. Note there are separate pyproject.toml for the root
+# and examples/docs_snippets.
+#
+# NOTE: Use `extend-exclude` instead of `exclude`. If `exclude` is provided, it stops black from
+# reading gitignore. `extend-exclude` is layered on top of gitignore. See:
+#   https://black.readthedocs.io/en/stable/usage_and_configuration/file_collection_and_discovery.html#gitignore
+black:
+	black --fast \
+    --extend-exclude="examples/docs_snippets|snapshots" \
+    docs examples integration_tests helm python_modules .buildkite
+	black --fast \
+    examples/docs_snippets
+
+check_black:
+	black --check --fast \
+    --extend-exclude="examples/docs_snippets|snapshots" \
+    docs examples integration_tests helm python_modules .buildkite
+	black --check --fast \
+    examples/docs_snippets
 
 pyright:
 	python scripts/run-pyright.py --all
 
-install_prettier:
-	npm install -g prettier
-
 install_pyright:
-	uv pip install -e 'python_modules/dagster[pyright]' -e 'python_modules/dagster-pipes' -e 'python_modules/libraries/dagster-shared'
+	pip install -e 'python_modules/dagster[pyright]'
 
 rebuild_pyright:
 	python scripts/run-pyright.py --all --rebuild
 
-# Skip typecheck so that this can be used to test if all requirements can successfully be resolved
-# in CI independently of typechecking.
 rebuild_pyright_pins:
-	python scripts/run-pyright.py --update-pins --skip-typecheck
+	python scripts/run-pyright.py --update-pins
 
 quick_pyright:
 	python scripts/run-pyright.py --diff
@@ -30,38 +46,23 @@ unannotated_pyright:
 	python scripts/run-pyright.py --unannotated
 
 ruff:
-	-ruff check --fix .
-	ruff format .
+	ruff --fix .
 
 check_ruff:
-	ruff check .
-	ruff format --check .
+	ruff .
 
-check_prettier:
-#NOTE: excludes symlinked md files
-	prettier `git ls-files \
-	'python_modules/*.yml' 'python_modules/*.yaml' 'helm/*.yml' 'helm/*.yaml' \
-	'*.md' '.claude/*.md' \
-	':!:docs/*.md' ':!:helm/**/templates/*.yml' ':!:helm/**/templates/*.yaml' \
-	':!:README.md' ':!:GEMINI.md'` \
-	--check
-
-prettier:
-	prettier `git ls-files \
-	'python_modules/*.yml' 'python_modules/*.yaml' 'helm/*.yml' 'helm/*.yaml' \
-	'*.md' '.claude/*.md' \
-	':!:docs/*.md' ':!:helm/**/templates/*.yml' ':!:helm/**/templates/*.yaml' \
-	':!:README.md' ':!:GEMINI.md'` \
-	--write
+yamllint:
+	yamllint -c .yamllint.yaml --strict \
+    `git ls-files 'helm/*.yml' 'helm/*.yaml' ':!:helm/**/templates/*.yml' ':!:helm/**/templates/*.yaml'`
 
 install_dev_python_modules:
-	python scripts/install_dev_python_modules.py -q
+	python scripts/install_dev_python_modules.py -qqq
 
 install_dev_python_modules_verbose:
 	python scripts/install_dev_python_modules.py
 
 install_dev_python_modules_verbose_m1:
-	python scripts/install_dev_python_modules.py --include-prebuilt-grpcio-wheel
+	python scripts/install_dev_python_modules.py -qqq --include-prebuilt-grpcio-wheel
 
 graphql:
 	cd js_modules/dagster-ui/; make generate-graphql; make generate-perms
@@ -69,8 +70,8 @@ graphql:
 sanity_check:
 #NOTE:  fails on nonPOSIX-compliant shells (e.g. CMD, powershell)
 #NOTE:  dagster-hex is an external package
-	@echo Checking for prod installs - if any are listed below reinstall with 'uv pip install -e'
-	@! (uv pip list --exclude-editable | grep -e dagster | grep -v dagster-hex | grep -v dagster-hightouch)
+	@echo Checking for prod installs - if any are listed below reinstall with 'pip -e'
+	@! (pip list --exclude-editable | grep -e dagster | grep -v dagster-hex)
 
 rebuild_ui: sanity_check
 	cd js_modules/dagster-ui/; yarn install && yarn build
@@ -92,13 +93,3 @@ check_manifest:
 	check-manifest python_modules/dagster-webserver
 	check-manifest python_modules/dagster-graphql
 	ls python_modules/libraries | xargs -n 1 -Ipkg check-manifest python_modules/libraries/pkg
-
-ready_dagster_dg_docs_for_publish:
-	rm -rf python_modules/libraries/dagster-dg-cli/dagster_dg_cli/docs/packages
-	mkdir -p python_modules/libraries/dagster-dg-cli/dagster_dg_cli/docs/packages
-	cp -r js_modules/dagster-ui/packages/dg-docs-components python_modules/libraries/dagster-dg-cli/dagster_dg_cli/docs/packages
-	cp -r js_modules/dagster-ui/packages/dg-docs-site python_modules/libraries/dagster-dg-cli/dagster_dg_cli/docs/packages
-	rm -rf python_modules/libraries/dagster-dg-cli/dagster_dg_cli/docs/packages/dg-docs-components/.next
-	rm -rf python_modules/libraries/dagster-dg-cli/dagster_dg_cli/docs/packages/dg-docs-site/.next
-	rm -rf python_modules/libraries/dagster-dg-cli/dagster_dg_cli/docs/packages/dg-docs-components/node_modules
-	rm -rf python_modules/libraries/dagster-dg-cli/dagster_dg_cli/docs/packages/dg-docs-site/node_modules

@@ -1,6 +1,8 @@
 import prometheus_client
-from dagster import ConfigurableResource, resource
-from dagster._annotations import beta
+from dagster import (
+    ConfigurableResource,
+    resource,
+)
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
 from dagster._core.execution.context.init import InitResourceContext
 from prometheus_client.exposition import default_handler
@@ -11,7 +13,6 @@ class PrometheusClient:
     """Integrates with Prometheus via the prometheus_client library."""
 
 
-@beta
 class PrometheusResource(ConfigurableResource):
     """This resource is used to send metrics to a Prometheus Pushgateway.
 
@@ -30,7 +31,7 @@ class PrometheusResource(ConfigurableResource):
         def my_job():
             example_prometheus_op()
 
-        Definitions(
+        defs = Definitions(
             jobs=[my_job],
             resources={"prometheus": PrometheusResource(gateway="http://pushgateway.local")},
         )
@@ -48,7 +49,7 @@ class PrometheusResource(ConfigurableResource):
         default=30,
         description="is how long delete will attempt to connect before giving up. Defaults to 30s.",
     )
-    _registry: prometheus_client.CollectorRegistry = PrivateAttr(default=None)  # type: ignore
+    _registry: prometheus_client.CollectorRegistry = PrivateAttr(default=None)
 
     @classmethod
     def _is_dagster_maintained(cls) -> bool:
@@ -149,7 +150,6 @@ class PrometheusResource(ConfigurableResource):
         )
 
 
-@beta
 @dagster_maintained_resource
 @resource(
     config_schema=PrometheusResource.to_config_schema(),

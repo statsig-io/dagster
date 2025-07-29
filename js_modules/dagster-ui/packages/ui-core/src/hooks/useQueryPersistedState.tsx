@@ -1,44 +1,23 @@
 import isEqual from 'lodash/isEqual';
-import memoize from 'lodash/memoize';
 import qs from 'qs';
-import {useCallback, useMemo, useRef} from 'react';
+import React from 'react';
 import {useHistory, useLocation} from 'react-router-dom';
 
-import {useSetStateUpdateCallback} from './useSetStateUpdateCallback';
-import {COMMON_COLLATOR} from '../app/Util';
-
-export type QueryPersistedDataType =
-  | {[key: string]: QueryPersistedDataType}
-  | Array<QueryPersistedDataType>
-  | Set<QueryPersistedDataType>
-  | string
-  | undefined
-  | number
-  | boolean
+type QueryPersistedDataType =
+  | {[key: string]: any}
+  | Array<any>
+  | (string | undefined | number)
+  | (boolean | undefined)
   | null;
 
-let currentQueryString: qs.ParsedQs = {};
+let currentQueryString: {[key: string]: any} = {};
 
 export type QueryPersistedStateConfig<T extends QueryPersistedDataType> = {
   queryKey?: string;
-  defaults?: qs.ParsedQs;
-  decode?: (raw: qs.ParsedQs) => T;
-  encode?: (raw: T) => qs.ParsedQs;
-  behavior?: 'push' | 'replace';
+  defaults?: {[key: string]: any};
+  decode?: (raw: {[key: string]: any}) => T;
+  encode?: (raw: T) => {[key: string]: any};
 };
-
-const defaultEncode = memoize(<T extends QueryPersistedDataType>(queryKey: string) => {
-  return (raw: T) => {
-    return {[queryKey]: raw} as qs.ParsedQs;
-  };
-});
-const defaultDecode = memoize(
-  <T extends QueryPersistedDataType>(queryKey: string) =>
-    (qs: {[key: string]: QueryPersistedDataType}) =>
-      inferTypeOfQueryParam<T>(qs[queryKey]),
-);
-
-const ARRAY_LIMIT = 1000;
 
 /**
  * This goal of this hook is to make it easy to replace `React.useState` with a version
@@ -72,17 +51,17 @@ const ARRAY_LIMIT = 1000;
  */
 export function useQueryPersistedState<T extends QueryPersistedDataType>(
   options: QueryPersistedStateConfig<T>,
-): [T, React.Dispatch<React.SetStateAction<T>>] {
-  const {queryKey, defaults, behavior = 'replace'} = options;
+): [T, (updates: T) => void] {
+  const {queryKey, defaults} = options;
   let {encode, decode} = options;
 
   if (queryKey) {
     // Just a short-hand way of providing encode/decode that go from qs object => string
     if (!encode) {
-      encode = defaultEncode(queryKey);
+      encode = (raw: T) => ({[queryKey]: raw});
     }
     if (!decode) {
-      decode = defaultDecode(queryKey);
+      decode = (qs: {[key: string]: any}) => inferTypeOfQueryParam<T>(qs[queryKey]);
     }
   }
 
@@ -91,48 +70,24 @@ export function useQueryPersistedState<T extends QueryPersistedDataType>(
 
   // Note: If you have provided defaults and no encoder/decoder, the `value` exposed by
   // useQueryPersistedState only includes those keys so other params don't leak into your value.
-  const qsDecoded = useMemo(() => {
+  const qsDecoded = React.useMemo(() => {
     // We stash the query string into a ref so that the setter can operate on the /current/
     // location even if the user retains it and calls it after other query string changes.
-    try {
-      currentQueryString = qs.parse(location.search, {
-        ignoreQueryPrefix: true,
-        // @ts-expect-error QS types are out of date.
-        throwOnLimitExceeded: true,
-        arrayLimit: ARRAY_LIMIT,
-      });
-    } catch {
-      console.error(
-        `Very large array (>${ARRAY_LIMIT} items) detected in query string. This will be permitted, but should be investigated.`,
-      );
-      // After logging the issue, permit arbitrarily large arrays in order to avoid breaking
-      // the app. This might be slow for users, but we won't end up with unexpected objects replacing
-      // any arrays. https://github.com/ljharb/qs?tab=readme-ov-file#parsing-arrays
-      // This is a pretty unlikely situation: GET request querystrings will be limited by length,
-      // and in any case, we shouldn't have many interfaces in the app that allow unbounded arrays to be encoded
-      // in querystrings.
-      currentQueryString = qs.parse(location.search, {
-        ignoreQueryPrefix: true,
-        arrayLimit: Infinity,
-      });
-    }
+    currentQueryString = qs.parse(location.search, {ignoreQueryPrefix: true});
 
-    const qsWithDefaults = {
-      ...(defaults || {}),
-      ...currentQueryString,
-    };
+    const qsWithDefaults = {...(defaults || {}), ...currentQueryString};
     return decode ? decode(qsWithDefaults) : inferTypeOfQueryParams<T>(qsWithDefaults);
   }, [location.search, decode, defaults]);
 
   // If `decode` yields a non-primitive type (eg: object or array), by default we yield
   // an object with a new identity on every render. To prevent possible render loops caused by
   // our value as a useEffect dependency, etc., we re-use the last yielded object if it isEqual.
-  const valueRef = useRef<T>(qsDecoded);
-  const onChangeRef = useCallback<(updated: T) => void>(
+  const valueRef = React.useRef<T>(qsDecoded);
+  const onChangeRef = React.useCallback<(updated: T) => void>(
     (updated: T) => {
-      const next: qs.ParsedQs = {
+      const next = {
         ...currentQueryString,
-        ...(encode ? encode(updated) : (updated as qs.ParsedQs)),
+        ...(encode ? encode(updated) : (updated as {[key: string]: any})),
       };
 
       // omit any keys that are equal to the defaults to keep URLs minimal
@@ -142,43 +97,17 @@ export function useQueryPersistedState<T extends QueryPersistedDataType>(
         }
       }
 
-      // Check if the query has changed. If so, perform a replace. Otherwise, do nothing
-      // to ensure that we don't end up in a `replace` loop. If we're not in prod, always run
-      // the `replace` so that we surface any unwanted loops during development.
-      if (
-        (process.env.NODE_ENV !== 'production' && behavior === 'replace') ||
-        !areQueriesEqual(currentQueryString, next)
-      ) {
-        currentQueryString = next;
-        const nextPath = `${history.location.pathname}?${qs.stringify(next, {arrayFormat: 'indices'})}`;
-        if (behavior === 'replace') {
-          history.replace(nextPath);
-        } else {
-          history.push(nextPath);
-        }
-      }
+      currentQueryString = next;
+
+      history.replace(`${location.pathname}?${qs.stringify(next, {arrayFormat: 'brackets'})}`);
     },
-    [encode, options.defaults, behavior, history],
+    [history, encode, location.pathname, options],
   );
 
   if (!isEqual(valueRef.current, qsDecoded)) {
     valueRef.current = qsDecoded;
   }
-  return [valueRef.current, useSetStateUpdateCallback(valueRef.current, onChangeRef)];
-}
-
-// Stringify two query objects to check whether they have the same value. Explicitly sort the
-// keys, since key order is otherwise undefined.
-function areQueriesEqual(queryA: qs.ParsedQs, queryB: qs.ParsedQs) {
-  const stringA = qs.stringify(queryA, {
-    arrayFormat: 'brackets',
-    sort: (a, b) => COMMON_COLLATOR.compare(a, b),
-  });
-  const stringB = qs.stringify(queryB, {
-    arrayFormat: 'brackets',
-    sort: (a, b) => COMMON_COLLATOR.compare(a, b),
-  });
-  return stringA === stringB;
+  return [valueRef.current, onChangeRef];
 }
 
 function inferTypeOfQueryParam<T>(q: any): T {

@@ -1,10 +1,9 @@
 from collections import namedtuple
-from collections.abc import Sequence
-from typing import Callable
 
 import dagster._check as check
 import graphene
 from dagster._config import (
+    ConfigSchemaSnapshot,
     EvaluationError as DagsterEvaluationError,
     EvaluationStackListItemEntry,
     EvaluationStackMapKeyEntry,
@@ -17,13 +16,12 @@ from dagster._config import (
     RuntimeMismatchErrorData,
     SelectorTypeErrorData,
 )
-from dagster._config.snap import ConfigTypeSnap
-from dagster._core.remote_representation.represented import RepresentedJob
+from dagster._core.host_representation.represented import RepresentedJob
 from dagster._utils.error import SerializableErrorInfo
 from graphene.types.generic import GenericScalar
 
-from dagster_graphql.schema.config_types import GrapheneConfigTypeField
-from dagster_graphql.schema.util import non_null_list
+from ..config_types import GrapheneConfigTypeField
+from ..util import non_null_list
 
 
 class GrapheneEvaluationStackListItemEntry(graphene.ObjectType):
@@ -112,7 +110,10 @@ class GrapheneEvaluationStack(graphene.ObjectType):
     class Meta:
         name = "EvaluationStack"
 
-    def __init__(self, stack):
+    def __init__(self, config_schema_snapshot, stack):
+        self._config_schema_snapshot = check.inst_param(
+            config_schema_snapshot, "config_schema_snapshot", ConfigSchemaSnapshot
+        )
         self._stack = stack
         super().__init__()
 
@@ -142,16 +143,15 @@ class GraphenePipelineConfigValidationError(graphene.Interface):
         name = "PipelineConfigValidationError"
 
     @staticmethod
-    def from_dagster_error(
-        get_config_type: Callable[[str], ConfigTypeSnap], error: DagsterEvaluationError
-    ):
+    def from_dagster_error(config_schema_snapshot, error):
+        check.inst_param(config_schema_snapshot, "config_schema_snapshot", ConfigSchemaSnapshot)
         check.inst_param(error, "error", DagsterEvaluationError)
 
         if isinstance(error.error_data, RuntimeMismatchErrorData):
             return GrapheneRuntimeMismatchConfigError(
                 message=error.message,
                 path=[],  # TODO: remove
-                stack=GrapheneEvaluationStack(error.stack),
+                stack=GrapheneEvaluationStack(config_schema_snapshot, error.stack),
                 reason=error.reason.value,
                 value_rep=error.error_data.value_rep,
             )
@@ -159,10 +159,10 @@ class GraphenePipelineConfigValidationError(graphene.Interface):
             return GrapheneMissingFieldConfigError(
                 message=error.message,
                 path=[],  # TODO: remove
-                stack=GrapheneEvaluationStack(error.stack),
+                stack=GrapheneEvaluationStack(config_schema_snapshot, error.stack),
                 reason=error.reason.value,
                 field=GrapheneConfigTypeField(
-                    get_config_type,
+                    config_schema_snapshot=config_schema_snapshot,
                     field_snap=error.error_data.field_snap,
                 ),
             )
@@ -170,11 +170,11 @@ class GraphenePipelineConfigValidationError(graphene.Interface):
             return GrapheneMissingFieldsConfigError(
                 message=error.message,
                 path=[],  # TODO: remove
-                stack=GrapheneEvaluationStack(error.stack),
+                stack=GrapheneEvaluationStack(config_schema_snapshot, error.stack),
                 reason=error.reason.value,
                 fields=[
                     GrapheneConfigTypeField(
-                        get_config_type,
+                        config_schema_snapshot=config_schema_snapshot,
                         field_snap=field_snap,
                     )
                     for field_snap in error.error_data.field_snaps
@@ -185,7 +185,7 @@ class GraphenePipelineConfigValidationError(graphene.Interface):
             return GrapheneFieldNotDefinedConfigError(
                 message=error.message,
                 path=[],  # TODO: remove
-                stack=GrapheneEvaluationStack(error.stack),
+                stack=GrapheneEvaluationStack(config_schema_snapshot, error.stack),
                 reason=error.reason.value,
                 field_name=error.error_data.field_name,
             )
@@ -193,7 +193,7 @@ class GraphenePipelineConfigValidationError(graphene.Interface):
             return GrapheneFieldsNotDefinedConfigError(
                 message=error.message,
                 path=[],  # TODO: remove
-                stack=GrapheneEvaluationStack(error.stack),
+                stack=GrapheneEvaluationStack(config_schema_snapshot, error.stack),
                 reason=error.reason.value,
                 field_names=error.error_data.field_names,
             )
@@ -201,7 +201,7 @@ class GraphenePipelineConfigValidationError(graphene.Interface):
             return GrapheneSelectorTypeConfigError(
                 message=error.message,
                 path=[],  # TODO: remove
-                stack=GrapheneEvaluationStack(error.stack),
+                stack=GrapheneEvaluationStack(config_schema_snapshot, error.stack),
                 reason=error.reason.value,
                 incoming_fields=error.error_data.incoming_fields,
             )
@@ -303,17 +303,14 @@ class GrapheneRunConfigValidationInvalid(graphene.ObjectType):
         name = "RunConfigValidationInvalid"
 
     @staticmethod
-    def for_validation_errors(
-        represented_pipeline: RepresentedJob, errors: Sequence[DagsterEvaluationError]
-    ) -> "GrapheneRunConfigValidationInvalid":
+    def for_validation_errors(represented_pipeline, errors):
         check.inst_param(represented_pipeline, "represented_pipeline", RepresentedJob)
         check.list_param(errors, "errors", of_type=DagsterEvaluationError)
         return GrapheneRunConfigValidationInvalid(
             pipeline_name=represented_pipeline.name,
             errors=[
                 GraphenePipelineConfigValidationError.from_dagster_error(
-                    represented_pipeline.config_schema_snapshot.get_config_snap,
-                    err,
+                    represented_pipeline.config_schema_snapshot, err
                 )
                 for err in errors
             ],

@@ -349,7 +349,7 @@ class AzureBlobStorageDestination(GeneratedAirbyteDestination):
     ):
         """Airbyte Destination for Azure Blob Storage.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/destinations/azure-blob-storage
+        Documentation can be found at https://docs.airbyte.com/integrations/destinations/azureblobstorage
 
         Args:
             name (str): The name of the destination.
@@ -1294,7 +1294,7 @@ class CsvDestination(GeneratedAirbyteDestination):
     def __init__(self, name: str, destination_path: str):
         """Airbyte Destination for Csv.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/destinations/csv
+        Documentation can be found at https://docs.airbyte.com/integrations/destinations/local-csv
 
         Args:
             name (str): The name of the destination.
@@ -2469,7 +2469,7 @@ class ScaffoldDestinationPythonDestination(GeneratedAirbyteDestination):
     def __init__(self, name: str, TODO: Optional[str] = None):
         """Airbyte Destination for Scaffold Destination Python.
 
-        Documentation for this source is no longer available.
+        Documentation can be found at https://docs.airbyte.com/integrations/destinations/scaffold-destination-python
 
         Args:
             name (str): The name of the destination.

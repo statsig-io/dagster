@@ -1,32 +1,43 @@
 # ruff: isort: skip_file
 
-import dagster as dg
+from dagster import (
+    AssetMaterialization,
+    Config,
+    DagsterEventType,
+    ExpectationResult,
+    ExecuteInProcessResult,
+    OpExecutionContext,
+    Output,
+    Out,
+    op,
+    graph,
+)
 
 
-class AddOneConfig(dg.Config):
+class AddOneConfig(Config):
     num: int = 1
 
 
-class AddTwoConfig(dg.Config):
+class AddTwoConfig(Config):
     num: int = 1
 
 
-@dg.op
+@op
 def add_one(config: AddOneConfig) -> int:
     return config.num + 1
 
 
-@dg.op
+@op
 def add_two(config: AddTwoConfig) -> int:
     return config.num + 2
 
 
-@dg.op
+@op
 def subtract(left: int, right: int) -> int:
     return left - right
 
 
-@dg.graph
+@graph
 def do_math():
     subtract(add_one(), add_two())
 
@@ -34,20 +45,20 @@ def do_math():
 do_math_job = do_math.to_job()
 
 
-@dg.op(out={"a_num": dg.Out(dagster_type=int)})
+@op(out={"a_num": Out(dagster_type=int)})
 def emit_events_op():
     a_num = 2
-    yield dg.ExpectationResult(
+    yield ExpectationResult(
         success=a_num > 0, label="positive", description="A num must be positive"
     )
-    yield dg.AssetMaterialization(
+    yield AssetMaterialization(
         asset_key="persisted_string",
         description="Let us pretend we persisted the string somewhere",
     )
-    yield dg.Output(value=a_num, output_name="a_num")
+    yield Output(value=a_num, output_name="a_num")
 
 
-@dg.graph
+@graph
 def emit_events():
     emit_events_op()
 
@@ -59,10 +70,10 @@ emit_events_job = emit_events.to_job()
 def test_job():
     result = do_math_job.execute_in_process()
 
-    # return type is dg.ExecuteInProcessResult
-    assert isinstance(result, dg.ExecuteInProcessResult)
+    # return type is ExecuteInProcessResult
+    assert isinstance(result, ExecuteInProcessResult)
     assert result.success
-    # inspect individual dg.op result
+    # inspect individual op result
     assert result.output_for_node("add_one") == 2
     assert result.output_for_node("add_two") == 3
     assert result.output_for_node("subtract") == -1
@@ -72,7 +83,7 @@ def test_job():
 
 
 # start_invocation_op_marker
-@dg.op
+@op
 def my_op_to_test():
     return 5
 
@@ -89,7 +100,7 @@ def test_op_with_invocation():
 
 
 # start_invocation_op_inputs_marker
-@dg.op
+@op
 def my_op_with_inputs(x, y):
     return x + y
 
@@ -113,7 +124,7 @@ class FooResource(ConfigurableResource):
     my_string: str
 
 
-@dg.op
+@op
 def op_requires_foo(foo: FooResource):
     return f"found {foo.my_string}"
 
@@ -122,14 +133,15 @@ def op_requires_foo(foo: FooResource):
 
 
 # start_op_requires_config
-import dagster as dg
+
+from dagster import Config
 
 
-class MyOpConfig(dg.Config):
+class MyOpConfig(Config):
     my_int: int
 
 
-@dg.op
+@op
 def op_requires_config(config: MyOpConfig):
     return config.my_int * 2
 
@@ -149,8 +161,8 @@ def test_op_with_config():
 # start_op_requires_context_marker
 
 
-@dg.op
-def context_op(context: dg.OpExecutionContext):
+@op
+def context_op(context: OpExecutionContext):
     context.log.info(f"My run ID is {context.run_id}")
 
 
@@ -159,14 +171,15 @@ def context_op(context: dg.OpExecutionContext):
 # start_test_op_with_resource_client
 
 from dagster import ConfigurableResource
-from unittest import mock
+import mock
 
 
 class Client:
     def __init__(self, api_key):
         self._api_key = api_key
 
-    def query(self, body): ...
+    def query(self, body):
+        ...
 
 
 class MyClientResource(ConfigurableResource):
@@ -176,7 +189,7 @@ class MyClientResource(ConfigurableResource):
         return Client(self.api_key)
 
 
-@dg.op
+@op
 def my_client_op(client_resource: MyClientResource):
     return client_resource.get_client().query({"foo": "bar"})
 
@@ -199,7 +212,7 @@ def test_my_client_op():
 
 
 def test_op_with_context():
-    context = dg.build_op_context()
+    context = build_op_context()
     context_op(context)
 
 
@@ -213,6 +226,8 @@ def test_op_with_resource():
 
 
 # end_test_op_resource_marker
+
+from dagster import resource
 
 
 # start_test_job_with_config
@@ -245,17 +260,17 @@ def test_event_stream():
 
     assert job_result.success
 
-    # when one dg.op has multiple outputs, you need to specify output name
+    # when one op has multiple outputs, you need to specify output name
     assert job_result.output_for_node("emit_events_op", output_name="a_num") == 2
 
     events_for_step = job_result.events_for_node("emit_events_op")
     assert [se.event_type for se in events_for_step] == [
-        dg.DagsterEventType.STEP_START,
-        dg.DagsterEventType.STEP_EXPECTATION_RESULT,
-        dg.DagsterEventType.ASSET_MATERIALIZATION,
-        dg.DagsterEventType.STEP_OUTPUT,
-        dg.DagsterEventType.HANDLED_OUTPUT,
-        dg.DagsterEventType.STEP_SUCCESS,
+        DagsterEventType.STEP_START,
+        DagsterEventType.STEP_EXPECTATION_RESULT,
+        DagsterEventType.ASSET_MATERIALIZATION,
+        DagsterEventType.STEP_OUTPUT,
+        DagsterEventType.HANDLED_OUTPUT,
+        DagsterEventType.STEP_SUCCESS,
     ]
 
     # ops communicate what they did via the event stream, viewable in tools (e.g. the Dagster UI)
@@ -270,12 +285,12 @@ def test_event_stream():
 
     # apologies for verboseness here! we can do better.
     expectation_result = expectation_event.event_specific_data.expectation_result
-    assert isinstance(expectation_result, dg.ExpectationResult)
+    assert isinstance(expectation_result, ExpectationResult)
     assert expectation_result.success
     assert expectation_result.label == "positive"
 
     materialization = materialization_event.event_specific_data.materialization
-    assert isinstance(materialization, dg.AssetMaterialization)
+    assert isinstance(materialization, AssetMaterialization)
     assert materialization.label == "persisted_string"
 
 
@@ -315,7 +330,7 @@ def test_asset_with_inputs():
 
 
 # start_test_resource_asset
-from dagster import asset, ConfigurableResource
+from dagster import asset, ConfigurableResource, build_op_context, with_resources
 
 
 class BarResource(ConfigurableResource):
@@ -336,10 +351,10 @@ def test_asset_requires_bar():
 
 
 # start_test_config_asset
-import dagster as dg
+from dagster import asset, Config, build_op_context
 
 
-class MyAssetConfig(dg.Config):
+class MyAssetConfig(Config):
     my_string: str
 
 
@@ -382,7 +397,7 @@ def structured_data(data_source):
 def test_data_assets():
     result = materialize_to_memory([data_source, structured_data])
     assert result.success
-    # Materialized objects can be accessed in terms of the underlying dg.op
+    # Materialized objects can be accessed in terms of the underlying op
     materialized_data = result.output_for_node("structured_data")
     ...
 
@@ -391,20 +406,22 @@ def test_data_assets():
 
 
 # start_materialize_resources
-import dagster as dg
-
-from unittest import mock
-
-
-class MyServiceResource(ConfigurableResource): ...
+from dagster import asset, materialize_to_memory, ConfigurableResource
+import mock
 
 
-@asset
-def asset_requires_service(service: MyServiceResource): ...
+class MyServiceResource(ConfigurableResource):
+    ...
 
 
 @asset
-def other_asset_requires_service(service: MyServiceResource): ...
+def asset_requires_service(service: MyServiceResource):
+    ...
+
+
+@asset
+def other_asset_requires_service(service: MyServiceResource):
+    ...
 
 
 def test_assets_require_service():

@@ -4,7 +4,8 @@ import pytest
 from dagster import job, repository
 from dagster._core.errors import DagsterInvalidDefinitionError, DagsterInvariantViolationError
 from dagstermill.examples.repository import hello_world
-from dagstermill.test_utils import exec_for_test
+
+from .test_ops import exec_for_test
 
 
 def test_yes_output_notebook_no_file_manager():
@@ -66,10 +67,10 @@ def test_yes_output_notebook_yes_io_manager():
 
         output_path = (
             materializations[0]
-            .event_specific_data.materialization.metadata["Executed notebook"]  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+            .event_specific_data.materialization.metadata["Executed notebook"]
             .path
         )
-        assert os.path.exists(output_path)  # pyright: ignore[reportArgumentType]
+        assert os.path.exists(output_path)
 
-        with open(output_path, "rb") as f:  # pyright: ignore[reportCallIssue,reportArgumentType]
+        with open(output_path, "rb") as f:
             assert f.read() == result.output_for_node("load_notebook")

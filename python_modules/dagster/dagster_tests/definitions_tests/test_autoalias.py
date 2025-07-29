@@ -1,18 +1,18 @@
-import dagster as dg
+from dagster import graph, job, op
 
 
-@dg.op
+@op
 def hello(_context):
     return "hello"
 
 
-@dg.op
+@op
 def echo(_context, x):
     return x
 
 
 def test_job_autoalias():
-    @dg.job
+    @job
     def autopipe():
         echo(echo(echo(hello())))
 
@@ -25,11 +25,11 @@ def test_job_autoalias():
 
 
 def test_composite_autoalias():
-    @dg.graph
+    @graph
     def mega_echo(foo):
         echo(echo(echo(foo)))
 
-    @dg.job
+    @job
     def autopipe():
         mega_echo(hello())
 

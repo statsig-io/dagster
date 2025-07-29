@@ -1,33 +1,46 @@
 # mypy: disable-error-code=return-value
 from datetime import datetime
+from typing import List
 
-import dagster as dg
 import pytest
+from dagster import (
+    AssetKey,
+    ConfigMapping,
+    DynamicOut,
+    DynamicOutput,
+    In,
+    graph,
+    job,
+    op,
+    repository,
+)
+from dagster._core.errors import DagsterInvalidInvocationError, DagsterInvalidSubsetError
 from dagster._core.events import DagsterEventType
 from dagster._core.execution.execute_in_process_result import ExecuteInProcessResult
+from dagster._core.storage.input_manager import input_manager
 
 
-@dg.op
+@op
 def return_one():
     return 1
 
 
-@dg.op
+@op
 def return_two():
     return 2
 
 
-@dg.op
+@op
 def adder(num1: int, num2: int):
     return num1 + num2
 
 
-@dg.op
+@op
 def add_one(num: int):
     return num + 1
 
 
-@dg.graph
+@graph
 def do_it_all():
     add_one(adder(return_one(), return_two()))
 
@@ -43,7 +56,7 @@ def _success_step_keys(result: ExecuteInProcessResult):
 def test_repo_can_load():
     my_subset_job = do_it_all.to_job(name="subset_job", op_selection=["add_one"])
 
-    @dg.repository
+    @repository
     def my_repo():
         return [do_it_all, my_subset_job]
 
@@ -105,15 +118,15 @@ def test_simple_op_selection_on_subset_execution():
 
 
 def test_unselected_extra_config_input():
-    @dg.op
+    @op
     def root(_):
         return "public.table_1"
 
-    @dg.op(config_schema={"some_config": str})
+    @op(config_schema={"some_config": str})
     def takes_input(_, input_table):
         return input_table
 
-    @dg.graph
+    @graph
     def full():
         takes_input(root())
 
@@ -130,15 +143,15 @@ def test_unselected_extra_config_input():
 
 
 def test_unsatisfied_input_use_config():
-    @dg.op
+    @op
     def start(_, x):
         return x
 
-    @dg.op
+    @op
     def end(_, x=1):
         return x
 
-    @dg.graph
+    @graph
     def testing():
         end(start())
 
@@ -168,19 +181,19 @@ def test_unsatisfied_input_use_config():
 
 
 def test_unsatisfied_input_use_input_manager():
-    @dg.input_manager(input_config_schema=int)
+    @input_manager(input_config_schema=int)
     def config_io_man(context):
         return context.config
 
-    @dg.op(ins={"x": dg.In(input_manager_key="my_loader")})
+    @op(ins={"x": In(input_manager_key="my_loader")})
     def start(x):
         return x
 
-    @dg.op
+    @op
     def end(_, x):
         return x
 
-    @dg.graph
+    @graph
     def testing_io():
         end(start())
 
@@ -205,15 +218,15 @@ def test_unsatisfied_input_use_input_manager():
 
 
 def test_unsatisfied_input_with_asset_key_use_config():
-    @dg.op(ins={"x": dg.In(asset_key=dg.AssetKey("foo"))})
+    @op(ins={"x": In(asset_key=AssetKey("foo"))})
     def start(_, x: int):
         return x
 
-    @dg.op(ins={"x": dg.In(asset_key=dg.AssetKey("bar"))})
+    @op(ins={"x": In(asset_key=AssetKey("bar"))})
     def end(_, x: int):
         return x
 
-    @dg.graph
+    @graph
     def testing_io():
         end(start())
 
@@ -238,38 +251,38 @@ def test_unsatisfied_input_with_asset_key_use_config():
 
 
 def test_op_selection_on_dynamic_orchestration():
-    @dg.op
+    @op
     def num_range():
         return 3
 
-    @dg.op(out=dg.DynamicOut())
+    @op(out=DynamicOut())
     def emit(num: int = 2):
         for i in range(num):
-            yield dg.DynamicOutput(value=i, mapping_key=str(i))
+            yield DynamicOutput(value=i, mapping_key=str(i))
 
-    @dg.op
+    @op
     def emit_ten(_):
         return 10
 
-    @dg.op
+    @op
     def multiply_by_two(context, y):
         context.log.info("multiply_by_two is returning " + str(y * 2))
         return y * 2
 
-    @dg.op
+    @op
     def multiply_inputs(context, y, ten):
         context.log.info("multiply_inputs is returning " + str(y * ten))
         return y * ten
 
-    @dg.op
+    @op
     def sum_numbers(_, nums):
         return sum(nums)
 
-    @dg.op
+    @op
     def echo(_, x: int) -> int:
         return x
 
-    @dg.graph
+    @graph
     def dynamic_graph():
         numbers = emit(num_range())
         dynamic = numbers.map(lambda num: multiply_by_two(multiply_inputs(num, emit_ten())))
@@ -289,7 +302,7 @@ def test_op_selection_on_dynamic_orchestration():
 
 
 def test_op_selection_on_alias():
-    @dg.graph
+    @graph
     def _aliased():
         add_one.alias("add_one_1")(return_one.alias("return_one_1")())
         add_one.alias("add_one_2")(return_one.alias("return_one_2")())
@@ -310,7 +323,7 @@ def test_op_selection_on_alias():
 
 
 def test_op_selection_on_implicit_alias():
-    @dg.job
+    @job
     def _reuse_ops_job():
         add_one(return_one())
         add_one(return_one())
@@ -336,16 +349,16 @@ def test_op_selection_with_config_mapping():
             }
         }
 
-    @dg.op
+    @op
     def my_op(context):
         return context.op_config["foo"]
 
-    @dg.graph
+    @graph
     def my_graph():
         my_op()
         my_op.alias("my_other_op")()
 
-    my_job = my_graph.to_job(config=dg.ConfigMapping(my_config_fn))
+    my_job = my_graph.to_job(config=ConfigMapping(my_config_fn))
     result = my_job.execute_in_process(run_config={"foo": "bar"})
     assert result.success
     assert result.output_for_node("my_op") == "bar"
@@ -371,12 +384,12 @@ def test_disconnected_selection():
     assert set(executed_step_keys) == {"return_two", "add_one"}
 
 
-@dg.graph
+@graph
 def subgraph():
     return add_one(adder(return_one(), return_two()))
 
 
-@dg.job
+@job
 def supergraph():
     add_one(subgraph())
 
@@ -428,7 +441,7 @@ def test_nested_graph_selection_inside_graph():
 
 def test_nested_graph_selection_both_inside_and_outside_disconnected():
     # select inside subgraph (disconnected to the outside) and outside
-    with pytest.raises(dg.DagsterInvalidSubsetError):
+    with pytest.raises(DagsterInvalidSubsetError):
         # can't build graph bc "subgraph" won't have output mapping but "add_one" expect output
         supergraph.execute_in_process(
             op_selection=["subgraph.adder", "add_one"],
@@ -468,11 +481,11 @@ def test_nested_graph_selection_unsatisfied_subgraph_inputs():
 
 
 def test_nested_graph_selection_input_mapping():
-    @dg.graph
+    @graph
     def _subgraph(x):
         return add_one(adder.alias("aliased_adder")(return_one(), x))
 
-    @dg.job
+    @job
     def _super():
         add_one(_subgraph(return_two()))
 
@@ -502,15 +515,15 @@ def test_nested_graph_selection_input_mapping():
 
 
 def test_sub_sub_graph_selection():
-    @dg.graph
+    @graph
     def subsubgraph():
         return add_one(return_one())
 
-    @dg.graph
+    @graph
     def _subgraph():
         return add_one(subsubgraph())
 
-    @dg.job
+    @job
     def _super():
         add_one(_subgraph())
 
@@ -567,18 +580,18 @@ def test_sub_sub_graph_selection():
 
 
 def test_nested_op_selection_fan_in():
-    @dg.op
-    def sum_fan_in(nums: list[int]) -> int:
+    @op
+    def sum_fan_in(nums: List[int]) -> int:
         return sum(nums)
 
-    @dg.graph
+    @graph
     def fan_in_graph():
         fan_outs = []
         for i in range(0, 10):
             fan_outs.append(return_one.alias(f"return_one_{i}")())
         return sum_fan_in(fan_outs)
 
-    @dg.job
+    @job
     def _super():
         add_one(fan_in_graph())
 
@@ -600,25 +613,25 @@ def test_nested_op_selection_fan_in():
 
 
 def test_nested_op_selection_with_config_mapping():
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def concat(context, x: str):
         return x + context.op_config
 
-    @dg.op(config_schema=str)
+    @op(config_schema=str)
     def my_op(context):
         return context.op_config
 
     def _nested_config_fn(outer):
         return {"my_op": {"config": outer}, "concat": {"config": outer}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_nested_config_fn, config_schema=str))
+    @graph(config=ConfigMapping(config_fn=_nested_config_fn, config_schema=str))
     def my_nested_graph():
         concat(my_op())
 
     def _config_fn(outer):
         return {"my_nested_graph": {"config": outer}}
 
-    @dg.graph(config=dg.ConfigMapping(config_fn=_config_fn, config_schema=str))
+    @graph(config=ConfigMapping(config_fn=_config_fn, config_schema=str))
     def my_graph():
         my_nested_graph()
 
@@ -642,7 +655,7 @@ def test_nested_op_selection_with_config_mapping():
     assert result_sub_2.output_for_node("my_nested_graph.my_op") == "hello"
 
     # sub sub graph
-    @dg.graph
+    @graph
     def my_super_graph():
         my_graph()
 
@@ -667,47 +680,47 @@ def test_nested_op_selection_with_config_mapping():
 
 
 def test_op_selection_unsatisfied_input_failure():
-    @dg.op
+    @op
     def basic() -> datetime:
         return 5  # type: ignore  # (test error)
 
-    @dg.op
+    @op
     def ingest(x: datetime) -> str:
         return str(x)
 
-    @dg.graph
+    @graph
     def the_graph():
         ingest(basic())
 
-    with pytest.raises(dg.DagsterInvalidSubsetError):
+    with pytest.raises(DagsterInvalidSubsetError):
         the_graph.execute_in_process(op_selection=["ingest"])
 
-    with pytest.raises(dg.DagsterInvalidSubsetError):
+    with pytest.raises(DagsterInvalidSubsetError):
         the_graph.to_job(op_selection=["ingest"])
 
 
 def test_op_selection_nested_unsatisfied_input_values():
-    @dg.op
+    @op
     def some_other_op():
         pass
 
-    @dg.op
+    @op
     def ingest(x: datetime) -> str:
         return str(x)
 
-    @dg.graph
+    @graph
     def the_graph(x):
         ingest(x)
         some_other_op()
 
-    @dg.graph
+    @graph
     def the_top_level_graph(x):
         the_graph(x)
 
     the_job = the_top_level_graph.to_job(op_selection=["the_graph.ingest"])
 
     with pytest.raises(
-        dg.DagsterInvalidInvocationError,
+        DagsterInvalidInvocationError,
         match=(
             "Attempted to invoke execute_in_process for 'the_top_level_graph' without specifying an"
             " input_value for input 'x', but downstream input x of op 'the_graph.ingest' has no"

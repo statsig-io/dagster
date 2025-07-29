@@ -1,11 +1,12 @@
-import {memo, useCallback, useEffect, useRef, useState} from 'react';
+import {gql, useSubscription} from '@apollo/client';
+import React from 'react';
 
-import {gql, useSubscription} from '../apollo-client';
+import {AssetKey} from '../graphql/types';
+
 import {
   AssetLiveRunLogsSubscription,
   AssetLiveRunLogsSubscriptionVariables,
 } from './types/AssetRunLogObserver.types';
-import {AssetKey} from '../graphql/types';
 
 const OBSERVED_RUNS_CHANGED = 'observed-runs-changed';
 
@@ -47,12 +48,12 @@ export function observeAssetEventsInRuns(runIds: string[], callback: ObservedRun
 }
 
 export const AssetRunLogObserver = () => {
-  const [runIds, setRunIds] = useState<string[]>([]);
-  const callback = useCallback((runId: string, events: ObservedEvent[]) => {
+  const [runIds, setRunIds] = React.useState<string[]>([]);
+  const callback = React.useCallback((runId: string, events: ObservedEvent[]) => {
     (ObservedRuns[runId] || []).forEach((cb) => cb(events));
   }, []);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const listener = () => setRunIds(Object.keys(ObservedRuns));
     document.addEventListener(OBSERVED_RUNS_CHANGED, listener);
     return () => document.removeEventListener(OBSERVED_RUNS_CHANGED, listener);
@@ -67,13 +68,11 @@ export const AssetRunLogObserver = () => {
   );
 };
 
-interface SingleRunLogObserverProps {
+const SingleRunLogObserver: React.FC<{
   runId: string;
   callback: (runId: string, events: ObservedEvent[]) => void;
-}
-
-const SingleRunLogObserver = memo(({runId, callback}: SingleRunLogObserverProps) => {
-  const counter = useRef(0);
+}> = React.memo(({runId, callback}) => {
+  const counter = React.useRef(0);
 
   // Useful for testing this component:
   // React.useEffect(() => {
@@ -99,8 +98,7 @@ const SingleRunLogObserver = memo(({runId, callback}: SingleRunLogObserverProps)
             if (
               m.__typename === 'AssetMaterializationPlannedEvent' ||
               m.__typename === 'MaterializationEvent' ||
-              m.__typename === 'ObservationEvent' ||
-              m.__typename === 'FailedToMaterializeEvent'
+              m.__typename === 'ObservationEvent'
             ) {
               return {assetKey: m.assetKey} as ObservedEvent;
             }
@@ -151,11 +149,6 @@ export const ASSET_LIVE_RUN_LOGS_SUBSCRIPTION = gql`
             }
           }
           ... on ObservationEvent {
-            assetKey {
-              path
-            }
-          }
-          ... on FailedToMaterializeEvent {
             assetKey {
               path
             }

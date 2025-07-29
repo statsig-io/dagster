@@ -14,11 +14,9 @@ export type RunActionButtonsTestQuery = {
         parentPipelineSnapshotId: string | null;
         runConfigYaml: string;
         canTerminate: boolean;
-        allPools: Array<string> | null;
         hasReExecutePermission: boolean;
         hasTerminatePermission: boolean;
         hasDeletePermission: boolean;
-        hasRunMetricsEnabled: boolean;
         status: Types.RunStatus;
         mode: string;
         rootRunId: string | null;
@@ -38,6 +36,11 @@ export type RunActionButtonsTestQuery = {
           repositoryLocationName: string;
         } | null;
         tags: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
+        assets: Array<{
+          __typename: 'Asset';
+          id: string;
+          key: {__typename: 'AssetKey'; path: Array<string>};
+        }>;
         assetSelection: Array<{__typename: 'AssetKey'; path: Array<string>}> | null;
         assetCheckSelection: Array<{
           __typename: 'AssetCheckhandle';
@@ -47,7 +50,6 @@ export type RunActionButtonsTestQuery = {
         executionPlan: {
           __typename: 'ExecutionPlan';
           artifactsPersisted: boolean;
-          assetSelection: Array<string>;
           steps: Array<{
             __typename: 'ExecutionStep';
             key: string;
@@ -58,8 +60,23 @@ export type RunActionButtonsTestQuery = {
             }>;
           }>;
         } | null;
+        stepStats: Array<{
+          __typename: 'RunStepStats';
+          stepKey: string;
+          status: Types.StepEventStatus | null;
+          startTime: number | null;
+          endTime: number | null;
+          attempts: Array<{
+            __typename: 'RunMarker';
+            startTime: number | null;
+            endTime: number | null;
+          }>;
+          markers: Array<{
+            __typename: 'RunMarker';
+            startTime: number | null;
+            endTime: number | null;
+          }>;
+        }>;
       }
     | {__typename: 'RunNotFoundError'};
 };
-
-export const RunActionButtonsTestQueryVersion = 'eaab1aaf56a17b1bb20c13326a1c672246ae3ad931deb30085356edcedc45c47';

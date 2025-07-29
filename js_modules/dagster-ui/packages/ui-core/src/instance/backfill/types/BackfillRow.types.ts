@@ -2,8 +2,28 @@
 
 import * as Types from '../../../graphql/types';
 
+export type SingleBackfillCountsQueryVariables = Types.Exact<{
+  backfillId: Types.Scalars['String'];
+}>;
+
+export type SingleBackfillCountsQuery = {
+  __typename: 'Query';
+  partitionBackfillOrError:
+    | {__typename: 'BackfillNotFoundError'}
+    | {
+        __typename: 'PartitionBackfill';
+        id: string;
+        partitionStatusCounts: Array<{
+          __typename: 'PartitionStatusCounts';
+          runStatus: Types.RunStatus;
+          count: number;
+        }>;
+      }
+    | {__typename: 'PythonError'};
+};
+
 export type SingleBackfillQueryVariables = Types.Exact<{
-  backfillId: Types.Scalars['String']['input'];
+  backfillId: Types.Scalars['String'];
 }>;
 
 export type SingleBackfillQuery = {
@@ -13,14 +33,27 @@ export type SingleBackfillQuery = {
     | {
         __typename: 'PartitionBackfill';
         id: string;
-        cancelableRuns: Array<{
-          __typename: 'Run';
-          id: string;
-          runId: string;
-          status: Types.RunStatus;
-        }>;
+        partitionStatuses: {
+          __typename: 'PartitionStatuses';
+          results: Array<{
+            __typename: 'PartitionStatus';
+            id: string;
+            partitionName: string;
+            runId: string | null;
+            runStatus: Types.RunStatus | null;
+          }>;
+        } | null;
       }
     | {__typename: 'PythonError'};
 };
 
-export const SingleBackfillQueryVersion = 'c2b27d4666926a1c0bfd0c7cfabf9840c67e33a0a374651ee8e52bdec395aa56';
+export type PartitionStatusesForBackfillFragment = {
+  __typename: 'PartitionStatuses';
+  results: Array<{
+    __typename: 'PartitionStatus';
+    id: string;
+    partitionName: string;
+    runId: string | null;
+    runStatus: Types.RunStatus | null;
+  }>;
+};

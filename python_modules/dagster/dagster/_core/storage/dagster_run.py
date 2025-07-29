@@ -1,44 +1,43 @@
-import os
-from collections.abc import Iterable, Mapping, Sequence, Set
 from datetime import datetime
 from enum import Enum
-from functools import cached_property
-from typing import TYPE_CHECKING, AbstractSet, Any, NamedTuple, Optional, Union  # noqa: UP035
+from typing import (
+    TYPE_CHECKING,
+    AbstractSet,
+    Any,
+    Dict,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Union,
+)
 
-from dagster_shared.serdes import NamedTupleSerializer, whitelist_for_serdes
 from typing_extensions import Self
 
 import dagster._check as check
 from dagster._annotations import PublicAttr, public
-from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
+from dagster._core.definitions.asset_check_spec import AssetCheckHandle
 from dagster._core.definitions.events import AssetKey
-from dagster._core.loader import LoadableBy, LoadingContext
 from dagster._core.origin import JobPythonOrigin
-from dagster._core.storage.tags import (
-    ASSET_EVALUATION_ID_TAG,
-    AUTO_RETRY_RUN_ID_TAG,
-    AUTOMATION_CONDITION_TAG,
+from dagster._core.storage.tags import PARENT_RUN_ID_TAG, ROOT_RUN_ID_TAG
+from dagster._core.utils import make_new_run_id
+from dagster._serdes.serdes import (
+    NamedTupleSerializer,
+    whitelist_for_serdes,
+)
+
+from .tags import (
     BACKFILL_ID_TAG,
-    PARENT_RUN_ID_TAG,
-    POOL_TAG_PREFIX,
     REPOSITORY_LABEL_TAG,
     RESUME_RETRY_TAG,
-    ROOT_RUN_ID_TAG,
     SCHEDULE_NAME_TAG,
     SENSOR_NAME_TAG,
-    TICK_ID_TAG,
-    WILL_RETRY_TAG,
 )
-from dagster._core.utils import make_new_run_id
-from dagster._record import IHaveNew, record_custom
-from dagster._utils.tags import get_boolean_tag_value
 
 if TYPE_CHECKING:
-    from dagster._core.definitions.schedule_definition import ScheduleDefinition
-    from dagster._core.definitions.sensor_definition import SensorDefinition
-    from dagster._core.remote_representation.external import RemoteSchedule, RemoteSensor
-    from dagster._core.remote_representation.origin import RemoteJobOrigin
-    from dagster._core.scheduler.instigation import InstigatorState
+    from dagster._core.host_representation.external import ExternalSchedule, ExternalSensor
+    from dagster._core.host_representation.origin import ExternalJobOrigin
 
 
 @whitelist_for_serdes(storage_name="PipelineRunStatus")
@@ -48,7 +47,7 @@ class DagsterRunStatus(Enum):
     # Runs waiting to be launched by the Dagster Daemon.
     QUEUED = "QUEUED"
 
-    # Runs in the brief window between creating the run and launching or enqueueing it.
+    # Runs that have been launched, but execution has not yet started."""
     NOT_STARTED = "NOT_STARTED"
 
     # Runs that are managed outside of the Dagster control plane.
@@ -97,18 +96,10 @@ FINISHED_STATUSES = [
     DagsterRunStatus.CANCELED,
 ]
 
-NOT_FINISHED_STATUSES = [
-    DagsterRunStatus.STARTING,
-    DagsterRunStatus.STARTED,
-    DagsterRunStatus.CANCELING,
-    DagsterRunStatus.QUEUED,
-    DagsterRunStatus.NOT_STARTED,
-]
-
 # Run statuses for runs that can be safely canceled.
 # Does not include the other unfinished statuses for the following reasons:
 # STARTING: Control has been ceded to the run worker, which will eventually move the run to a STARTED.
-# NOT_STARTED: Mostly replaced with STARTING. Runs are only here in the brief window between
+# NOT_STARTED: Mostly replaced with STARTING. Runs are only here in the the brief window between
 # creating the run and launching or enqueueing it.
 CANCELABLE_RUN_STATUSES = [DagsterRunStatus.STARTED, DagsterRunStatus.QUEUED]
 
@@ -142,7 +133,7 @@ class DagsterRunStatsSnapshot(
         start_time: Optional[float],
         end_time: Optional[float],
     ):
-        return super().__new__(
+        return super(DagsterRunStatsSnapshot, cls).__new__(
             cls,
             run_id=check.str_param(run_id, "run_id"),
             steps_succeeded=check.int_param(steps_succeeded, "steps_succeeded"),
@@ -153,39 +144,6 @@ class DagsterRunStatsSnapshot(
             launch_time=check.opt_float_param(launch_time, "launch_time"),
             start_time=check.opt_float_param(start_time, "start_time"),
             end_time=check.opt_float_param(end_time, "end_time"),
-        )
-
-
-@whitelist_for_serdes
-class RunOpConcurrency(
-    NamedTuple(
-        "_RunOpConcurrency",
-        [
-            ("root_key_counts", Mapping[str, int]),
-            ("has_unconstrained_root_nodes", bool),
-            ("all_pools", Optional[Set[str]]),
-        ],
-    )
-):
-    """Utility class to help calculate the immediate impact of launching a run on the op concurrency
-    slots that will be available for other runs.
-    """
-
-    def __new__(
-        cls,
-        root_key_counts: Mapping[str, int],
-        has_unconstrained_root_nodes: bool,
-        all_pools: Optional[Set[str]] = None,
-    ):
-        return super().__new__(
-            cls,
-            root_key_counts=check.dict_param(
-                root_key_counts, "root_key_counts", key_type=str, value_type=int
-            ),
-            has_unconstrained_root_nodes=check.bool_param(
-                has_unconstrained_root_nodes, "has_unconstrained_root_nodes"
-            ),
-            all_pools=check.opt_set_param(all_pools, "all_pools", of_type=str),
         )
 
 
@@ -201,7 +159,7 @@ class DagsterRunSerializer(NamedTupleSerializer["DagsterRun"]):
     # * renamed environment_dict -> run_config
     # * added asset_selection
     # * added has_repository_load_data
-    def before_unpack(self, context, unpacked_dict: dict[str, Any]) -> dict[str, Any]:
+    def before_unpack(self, context, unpacked_dict: Dict[str, Any]) -> Dict[str, Any]:
         # back compat for environment dict => run_config
         if "environment_dict" in unpacked_dict:
             check.invariant(
@@ -265,7 +223,7 @@ class DagsterRunSerializer(NamedTupleSerializer["DagsterRun"]):
     storage_field_names={
         "job_name": "pipeline_name",
         "job_snapshot_id": "pipeline_snapshot_id",
-        "remote_job_origin": "external_pipeline_origin",
+        "external_job_origin": "external_pipeline_origin",
         "job_code_origin": "pipeline_code_origin",
         "op_selection": "solid_selection",
         "resolved_op_selection": "solids_to_execute",
@@ -276,48 +234,27 @@ class DagsterRun(
         "_DagsterRun",
         [
             ("job_name", PublicAttr[str]),
-            ("run_id", PublicAttr[str]),
-            ("run_config", PublicAttr[Mapping[str, object]]),
+            ("run_id", str),
+            ("run_config", Mapping[str, object]),
             ("asset_selection", Optional[AbstractSet[AssetKey]]),
-            ("asset_check_selection", Optional[AbstractSet[AssetCheckKey]]),
+            ("asset_check_selection", Optional[AbstractSet[AssetCheckHandle]]),
             ("op_selection", Optional[Sequence[str]]),
             ("resolved_op_selection", Optional[AbstractSet[str]]),
             ("step_keys_to_execute", Optional[Sequence[str]]),
             ("status", DagsterRunStatus),
-            ("tags", PublicAttr[Mapping[str, str]]),
+            ("tags", Mapping[str, str]),
             ("root_run_id", Optional[str]),
             ("parent_run_id", Optional[str]),
             ("job_snapshot_id", Optional[str]),
             ("execution_plan_snapshot_id", Optional[str]),
-            ("remote_job_origin", Optional["RemoteJobOrigin"]),
+            ("external_job_origin", Optional["ExternalJobOrigin"]),
             ("job_code_origin", Optional[JobPythonOrigin]),
             ("has_repository_load_data", bool),
-            ("run_op_concurrency", Optional[RunOpConcurrency]),
         ],
     )
 ):
     """Serializable internal representation of a dagster run, as stored in a
     :py:class:`~dagster._core.storage.runs.RunStorage`.
-
-    Args:
-        job_name (str): The name of the job executed in this run.
-        run_id (str): The ID of the run.
-        run_config (Mapping[str, object]): The config for the run.
-        asset_selection (Optional[AbstractSet[AssetKey]]): The assets selected for this run.
-        asset_check_selection (Optional[AbstractSet[AssetCheckKey]]): The asset checks selected for this run.
-        op_selection (Optional[Sequence[str]]): The op queries provided by the user.
-        resolved_op_selection (Optional[AbstractSet[str]]): The resolved set of op names to execute.
-        step_keys_to_execute (Optional[Sequence[str]]): The step keys to execute.
-        status (DagsterRunStatus): The status of the run.
-        tags (Mapping[str, str]): The tags applied to the run.
-        root_run_id (Optional[str]): The ID of the root run in the run's group.
-        parent_run_id (Optional[str]): The ID of the parent run in the run's group.
-        job_snapshot_id (Optional[str]): The ID of the job snapshot.
-        execution_plan_snapshot_id (Optional[str]): The ID of the execution plan snapshot.
-        remote_job_origin (Optional[RemoteJobOrigin]): The origin of the executed job.
-        job_code_origin (Optional[JobPythonOrigin]): The origin of the job code.
-        has_repository_load_data (bool): Whether the run has repository load data.
-        run_op_concurrency (Optional[RunOpConcurrency]): The op concurrency information for the run.
     """
 
     def __new__(
@@ -326,7 +263,7 @@ class DagsterRun(
         run_id: Optional[str] = None,
         run_config: Optional[Mapping[str, object]] = None,
         asset_selection: Optional[AbstractSet[AssetKey]] = None,
-        asset_check_selection: Optional[AbstractSet[AssetCheckKey]] = None,
+        asset_check_selection: Optional[AbstractSet[AssetCheckHandle]] = None,
         op_selection: Optional[Sequence[str]] = None,
         resolved_op_selection: Optional[AbstractSet[str]] = None,
         step_keys_to_execute: Optional[Sequence[str]] = None,
@@ -336,10 +273,9 @@ class DagsterRun(
         parent_run_id: Optional[str] = None,
         job_snapshot_id: Optional[str] = None,
         execution_plan_snapshot_id: Optional[str] = None,
-        remote_job_origin: Optional["RemoteJobOrigin"] = None,
+        external_job_origin: Optional["ExternalJobOrigin"] = None,
         job_code_origin: Optional[JobPythonOrigin] = None,
         has_repository_load_data: Optional[bool] = None,
-        run_op_concurrency: Optional[RunOpConcurrency] = None,
     ):
         check.invariant(
             (root_run_id is not None and parent_run_id is not None)
@@ -360,25 +296,25 @@ class DagsterRun(
             asset_selection, "asset_selection", of_type=AssetKey
         )
         asset_check_selection = check.opt_nullable_set_param(
-            asset_check_selection, "asset_check_selection", of_type=AssetCheckKey
+            asset_check_selection, "asset_check_selection", of_type=AssetCheckHandle
         )
 
         # Placing this with the other imports causes a cyclic import
         # https://github.com/dagster-io/dagster/issues/3181
-        from dagster._core.remote_representation.origin import RemoteJobOrigin
+        from dagster._core.host_representation.origin import ExternalJobOrigin
 
         if status == DagsterRunStatus.QUEUED:
             check.inst_param(
-                remote_job_origin,
-                "remote_job_origin",
-                RemoteJobOrigin,
-                "remote_job_origin is required for queued runs",
+                external_job_origin,
+                "external_job_origin",
+                ExternalJobOrigin,
+                "external_job_origin is required for queued runs",
             )
 
         if run_id is None:
             run_id = make_new_run_id()
 
-        return super().__new__(
+        return super(DagsterRun, cls).__new__(
             cls,
             job_name=check.str_param(job_name, "job_name"),
             run_id=check.str_param(run_id, "run_id"),
@@ -398,8 +334,8 @@ class DagsterRun(
             execution_plan_snapshot_id=check.opt_str_param(
                 execution_plan_snapshot_id, "execution_plan_snapshot_id"
             ),
-            remote_job_origin=check.opt_inst_param(
-                remote_job_origin, "remote_job_origin", RemoteJobOrigin
+            external_job_origin=check.opt_inst_param(
+                external_job_origin, "external_job_origin", ExternalJobOrigin
             ),
             job_code_origin=check.opt_inst_param(
                 job_code_origin, "job_code_origin", JobPythonOrigin
@@ -407,28 +343,27 @@ class DagsterRun(
             has_repository_load_data=check.opt_bool_param(
                 has_repository_load_data, "has_repository_load_data", default=False
             ),
-            run_op_concurrency=check.opt_inst_param(
-                run_op_concurrency, "run_op_concurrency", RunOpConcurrency
-            ),
         )
 
     def with_status(self, status: DagsterRunStatus) -> Self:
         if status == DagsterRunStatus.QUEUED:
             # Placing this with the other imports causes a cyclic import
             # https://github.com/dagster-io/dagster/issues/3181
+            from dagster._core.host_representation.origin import ExternalJobOrigin
 
-            check.not_none(
-                self.remote_job_origin,
+            check.inst(
+                self.external_job_origin,
+                ExternalJobOrigin,
                 "external_pipeline_origin is required for queued runs",
             )
 
         return self._replace(status=status)
 
-    def with_job_origin(self, origin: "RemoteJobOrigin") -> Self:
-        from dagster._core.remote_representation.origin import RemoteJobOrigin
+    def with_job_origin(self, origin: "ExternalJobOrigin") -> Self:
+        from dagster._core.host_representation.origin import ExternalJobOrigin
 
-        check.inst_param(origin, "origin", RemoteJobOrigin)
-        return self._replace(remote_job_origin=origin)
+        check.inst_param(origin, "origin", ExternalJobOrigin)
+        return self._replace(external_job_origin=origin)
 
     def with_tags(self, tags: Mapping[str, str]) -> Self:
         return self._replace(tags=tags)
@@ -439,84 +374,25 @@ class DagsterRun(
     def get_parent_run_id(self) -> Optional[str]:
         return self.tags.get(PARENT_RUN_ID_TAG)
 
-    @cached_property
-    def dagster_execution_info(self) -> Mapping[str, str]:
-        """Key-value pairs encoding metadata about the current Dagster run, typically attached to external execution resources.
-
-        Remote execution environments commonly have their own concepts of tags or labels. It's useful to include
-        Dagster-specific metadata in these environments to help with debugging, monitoring, and linking remote
-        resources back to Dagster. For example, the Kubernetes Executor and Pipes client are using these tags as Kubernetes labels.
-
-        By default the tags include:
-        * dagster/run-id
-        * dagster/job
-
-        And, if available:
-        * dagster/partition
-        * dagster/code-location
-        * dagster/user
-
-        And, for Dagster+ deployments:
-        * dagster/deployment-name
-        * dagster/git-repo
-        * dagster/git-branch
-        * dagster/git-sha
-        """
-        tags = {
-            "dagster/run-id": self.run_id,
-            "dagster/job": self.job_name,
-        }
-
-        if self.remote_job_origin:
-            tags["dagster/code-location"] = (
-                self.remote_job_origin.repository_origin.code_location_origin.location_name
-            )
-
-        if user := self.tags.get("dagster/user"):
-            tags["dagster/user"] = user
-
-        if partition := self.tags.get("dagster/partition"):
-            tags["dagster/partition"] = partition
-
-        for env_var, tag in {
-            "DAGSTER_CLOUD_DEPLOYMENT_NAME": "deployment-name",
-            "DAGSTER_CLOUD_GIT_REPO": "git-repo",
-            "DAGSTER_CLOUD_GIT_BRANCH": "git-branch",
-            "DAGSTER_CLOUD_GIT_SHA": "git-sha",
-        }.items():
-            if value := os.getenv(env_var):
-                tags[f"dagster/{tag}"] = value
-
-        return tags
-
     def tags_for_storage(self) -> Mapping[str, str]:
         repository_tags = {}
-        if self.remote_job_origin:
+        if self.external_job_origin:
             # tag the run with a label containing the repository name / location name, to allow for
             # per-repository filtering of runs from the Dagster UI.
             repository_tags[REPOSITORY_LABEL_TAG] = (
-                self.remote_job_origin.repository_origin.get_label()
+                self.external_job_origin.external_repository_origin.get_label()
             )
 
-        pool_tags = {}
-        if self.run_op_concurrency and self.run_op_concurrency.all_pools:
-            pool_tags = {
-                f"{POOL_TAG_PREFIX}{pool}": "true" for pool in self.run_op_concurrency.all_pools
-            }
+        if not self.tags:
+            return repository_tags
 
-        return {**repository_tags, **pool_tags, **(self.tags or {})}
+        return {**repository_tags, **self.tags}
 
     @public
     @property
     def is_finished(self) -> bool:
         """bool: If this run has completely finished execution."""
         return self.status in FINISHED_STATUSES
-
-    @public
-    @property
-    def is_cancelable(self) -> bool:
-        """bool: If this run an be canceled."""
-        return self.status in CANCELABLE_RUN_STATUSES
 
     @public
     @property
@@ -543,55 +419,56 @@ class DagsterRun(
         return self.tags.get(RESUME_RETRY_TAG) == "true"
 
     @property
-    def is_complete_and_waiting_to_retry(self):
-        """Indicates if a run is waiting to be retried by the auto-reexecution system.
-        Returns True if 1) the run is complete, 2) the run is in a failed state (therefore eligible for retry),
-        3) the run is marked as needing to be retried, and 4) the retried run has not been launched yet.
-        Otherwise returns False.
-        """
-        if self.status in NOT_FINISHED_STATUSES:
-            return False
-        if self.status != DagsterRunStatus.FAILURE:
-            return False
-        will_retry = get_boolean_tag_value(self.tags.get(WILL_RETRY_TAG), default_value=False)
-        retry_not_launched = self.tags.get(AUTO_RETRY_RUN_ID_TAG) is None
-        if will_retry:
-            return retry_not_launched
-
-        return False
-
-    @property
     def previous_run_id(self) -> Optional[str]:
         # Compat
         return self.parent_run_id
 
     @staticmethod
-    def tags_for_schedule(
-        schedule: Union["InstigatorState", "RemoteSchedule", "ScheduleDefinition"],
-    ) -> Mapping[str, str]:
+    def tags_for_schedule(schedule) -> Mapping[str, str]:
         return {SCHEDULE_NAME_TAG: schedule.name}
 
     @staticmethod
-    def tags_for_sensor(
-        sensor: Union["InstigatorState", "RemoteSensor", "SensorDefinition"],
-    ) -> Mapping[str, str]:
+    def tags_for_sensor(sensor) -> Mapping[str, str]:
         return {SENSOR_NAME_TAG: sensor.name}
 
     @staticmethod
     def tags_for_backfill_id(backfill_id: str) -> Mapping[str, str]:
         return {BACKFILL_ID_TAG: backfill_id}
 
-    @staticmethod
-    def tags_for_tick_id(tick_id: str, has_evaluations: bool = False) -> Mapping[str, str]:
-        if has_evaluations:
-            automation_tags = {AUTOMATION_CONDITION_TAG: "true", ASSET_EVALUATION_ID_TAG: tick_id}
-        else:
-            automation_tags = {}
-        return {TICK_ID_TAG: tick_id, **automation_tags}
+
+class RunsFilterSerializer(NamedTupleSerializer["RunsFilter"]):
+    def before_unpack(
+        self,
+        context,
+        unpacked_dict: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        # We store empty run ids as [] but only accept None
+        if "run_ids" in unpacked_dict and unpacked_dict["run_ids"] == []:
+            unpacked_dict["run_ids"] = None
+        return unpacked_dict
 
 
-@record_custom
-class RunsFilter(IHaveNew):
+@whitelist_for_serdes(
+    serializer=RunsFilterSerializer,
+    old_storage_names={"PipelineRunsFilter"},
+    storage_field_names={"job_name": "pipeline_name"},
+)
+class RunsFilter(
+    NamedTuple(
+        "_RunsFilter",
+        [
+            ("run_ids", Sequence[str]),
+            ("job_name", Optional[str]),
+            ("statuses", Sequence[DagsterRunStatus]),
+            ("tags", Mapping[str, Union[str, Sequence[str]]]),
+            ("snapshot_id", Optional[str]),
+            ("updated_after", Optional[datetime]),
+            ("updated_before", Optional[datetime]),
+            ("created_after", Optional[datetime]),
+            ("created_before", Optional[datetime]),
+        ],
+    )
+):
     """Defines a filter across job runs, for use when querying storage directly.
 
     Each field of the RunsFilter represents a logical AND with each other. For
@@ -610,19 +487,8 @@ class RunsFilter(IHaveNew):
         snapshot_id (Optional[str]): The ID of the job snapshot to query for. Intended for internal use.
         updated_after (Optional[DateTime]): Filter by runs that were last updated before this datetime.
         created_before (Optional[DateTime]): Filter by runs that were created before this datetime.
-        exclude_subruns (Optional[bool]): If true, runs that were launched to backfill historical data will be excluded from results.
-    """
 
-    run_ids: Optional[Sequence[str]]
-    job_name: Optional[str]
-    statuses: Sequence[DagsterRunStatus]
-    tags: Mapping[str, Union[str, Sequence[str]]]
-    snapshot_id: Optional[str]
-    updated_after: Optional[datetime]
-    updated_before: Optional[datetime]
-    created_after: Optional[datetime]
-    created_before: Optional[datetime]
-    exclude_subruns: Optional[bool]
+    """
 
     def __new__(
         cls,
@@ -635,34 +501,28 @@ class RunsFilter(IHaveNew):
         updated_before: Optional[datetime] = None,
         created_after: Optional[datetime] = None,
         created_before: Optional[datetime] = None,
-        exclude_subruns: Optional[bool] = None,
     ):
         check.invariant(run_ids != [], "When filtering on run ids, a non-empty list must be used.")
 
-        return super().__new__(
+        return super(RunsFilter, cls).__new__(
             cls,
-            run_ids=run_ids,
-            job_name=job_name,
-            statuses=statuses or [],
-            tags=tags or {},
-            snapshot_id=snapshot_id,
-            updated_after=updated_after,
-            updated_before=updated_before,
-            created_after=created_after,
-            created_before=created_before,
-            exclude_subruns=exclude_subruns,
+            run_ids=check.opt_sequence_param(run_ids, "run_ids", of_type=str),
+            job_name=check.opt_str_param(job_name, "job_name"),
+            statuses=check.opt_sequence_param(statuses, "statuses", of_type=DagsterRunStatus),
+            tags=check.opt_mapping_param(tags, "tags", key_type=str),
+            snapshot_id=check.opt_str_param(snapshot_id, "snapshot_id"),
+            updated_after=check.opt_inst_param(updated_after, "updated_after", datetime),
+            updated_before=check.opt_inst_param(updated_before, "updated_before", datetime),
+            created_after=check.opt_inst_param(created_after, "created_after", datetime),
+            created_before=check.opt_inst_param(created_before, "created_before", datetime),
         )
 
     @staticmethod
-    def for_schedule(
-        schedule: Union["RemoteSchedule", "InstigatorState", "ScheduleDefinition"],
-    ) -> "RunsFilter":
+    def for_schedule(schedule: "ExternalSchedule") -> "RunsFilter":
         return RunsFilter(tags=DagsterRun.tags_for_schedule(schedule))
 
     @staticmethod
-    def for_sensor(
-        sensor: Union["RemoteSensor", "InstigatorState", "SensorDefinition"],
-    ) -> "RunsFilter":
+    def for_sensor(sensor: "ExternalSensor") -> "RunsFilter":
         return RunsFilter(tags=DagsterRun.tags_for_sensor(sensor))
 
     @staticmethod
@@ -671,13 +531,13 @@ class RunsFilter(IHaveNew):
 
 
 class JobBucket(NamedTuple):
-    job_names: list[str]
+    job_names: List[str]
     bucket_limit: Optional[int]
 
 
 class TagBucket(NamedTuple):
     tag_key: str
-    tag_values: list[str]
+    tag_values: List[str]
     bucket_limit: Optional[int]
 
 
@@ -692,8 +552,7 @@ class RunRecord(
             ("start_time", Optional[float]),
             ("end_time", Optional[float]),
         ],
-    ),
-    LoadableBy[str],
+    )
 ):
     """Internal representation of a run record, as stored in a
     :py:class:`~dagster._core.storage.runs.RunStorage`.
@@ -710,7 +569,7 @@ class RunRecord(
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
     ):
-        return super().__new__(
+        return super(RunRecord, cls).__new__(
             cls,
             storage_id=check.int_param(storage_id, "storage_id"),
             dagster_run=check.inst_param(dagster_run, "dagster_run", DagsterRun),
@@ -720,20 +579,6 @@ class RunRecord(
             start_time=check.opt_float_param(start_time, "start_time"),
             end_time=check.opt_float_param(end_time, "end_time"),
         )
-
-    @classmethod
-    def _blocking_batch_load(
-        cls, keys: Iterable[str], context: LoadingContext
-    ) -> Iterable[Optional["RunRecord"]]:
-        result_map: dict[str, Optional[RunRecord]] = {run_id: None for run_id in keys}
-
-        # this should be replaced with an async DB call
-        records = context.instance.get_run_records(RunsFilter(run_ids=list(result_map.keys())))
-
-        for record in records:
-            result_map[record.dagster_run.run_id] = record
-
-        return result_map.values()
 
 
 @whitelist_for_serdes
@@ -757,7 +602,7 @@ class RunPartitionData(
         start_time: Optional[float],
         end_time: Optional[float],
     ):
-        return super().__new__(
+        return super(RunPartitionData, cls).__new__(
             cls,
             run_id=check.str_param(run_id, "run_id"),
             partition=check.str_param(partition, "partition"),
@@ -790,7 +635,7 @@ class ExecutionSelector(
     """Kept here to maintain loading of PipelineRuns from when it was still alive."""
 
     def __new__(cls, name: str, solid_subset: Optional[Sequence[str]] = None):
-        return super().__new__(
+        return super(ExecutionSelector, cls).__new__(
             cls,
             name=check.str_param(name, "name"),
             solid_subset=(
@@ -799,9 +644,3 @@ class ExecutionSelector(
                 else check.sequence_param(solid_subset, "solid_subset", of_type=str)
             ),
         )
-
-
-def assets_are_externally_managed(run: DagsterRun) -> bool:
-    from dagster._core.storage.tags import EXTERNALLY_MANAGED_ASSETS_TAG
-
-    return get_boolean_tag_value(run.tags.get(EXTERNALLY_MANAGED_ASSETS_TAG), default_value=False)

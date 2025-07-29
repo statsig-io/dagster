@@ -2,9 +2,7 @@ import os
 import subprocess
 import sys
 
-import dagster_shared.seven as seven
-import pytest
-from dagster._utils.env import environ
+import dagster._seven as seven
 
 IS_BUILDKITE = os.getenv("BUILDKITE") is not None
 
@@ -13,9 +11,3 @@ IS_BUILDKITE = os.getenv("BUILDKITE") is not None
 # Fixed in later versions of Python but never back-ported, see the bug for details.
 if seven.IS_WINDOWS and sys.version_info[0] == 3 and sys.version_info[1] == 6:
     subprocess._cleanup = lambda: None  # type: ignore # noqa: SLF001
-
-
-@pytest.fixture(scope="session", autouse=True)
-def enable_defensive_checks():
-    with environ({"DAGSTER_RECORD_DEFENSIVE_CHECKS": "true"}):
-        yield

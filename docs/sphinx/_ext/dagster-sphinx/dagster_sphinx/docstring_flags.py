@@ -1,9 +1,9 @@
 import re
-from typing import Union
+from typing import List, Union
 
 import dagster._check as check
 import docutils.nodes as nodes
-from dagster._annotations import BetaInfo, DeprecatedInfo, PreviewInfo, SupersededInfo
+from dagster._annotations import DeprecatedInfo, ExperimentalInfo
 from sphinx.util.docutils import SphinxDirective
 
 # ########################
@@ -14,31 +14,17 @@ from sphinx.util.docutils import SphinxDirective
 
 
 def inject_object_flag(
-    obj: object,
-    info: Union[SupersededInfo, DeprecatedInfo, PreviewInfo, BetaInfo],
-    docstring: list[str],
+    obj: object, info: Union[DeprecatedInfo, ExperimentalInfo], docstring: List[str]
 ) -> None:
     if isinstance(info, DeprecatedInfo):
         additional_text = f" {info.additional_warn_text}." if info.additional_warn_text else ""
         flag_type = "deprecated"
-        message = f"This API will be removed in version {info.breaking_version}.\n{additional_text}"
-    elif isinstance(info, SupersededInfo):
+        message = f"This API will be removed in version {info.breaking_version}.{additional_text}"
+    elif isinstance(info, ExperimentalInfo):
         additional_text = f" {info.additional_warn_text}." if info.additional_warn_text else ""
-        flag_type = "superseded"
-        message = f"This API has been superseded.\n{additional_text}"
-    elif isinstance(info, PreviewInfo):
-        additional_text = f" {info.additional_warn_text}." if info.additional_warn_text else ""
-        flag_type = "preview"
+        flag_type = "experimental"
         message = (
-            f"This API is currently in preview, and may have breaking changes in patch version releases. "
-            f"This API is not considered ready for production use.\n{additional_text}"
-        )
-    elif isinstance(info, BetaInfo):
-        additional_text = f" {info.additional_warn_text}." if info.additional_warn_text else ""
-        flag_type = "beta"
-        message = (
-            f"This API is currently in beta, and may have breaking changes in minor version releases, "
-            f"with behavior changes in patch releases.\n{additional_text}"
+            f"This API may break in future versions, even between dot releases.{additional_text}"
         )
     else:
         check.failed(f"Unexpected info type {type(info)}")
@@ -47,19 +33,27 @@ def inject_object_flag(
 
 
 def inject_param_flag(
-    lines: list[str],
+    lines: List[str],
     param: str,
-    info: Union[BetaInfo, DeprecatedInfo],
+    info: Union[DeprecatedInfo, ExperimentalInfo],
 ):
+    additional_text = f" {info.additional_warn_text}" if info.additional_warn_text else ""
     if isinstance(info, DeprecatedInfo):
         flag = ":inline-flag:`deprecated`"
-    elif isinstance(info, BetaInfo):
-        flag = ":inline-flag:`beta`"
+        message = (
+            f"(This parameter will be removed in version {info.breaking_version}.{additional_text})"
+        )
+    elif isinstance(info, ExperimentalInfo):
+        flag = ":inline-flag:`experimental`"
+        message = (
+            "(This parameter may break in future versions, even between dot"
+            f" releases.{additional_text})"
+        )
     else:
         check.failed(f"Unexpected info type {type(info)}")
     index = next((i for i in range(len(lines)) if re.search(f"^:param {param}", lines[i])), None)
     modified_line = (
-        re.sub(rf"^:param {param}:", f":param {param}: {flag} ", lines[index])
+        re.sub(rf"^:param {param}:", f":param {param}: {flag} {message}", lines[index])
         if index is not None
         else None
     )
@@ -101,7 +95,7 @@ def visit_inline_flag(self, node: inline_flag):
 
 
 class flag(nodes.Element):
-    local_attributes = [*nodes.Element.local_attributes, *FLAG_ATTRS]
+    local_attributes = [*nodes.Element.local_attributes, *FLAG_ATTRS]  # type: ignore
 
 
 def visit_flag(self, node: flag):
@@ -110,9 +104,6 @@ def visit_flag(self, node: flag):
     # all `references` with `<cite>` tags, which is what the HTML writer does
     # for parsed RST.
     message = re.sub(r"`(\S+?)`", r"<cite>\1</cite>", message)
-    header, *body = message.splitlines()
-    processed_lines = [header, *(f"<p>{line}</>" for line in body)]
-    message_html = "\n".join(processed_lines)
     # The "hidden" elements are not visible on screen, but are picked up by the search
     # crawler to provide better structure to search results.
     html = f"""
@@ -123,8 +114,8 @@ def visit_flag(self, node: flag):
           {flag_type}
           <span class="hidden">)</span>
         </span>
+        {message}
       </>
-      {message_html}
     </div>
     """
     self.body.append(html)

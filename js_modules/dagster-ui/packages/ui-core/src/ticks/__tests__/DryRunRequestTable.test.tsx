@@ -1,17 +1,12 @@
-import {render, screen, waitFor} from '@testing-library/react';
+import {render, screen} from '@testing-library/react';
+import * as React from 'react';
 import {BrowserRouter} from 'react-router-dom';
 
 import {RunRequestTable} from '../DryRunRequestTable';
+import {mockRepository} from '../__fixtures__/DryRunRequestTable.fixtures';
 import {runRequests} from '../__fixtures__/SensorDryRunDialog.fixtures';
 
-jest.mock('../../workspace/WorkspaceContext/util', () => ({
-  ...jest.requireActual('../../workspace/WorkspaceContext/util'),
-  useRepository: jest.fn(() => null),
-}));
-
-jest.mock('../../runs/RunConfigDialog', () => ({
-  RunConfigDialog: () => <div>RunConfigDialog</div>,
-}));
+jest.mock('../../workspace/WorkspaceContext', () => ({useRepository: () => mockRepository}));
 
 function TestComponent() {
   return (
@@ -35,19 +30,10 @@ describe('RunRequestTableTest', () => {
     render(<TestComponent />);
 
     runRequests.forEach((req) => {
+      req.tags.forEach(({key, value}) => {
+        expect(screen.getByText(`${key}: ${value}`)).toBeVisible();
+      });
       expect(screen.getByTestId(req.runKey!)).toBeVisible();
-    });
-  });
-
-  it('renders preview button and opens dialog on click', async () => {
-    render(<TestComponent />);
-
-    const previewButton = screen.getByTestId(`preview-${runRequests[0]!.runKey || ''}`);
-    expect(previewButton).toBeVisible();
-    previewButton.click();
-
-    await waitFor(() => {
-      expect(screen.getByText(/RunConfigDialog/i)).toBeVisible();
     });
   });
 });

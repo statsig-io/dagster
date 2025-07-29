@@ -2,21 +2,28 @@ import re
 
 import pytest
 
-import dagster as dg
+from dagster import (
+    AssetMaterialization,
+    InputContext,
+    OutputContext,
+    build_input_context,
+    build_output_context,
+    resource,
+)
 from dagster._core.errors import DagsterInvariantViolationError
 
 
 def test_basic_build_input_context():
-    context = dg.build_input_context()
-    assert isinstance(context, dg.InputContext)
+    context = build_input_context()
+    assert isinstance(context, InputContext)
 
 
 def test_build_input_context_with_resources():
-    @dg.resource
+    @resource
     def foo_def():
         return "bar_def"
 
-    context = dg.build_input_context(resources={"foo": "bar", "foo_def": foo_def})
+    context = build_input_context(resources={"foo": "bar", "foo_def": foo_def})
     assert context.resources.foo == "bar"
     assert context.resources.foo_def == "bar_def"
 
@@ -24,14 +31,14 @@ def test_build_input_context_with_resources():
 def test_build_input_context_with_cm_resource():
     entered = []
 
-    @dg.resource
+    @resource
     def cm_resource():
         try:
             yield "foo"
         finally:
             entered.append("yes")
 
-    context = dg.build_input_context(resources={"cm_resource": cm_resource})
+    context = build_input_context(resources={"cm_resource": cm_resource})
     with pytest.raises(
         DagsterInvariantViolationError,
         match=re.escape(
@@ -47,28 +54,28 @@ def test_build_input_context_with_cm_resource():
 
     assert entered == ["yes"]
 
-    with dg.build_input_context(resources={"cm_resource": cm_resource}) as context:
+    with build_input_context(resources={"cm_resource": cm_resource}) as context:
         assert context.resources.cm_resource == "foo"
 
     assert entered == ["yes", "yes"]
 
 
 def test_basic_build_output_context():
-    context = dg.build_output_context()
-    assert isinstance(context, dg.OutputContext)
+    context = build_output_context()
+    assert isinstance(context, OutputContext)
 
 
 def test_build_output_context_with_cm_resource():
     entered = []
 
-    @dg.resource
+    @resource
     def cm_resource():
         try:
             yield "foo"
         finally:
             entered.append("yes")
 
-    context = dg.build_output_context(
+    context = build_output_context(
         step_key="test", name="test", resources={"cm_resource": cm_resource}
     )
     with pytest.raises(
@@ -86,7 +93,7 @@ def test_build_output_context_with_cm_resource():
 
     assert entered == ["yes"]
 
-    with dg.build_output_context(
+    with build_output_context(
         step_key="test", name="test", resources={"cm_resource": cm_resource}
     ) as context:
         assert context.resources.cm_resource == "foo"
@@ -95,15 +102,15 @@ def test_build_output_context_with_cm_resource():
 
 
 def test_context_logging_user_events():
-    context = dg.build_output_context()
+    context = build_output_context()
 
-    context.log_event(dg.AssetMaterialization("first"))
-    context.log_event(dg.AssetMaterialization("second"))
+    context.log_event(AssetMaterialization("first"))
+    context.log_event(AssetMaterialization("second"))
     assert [event.label for event in context.get_logged_events()] == ["first", "second"]
 
 
 def test_context_logging_metadata():
-    context = dg.build_output_context()
+    context = build_output_context()
 
     context.add_output_metadata({"foo": "bar"})
 
@@ -111,15 +118,15 @@ def test_context_logging_metadata():
 
 
 def test_output_context_partition_key():
-    context = dg.build_output_context(partition_key="foo")
+    context = build_output_context(partition_key="foo")
     assert context.partition_key == "foo"
     assert context.has_partition_key
 
 
 def test_input_context_partition_key():
-    context = dg.build_input_context(partition_key="foo")
+    context = build_input_context(partition_key="foo")
     assert context.partition_key == "foo"
     assert context.has_partition_key
 
-    context = dg.build_input_context()
+    context = build_input_context()
     assert not context.has_partition_key

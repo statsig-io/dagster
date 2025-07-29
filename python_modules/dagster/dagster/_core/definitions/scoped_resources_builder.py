@@ -6,8 +6,7 @@
 # See: https://github.com/python/mypy/issues/7281
 
 from collections import namedtuple
-from collections.abc import Mapping
-from typing import AbstractSet, Any, NamedTuple, Optional  # noqa: UP035
+from typing import AbstractSet, Any, Mapping, NamedTuple, Optional
 
 import dagster._check as check
 from dagster._core.errors import DagsterUnknownResourceError
@@ -30,7 +29,7 @@ class Resources:
         raise DagsterUnknownResourceError(name)
 
     @property
-    def original_resource_dict(self) -> Mapping[str, object]:
+    def _original_resource_dict(self) -> Mapping[str, object]:
         raise NotImplementedError()
 
 
@@ -51,7 +50,7 @@ class ScopedResourcesBuilder(
         resource_instance_dict: Optional[Mapping[str, object]] = None,
         contains_generator: bool = False,
     ):
-        return super().__new__(
+        return super(ScopedResourcesBuilder, cls).__new__(
             cls,
             resource_instance_dict=check.opt_mapping_param(
                 resource_instance_dict, "resource_instance_dict", key_type=str
@@ -107,7 +106,7 @@ class ScopedResourcesBuilder(
                 IContainsGenerator,
             ):
                 @property
-                def original_resource_dict(self) -> Mapping[str, object]:
+                def _original_resource_dict(self) -> Mapping[str, object]:
                     return resource_instance_dict
 
             return _ScopedResourcesContainsGenerator(**resources_to_attach_to_context)
@@ -119,7 +118,7 @@ class ScopedResourcesBuilder(
                 Resources,
             ):
                 @property
-                def original_resource_dict(self) -> Mapping[str, object]:
+                def _original_resource_dict(self) -> Mapping[str, object]:
                     return resource_instance_dict
 
             return _ScopedResources(**resources_to_attach_to_context)

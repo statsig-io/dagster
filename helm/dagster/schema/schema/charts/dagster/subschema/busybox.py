@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from schema.charts.utils.kubernetes import ExternalImage
+from ...utils.kubernetes import ExternalImage
 
 
 class Busybox(BaseModel):

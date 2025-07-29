@@ -1,11 +1,12 @@
-import {memo} from 'react';
+import * as React from 'react';
 import styled from 'styled-components';
+
+import {weakmapMemoize} from '../app/Util';
+import {buildSVGPath} from '../asset-graph/Utils';
 
 import {OpGraphLayout, OpLayout, OpLayoutEdge} from './asyncGraphLayout';
 import {OpLayoutEdgeSide, OpLayoutIO} from './layout';
 import {OpGraphOpFragment} from './types/OpGraph.types';
-import {buildSVGPathVertical} from '../asset-graph/Utils';
-import {weakMapMemoize} from '../util/weakMapMemoize';
 
 export type Edge = {a: string; b: string};
 
@@ -17,7 +18,7 @@ type Path = {
   to: OpLayoutEdgeSide;
 };
 
-const buildSVGPaths = weakMapMemoize((edges: OpLayoutEdge[], nodes: {[name: string]: OpLayout}) =>
+const buildSVGPaths = weakmapMemoize((edges: OpLayoutEdge[], nodes: {[name: string]: OpLayout}) =>
   edges
     .map(({from, to}) => {
       const source = nodes[from.opName]!;
@@ -36,7 +37,7 @@ const buildSVGPaths = weakMapMemoize((edges: OpLayoutEdge[], nodes: {[name: stri
       }
       return {
         // can also use from.point for the "Dagre" closest point on node
-        path: buildSVGPathVertical({source: sourceOutput.port, target: targetInput.port}),
+        path: buildSVGPath({source: sourceOutput.port, target: targetInput.port}),
         sourceOutput,
         targetInput,
         from,
@@ -61,7 +62,7 @@ const inputIsDynamicCollect = (
   return inputDef?.isDynamicCollect || false;
 };
 
-export const OpEdges = memo(
+export const OpEdges = React.memo(
   (props: {
     color: string;
     ops: OpGraphOpFragment[];
@@ -103,17 +104,12 @@ export const OpEdges = memo(
 
 OpEdges.displayName = 'OpEdges';
 
-const DynamicMarker = ({
-  x,
-  y,
-  direction,
-  color,
-}: {
+const DynamicMarker: React.FC<{
   x: number;
   y: number;
   direction: 'output' | 'collect';
   color: string;
-}) => (
+}> = ({x, y, direction, color}) => (
   <g
     fill={color}
     transform={`translate(${x - 35}, ${y})${

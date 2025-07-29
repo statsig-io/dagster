@@ -1,7 +1,5 @@
 import boto3
 import pytest
-from moto import mock_athena
-
 from dagster_aws.athena.resources import (
     AthenaError,
     AthenaTimeout,
@@ -9,6 +7,7 @@ from dagster_aws.athena.resources import (
     ResourceWithAthenaConfig,
     fake_athena_resource,
 )
+from moto import mock_athena
 
 
 class TestAthenaClientResource(ResourceWithAthenaConfig):

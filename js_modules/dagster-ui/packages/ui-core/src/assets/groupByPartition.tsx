@@ -1,18 +1,14 @@
 import groupBy from 'lodash/groupBy';
-import {useMemo} from 'react';
+import React from 'react';
 
 import {
-  AssetFailedToMaterializeFragment,
+  AssetMaterializationFragment,
   AssetObservationFragment,
-  AssetSuccessfulMaterializationFragment,
 } from './types/useRecentAssetEvents.types';
 
 const NO_PARTITION_KEY = '__NO_PARTITION__';
 
-type Event =
-  | AssetSuccessfulMaterializationFragment
-  | AssetFailedToMaterializeFragment
-  | AssetObservationFragment;
+type Event = AssetMaterializationFragment | AssetObservationFragment;
 
 export type AssetEventGroup = {
   latest: Event | null;
@@ -23,6 +19,10 @@ export type AssetEventGroup = {
 
 const sortByEventTimestamp = (a: Event, b: Event) => Number(b?.timestamp) - Number(a?.timestamp);
 
+/**
+ * A hook that can bucket a list of materializations by partition, if any, with the `latest`
+ * materialization separated from predecessor materializations.
+ */
 const groupByPartition = (events: Event[], definedPartitionKeys: string[]): AssetEventGroup[] => {
   const grouped = groupBy(events, (m) => m.partition || NO_PARTITION_KEY);
   const orderedPartitionKeys = [...definedPartitionKeys].reverse();
@@ -47,16 +47,16 @@ const groupByPartition = (events: Event[], definedPartitionKeys: string[]): Asse
     });
 };
 
-/**
- * A hook that can bucket a list of materializations by partition, if any, with the `latest`
- * materialization separated from predecessor materializations.
- */
 export function useGroupedEvents(
   xAxis: 'partition' | 'time',
-  events: Event[],
+  materializations: Event[],
+  observations: Event[],
   loadedPartitionKeys: string[] | undefined,
 ) {
-  return useMemo<AssetEventGroup[]>(() => {
+  return React.useMemo<AssetEventGroup[]>(() => {
+    const events = [...materializations, ...observations].sort(
+      (b, a) => Number(a.timestamp) - Number(b.timestamp),
+    );
     if (xAxis === 'partition' && loadedPartitionKeys) {
       return groupByPartition(events, loadedPartitionKeys);
     } else {
@@ -68,5 +68,5 @@ export function useGroupedEvents(
         all: [],
       }));
     }
-  }, [loadedPartitionKeys, events, xAxis]);
+  }, [loadedPartitionKeys, materializations, observations, xAxis]);
 }

@@ -1,10 +1,8 @@
 import memoize from 'lodash/memoize';
 import LRU from 'lru-cache';
 
+import {featureEnabled, FeatureFlag} from './Flags';
 import {timeByParts} from './timeByParts';
-import {hashObject} from '../util/hashObject';
-import {cache} from '../util/idb-lru-cache';
-import {weakMapMemoize} from '../util/weakMapMemoize';
 
 function twoDigit(v: number) {
   return `${v < 10 ? '0' : ''}${v}`;
@@ -83,26 +81,30 @@ const formatMsecMantissa = (msec: number) =>
     .slice(-4);
 
 /**
- * Format the time without milliseconds, rounding to :01 for non-zero value within (-1, 1)
+ * Opinionated elapsed time formatting:
+ *
+ * - Times between -10 and 10 seconds are shown as `X.XXXs`
+ * - Otherwise times are rendered in a `X:XX:XX` format, without milliseconds
  */
-export const formatElapsedTimeWithoutMsec = (msec: number) => {
-  const {hours, minutes, seconds} = timeByParts(msec);
+export const formatElapsedTime = (msec: number) => {
+  const {hours, minutes, seconds, milliseconds} = timeByParts(msec);
   const negative = msec < 0;
-  const roundedSeconds = msec !== 0 && msec < 1000 && msec > -1000 ? 1 : seconds;
-  return `${negative ? '-' : ''}${hours}:${twoDigit(minutes)}:${twoDigit(roundedSeconds)}`;
+
+  if (msec < 10000 && msec > -10000) {
+    const formattedMsec = formatMsecMantissa(milliseconds);
+    return `${negative ? '-' : ''}${seconds}${formattedMsec}s`;
+  }
+
+  return `${negative ? '-' : ''}${hours}:${twoDigit(minutes)}:${twoDigit(seconds)}`;
 };
 
 export const formatElapsedTimeWithMsec = (msec: number) => {
   const {hours, minutes, seconds, milliseconds} = timeByParts(msec);
-
   const negative = msec < 0;
-  const sign = negative ? '-' : '';
-  const hourStr = hours > 0 ? `${hours}:` : '';
-  const minuteStr = hours > 0 ? `${twoDigit(minutes)}:` : minutes > 0 ? `${minutes}:` : '';
-  const secStr = hours > 0 || minutes > 0 ? `${twoDigit(seconds)}` : `${seconds}`;
-  const mantissa = formatMsecMantissa(milliseconds);
-
-  return `${sign}${hourStr}${minuteStr}${secStr}${mantissa}`;
+  const positiveValue = `${hours}:${twoDigit(minutes)}:${twoDigit(seconds)}${formatMsecMantissa(
+    milliseconds,
+  )}`;
+  return `${negative ? '-' : ''}${positiveValue}`;
 };
 
 export function breakOnUnderscores(str: string) {
@@ -134,7 +136,7 @@ export function asyncMemoize<T, R, U extends (arg: T, ...rest: any[]) => Promise
   hashFn?: (arg: T, ...rest: any[]) => any,
   hashSize?: number,
 ): U {
-  const cache = new LRU<any, R>(hashSize || 50);
+  const cache = new LRU(hashSize || 50);
   return (async (arg: T, ...rest: any[]) => {
     const key = hashFn ? hashFn(arg, ...rest) : arg;
     if (cache.has(key)) {
@@ -146,85 +148,36 @@ export function asyncMemoize<T, R, U extends (arg: T, ...rest: any[]) => Promise
   }) as any;
 }
 
-export const indexedDBAsyncMemoize = <R, U extends (...args: any[]) => Promise<R>>(
-  fn: U,
-  key: string,
-  hashFn?: (...args: Parameters<U>) => any,
-): U & {
-  isCached: (...args: Parameters<U>) => Promise<boolean>;
-  clearEntry: (...args: Parameters<U>) => Promise<void>;
-} => {
-  let lru: ReturnType<typeof cache<R>> | undefined;
-  try {
-    lru = cache<R>({
-      dbName: `indexDBAsyncMemoizeDB${key}`,
-      maxCount: 50,
-    });
-  } catch {}
-
-  const hashToPromise: Record<string, Promise<R>> = {};
-
-  const genHashKey = weakMapMemoize(async (...args: Parameters<U>) => {
-    return hashFn ? hashFn(...args) : hashObject(args);
-  });
-
-  const ret = weakMapMemoize(async (...args: Parameters<U>) => {
-    return new Promise<R>(async (resolve, reject) => {
-      const hashKey = await genHashKey(...args);
-      if (lru && (await lru.has(hashKey))) {
-        const entry = await lru.get(hashKey);
-        const value = entry?.value;
-        if (value) {
-          resolve(value);
-        } else {
-          reject(new Error('No value found'));
-        }
-        return;
-      } else if (!hashToPromise[hashKey]) {
-        hashToPromise[hashKey] = new Promise(async (res, rej) => {
-          try {
-            const result = await fn(...args);
-            // Resolve the promise before storing the result in IndexedDB
-            res(result);
-            if (lru) {
-              await lru.set(hashKey, result);
-              delete hashToPromise[hashKey];
-            }
-          } catch (e) {
-            delete hashToPromise[hashKey];
-            rej(e);
-          }
-        });
-      }
-      try {
-        const result = await hashToPromise[hashKey]!;
-        resolve(result);
-      } catch (e) {
-        delete hashToPromise[hashKey];
-        reject(e);
-      }
-    });
-  }) as any;
-  ret.isCached = async (...args: Parameters<U>) => {
-    const hashKey = await genHashKey(...args);
-    if (!lru) {
-      return false;
+// Simple memoization function for methods that take a single object argument.
+// Returns a memoized copy of the provided function which retrieves the result
+// from a cache after the first invocation with a given object.
+//
+// Uses WeakMap to tie the lifecycle of the cache to the lifecycle of the
+// object argument.
+//
+// eslint-disable-next-line @typescript-eslint/ban-types
+export function weakmapMemoize<T extends object, R>(
+  fn: (arg: T, ...rest: any[]) => R,
+): (arg: T, ...rest: any[]) => R {
+  const cache = new WeakMap();
+  return (arg: T, ...rest: any[]) => {
+    if (cache.has(arg)) {
+      return cache.get(arg);
     }
-    return await lru.has(hashKey);
+    const r = fn(arg, ...rest);
+    cache.set(arg, r);
+    return r;
   };
-  ret.clearEntry = async (...args: Parameters<U>) => {
-    if (!lru) {
-      return;
-    }
-    const hashKey = await genHashKey(...args);
-    delete hashToPromise[hashKey];
-    await lru.delete(hashKey);
-  };
-  return ret;
-};
+}
 
 export function assertUnreachable(value: never): never {
   throw new Error(`Didn't expect to get here with value: ${JSON.stringify(value)}`);
+}
+
+export function debugLog(...args: any[]) {
+  if (featureEnabled(FeatureFlag.flagDebugConsoleLogging)) {
+    console.log(...args);
+  }
 }
 
 export function colorHash(str: string) {

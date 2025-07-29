@@ -5,13 +5,6 @@ import qs from 'qs';
 import * as React from 'react';
 import {Link, useLocation} from 'react-router-dom';
 
-import {EventTypeColumn} from './LogsRowComponents';
-import {IRunMetadataDict} from './RunMetadataProvider';
-import {eventTypeToDisplayType} from './getRunFilterProviders';
-import {
-  LogsRowStructuredFragment,
-  LogsRowStructuredFragment_AssetCheckEvaluationEvent,
-} from './types/LogsRow.types';
 import {assertUnreachable} from '../app/Util';
 import {PythonErrorFragment} from '../app/types/PythonErrorFragment.types';
 import {displayNameForAssetKey} from '../asset-graph/Utils';
@@ -20,21 +13,28 @@ import {
   assetDetailsPathForKey,
 } from '../assets/assetDetailsPathForKey';
 import {AssetKey} from '../assets/types';
-import {DagsterEventType, ErrorSource} from '../graphql/types';
+import {ErrorSource, DagsterEventType} from '../graphql/types';
 import {
   LogRowStructuredContentTable,
-  LogRowStructuredRow,
   MetadataEntries,
   MetadataEntryLink,
 } from '../metadata/MetadataEntry';
-import {MetadataEntryFragment} from '../metadata/types/MetadataEntryFragment.types';
+import {MetadataEntryFragment} from '../metadata/types/MetadataEntry.types';
+
+import {EventTypeColumn} from './LogsRowComponents';
+import {IRunMetadataDict} from './RunMetadataProvider';
+import {eventTypeToDisplayType} from './getRunFilterProviders';
+import {
+  LogsRowStructuredFragment,
+  LogsRowStructuredFragment_AssetCheckEvaluationEvent_,
+} from './types/LogsRow.types';
 
 interface IStructuredContentProps {
   node: LogsRowStructuredFragment;
   metadata: IRunMetadataDict;
 }
 
-export const LogsRowStructuredContent = ({node, metadata}: IStructuredContentProps) => {
+export const LogsRowStructuredContent: React.FC<IStructuredContentProps> = ({node, metadata}) => {
   const location = useLocation();
   const eventType = node.eventType as string;
   switch (node.__typename) {
@@ -132,8 +132,6 @@ export const LogsRowStructuredContent = ({node, metadata}: IStructuredContentPro
           <MetadataEntries entries={node.expectationResult.metadataEntries} />
         </DefaultContent>
       );
-    case 'FailedToMaterializeEvent':
-    case 'HealthChangedEvent':
     case 'MaterializationEvent':
       return (
         <AssetMetadataContent
@@ -142,7 +140,6 @@ export const LogsRowStructuredContent = ({node, metadata}: IStructuredContentPro
           metadataEntries={node.metadataEntries}
           eventType={eventType}
           timestamp={node.timestamp}
-          partition={node.partition}
         />
       );
     case 'ObservationEvent':
@@ -153,12 +150,9 @@ export const LogsRowStructuredContent = ({node, metadata}: IStructuredContentPro
           metadataEntries={node.metadataEntries}
           eventType={eventType}
           timestamp={node.timestamp}
-          partition={node.partition}
         />
       );
     case 'AssetMaterializationPlannedEvent':
-      return <DefaultContent eventType={eventType} message={node.message} />;
-    case 'FailedToMaterializeEvent':
       return <DefaultContent eventType={eventType} message={node.message} />;
     case 'ObjectStoreOperationEvent':
       return (
@@ -191,7 +185,6 @@ export const LogsRowStructuredContent = ({node, metadata}: IStructuredContentPro
     case 'AlertFailureEvent':
       return <DefaultContent eventType={eventType} message={node.message} eventIntent="warning" />;
     case 'ResourceInitFailureEvent':
-    case 'RunCanceledEvent':
     case 'RunFailureEvent':
       if (node.error) {
         return <FailureContent message={node.message} error={node.error} eventType={eventType} />;
@@ -209,16 +202,11 @@ export const LogsRowStructuredContent = ({node, metadata}: IStructuredContentPro
     case 'StepWorkerStartedEvent':
     case 'StepWorkerStartingEvent':
       return <DefaultContent message={node.message} eventType={eventType} />;
+    case 'RunCanceledEvent':
+      return <FailureContent message={node.message} eventType={eventType} />;
     case 'EngineEvent':
       if (node.error) {
-        return (
-          <FailureContent
-            message={node.message}
-            error={node.error}
-            metadataEntries={node.metadataEntries}
-            eventType={eventType}
-          />
-        );
+        return <FailureContent message={node.message} error={node.error} eventType={eventType} />;
       }
       return (
         <DefaultContent
@@ -275,20 +263,14 @@ export const LogsRowStructuredContent = ({node, metadata}: IStructuredContentPro
 
 // Structured Content Renderers
 
-const DefaultContent = ({
-  message,
-  eventType,
-  eventColor,
-  eventIntent,
-  children,
-}: {
+const DefaultContent: React.FC<{
   message: string;
   eventType?: string;
   eventColor?: string;
   eventIntent?: Intent;
   metadataEntries?: MetadataEntryFragment[];
   children?: React.ReactElement;
-}) => {
+}> = ({message, eventType, eventColor, eventIntent, children}) => {
   return (
     <>
       <EventTypeColumn>
@@ -298,12 +280,12 @@ const DefaultContent = ({
             style={
               eventColor
                 ? {
-                    fontSize: '12px',
+                    fontSize: '0.9em',
                     color: 'black',
                     background: eventColor,
                   }
                 : {
-                    fontSize: '12px',
+                    fontSize: '0.9em',
                   }
             }
           >
@@ -319,19 +301,13 @@ const DefaultContent = ({
   );
 };
 
-const FailureContent = ({
-  message,
-  error,
-  errorSource,
-  eventType,
-  metadataEntries,
-}: {
+const FailureContent: React.FC<{
   message?: string;
   eventType: string;
   error?: PythonErrorFragment | null;
   errorSource?: ErrorSource | null;
   metadataEntries?: MetadataEntryFragment[];
-}) => {
+}> = ({message, error, errorSource, eventType, metadataEntries}) => {
   let contextMessage = null;
   let errorMessage = null;
   let errorStack = null;
@@ -347,7 +323,7 @@ const FailureContent = ({
   }
 
   if (error) {
-    errorMessage = <span style={{color: Colors.textRed()}}>{`${error.message}`}</span>;
+    errorMessage = <span style={{color: Colors.Red500}}>{`${error.message}`}</span>;
 
     // omit the outer stack for user code errors with a cause
     // as the outer stack is just framework code
@@ -355,9 +331,7 @@ const FailureContent = ({
       error.stack.length &&
       !(errorSource === ErrorSource.USER_CODE_ERROR && error.errorChain.length)
     ) {
-      errorStack = (
-        <span style={{color: Colors.textRed()}}>{`\nStack Trace:\n${error.stack}`}</span>
-      );
+      errorStack = <span style={{color: Colors.Red500}}>{`\nStack Trace:\n${error.stack}`}</span>;
     }
 
     if (error.errorChain.length) {
@@ -366,11 +340,9 @@ const FailureContent = ({
           {chainLink.isExplicitLink
             ? `The above exception was caused by the following exception:\n`
             : `The above exception occurred during handling of the following exception:\n`}
-          <span style={{color: Colors.textRed()}}>{`${chainLink.error.message}`}</span>
+          <span style={{color: Colors.Red500}}>{`${chainLink.error.message}`}</span>
           {chainLink.error.stack.length ? (
-            <span
-              style={{color: Colors.textRed()}}
-            >{`\nStack Trace:\n${chainLink.error.stack}`}</span>
+            <span style={{color: Colors.Red500}}>{`\nStack Trace:\n${chainLink.error.stack}`}</span>
           ) : null}
         </React.Fragment>
       ));
@@ -395,13 +367,10 @@ const FailureContent = ({
   );
 };
 
-const StepUpForRetryContent = ({
-  message,
-  error,
-}: {
+const StepUpForRetryContent: React.FC<{
   message?: string;
   error?: PythonErrorFragment | null;
-}) => {
+}> = ({message, error}) => {
   let contextMessage = null;
   let errorCause = null;
   let errorMessage = null;
@@ -419,10 +388,8 @@ const StepUpForRetryContent = ({
   if (error) {
     // If no cause, this was a `raise RetryRequest` inside the op. Show the trace for the main error.
     if (!error.errorChain.length) {
-      errorMessage = <span style={{color: Colors.textRed()}}>{`${error.message}`}</span>;
-      errorStack = (
-        <span style={{color: Colors.textRed()}}>{`\nStack Trace:\n${error.stack}`}</span>
-      );
+      errorMessage = <span style={{color: Colors.Red500}}>{`${error.message}`}</span>;
+      errorStack = <span style={{color: Colors.Red500}}>{`\nStack Trace:\n${error.stack}`}</span>;
     } else {
       // If there is a cause, this was a different exception. Show that instead.
       errorCause = (
@@ -432,9 +399,9 @@ const StepUpForRetryContent = ({
               {index === 0
                 ? `The retry request was caused by the following exception:\n`
                 : `The above exception was caused by the following exception:\n`}
-              <span style={{color: Colors.textRed()}}>{`${chainLink.error.message}`}</span>
+              <span style={{color: Colors.Red500}}>{`${chainLink.error.message}`}</span>
               <span
-                style={{color: Colors.textRed()}}
+                style={{color: Colors.Red500}}
               >{`\nStack Trace:\n${chainLink.error.stack}`}</span>
             </React.Fragment>
           ))}
@@ -460,22 +427,16 @@ const StepUpForRetryContent = ({
   );
 };
 
-const AssetCheckEvaluationContent = ({
-  node,
-  eventType,
-}: {
-  node: LogsRowStructuredFragment_AssetCheckEvaluationEvent;
+const AssetCheckEvaluationContent: React.FC<{
+  node: LogsRowStructuredFragment_AssetCheckEvaluationEvent_;
   eventType: string;
-}) => {
+}> = ({node, eventType}) => {
   const {checkName, success, metadataEntries, targetMaterialization, assetKey} = node.evaluation;
 
   const checkLink = assetDetailsPathForAssetCheck({assetKey, name: checkName});
-
-  // Target materialization timestamp is in seconds, and must be converted to msec for the query param.
-  const asOf = targetMaterialization?.timestamp ?? null;
   const matLink = assetDetailsPathForKey(assetKey, {
     view: 'events',
-    asOf: asOf ? `${Math.floor(asOf * 1000)}` : undefined,
+    asOf: targetMaterialization ? `${targetMaterialization.timestamp}` : undefined,
   });
 
   return (
@@ -485,7 +446,7 @@ const AssetCheckEvaluationContent = ({
       eventIntent={success ? Intent.SUCCESS : Intent.DANGER}
     >
       <div>
-        <div style={{color: success ? 'inherit' : Colors.textRed()}}>
+        <div style={{color: success ? 'inherit' : Colors.Red500}}>
           Check <MetadataEntryLink to={checkLink}>{checkName}</MetadataEntryLink>
           {` ${success ? 'succeeded' : 'failed'} for materialization of `}
           <MetadataEntryLink to={matLink}>{displayNameForAssetKey(assetKey)}</MetadataEntryLink>.
@@ -496,21 +457,13 @@ const AssetCheckEvaluationContent = ({
   );
 };
 
-const AssetMetadataContent = ({
-  message,
-  assetKey,
-  metadataEntries,
-  eventType,
-  timestamp,
-  partition,
-}: {
+const AssetMetadataContent: React.FC<{
   message: string;
   assetKey: AssetKey | null;
   metadataEntries: MetadataEntryFragment[];
   eventType: string;
   timestamp: string;
-  partition: string | null;
-}) => {
+}> = ({message, assetKey, metadataEntries, eventType, timestamp}) => {
   if (!assetKey) {
     return (
       <DefaultContent message={message} eventType={eventType}>
@@ -527,30 +480,22 @@ const AssetMetadataContent = ({
     </span>
   );
 
-  // Note: No memoization here - log row content components are memoized higher up
-
-  const rows: LogRowStructuredRow[] = [
-    {
-      label: 'asset_key',
-      item: (
-        <>
-          {displayNameForAssetKey(assetKey)}
-          {assetDashboardLink}
-        </>
-      ),
-    },
-  ];
-
-  if (partition) {
-    rows.push({label: 'partition', item: <>{partition}</>});
-  }
-
   return (
     <DefaultContent message={message} eventType={eventType}>
       <>
         <LogRowStructuredContentTable
           styles={metadataEntries?.length ? {paddingBottom: 0} : {}}
-          rows={rows}
+          rows={[
+            {
+              label: 'asset_key',
+              item: (
+                <>
+                  {displayNameForAssetKey(assetKey)}
+                  {assetDashboardLink}
+                </>
+              ),
+            },
+          ]}
         />
         <MetadataEntries entries={metadataEntries} />
       </>

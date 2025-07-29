@@ -1,27 +1,28 @@
 import {
   Box,
-  Button,
   ButtonGroup,
   Checkbox,
-  ExternalAnchorButton,
-  Icon,
   IconName,
+  Icon,
   MenuItem,
-  Suggest,
   Tooltip,
+  Suggest,
+  ExternalAnchorButton,
+  Button,
 } from '@dagster-io/ui-components';
 import * as React from 'react';
 import styled from 'styled-components';
+
+import {OptionsContainer, OptionsDivider} from '../gantt/VizComponents';
+import {useStateWithStorage} from '../hooks/useStateWithStorage';
 
 import {FilterOption, LogFilterSelect} from './LogFilterSelect';
 import {LogLevel} from './LogLevel';
 import {LogsFilterInput} from './LogsFilterInput';
 import {LogFilter, LogFilterValue} from './LogsProvider';
-import {IRunMetadataDict, extractLogCaptureStepsFromLegacySteps} from './RunMetadataProvider';
+import {extractLogCaptureStepsFromLegacySteps, IRunMetadataDict} from './RunMetadataProvider';
 import {getRunFilterProviders} from './getRunFilterProviders';
 import {EnabledRunLogLevelsKey, validateLogLevels} from './useQueryPersistedLogFilter';
-import {OptionsContainer, OptionsDivider} from '../gantt/VizComponents';
-import {useStateWithStorage} from '../hooks/useStateWithStorage';
 
 export enum LogType {
   structured = 'structured',
@@ -53,7 +54,7 @@ interface WithExpandCollapseProps extends ILogsToolbarProps {
 const logQueryToString = (logQuery: LogFilterValue[]) =>
   logQuery.map(({token, value}) => (token ? `${token}:${value}` : value)).join(' ');
 
-export const LogsToolbar = (props: ILogsToolbarProps | WithExpandCollapseProps) => {
+export const LogsToolbar: React.FC<ILogsToolbarProps | WithExpandCollapseProps> = (props) => {
   const {
     steps,
     metadata,
@@ -77,22 +78,19 @@ export const LogsToolbar = (props: ILogsToolbarProps | WithExpandCollapseProps) 
 
   const activeItems = React.useMemo(() => new Set([logType]), [logType]);
 
-  const noStepsStarted = React.useMemo(
-    () => Object.values(metadata.steps).every((step) => !step.start),
-    [metadata],
-  );
-
   return (
-    <OptionsContainer style={{gap: 12}}>
-      <ButtonGroup
-        activeItems={activeItems}
-        buttons={[
-          {id: LogType.structured, icon: 'logs_structured', label: 'Events'},
-          {id: LogType.stdout, icon: 'logs_stdout', label: 'stdout', disabled: noStepsStarted},
-          {id: LogType.stderr, icon: 'logs_stderr', label: 'stderr', disabled: noStepsStarted},
-        ]}
-        onClick={(id) => onSetLogType(id)}
-      />
+    <OptionsContainer>
+      <Box margin={{right: 12}}>
+        <ButtonGroup
+          activeItems={activeItems}
+          buttons={[
+            {id: LogType.structured, icon: 'view_list', label: 'Events'},
+            {id: LogType.stdout, icon: 'console', label: 'stdout'},
+            {id: LogType.stderr, icon: 'warning', label: 'stderr'},
+          ]}
+          onClick={(id) => onSetLogType(id)}
+        />
+      </Box>
       {logType === 'structured' ? (
         <StructuredLogToolbar
           counts={counts}
@@ -172,34 +170,30 @@ export const ComputeLogToolbar = ({
     >
       <Box flex={{direction: 'row', alignItems: 'center', gap: 12}}>
         {steps ? (
-          <div style={{width: 200}}>
-            <Suggest
-              resetOnClose
-              inputProps={{placeholder: 'Select a step…', style: {width: 500}}}
-              popoverProps={{matchTargetWidth: true}}
-              activeItem={computeLogFileKey}
-              selectedItem={computeLogFileKey}
-              disabled={!steps.length}
-              items={Object.keys(logCaptureSteps)}
-              noResults="No matching steps"
-              inputValueRenderer={(item) => fileKeyText(item)}
-              itemPredicate={(query, item) =>
-                fileKeyText(item).toLocaleLowerCase().includes(query.toLocaleLowerCase())
-              }
-              itemRenderer={(item, itemProps) => (
-                <MenuItem
-                  active={itemProps.modifiers.active}
-                  onClick={(e) => itemProps.handleClick(e)}
-                  text={fileKeyText(item)}
-                  key={item}
-                />
-              )}
-              menuWidth={500}
-              onItemSelect={(fileKey) => {
-                onSetComputeLogKey(fileKey);
-              }}
-            />
-          </div>
+          <Suggest
+            resetOnClose
+            inputProps={{placeholder: 'Select a step…'}}
+            activeItem={computeLogFileKey}
+            selectedItem={computeLogFileKey}
+            disabled={!steps.length}
+            items={Object.keys(logCaptureSteps)}
+            noResults="No matching steps"
+            inputValueRenderer={(item) => fileKeyText(item)}
+            itemPredicate={(query, item) =>
+              fileKeyText(item).toLocaleLowerCase().includes(query.toLocaleLowerCase())
+            }
+            itemRenderer={(item, itemProps) => (
+              <MenuItem
+                active={itemProps.modifiers.active}
+                onClick={(e) => itemProps.handleClick(e)}
+                text={fileKeyText(item)}
+                key={item}
+              />
+            )}
+            onItemSelect={(fileKey) => {
+              onSetComputeLogKey(fileKey);
+            }}
+          />
         ) : undefined}
 
         {!steps ? <Box>Step: {(logCaptureInfo?.stepKeys || []).join(', ')}</Box> : undefined}
@@ -244,7 +238,7 @@ const StructuredLogToolbar = ({
   onSetFilter: (filter: LogFilter) => void;
   steps: string[];
 }) => {
-  const [copyIcon, setCopyIcon] = React.useState<IconName>('copy_to_clipboard');
+  const [copyIcon, setCopyIcon] = React.useState<IconName>('assignment');
   const logQueryString = logQueryToString(filter.logQuery);
   const [queryString, setQueryString] = React.useState<string>(() => logQueryString);
 
@@ -283,11 +277,7 @@ const StructuredLogToolbar = ({
 
       // When changing log level filters, update localStorage with the selected levels
       // so that it persists as the default.
-      if (enabled) {
-        allEnabledFilters.add(level);
-      } else {
-        allEnabledFilters.delete(level);
-      }
+      enabled ? allEnabledFilters.add(level) : allEnabledFilters.delete(level);
       setStoredLogLevels(Array.from(allEnabledFilters));
 
       // Then, update the querystring.
@@ -305,15 +295,13 @@ const StructuredLogToolbar = ({
   // Restore the clipboard icon after a delay.
   React.useEffect(() => {
     let token: any;
-    if (copyIcon === 'copy_to_clipboard_done') {
+    if (copyIcon === 'assignment_turned_in') {
       token = setTimeout(() => {
-        setCopyIcon('copy_to_clipboard');
+        setCopyIcon('assignment');
       }, 2000);
     }
     return () => {
-      if (token) {
-        clearTimeout(token);
-      }
+      token && clearTimeout(token);
     };
   }, [copyIcon]);
 

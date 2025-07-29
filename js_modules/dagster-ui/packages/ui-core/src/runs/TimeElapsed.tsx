@@ -1,31 +1,26 @@
 import {Colors, Group, Icon} from '@dagster-io/ui-components';
-import {useCallback, useEffect, useRef, useState} from 'react';
+import * as React from 'react';
 
-import {formatElapsedTimeWithMsec, formatElapsedTimeWithoutMsec} from '../app/Util';
+import {formatElapsedTime} from '../app/Util';
 
 export interface Props {
   startUnix: number | null;
   endUnix: number | null;
-  showMsec?: boolean;
 }
 
 export const TimeElapsed = (props: Props) => {
-  const {startUnix, endUnix, showMsec} = props;
+  const {startUnix, endUnix} = props;
 
-  const [endTime, setEndTime] = useState(() => (endUnix ? endUnix * 1000 : null));
-  const interval = useRef<ReturnType<typeof setInterval>>();
-  const timeout = useRef<ReturnType<typeof setTimeout>>();
+  const [endTime, setEndTime] = React.useState(() => (endUnix ? endUnix * 1000 : null));
+  const interval = React.useRef<NodeJS.Timer | null>(null);
+  const timeout = React.useRef<NodeJS.Timer | null>(null);
 
-  const clearTimers = useCallback(() => {
-    if (interval.current) {
-      clearInterval(interval.current);
-    }
-    if (timeout.current) {
-      clearTimeout(timeout.current);
-    }
+  const clearTimers = React.useCallback(() => {
+    interval.current && clearInterval(interval.current);
+    timeout.current && clearTimeout(timeout.current);
   }, []);
 
-  useEffect(() => {
+  React.useEffect(() => {
     // An end time has been supplied. Simply set a static value.
     if (endUnix) {
       setEndTime(endUnix * 1000);
@@ -47,13 +42,9 @@ export const TimeElapsed = (props: Props) => {
 
   return (
     <Group direction="row" spacing={4} alignItems="center">
-      <Icon name="timer" color={Colors.textLight()} />
+      <Icon name="timer" color={Colors.Gray400} />
       <span style={{fontVariantNumeric: 'tabular-nums'}}>
-        {startTime
-          ? showMsec
-            ? formatElapsedTimeWithMsec((endTime || Date.now()) - startTime)
-            : formatElapsedTimeWithoutMsec((endTime || Date.now()) - startTime)
-          : '–'}
+        {startTime ? formatElapsedTime((endTime || Date.now()) - startTime) : '–'}
       </span>
     </Group>
   );

@@ -1,4 +1,3 @@
 include README.md
 include LICENSE
 include dagster_celery/py.typed
-recursive-exclude example *

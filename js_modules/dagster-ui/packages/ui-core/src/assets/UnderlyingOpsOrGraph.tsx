@@ -1,23 +1,19 @@
-import {Box, Icon} from '@dagster-io/ui-components';
+import {gql} from '@apollo/client';
+import {Box, Icon, Mono} from '@dagster-io/ui-components';
+import React from 'react';
 import {Link} from 'react-router-dom';
 
-import {gql} from '../apollo-client';
-import {UnderlyingOpsAssetNodeFragment} from './types/UnderlyingOpsOrGraph.types';
 import {displayNameForAssetKey} from '../asset-graph/Utils';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
-export const UnderlyingOpsOrGraph = ({
-  assetNode,
-  repoAddress,
-  minimal,
-  hideIfRedundant = true,
-}: {
+import {UnderlyingOpsAssetNodeFragment} from './types/UnderlyingOpsOrGraph.types';
+
+export const UnderlyingOpsOrGraph: React.FC<{
   assetNode: UnderlyingOpsAssetNodeFragment;
   repoAddress: RepoAddress;
   minimal?: boolean;
-  hideIfRedundant?: boolean;
-}) => {
+}> = ({assetNode, repoAddress, minimal}) => {
   const {assetKey, graphName, opNames, jobNames} = assetNode;
   const opCount = opNames.length;
 
@@ -27,14 +23,16 @@ export const UnderlyingOpsOrGraph = ({
 
   if (!graphName) {
     const firstOp = opNames[0];
-    if (displayNameForAssetKey(assetKey) === firstOp && hideIfRedundant) {
+    if (displayNameForAssetKey(assetKey) === firstOp) {
       return null;
     }
     const opPath = workspacePathFromAddress(repoAddress, `/ops/${firstOp}`);
     return (
       <Box flex={{gap: 4, alignItems: 'center'}}>
         <Icon name="op" size={16} />
-        <Link to={opPath}>{firstOp}</Link>
+        <Mono>
+          <Link to={opPath}>{firstOp}</Link>
+        </Mono>
       </Box>
     );
   }
@@ -51,12 +49,12 @@ export const UnderlyingOpsOrGraph = ({
           View graph
         </Link>
       ) : (
-        <>
+        <Mono>
           <Link to={workspacePathFromAddress(repoAddress, `/graphs/${jobNames[0]}/${graphName}/`)}>
             {graphName}
           </Link>
           {` (${opCount === 1 ? '1 op' : `${opCount} ops`})`}
-        </>
+        </Mono>
       )}
     </Box>
   );

@@ -2,7 +2,6 @@ import os
 
 from dagster import (
     AssetKey,
-    DefaultSensorStatus,
     RunFailureSensorContext,
     RunRequest,
     SkipReason,
@@ -27,7 +26,7 @@ def get_directory_files(directory_name, since=None):
         return []
 
     try:
-        since = float(since)  # pyright: ignore[reportArgumentType]
+        since = float(since)
     except (TypeError, ValueError):
         since = None
 
@@ -121,7 +120,7 @@ def get_toys_sensors():
     built_in_slack_on_run_failure_sensor = make_slack_on_run_failure_sensor(
         name="built_in_slack_on_run_failure_sensor",
         channel="#toy-test",
-        slack_token=os.environ.get("SLACK_DAGSTER_ETL_BOT_TOKEN"),  # pyright: ignore[reportArgumentType]
+        slack_token=os.environ.get("SLACK_DAGSTER_ETL_BOT_TOKEN"),
         monitored_jobs=[error_monster_failing_job],
         webserver_base_url="http://localhost:3000",
     )
@@ -141,38 +140,12 @@ def get_toys_sensors():
 
     @sensor(job=simple_config_job)
     def math_sensor(context):
-        cursor = context.cursor if context.cursor else 0
-        context.update_cursor(str(int(cursor) + 1))
+        context.update_cursor(str(int(context.cursor) + 1))
         for i in range(3):
             yield RunRequest(
                 run_key=str(i),
-                run_config={"ops": {"requires_config": {"config": {"num": 0}}}},
+                run_config={"ops": {"the_op": {"config": {"foo": "bar"}}}},
                 tags={"fee": "fifofum"},
-            )
-
-    @sensor(
-        job=simple_config_job,
-        minimum_interval_seconds=2,
-        default_status=DefaultSensorStatus.STOPPED,
-    )
-    def tick_logging_sensor(context):
-        cursor = int(context.cursor) if context.cursor else 1
-        context.update_cursor(str(cursor + 1))
-
-        context.log.debug("debug")
-        context.log.info("info")
-        context.log.warning("warning")
-        context.log.error("error")
-        context.log.critical("critical")
-
-        if cursor % 3 == 0:
-            raise Exception("Sensor error! All subsequent ticks will fail.")
-        elif cursor % 3 == 1:
-            yield SkipReason("A skip reason.")
-        elif cursor % 3 == 2:
-            yield RunRequest(
-                run_key=str(cursor),
-                run_config={"ops": {"requires_config": {"config": {"num": cursor}}}},
             )
 
     return [
@@ -182,5 +155,4 @@ def get_toys_sensors():
         custom_slack_on_job_failure,
         built_in_slack_on_run_failure_sensor,
         math_sensor,
-        tick_logging_sensor,
     ]

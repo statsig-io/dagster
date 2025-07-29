@@ -2,36 +2,36 @@
 
 # start_pipeline_marker
 
-import dagster as dg
+from dagster import job, op
 
 
-@dg.op
+@op
 def return_one():
     return 1
 
 
-@dg.op
+@op
 def add_two(i: int):
     return i + 2
 
 
-@dg.op
+@op
 def multi_three(i: int):
     return i * 3
 
 
-@dg.job
+@job
 def my_job():
     multi_three(add_two(return_one()))
 
 
 # end_pipeline_marker
 
-# start_execute
+# start_execute_marker
 if __name__ == "__main__":
     result = my_job.execute_in_process()
 
-# end_execute
+# end_execute_marker
 
 
 def execute_subset():
@@ -40,7 +40,7 @@ def execute_subset():
     # end_op_selection_marker
 
 
-@dg.op
+@op
 def total(in_1: int, in_2: int, in_3: int, in_4: int):
     return in_1 + in_2 + in_3 + in_4
 
@@ -57,7 +57,7 @@ execution:
 
 
 # start_mp_cfg
-@dg.job(
+@job(
     config={
         "execution": {
             "config": {
@@ -79,7 +79,7 @@ def forkserver_job():
 
 
 # start_tag_concurrency
-@dg.job(
+@job(
     config={
         "execution": {
             "config": {
@@ -97,7 +97,8 @@ def forkserver_job():
         }
     }
 )
-def tag_concurrency_job(): ...
+def tag_concurrency_job():
+    ...
 
 
 # end_tag_concurrency

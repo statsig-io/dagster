@@ -4,10 +4,10 @@ import styled, {css} from 'styled-components';
 
 import {useConfirmation} from '../app/CustomConfirmationProvider';
 import {
-  IStorageData,
   applyChangesToSession,
   applyRemoveSession,
   applySelectSession,
+  IStorageData,
 } from '../app/ExecutionSessionStorage';
 
 interface ExecutationTabProps {
@@ -35,18 +35,14 @@ const LaunchpadTab = (props: ExecutationTabProps) => {
   const onClickRemove = React.useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
       e.stopPropagation();
-      if (onRemove) {
-        onRemove();
-      }
+      onRemove && onRemove();
     },
     [onRemove],
   );
 
   const handleBlur = React.useCallback(() => {
     setEditing(false);
-    if (onChange) {
-      onChange(value);
-    }
+    onChange && onChange(value);
   }, [onChange, value]);
 
   const handleChange = React.useCallback(
@@ -79,7 +75,7 @@ const LaunchpadTab = (props: ExecutationTabProps) => {
       )}
       {canRemove && !editing && onRemove ? (
         <RemoveButton onClick={onClickRemove}>
-          <Icon name="close" color={Colors.accentPrimary()} />
+          <Icon name="close" color={Colors.Olive500} />
         </RemoveButton>
       ) : null}
     </TabContainer>
@@ -91,7 +87,7 @@ const REMOVE_ALL_THRESHOLD = 3;
 interface LaunchpadTabsProps {
   data: IStorageData;
   onCreate: () => void;
-  onSave: (data: React.SetStateAction<IStorageData>) => void;
+  onSave: (data: IStorageData) => void;
 }
 
 export const LaunchpadTabs = (props: LaunchpadTabsProps) => {
@@ -124,13 +120,12 @@ export const LaunchpadTabs = (props: LaunchpadTabsProps) => {
       description: 'All configuration tabs will be discarded.',
     });
 
-    onSave((data) => {
-      let updatedData = data;
-      sessionKeys.forEach((keyToRemove) => {
-        updatedData = applyRemoveSession(updatedData, keyToRemove);
-      });
-      return updatedData;
+    let updatedData = data;
+    sessionKeys.forEach((keyToRemove) => {
+      updatedData = applyRemoveSession(updatedData, keyToRemove);
     });
+
+    onSave(updatedData);
   };
 
   return (
@@ -149,22 +144,15 @@ export const LaunchpadTabs = (props: LaunchpadTabsProps) => {
         ))}
         <LaunchpadTab title="+ Add..." onClick={onCreate} />
         {sessionKeys.length > REMOVE_ALL_THRESHOLD ? (
-          <Box
-            background={Colors.backgroundDefault()}
-            padding={{top: 8, left: 8, right: 12}}
-            border="bottom"
-            style={{position: 'sticky', right: 0}}
-          >
-            <ButtonLink color={Colors.textRed()} onClick={onRemoveAll}>
-              <Box
-                flex={{direction: 'row', gap: 4, alignItems: 'center'}}
-                style={{whiteSpace: 'nowrap'}}
-              >
-                <Icon name="delete" color={Colors.textRed()} />
-                <div>Remove all</div>
-              </Box>
-            </ButtonLink>
-          </Box>
+          <ButtonLink color={Colors.Red500} onClick={onRemoveAll}>
+            <Box
+              flex={{direction: 'row', gap: 4, alignItems: 'center'}}
+              style={{whiteSpace: 'nowrap'}}
+            >
+              <Icon name="delete" color={Colors.Red500} />
+              <div>Remove all</div>
+            </Box>
+          </ButtonLink>
         ) : null}
       </LaunchpadTabsContainer>
     </Box>
@@ -180,10 +168,6 @@ const LaunchpadTabsContainer = styled.div`
   flex-direction: row;
   padding-left: 12px;
   overflow-x: auto;
-
-  ::-webkit-scrollbar {
-    display: none; /* Safari and Chrome */
-  }
 `;
 
 const TabContainer = styled.div<{$active: boolean}>`
@@ -201,20 +185,20 @@ const TabContainer = styled.div<{$active: boolean}>`
     $active
       ? css`
           font-weight: 600;
-          background-color: ${Colors.backgroundLighter()};
-          color: ${Colors.accentPrimary()};
-          box-shadow: ${Colors.accentPrimary()} 0 -2px 0 inset;
+          background-color: ${Colors.Gray100};
+          color: ${Colors.ForestGreen};
+          box-shadow: ${Colors.ForestGreen} 0 -2px 0 inset;
         `
       : css`
           font-weight: normal;
-          background-color: ${Colors.backgroundLight()};
-          color: ${Colors.textLighter()};
-          box-shadow: ${Colors.accentGray()} 0 -1px 0 inset;
+          background-color: ${Colors.Gray50};
+          color: ${Colors.Gray300};
+          box-shadow: ${Colors.Olive200} 0 -1px 0 inset;
 
           &:hover {
-            background-color: ${Colors.backgroundLight()};
-            box-shadow: ${Colors.accentGray()} 0 -1px 0 inset;
-            color: ${Colors.textLight()};
+            background-color: ${Colors.Gray100};
+            box-shadow: ${Colors.Olive500} 0 -1px 0 inset;
+            color: ${Colors.Olive500};
           }
         `}
 
@@ -244,6 +228,6 @@ const RemoveButton = styled.button`
   }
 
   &:hover ${IconWrapper} {
-    background-color: ${Colors.accentPrimaryHover()};
+    background-color: ${Colors.Olive700};
   }
 `;

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright 2015-2016 Yelp
 # Copyright 2019 Yelp
 #
@@ -13,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Parse the log4j syslog format used by Hadoop."""
-
 import re
 from collections import namedtuple
 
@@ -60,7 +60,7 @@ class Log4jRecord(
     def __new__(
         cls, caller_location, level, logger, message, num_lines, start_line, thread, timestamp
     ):
-        return super().__new__(
+        return super(Log4jRecord, cls).__new__(
             cls, caller_location, level, logger, message, num_lines, start_line, thread, timestamp
         )
 

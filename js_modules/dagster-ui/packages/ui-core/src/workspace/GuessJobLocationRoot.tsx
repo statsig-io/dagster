@@ -4,18 +4,20 @@ import {
   NonIdealState,
   Page,
   PageHeader,
-  Subtitle1,
   Table,
+  Heading,
 } from '@dagster-io/ui-components';
+import * as React from 'react';
 import {Link, Redirect, useLocation, useParams, useRouteMatch} from 'react-router-dom';
 
-import {isThisThingAJob, optionToRepoAddress, useRepositoryOptions} from './WorkspaceContext/util';
-import {buildRepoPathForHuman} from './buildRepoAddress';
-import {findRepoContainingPipeline} from './findRepoContainingPipeline';
-import {workspacePath, workspacePathFromAddress} from './workspacePath';
 import {useTrackPageView} from '../app/analytics';
 import {explorerPathFromString} from '../pipelines/PipelinePathUtils';
 import {LoadingSpinner} from '../ui/Loading';
+
+import {isThisThingAJob, optionToRepoAddress, useRepositoryOptions} from './WorkspaceContext';
+import {buildRepoPathForHuman} from './buildRepoAddress';
+import {findRepoContainingPipeline} from './findRepoContainingPipeline';
+import {workspacePath, workspacePathFromAddress} from './workspacePath';
 
 export const GuessJobLocationRoot = () => {
   useTrackPageView();
@@ -72,7 +74,7 @@ export const GuessJobLocationRoot = () => {
   return (
     <Page>
       <PageHeader
-        title={<Subtitle1>{pipelineName}</Subtitle1>}
+        title={<Heading>{pipelineName}</Heading>}
         icon="job"
         description={
           anyPipelines

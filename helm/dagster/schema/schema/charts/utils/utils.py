@@ -1,10 +1,9 @@
-from collections.abc import Mapping
 from enum import Enum
-from typing import Any
+from typing import Dict, List
 
 from pydantic import (
     BaseModel as PydanticBaseModel,
-    Field,
+    Extra,
 )
 
 
@@ -12,10 +11,14 @@ class SupportedKubernetes(str, Enum):
     V1_18 = "1.18.0"
 
 
-class ConfigurableClass(PydanticBaseModel, extra="forbid"):
+class ConfigurableClass(PydanticBaseModel):
     module: str
-    class_: str = Field(alias="class")
+    class_: str
     config: dict
+
+    class Config:
+        fields = {"class_": "class"}
+        extra = Extra.forbid
 
 
 class BaseModel(PydanticBaseModel):
@@ -30,7 +33,7 @@ class BaseModel(PydanticBaseModel):
         def schema_extra(schema, model):
             for prop, value in schema.get("properties", {}).items():
                 # retrieve right field from alias or name
-                field = next(x for x in model.model_fields.values() if x.alias == prop)
+                field = next(x for x in model.__fields__.values() if x.alias == prop)
                 if field.allow_none:
                     # only one type e.g. {'type': 'integer'}
                     if "type" in value:
@@ -44,15 +47,15 @@ class BaseModel(PydanticBaseModel):
                     value["anyOf"].append({"type": "null"})
 
 
-def create_definition_ref(definition: str, version: str = SupportedKubernetes.V1_18.value) -> str:
+def create_definition_ref(definition: str, version: str = SupportedKubernetes.V1_18) -> str:
     return (
         f"https://kubernetesjsonschema.dev/v{version}/_definitions.json#/definitions/{definition}"
     )
 
 
 def create_json_schema_conditionals(
-    enum_type_to_config_name_mapping: dict[Enum, str],
-) -> list[Mapping[str, Any]]:
+    enum_type_to_config_name_mapping: Dict[Enum, str]
+) -> List[dict]:
     return [
         {
             "if": {

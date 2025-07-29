@@ -1,5 +1,4 @@
-from collections.abc import Mapping, Sequence
-from typing import Any, Optional
+from typing import Any, Mapping, Optional, Sequence, Type
 
 from dagster import InputContext, MetadataValue, OutputContext, TableColumn, TableSchema
 from dagster._core.definitions.metadata import RawMetadataValue
@@ -46,10 +45,10 @@ class BigQueryPySparkTypeHandler(DbTypeHandler[DataFrame]):
             @asset(
                 key_prefix=["my_dataset"]  # my_dataset will be used as the dataset in BigQuery
             )
-            def my_table() -> pyspark.sql.DataFrame:  # the name of the asset will be the table name
+            def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
                 ...
 
-            Definitions(
+            defs = Definitions(
                 assets=[my_table],
                 resources={
                     "io_manager": MyBigQueryIOManager(project=EnvVar("GCP_PROJECT"))
@@ -58,7 +57,7 @@ class BigQueryPySparkTypeHandler(DbTypeHandler[DataFrame]):
 
     """
 
-    def handle_output(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def handle_output(
         self, context: OutputContext, table_slice: TableSlice, obj: DataFrame, _
     ) -> Mapping[str, RawMetadataValue]:
         options = _get_bigquery_write_options(context.resource_config, table_slice)
@@ -78,7 +77,7 @@ class BigQueryPySparkTypeHandler(DbTypeHandler[DataFrame]):
             ),
         }
 
-    def load_input(self, context: InputContext, table_slice: TableSlice, _) -> DataFrame:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def load_input(self, context: InputContext, table_slice: TableSlice, _) -> DataFrame:
         options = _get_bigquery_read_options(table_slice)
         spark = SparkSession.builder.getOrCreate()  # type: ignore
 
@@ -120,7 +119,7 @@ Examples:
         def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
             ...
 
-        Definitions(
+        defs = Definitions(
             assets=[my_table],
             resources={
                 "io_manager": bigquery_pyspark_io_manager.configured({
@@ -129,51 +128,22 @@ Examples:
             }
         )
 
-    You can set a default dataset to store the assets using the ``dataset`` configuration value of the BigQuery I/O
-    Manager. This dataset will be used if no other dataset is specified directly on an asset or op.
-
-    .. code-block:: python
-
-        Definitions(
-            assets=[my_table],
-            resources={
-                    "io_manager": bigquery_pandas_io_manager.configured({
-                        "project" : {"env": "GCP_PROJECT"}
-                        "dataset": "my_dataset"
-                    })
-                }
-        )
-
-    On individual assets, you an also specify the dataset where they should be stored using metadata or
-    by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-    take precedence.
-
-    .. code-block:: python
-
-        @asset(
-            key_prefix=["my_dataset"]  # will be used as the dataset in BigQuery
-        )
-        def my_table() -> pyspark.sql.DataFrame:
-            ...
-
-        @asset(
-            # note that the key needs to be "schema"
-            metadata={"schema": "my_dataset"}  # will be used as the dataset in BigQuery
-        )
-        def my_other_table() -> pyspark.sql.DataFrame:
-            ...
-
-    For ops, the dataset can be specified by including a "schema" entry in output metadata.
+    You can tell Dagster in which dataset to create tables by setting the "dataset" configuration value.
+    If you do not provide a dataset as configuration to the I/O manager, Dagster will determine a dataset based
+    on the assets and ops using the I/O Manager. For assets, the dataset will be determined from the asset key,
+    as shown in the above example. The final prefix before the asset name will be used as the dataset. For example,
+    if the asset "my_table" had the key prefix ["gcp", "bigquery", "my_dataset"], the dataset "my_dataset" will be
+    used. For ops, the dataset can be specified by including a "schema" entry in output metadata. If "schema" is not provided
+    via config or on the asset/op, "public" will be used for the dataset.
 
     .. code-block:: python
 
         @op(
-            out={"my_table": Out(metadata={"schema": "my_schema"})}
+            out={"my_table": Out(metadata={"schema": "my_dataset"})}
         )
-        def make_my_table() -> pyspark.sql.DataFrame:
+        def make_my_table() -> pd.DataFrame:
+            # the returned value will be stored at my_dataset.my_table
             ...
-
-    If none of these is provided, the dataset will default to "public".
 
     To only use specific columns of a table as input to a downstream op or asset, add the metadata "columns" to the
     In or AssetIn.
@@ -183,7 +153,7 @@ Examples:
         @asset(
             ins={"my_table": AssetIn("my_table", metadata={"columns": ["a"]})}
         )
-        def my_table_a(my_table: pyspark.sql.DataFrame) -> pyspark.sql.DataFrame:
+        def my_table_a(my_table: pd.DataFrame) -> pd.DataFrame:
             # my_table will just contain the data from column "a"
             ...
 
@@ -213,58 +183,32 @@ class BigQueryPySparkIOManager(BigQueryIOManager):
             @asset(
                 key_prefix=["my_dataset"]  # will be used as the dataset in BigQuery
             )
-            def my_table() -> pyspark.sql.DataFrame:  # the name of the asset will be the table name
+            def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
                 ...
 
-            Definitions(
+            defs = Definitions(
                 assets=[my_table],
                 resources={
                     "io_manager": BigQueryPySparkIOManager(project=EnvVar("GCP_PROJECT"))
                 }
             )
 
-        You can set a default dataset to store the assets using the ``dataset`` configuration value of the BigQuery I/O
-        Manager. This dataset will be used if no other dataset is specified directly on an asset or op.
-
-        .. code-block:: python
-
-            Definitions(
-                assets=[my_table],
-                resources={
-                        "io_manager": BigQueryPySparkIOManager(project=EnvVar("GCP_PROJECT", dataset="my_dataset")
-                    }
-            )
-
-        On individual assets, you an also specify the dataset where they should be stored using metadata or
-        by adding a ``key_prefix`` to the asset key. If both ``key_prefix`` and metadata are defined, the metadata will
-        take precedence.
-
-        .. code-block:: python
-
-            @asset(
-                key_prefix=["my_dataset"]  # will be used as the dataset in BigQuery
-            )
-            def my_table() -> pyspark.sql.DataFrame:
-                ...
-
-            @asset(
-                # note that the key needs to be "schema"
-                metadata={"schema": "my_dataset"}  # will be used as the dataset in BigQuery
-            )
-            def my_other_table() -> pyspark.sql.DataFrame:
-                ...
-
-        For ops, the dataset can be specified by including a "schema" entry in output metadata.
+        You can tell Dagster in which dataset to create tables by setting the "dataset" configuration value.
+        If you do not provide a dataset as configuration to the I/O manager, Dagster will determine a dataset based
+        on the assets and ops using the I/O Manager. For assets, the dataset will be determined from the asset key,
+        as shown in the above example. The final prefix before the asset name will be used as the dataset. For example,
+        if the asset "my_table" had the key prefix ["gcp", "bigquery", "my_dataset"], the dataset "my_dataset" will be
+        used. For ops, the dataset can be specified by including a "schema" entry in output metadata. If "schema" is not provided
+        via config or on the asset/op, "public" will be used for the dataset.
 
         .. code-block:: python
 
             @op(
-                out={"my_table": Out(metadata={"schema": "my_schema"})}
+                out={"my_table": Out(metadata={"schema": "my_dataset"})}
             )
-            def make_my_table() -> pyspark.sql.DataFrame:
+            def make_my_table() -> pd.DataFrame:
+                # the returned value will be stored at my_dataset.my_table
                 ...
-
-        If none of these is provided, the dataset will default to "public".
 
         To only use specific columns of a table as input to a downstream op or asset, add the metadata "columns" to the
         In or AssetIn.
@@ -274,7 +218,7 @@ class BigQueryPySparkIOManager(BigQueryIOManager):
             @asset(
                 ins={"my_table": AssetIn("my_table", metadata={"columns": ["a"]})}
             )
-            def my_table_a(my_table: pyspark.sql.DataFrame) -> pyspark.sql.DataFrame:
+            def my_table_a(my_table: pd.DataFrame) -> pd.DataFrame:
                 # my_table will just contain the data from column "a"
                 ...
 
@@ -297,5 +241,5 @@ class BigQueryPySparkIOManager(BigQueryIOManager):
         return [BigQueryPySparkTypeHandler()]
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> Optional[Type]:
         return DataFrame

@@ -1,21 +1,22 @@
 import re
-from unittest import mock
 
 import click
+import mock
 import pytest
 from click.testing import CliRunner
 from dagster._cli.sensor import (
+    check_repo_and_scheduler,
     sensor_cursor_command,
     sensor_list_command,
     sensor_preview_command,
     sensor_start_command,
     sensor_stop_command,
 )
-from dagster._cli.utils import validate_dagster_home_is_set, validate_repo_has_defined_sensors
-from dagster._core.remote_representation import RemoteRepository
+from dagster._core.host_representation import ExternalRepository
+from dagster._core.instance import DagsterInstance
 from dagster._core.test_utils import environ
 
-from dagster_tests.cli_tests.command_tests.test_cli_commands import sensor_command_contexts
+from .test_cli_commands import sensor_command_contexts
 
 
 @pytest.mark.parametrize("gen_sensor_args", sensor_command_contexts())
@@ -86,19 +87,24 @@ def test_sensors_start_all(gen_sensor_args):
             assert result.output == "Started all sensors for repository bar\n"
 
 
-def test_validate_repo_sensors():
-    repository = mock.MagicMock(spec=RemoteRepository)
-    repository.get_sensors.return_value = []
+def test_check_repo_and_sensorr_no_external_sensors():
+    repository = mock.MagicMock(spec=ExternalRepository)
+    repository.get_external_sensors.return_value = []
+    instance = mock.MagicMock(spec=DagsterInstance)
     with pytest.raises(click.UsageError, match="There are no sensors defined for repository"):
-        validate_repo_has_defined_sensors(repository)
+        check_repo_and_scheduler(repository, instance)
 
 
-def test_validate_no_dagster_home():
+def test_check_repo_and_scheduler_dagster_home_not_set():
     with environ({"DAGSTER_HOME": ""}):
+        repository = mock.MagicMock(spec=ExternalRepository)
+        repository.get_external_sensors.return_value = [mock.MagicMock()]
+        instance = mock.MagicMock(spec=DagsterInstance)
+
         with pytest.raises(
             click.UsageError, match=re.escape("The environment variable $DAGSTER_HOME is not set.")
         ):
-            validate_dagster_home_is_set()
+            check_repo_and_scheduler(repository, instance)
 
 
 @pytest.mark.parametrize("gen_sensor_args", sensor_command_contexts())

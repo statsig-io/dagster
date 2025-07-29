@@ -2,18 +2,13 @@ import typing
 
 import dagster._check as check
 from dagster._config import Array
-from dagster._core.types.config_schema import DagsterTypeLoader
-from dagster._core.types.dagster_type import (
-    DagsterType,
-    DagsterTypeKind,
-    PythonObjectDagsterType,
-    resolve_dagster_type,
-)
+from dagster._core.types.dagster_type import DagsterTypeKind
+
+from .config_schema import DagsterTypeLoader
+from .dagster_type import DagsterType, PythonObjectDagsterType, resolve_dagster_type
 
 PythonSet = PythonObjectDagsterType(
-    set,
-    "PythonSet",
-    description="""Represents a python dictionary to pass between ops""",
+    set, "PythonSet", description="""Represents a python dictionary to pass between ops"""
 )
 
 
@@ -31,9 +26,7 @@ class TypedSetLoader(DagsterTypeLoader):
         runtime_value = set()
         for item in config_value:
             runtime_value.add(
-                self._item_dagster_type.loader.construct_from_config_value(
-                    context, item
-                )
+                self._item_dagster_type.loader.construct_from_config_value(context, item)
             )
         return runtime_value
 
@@ -44,9 +37,7 @@ class _TypedPythonSet(DagsterType):
         super(_TypedPythonSet, self).__init__(
             key=f"TypedPythonSet.{item_dagster_type.key}",
             name=None,
-            loader=(
-                TypedSetLoader(item_dagster_type) if item_dagster_type.loader else None
-            ),
+            loader=(TypedSetLoader(item_dagster_type) if item_dagster_type.loader else None),
             type_check_fn=self.type_check_method,
             typing_type=typing.Set[item_dagster_type.typing_type],
         )

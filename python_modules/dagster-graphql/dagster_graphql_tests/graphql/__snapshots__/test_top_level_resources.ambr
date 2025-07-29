@@ -1,4 +1,3 @@
-# serializer version: 1
 # name: test_fetch_top_level_resource[0]
   dict({
     'topLevelResourceDetailsOrError': dict({
@@ -6,14 +5,14 @@
       'configFields': list([
         dict({
           'configType': dict({
-            'key': 'Noneable.StringSourceType',
+            'key': 'StringSourceType',
           }),
           'description': None,
           'name': 'a_string',
         }),
         dict({
           'configType': dict({
-            'key': 'Noneable.StringSourceType',
+            'key': 'StringSourceType',
           }),
           'description': None,
           'name': 'an_unset_string',
@@ -43,14 +42,14 @@
       'configFields': list([
         dict({
           'configType': dict({
-            'key': 'Noneable.StringSourceType',
+            'key': 'StringSourceType',
           }),
           'description': None,
           'name': 'a_string',
         }),
         dict({
           'configType': dict({
-            'key': 'Noneable.StringSourceType',
+            'key': 'StringSourceType',
           }),
           'description': None,
           'name': 'an_unset_string',
@@ -91,9 +90,15 @@
       ]),
       'jobsOpsUsing': list([
         dict({
-          'jobName': 'my_asset_job',
-          'opHandleIDs': list([
-            'my_asset',
+          'job': dict({
+            'name': 'my_asset_job',
+          }),
+          'opsUsing': list([
+            dict({
+              'solid': dict({
+                'name': 'my_asset',
+              }),
+            }),
           ]),
         }),
       ]),
@@ -133,14 +138,14 @@
           'configFields': list([
             dict({
               'configType': dict({
-                'key': 'Noneable.StringSourceType',
+                'key': 'StringSourceType',
               }),
               'description': None,
               'name': 'a_string',
             }),
             dict({
               'configType': dict({
-                'key': 'Noneable.StringSourceType',
+                'key': 'StringSourceType',
               }),
               'description': None,
               'name': 'an_unset_string',
@@ -165,14 +170,14 @@
           'configFields': list([
             dict({
               'configType': dict({
-                'key': 'Noneable.StringSourceType',
+                'key': 'StringSourceType',
               }),
               'description': None,
               'name': 'a_string',
             }),
             dict({
               'configType': dict({
-                'key': 'Noneable.StringSourceType',
+                'key': 'StringSourceType',
               }),
               'description': None,
               'name': 'an_unset_string',
@@ -197,14 +202,14 @@
           'configFields': list([
             dict({
               'configType': dict({
-                'key': 'Noneable.StringSourceType',
+                'key': 'StringSourceType',
               }),
               'description': None,
               'name': 'a_string',
             }),
             dict({
               'configType': dict({
-                'key': 'Noneable.StringSourceType',
+                'key': 'StringSourceType',
               }),
               'description': None,
               'name': 'an_unset_string',

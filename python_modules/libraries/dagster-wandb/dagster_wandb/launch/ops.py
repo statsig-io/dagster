@@ -1,7 +1,8 @@
 from dagster import OpExecutionContext, op
-from wandb.sdk.launch import launch, launch_add
+from wandb.sdk.launch import launch
+from wandb.sdk.launch.launch_add import launch_add
 
-from dagster_wandb.launch.configs import launch_agent_config, launch_config
+from .configs import launch_agent_config, launch_config
 
 
 def raise_on_invalid_config(context: OpExecutionContext):
@@ -79,7 +80,7 @@ def run_launch_agent(context: OpExecutionContext):
     }
     context.log.info(f"Launch agent configuration: {config}")
     context.log.info("Running Launch agent...")
-    launch.create_and_run_agent(api=context.resources.wandb_resource["api"], config=config)  # pyright: ignore[reportFunctionMemberAccess]
+    launch.create_and_run_agent(api=context.resources.wandb_resource["api"], config=config)
 
 
 @op(
@@ -150,7 +151,7 @@ def run_launch_job(context: OpExecutionContext):
     queue = context.op_config.get("queue")
     if queue is None:
         context.log.info("No queue provided, running Launch job locally")
-        launch.run(api=context.resources.wandb_resource["api"], config=config)  # pyright: ignore[reportFunctionMemberAccess]
+        launch.run(api=context.resources.wandb_resource["api"], config=config)
     else:
         synchronous = config.get("synchronous", True)
         config.pop("synchronous", None)

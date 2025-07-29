@@ -1,7 +1,7 @@
 import os
 import uuid
-from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Iterator
 
 import pytest
 from dagster import AssetKey, asset, build_input_context, build_output_context
@@ -11,7 +11,7 @@ from pandas import DataFrame as PandasDataFrame
 from pyspark.sql import Row, SparkSession
 from pyspark.sql.types import IntegerType, StringType, StructField, StructType
 
-from project_fully_featured.definitions import SHARED_SNOWFLAKE_CONF
+from project_fully_featured.resources import SHARED_SNOWFLAKE_CONF
 from project_fully_featured.resources.snowflake_io_manager import (
     SnowflakeIOManager,
     connect_snowflake,

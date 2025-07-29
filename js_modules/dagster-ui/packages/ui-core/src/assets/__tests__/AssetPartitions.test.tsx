@@ -1,18 +1,17 @@
 import {MockedProvider, MockedResponse} from '@apollo/client/testing';
 import {getByTestId, render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {useState} from 'react';
-import {MemoryRouter} from 'react-router-dom';
+import React from 'react';
+import {MemoryRouter, Route} from 'react-router-dom';
 
-import {Route} from '../../app/Route';
 import {AssetKeyInput} from '../../graphql/types';
 import {AssetPartitionListProps} from '../AssetPartitionList';
 import {AssetPartitionStatus} from '../AssetPartitionStatus';
 import {AssetPartitions} from '../AssetPartitions';
 import {
-  MultiDimensionTimeFirstPartitionHealthQuery,
   SingleDimensionStaticPartitionHealthQuery,
   SingleDimensionTimePartitionHealthQuery,
+  MultiDimensionTimeFirstPartitionHealthQuery,
 } from '../__fixtures__/PartitionHealthSummary.fixtures';
 import {AssetViewParams} from '../types';
 
@@ -36,14 +35,11 @@ jest.mock('../AssetPartitionList', () => ({
   ),
 }));
 
-const SingleDimensionAssetPartitions = ({
-  assetKey,
-  mocks,
-}: {
+const SingleDimensionAssetPartitions: React.FC<{
   assetKey: AssetKeyInput;
   mocks?: MockedResponse[];
-}) => {
-  const [params, setParams] = useState<AssetViewParams>({});
+}> = ({assetKey, mocks}) => {
+  const [params, setParams] = React.useState<AssetViewParams>({});
   return (
     <MemoryRouter>
       <MockedProvider
@@ -60,7 +56,6 @@ const SingleDimensionAssetPartitions = ({
           paramsTimeWindowOnly={false}
           assetPartitionDimensions={['default']}
           dataRefreshHint={undefined}
-          isLoadingDefinition={false}
         />
       </MockedProvider>
       <Route
@@ -146,34 +141,9 @@ describe('AssetPartitions', () => {
     expect(screen.queryByText('2022-08-31-00:00')).toBeVisible();
   });
 
-  it('should support filtering by partition status and partition text', async () => {
-    render(<SingleDimensionAssetPartitions assetKey={{path: ['single_dimension_time']}} />);
-    await waitFor(() => {
-      expect(screen.getByTestId('partitions-selected')).toHaveTextContent('6,000 Partitions');
-    });
-
-    const successCheck = screen.getByTestId(
-      `partition-status-${AssetPartitionStatus.MATERIALIZED}-checkbox`,
-    );
-    const missingCheck = screen.getByTestId(
-      `partition-status-${AssetPartitionStatus.MISSING}-checkbox`,
-    );
-    await userEvent.click(missingCheck);
-    await userEvent.click(successCheck);
-    expect(screen.getByTestId('router-search')).toHaveTextContent(
-      `status=${AssetPartitionStatus.FAILED}%2C${AssetPartitionStatus.MATERIALIZING}`,
-    );
-
-    const searchInput = screen.getByTestId(`search-0`);
-    await userEvent.type(searchInput, '09');
-
-    // verify that filtering by state updates the left sidebar
-    expect(screen.queryByText('2022-09-23-19:00')).toBeVisible();
-  });
-
   it('should support reverse sorting individual dimensions', async () => {
     const Component = () => {
-      const [params, setParams] = useState<AssetViewParams>({});
+      const [params, setParams] = React.useState<AssetViewParams>({});
       return (
         <MemoryRouter>
           <MockedProvider mocks={[MultiDimensionTimeFirstPartitionHealthQuery]}>
@@ -184,7 +154,6 @@ describe('AssetPartitions', () => {
               paramsTimeWindowOnly={false}
               assetPartitionDimensions={['date', 'zstate']}
               dataRefreshHint={undefined}
-              isLoadingDefinition={false}
             />
           </MockedProvider>
         </MemoryRouter>
@@ -266,116 +235,5 @@ describe('AssetPartitions', () => {
       expect(screen.getByTestId('partitions-selected')).toHaveTextContent('11 Partitions Selected');
     });
     expect(screen.queryByTestId('dimension-range-input')).toBeNull();
-  });
-
-  it('should support searching within a multiple asset partition', async () => {
-    const Component = () => {
-      const [params, setParams] = useState<AssetViewParams>({});
-      return (
-        <MemoryRouter>
-          <MockedProvider mocks={[MultiDimensionTimeFirstPartitionHealthQuery]}>
-            <AssetPartitions
-              assetKey={{path: ['multi_dimension_time_first']}}
-              params={params}
-              setParams={setParams}
-              paramsTimeWindowOnly={false}
-              assetPartitionDimensions={['date', 'zstate']}
-              dataRefreshHint={undefined}
-              isLoadingDefinition={false}
-            />
-          </MockedProvider>
-        </MemoryRouter>
-      );
-    };
-
-    render(<Component />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('partitions-date')).toBeVisible();
-      expect(screen.getByTestId('partitions-zstate')).toBeVisible();
-    });
-
-    await waitFor(() => {
-      expect(
-        getByTestId(
-          screen.getByTestId('partitions-date'),
-          'asset-partition-row-2023-02-05-index-0',
-        ),
-      ).toBeVisible();
-      expect(
-        getByTestId(screen.getByTestId('partitions-zstate'), 'asset-partition-row-TN-index-0'),
-      ).toBeVisible();
-    });
-
-    // search partitions
-    const searchInput = screen.getByTestId(`search-0`);
-    await userEvent.type(searchInput, '2023-01-3');
-
-    // verify partitions search results
-    await waitFor(() => {
-      expect(
-        getByTestId(
-          screen.getByTestId('partitions-date'),
-          'asset-partition-row-2023-01-31-index-0',
-        ),
-      ).toBeVisible();
-      expect(
-        getByTestId(
-          screen.getByTestId('partitions-date'),
-          'asset-partition-row-2023-01-30-index-1',
-        ),
-      ).toBeVisible();
-      expect(
-        screen.queryByTestId('asset-partition-row-2023-02-05-index-0'),
-      ).not.toBeInTheDocument();
-
-      // verify zstate is unchanged
-      expect(
-        getByTestId(screen.getByTestId('partitions-zstate'), 'asset-partition-row-TN-index-0'),
-      ).toBeVisible();
-    });
-
-    // search zstate
-    const searchInput1 = screen.getByTestId(`search-1`);
-    await userEvent.type(searchInput1, 'VA');
-
-    await waitFor(() => {
-      // verify zstate search filters properly
-      expect(
-        getByTestId(screen.getByTestId('partitions-zstate'), 'asset-partition-row-VA-index-0'),
-      ).toBeVisible();
-      expect(screen.queryByTestId('asset-partition-row-TN-index-0')).not.toBeInTheDocument();
-
-      // verify partitions search results are unchanged
-      expect(
-        getByTestId(
-          screen.getByTestId('partitions-date'),
-          'asset-partition-row-2023-01-31-index-0',
-        ),
-      ).toBeVisible();
-      expect(
-        getByTestId(
-          screen.getByTestId('partitions-date'),
-          'asset-partition-row-2023-01-30-index-1',
-        ),
-      ).toBeVisible();
-    });
-
-    // clear the search input
-    await userEvent.clear(searchInput);
-    await userEvent.clear(searchInput1);
-
-    // verify original rows are visible again
-    await waitFor(() => {
-      expect(
-        getByTestId(
-          screen.getByTestId('partitions-date'),
-          'asset-partition-row-2023-02-05-index-0',
-        ),
-      ).toBeVisible();
-      expect(
-        getByTestId(screen.getByTestId('partitions-zstate'), 'asset-partition-row-TN-index-0'),
-      ).toBeVisible();
-    });
   });
 });

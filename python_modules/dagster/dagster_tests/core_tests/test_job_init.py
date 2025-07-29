@@ -1,6 +1,5 @@
-import dagster as dg
 import pytest
-from dagster import DagsterInstance
+from dagster import DagsterInstance, GraphDefinition, op, resource
 from dagster._core.definitions.job_base import InMemoryJob
 from dagster._core.execution.api import create_execution_plan
 from dagster._core.execution.context_creation_job import PlanExecutionContextManager
@@ -34,7 +33,7 @@ def gen_basic_resource_job(called=None, cleaned=None):
     if not cleaned:
         cleaned = []
 
-    @dg.resource
+    @resource
     def resource_a():
         try:
             called.append("A")
@@ -42,7 +41,7 @@ def gen_basic_resource_job(called=None, cleaned=None):
         finally:
             cleaned.append("A")
 
-    @dg.resource
+    @resource
     def resource_b(_):
         try:
             called.append("B")
@@ -50,11 +49,11 @@ def gen_basic_resource_job(called=None, cleaned=None):
         finally:
             cleaned.append("B")
 
-    @dg.op(required_resource_keys={"a", "b"})
+    @op(required_resource_keys={"a", "b"})
     def resource_op(_):
         pass
 
-    return dg.GraphDefinition(
+    return GraphDefinition(
         name="basic_resource_job",
         node_defs=[resource_op],
     ).to_job(resource_defs={"a": resource_a, "b": resource_b})
@@ -65,6 +64,7 @@ def test_clean_event_generator_exit():
     (see https://amir.rachum.com/blog/2017/03/03/generator-cleanup/).
     """
     from dagster._core.definitions.resource_definition import ScopedResourcesBuilder
+    from dagster._core.execution.context.init import InitResourceContext
 
     job_def = gen_basic_resource_job()
     instance = DagsterInstance.ephemeral()
@@ -75,10 +75,9 @@ def test_clean_event_generator_exit():
     execution_plan = create_execution_plan(job_def)
 
     resource_name, resource_def = next(iter(job_def.resource_defs.items()))
-    resource_context = dg.InitResourceContext(
+    resource_context = InitResourceContext(
         resource_def=resource_def,
         resources=ScopedResourcesBuilder().build(None),
-        all_resource_defs=job_def.resource_defs,
         resource_config=None,
         dagster_run=run,
         instance=instance,
@@ -96,7 +95,6 @@ def test_clean_event_generator_exit():
         resource_keys_to_init={"a"},
         instance=instance,
         emit_persistent_events=True,
-        event_loop=None,
     )
     next(generator)
     generator.close()
@@ -114,6 +112,6 @@ def test_clean_event_generator_exit():
     generator.close()
 
 
-@dg.op
+@op
 def fake_op(_):
     pass

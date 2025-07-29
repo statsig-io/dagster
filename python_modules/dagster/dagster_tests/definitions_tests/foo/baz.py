@@ -1,6 +1,6 @@
-import dagster as dg
+from dagster import op
 
 
-@dg.op
+@op
 def baz_op(_):
     return

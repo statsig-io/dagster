@@ -1,13 +1,16 @@
-import {TYPE_EXPLORER_FRAGMENT, TypeExplorer} from './TypeExplorer';
-import {gql, useQuery} from '../apollo-client';
+import {gql, useQuery} from '@apollo/client';
+import * as React from 'react';
+
+import {ExplorerPath} from '../pipelines/PipelinePathUtils';
+import {Loading} from '../ui/Loading';
+import {buildPipelineSelector} from '../workspace/WorkspaceContext';
+import {RepoAddress} from '../workspace/types';
+
+import {TypeExplorer, TYPE_EXPLORER_FRAGMENT} from './TypeExplorer';
 import {
   TypeExplorerContainerQuery,
   TypeExplorerContainerQueryVariables,
 } from './types/TypeExplorerContainer.types';
-import {ExplorerPath} from '../pipelines/PipelinePathUtils';
-import {Loading} from '../ui/Loading';
-import {buildPipelineSelector} from '../workspace/WorkspaceContext/util';
-import {RepoAddress} from '../workspace/types';
 
 interface ITypeExplorerContainerProps {
   explorerPath: ExplorerPath;
@@ -15,11 +18,11 @@ interface ITypeExplorerContainerProps {
   repoAddress?: RepoAddress;
 }
 
-export const TypeExplorerContainer = ({
+export const TypeExplorerContainer: React.FC<ITypeExplorerContainerProps> = ({
   explorerPath,
   typeName,
   repoAddress,
-}: ITypeExplorerContainerProps) => {
+}) => {
   const pipelineSelector = buildPipelineSelector(repoAddress || null, explorerPath.pipelineName);
   const queryResult = useQuery<TypeExplorerContainerQuery, TypeExplorerContainerQueryVariables>(
     TYPE_EXPLORER_CONTAINER_QUERY,

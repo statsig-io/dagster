@@ -1,5 +1,5 @@
 # ruff: noqa: A001, A002
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import dagster._check as check
 from dagster._annotations import public
@@ -154,7 +154,7 @@ class LinkedinAdsSource(GeneratedAirbyteSource):
         name: str,
         credentials: Union["LinkedinAdsSource.OAuth20", "LinkedinAdsSource.AccessToken"],
         start_date: str,
-        account_ids: Optional[list[int]] = None,
+        account_ids: Optional[List[int]] = None,
     ):
         """Airbyte Source for Linkedin Ads.
 
@@ -189,7 +189,7 @@ class MongodbSource(GeneratedAirbyteSource):
     ):
         """Airbyte Source for Mongodb.
 
-        Documentation for this source is no longer available (see MongodbV2Source)
+        Documentation can be found at https://docs.airbyte.com/integrations/sources/mongodb
 
         Args:
             name (str): The name of the destination.
@@ -826,9 +826,9 @@ class JiraSource(GeneratedAirbyteSource):
         api_token: str,
         domain: str,
         email: str,
-        projects: Optional[list[str]] = None,
+        projects: Optional[List[str]] = None,
         start_date: Optional[str] = None,
-        additional_fields: Optional[list[str]] = None,
+        additional_fields: Optional[List[str]] = None,
         expand_issue_changelog: Optional[bool] = None,
         render_fields: Optional[bool] = None,
         enable_experimental_streams: Optional[bool] = None,
@@ -959,7 +959,7 @@ class KustomerSingerSource(GeneratedAirbyteSource):
     def __init__(self, name: str, api_token: str, start_date: str):
         """Airbyte Source for Kustomer Singer.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/sources/kustomer-singer
+        Documentation can be found at https://docs.airbyte.com/integrations/sources/kustomer
 
         Args:
             name (str): The name of the destination.
@@ -1011,7 +1011,7 @@ class ScaffoldJavaJdbcSource(GeneratedAirbyteSource):
     ):
         """Airbyte Source for Scaffold Java Jdbc.
 
-        Documentation for this source is no longer available.
+        Documentation can be found at https://docs.airbyte.com/integrations/sources/scaffold_java_jdbc
 
         Args:
             name (str): The name of the destination.
@@ -1078,7 +1078,7 @@ class QualarooSource(GeneratedAirbyteSource):
         token: str,
         key: str,
         start_date: str,
-        survey_ids: Optional[list[str]] = None,
+        survey_ids: Optional[List[str]] = None,
     ):
         """Airbyte Source for Qualaroo.
 
@@ -1155,7 +1155,7 @@ class GoogleAnalyticsV4Source(GeneratedAirbyteSource):
     ):
         """Airbyte Source for Google Analytics V4.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/sources/google-analytics-v4
+        Documentation can be found at https://docs.airbyte.com/integrations/sources/google-analytics-universal-analytics
 
         Args:
             name (str): The name of the destination.
@@ -1163,7 +1163,7 @@ class GoogleAnalyticsV4Source(GeneratedAirbyteSource):
             start_date (str): The date in the format YYYY-MM-DD. Any data before this date will not be replicated.
             view_id (str): The ID for the Google Analytics View you want to fetch data from. This can be found from the Google Analytics Account Explorer.
             custom_reports (Optional[str]): A JSON array describing the custom reports you want to sync from Google Analytics. See the docs for more information about the exact format you can use to fill out this field.
-            window_in_days (Optional[int]): The time increment used by the connector when requesting data from the Google Analytics API. More information is available in the docs. The bigger this value is, the faster the sync will be, but the more likely that sampling will be applied to your data, potentially causing inaccuracies in the returned results. We recommend setting this to 1 unless you have a hard requirement to make the sync faster at the expense of accuracy. The minimum allowed value for this field is 1, and the maximum is 364.
+            window_in_days (Optional[int]): The time increment used by the connector when requesting data from the Google Analytics API. More information is available in the the docs. The bigger this value is, the faster the sync will be, but the more likely that sampling will be applied to your data, potentially causing inaccuracies in the returned results. We recommend setting this to 1 unless you have a hard requirement to make the sync faster at the expense of accuracy. The minimum allowed value for this field is 1, and the maximum is 364.
         """
         self.credentials = check.inst_param(
             credentials,
@@ -1405,7 +1405,7 @@ class OracleSource(GeneratedAirbyteSource):
             "OracleSource.TLSEncryptedVerifyCertificate",
         ],
         password: Optional[str] = None,
-        schemas: Optional[list[str]] = None,
+        schemas: Optional[List[str]] = None,
         jdbc_url_params: Optional[str] = None,
     ):
         """Airbyte Source for Oracle.
@@ -1694,7 +1694,7 @@ class LookerSource(GeneratedAirbyteSource):
         domain: str,
         client_id: str,
         client_secret: str,
-        run_look_ids: Optional[list[str]] = None,
+        run_look_ids: Optional[List[str]] = None,
     ):
         """Airbyte Source for Looker.
 
@@ -1757,7 +1757,7 @@ class ExchangeRatesSource(GeneratedAirbyteSource):
     ):
         """Airbyte Source for Exchange Rates.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/sources/exchange-rates
+        Documentation can be found at https://docs.airbyte.com/integrations/sources/exchangeratesapi
 
         Args:
             name (str): The name of the destination.
@@ -1786,8 +1786,8 @@ class AmazonAdsSource(GeneratedAirbyteSource):
         report_wait_timeout: Optional[int] = None,
         report_generation_max_retries: Optional[int] = None,
         start_date: Optional[str] = None,
-        profiles: Optional[list[int]] = None,
-        state_filter: Optional[list[str]] = None,
+        profiles: Optional[List[int]] = None,
+        state_filter: Optional[List[str]] = None,
     ):
         """Airbyte Source for Amazon Ads.
 
@@ -2094,7 +2094,7 @@ class ElasticsearchSource(GeneratedAirbyteSource):
     ):
         r"""Airbyte Source for Elasticsearch.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/sources/elasticsearch
+        Documentation can be found at https://docs.airbyte.com/integrations/source/elasticsearch
 
         Args:
             name (str): The name of the destination.
@@ -2175,7 +2175,7 @@ class SearchMetricsSource(GeneratedAirbyteSource):
     ):
         """Airbyte Source for Search Metrics.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/sources/search-metrics
+        Documentation can be found at https://docs.airbyte.com/integrations/sources/seacrh-metrics
 
         Args:
             name (str): The name of the destination.
@@ -2192,7 +2192,7 @@ class SearchMetricsSource(GeneratedAirbyteSource):
 class TypeformSource(GeneratedAirbyteSource):
     @public
     def __init__(
-        self, name: str, start_date: str, token: str, form_ids: Optional[list[str]] = None
+        self, name: str, start_date: str, token: str, form_ids: Optional[List[str]] = None
     ):
         """Airbyte Source for Typeform.
 
@@ -2355,10 +2355,10 @@ class AdjustSource(GeneratedAirbyteSource):
         self,
         name: str,
         api_token: str,
-        dimensions: list[str],
+        dimensions: List[str],
         ingest_start: str,
-        metrics: list[str],
-        additional_metrics: Optional[list[str]] = None,
+        metrics: List[str],
+        additional_metrics: Optional[List[str]] = None,
         until_today: Optional[bool] = None,
     ):
         """Airbyte Source for Adjust.
@@ -2448,7 +2448,7 @@ class GoogleAdsSource(GeneratedAirbyteSource):
         customer_id: str,
         start_date: str,
         end_date: Optional[str] = None,
-        custom_queries: Optional[list[CustomGAQLQueriesEntry]] = None,
+        custom_queries: Optional[List[CustomGAQLQueriesEntry]] = None,
         login_customer_id: Optional[str] = None,
         conversion_window_days: Optional[int] = None,
     ):
@@ -2590,7 +2590,7 @@ class SalesforceSource(GeneratedAirbyteSource):
         is_sandbox: Optional[bool] = None,
         auth_type: Optional[str] = None,
         start_date: Optional[str] = None,
-        streams_criteria: Optional[list[FilterSalesforceObjectsEntry]] = None,
+        streams_criteria: Optional[List[FilterSalesforceObjectsEntry]] = None,
     ):
         """Airbyte Source for Salesforce.
 
@@ -2836,8 +2836,8 @@ class OrbSource(GeneratedAirbyteSource):
         api_key: str,
         start_date: Optional[str] = None,
         lookback_window_days: Optional[int] = None,
-        string_event_properties_keys: Optional[list[str]] = None,
-        numeric_event_properties_keys: Optional[list[str]] = None,
+        string_event_properties_keys: Optional[List[str]] = None,
+        numeric_event_properties_keys: Optional[List[str]] = None,
     ):
         """Airbyte Source for Orb.
 
@@ -3230,7 +3230,7 @@ class SlackSource(GeneratedAirbyteSource):
         credentials: Union[
             "SlackSource.DefaultOAuth20Authorization", "SlackSource.APITokenCredentials"
         ],
-        channel_filter: Optional[list[str]] = None,
+        channel_filter: Optional[List[str]] = None,
     ):
         """Airbyte Source for Slack.
 
@@ -3575,7 +3575,7 @@ class PostgresSource(GeneratedAirbyteSource):
             "PostgresSource.SSHKeyAuthentication",
             "PostgresSource.PasswordAuthentication",
         ],
-        schemas: Optional[list[str]] = None,
+        schemas: Optional[List[str]] = None,
         password: Optional[str] = None,
         jdbc_url_params: Optional[str] = None,
         ssl: Optional[bool] = None,
@@ -3643,7 +3643,7 @@ class TrelloSource(GeneratedAirbyteSource):
         token: str,
         key: str,
         start_date: str,
-        board_ids: Optional[list[str]] = None,
+        board_ids: Optional[List[str]] = None,
     ):
         """Airbyte Source for Trello.
 
@@ -3741,7 +3741,7 @@ class S3Source(GeneratedAirbyteSource):
         def __init__(
             self,
             filetype: Optional[str] = None,
-            columns: Optional[list[str]] = None,
+            columns: Optional[List[str]] = None,
             batch_size: Optional[int] = None,
             buffer_size: Optional[int] = None,
         ):
@@ -3934,7 +3934,7 @@ class PaypalTransactionSource(GeneratedAirbyteSource):
     ):
         """Airbyte Source for Paypal Transaction.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/sources/paypal-transaction
+        Documentation can be found at https://docs.airbyte.com/integrations/sources/paypal-transactions
 
         Args:
             name (str): The name of the destination.
@@ -4005,7 +4005,7 @@ class MssqlSource(GeneratedAirbyteSource):
             "MssqlSource.EncryptedVerifyCertificate",
         ],
         replication_method: Union["MssqlSource.Standard", "MssqlSource.LogicalReplicationCDC"],
-        schemas: Optional[list[str]] = None,
+        schemas: Optional[List[str]] = None,
         password: Optional[str] = None,
         jdbc_url_params: Optional[str] = None,
     ):
@@ -4096,7 +4096,7 @@ class RedshiftSource(GeneratedAirbyteSource):
         database: str,
         username: str,
         password: str,
-        schemas: Optional[list[str]] = None,
+        schemas: Optional[List[str]] = None,
         jdbc_url_params: Optional[str] = None,
     ):
         """Airbyte Source for Redshift.
@@ -4228,7 +4228,7 @@ class SentrySource(GeneratedAirbyteSource):
         organization: str,
         project: str,
         hostname: Optional[str] = None,
-        discover_fields: Optional[list[str]] = None,
+        discover_fields: Optional[List[str]] = None,
     ):
         """Airbyte Source for Sentry.
 
@@ -4301,7 +4301,7 @@ class PythonHttpTutorialSource(GeneratedAirbyteSource):
     def __init__(self, name: str, start_date: str, base: str, access_key: Optional[str] = None):
         """Airbyte Source for Python Http Tutorial.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/sources/exchange-rates
+        Documentation can be found at https://docs.airbyte.com/integrations/sources/exchangeratesapi
 
         Args:
             name (str): The name of the destination.
@@ -4317,7 +4317,7 @@ class PythonHttpTutorialSource(GeneratedAirbyteSource):
 
 class AirtableSource(GeneratedAirbyteSource):
     @public
-    def __init__(self, name: str, api_key: str, base_id: str, tables: list[str]):
+    def __init__(self, name: str, api_key: str, base_id: str, tables: List[str]):
         """Airbyte Source for Airtable.
 
         Documentation can be found at https://docs.airbyte.com/integrations/sources/airtable
@@ -4551,7 +4551,7 @@ class ZendeskSupportSource(GeneratedAirbyteSource):
         Args:
             name (str): The name of the destination.
             start_date (str): The date from which you'd like to replicate data for Zendesk Support API, in the format YYYY-MM-DDT00:00:00Z. All data generated after this date will be replicated.
-            subdomain (str): This is your Zendesk subdomain that can be found in your account URL. For example, in {my_subdomain}.zendesk.com, where my_subdomain is the value of your subdomain.
+            subdomain (str): This is your Zendesk subdomain that can be found in your account URL. For example, in https://{MY_SUBDOMAIN}.zendesk.com/, where MY_SUBDOMAIN is the value of your subdomain.
             credentials (Union[ZendeskSupportSource.OAuth20, ZendeskSupportSource.APIToken]): Zendesk service provides two authentication methods. Choose between: `OAuth2.0` or `API token`.
         """
         self.start_date = check.str_param(start_date, "start_date")
@@ -4724,7 +4724,7 @@ class GoogleAnalyticsDataApiSource(GeneratedAirbyteSource):
             credentials (Union[GoogleAnalyticsDataApiSource.AuthenticateViaGoogleOauth, GoogleAnalyticsDataApiSource.ServiceAccountKeyAuthentication]): Credentials for the service
             date_ranges_start_date (str): The start date. One of the values Ndaysago, yesterday, today or in the format YYYY-MM-DD
             custom_reports (Optional[str]): A JSON array describing the custom reports you want to sync from Google Analytics. See the docs for more information about the exact format you can use to fill out this field.
-            window_in_days (Optional[int]): The time increment used by the connector when requesting data from the Google Analytics API. More information is available in the docs. The bigger this value is, the faster the sync will be, but the more likely that sampling will be applied to your data, potentially causing inaccuracies in the returned results. We recommend setting this to 1 unless you have a hard requirement to make the sync faster at the expense of accuracy. The minimum allowed value for this field is 1, and the maximum is 364.
+            window_in_days (Optional[int]): The time increment used by the connector when requesting data from the Google Analytics API. More information is available in the the docs. The bigger this value is, the faster the sync will be, but the more likely that sampling will be applied to your data, potentially causing inaccuracies in the returned results. We recommend setting this to 1 unless you have a hard requirement to make the sync faster at the expense of accuracy. The minimum allowed value for this field is 1, and the maximum is 364.
         """
         self.property_id = check.str_param(property_id, "property_id")
         self.credentials = check.inst_param(
@@ -4859,7 +4859,7 @@ class ZendeskTalkSource(GeneratedAirbyteSource):
 
         Args:
             name (str): The name of the destination.
-            subdomain (str): This is your Zendesk subdomain that can be found in your account URL. For example, in {my_subdomain}.zendesk.com, where my_subdomain is the value of your subdomain.
+            subdomain (str): This is your Zendesk subdomain that can be found in your account URL. For example, in https://{MY_SUBDOMAIN}.zendesk.com/, where MY_SUBDOMAIN is the value of your subdomain.
             credentials (Union[ZendeskTalkSource.APIToken, ZendeskTalkSource.OAuth20]): Zendesk service provides two authentication methods. Choose between: `OAuth2.0` or `API token`.
             start_date (str): The date from which you'd like to replicate data for Zendesk Talk API, in the format YYYY-MM-DDT00:00:00Z. All data generated after this date will be replicated.
         """
@@ -4898,7 +4898,7 @@ class SftpSource(GeneratedAirbyteSource):
     ):
         """Airbyte Source for Sftp.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/sources/sftp
+        Documentation can be found at https://docs.airbyte.com/integrations/source/sftp
 
         Args:
             name (str): The name of the destination.
@@ -5123,7 +5123,7 @@ class NetsuiteSource(GeneratedAirbyteSource):
         token_key: str,
         token_secret: str,
         start_datetime: str,
-        object_types: Optional[list[str]] = None,
+        object_types: Optional[List[str]] = None,
         window_in_days: Optional[int] = None,
     ):
         """Airbyte Source for Netsuite.
@@ -5190,7 +5190,7 @@ class Dv360Source(GeneratedAirbyteSource):
         partner_id: int,
         start_date: str,
         end_date: Optional[str] = None,
-        filters: Optional[list[str]] = None,
+        filters: Optional[List[str]] = None,
     ):
         """Airbyte Source for Dv 360.
 
@@ -5276,7 +5276,7 @@ class ZendeskSunshineSource(GeneratedAirbyteSource):
     ):
         """Airbyte Source for Zendesk Sunshine.
 
-        Documentation can be found at https://docs.airbyte.com/integrations/sources/zendesk-sunshine
+        Documentation can be found at https://docs.airbyte.com/integrations/sources/zendesk_sunshine
 
         Args:
             name (str): The name of the destination.
@@ -5775,7 +5775,7 @@ class GoogleSearchConsoleSource(GeneratedAirbyteSource):
     def __init__(
         self,
         name: str,
-        site_urls: list[str],
+        site_urls: List[str],
         start_date: str,
         authorization: Union[
             "GoogleSearchConsoleSource.OAuth",
@@ -5816,9 +5816,9 @@ class FacebookMarketingSource(GeneratedAirbyteSource):
         def __init__(
             self,
             name: str,
-            fields: Optional[list[str]] = None,
-            breakdowns: Optional[list[str]] = None,
-            action_breakdowns: Optional[list[str]] = None,
+            fields: Optional[List[str]] = None,
+            breakdowns: Optional[List[str]] = None,
+            action_breakdowns: Optional[List[str]] = None,
             time_increment: Optional[int] = None,
             start_date: Optional[str] = None,
             end_date: Optional[str] = None,
@@ -5847,7 +5847,7 @@ class FacebookMarketingSource(GeneratedAirbyteSource):
         end_date: Optional[str] = None,
         include_deleted: Optional[bool] = None,
         fetch_thumbnail_images: Optional[bool] = None,
-        custom_insights: Optional[list[InsightConfig]] = None,
+        custom_insights: Optional[List[InsightConfig]] = None,
         page_size: Optional[int] = None,
         insights_lookback_window: Optional[int] = None,
         max_batch_size: Optional[int] = None,
@@ -5891,7 +5891,7 @@ class FacebookMarketingSource(GeneratedAirbyteSource):
 class SurveymonkeySource(GeneratedAirbyteSource):
     @public
     def __init__(
-        self, name: str, access_token: str, start_date: str, survey_ids: Optional[list[str]] = None
+        self, name: str, access_token: str, start_date: str, survey_ids: Optional[List[str]] = None
     ):
         """Airbyte Source for Surveymonkey.
 
@@ -5930,7 +5930,7 @@ class PardotSource(GeneratedAirbyteSource):
             client_secret (str): The Consumer Secret that can be found when viewing your app in Salesforce
             refresh_token (str): Salesforce Refresh Token used for Airbyte to access your Salesforce account. If you don't know what this is, follow this guide to retrieve it.
             start_date (Optional[str]): UTC date and time in the format 2017-01-25T00:00:00Z. Any data before this date will not be replicated. Leave blank to skip this filter
-            is_sandbox (Optional[bool]): Whether or not the app is in a Salesforce sandbox. If you do not know what this, assume it is false.
+            is_sandbox (Optional[bool]): Whether or not the the app is in a Salesforce sandbox. If you do not know what this, assume it is false.
         """
         self.pardot_business_unit_id = check.str_param(
             pardot_business_unit_id, "pardot_business_unit_id"

@@ -1,9 +1,8 @@
 from dagster import Array, Bool, Field, In, Noneable, Nothing, Out, Output, op
-from dagster._core.storage.tags import COMPUTE_KIND_TAG
 
-from dagster_census.resources import DEFAULT_POLL_INTERVAL
-from dagster_census.types import CensusOutput
-from dagster_census.utils import generate_materialization
+from .resources import DEFAULT_POLL_INTERVAL
+from .types import CensusOutput
+from .utils import generate_materialization
 
 
 @op(
@@ -60,7 +59,7 @@ from dagster_census.utils import generate_materialization
             ),
         ),
     },
-    tags={COMPUTE_KIND_TAG: "census"},
+    tags={"kind": "census"},
 )
 def census_trigger_sync_op(context):
     """Executes a Census sync for a given ``sync_id`` and polls until that sync completes, raising

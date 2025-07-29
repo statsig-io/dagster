@@ -1,11 +1,11 @@
-from typing import Optional
+from typing import List
 
 import dagster._check as check
 import graphene
 from dagster._core.definitions.events import AssetKey
 from dagster._utils.error import SerializableErrorInfo
 
-from dagster_graphql.schema.util import ResolveInfo, non_null_list
+from .util import ResolveInfo, non_null_list
 
 
 class GrapheneError(graphene.Interface):
@@ -96,7 +96,7 @@ class GraphenePythonError(graphene.ObjectType):
     def resolve_cause(self, _graphene_info):
         return GraphenePythonError(self._cause) if self._cause else None
 
-    def resolution_context(self, _graphene_info):
+    def resolve_context(self, _graphene_info):
         return GraphenePythonError(self._context) if self._context else None
 
     def resolve_className(self, _graphene_info):
@@ -109,7 +109,7 @@ class GraphenePythonError(graphene.ObjectType):
         return self._className
 
     def resolve_causes(self, _graphene_info: ResolveInfo):
-        causes: list[GraphenePythonError] = []
+        causes: List[GraphenePythonError] = []
         current_error = self._cause
         while current_error and len(causes) < 10:  # Sanity check the depth of the causes
             causes.append(GraphenePythonError(current_error))
@@ -192,7 +192,7 @@ class GraphenePipelineNotFoundError(graphene.ObjectType):
     repository_location_name = graphene.NonNull(graphene.String)
 
     def __init__(self, selector):
-        from dagster_graphql.implementation.utils import JobSubsetSelector
+        from ..implementation.utils import JobSubsetSelector
 
         super().__init__()
         check.inst_param(selector, "selector", JobSubsetSelector)
@@ -215,7 +215,7 @@ class GrapheneGraphNotFoundError(graphene.ObjectType):
     repository_location_name = graphene.NonNull(graphene.String)
 
     def __init__(self, selector):
-        from dagster_graphql.implementation.utils import GraphSelector
+        from ..implementation.utils import GraphSelector
 
         super().__init__()
         check.inst_param(selector, "selector", GraphSelector)
@@ -451,21 +451,6 @@ class GraphenePartitionSetNotFoundError(graphene.ObjectType):
         self.message = f"Partition set {self.partition_set_name} could not be found."
 
 
-class GraphenePartitionKeysNotFoundError(graphene.ObjectType):
-    class Meta:
-        interfaces = (GrapheneError,)
-        name = "PartitionKeysNotFoundError"
-
-    partition_keys = non_null_list(graphene.String)
-
-    def __init__(self, partition_keys: set[str]):
-        super().__init__()
-        self.partition_keys = check.list_param(
-            sorted(partition_keys), "partition_keys", of_type=str
-        )
-        self.message = f"Partition keys `{self.partition_keys}` could not be found."
-
-
 class GrapheneRepositoryNotFoundError(graphene.ObjectType):
     class Meta:
         interfaces = (GrapheneError,)
@@ -522,16 +507,6 @@ class GrapheneDuplicateDynamicPartitionError(graphene.ObjectType):
         )
 
 
-class GrapheneUnsupportedOperationError(graphene.ObjectType):
-    class Meta:
-        interfaces = (GrapheneError,)
-        name = "UnsupportedOperationError"
-
-    def __init__(self, message: Optional[str] = None):
-        super().__init__()
-        self.message = check.str_param(message, "message") or "Unsupported operation."
-
-
 types = [
     GrapheneAssetNotFoundError,
     GrapheneConflictingExecutionParamsError,
@@ -562,6 +537,5 @@ types = [
     GrapheneScheduleNotFoundError,
     GrapheneSchedulerNotDefinedError,
     GrapheneSensorNotFoundError,
-    GrapheneUnsupportedOperationError,
     GrapheneDuplicateDynamicPartitionError,
 ]

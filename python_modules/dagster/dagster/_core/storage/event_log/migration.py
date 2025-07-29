@@ -1,13 +1,13 @@
 from typing import NamedTuple
 
 import sqlalchemy as db
-from dagster_shared.serdes import deserialize_value
 from tqdm import tqdm
 
 from dagster._core.assets import AssetDetails
 from dagster._core.events.log import EventLogEntry
 from dagster._core.storage.sqlalchemy_compat import db_select
-from dagster._time import datetime_from_timestamp
+from dagster._serdes.serdes import deserialize_value
+from dagster._utils import utc_datetime_from_timestamp
 
 SECONDARY_INDEX_ASSET_KEY = "asset_key_table"  # builds the asset key table from the event log
 ASSET_KEY_INDEX_COLS = "asset_key_index_columns"  # extracts index columns from the asset_keys table
@@ -26,12 +26,12 @@ def migrate_event_log_data(instance=None):
     """
     from dagster._core.storage.event_log.sql_event_log import SqlEventLogStorage
 
-    event_log_storage = instance._event_storage  # noqa: SLF001  # pyright: ignore[reportOptionalMemberAccess]
+    event_log_storage = instance._event_storage  # noqa: SLF001
 
     if not isinstance(event_log_storage, SqlEventLogStorage):
         return
 
-    for run in instance.get_runs():  # pyright: ignore[reportOptionalMemberAccess]
+    for run in instance.get_runs():
         for record in event_log_storage.get_records_for_run(run.run_id).records:
             event_log_storage.update_event_log_record(record.storage_id, record.event_log_entry)
 
@@ -41,8 +41,9 @@ def migrate_asset_key_data(event_log_storage, print_fn=None):
     Takes in event_log_storage, and a print_fn to keep track of progress.
     """
     from dagster._core.definitions.events import AssetKey
-    from dagster._core.storage.event_log.schema import AssetKeyTable, SqlEventLogStorageTable
     from dagster._core.storage.event_log.sql_event_log import SqlEventLogStorage
+
+    from .schema import AssetKeyTable, SqlEventLogStorageTable
 
     if not isinstance(event_log_storage, SqlEventLogStorage):
         return
@@ -64,19 +65,20 @@ def migrate_asset_key_data(event_log_storage, print_fn=None):
             try:
                 conn.execute(
                     AssetKeyTable.insert().values(
-                        asset_key=AssetKey.from_db_string(asset_key).to_string()  # pyright: ignore[reportOptionalMemberAccess]
+                        asset_key=AssetKey.from_db_string(asset_key).to_string()
                     )
                 )
-            except db.exc.IntegrityError:  # pyright: ignore[reportAttributeAccessIssue]
+            except db.exc.IntegrityError:
                 # asset key already present
                 pass
 
 
 def migrate_asset_keys_index_columns(event_log_storage, print_fn=None):
     from dagster._core.definitions.events import AssetKey
-    from dagster._core.storage.event_log.schema import AssetKeyTable, SqlEventLogStorageTable
     from dagster._core.storage.event_log.sql_event_log import SqlEventLogStorage
     from dagster._serdes import serialize_value
+
+    from .schema import AssetKeyTable, SqlEventLogStorageTable
 
     if not isinstance(event_log_storage, SqlEventLogStorage):
         return
@@ -119,14 +121,14 @@ def migrate_asset_keys_index_columns(event_log_storage, print_fn=None):
                 materialization_query = (
                     db_select([SqlEventLogStorageTable.c.event])
                     .where(
-                        SqlEventLogStorageTable.c.asset_key == asset_key.to_string(),  # pyright: ignore[reportOptionalMemberAccess]
+                        SqlEventLogStorageTable.c.asset_key == asset_key.to_string(),
                     )
                     .order_by(SqlEventLogStorageTable.c.timestamp.desc())
                     .limit(1)
                 )
                 materialization_row = conn.execute(materialization_query).fetchone()
                 if materialization_row:
-                    event = deserialize_value(materialization_row[0], NamedTuple)  # pyright: ignore[reportCallIssue,reportArgumentType]
+                    event = deserialize_value(materialization_row[0], NamedTuple)
 
             if not event:
                 # this must be a wiped asset
@@ -136,11 +138,11 @@ def migrate_asset_keys_index_columns(event_log_storage, print_fn=None):
                         last_materialization=None,
                         last_materialization_timestamp=None,
                         wipe_timestamp=(
-                            datetime_from_timestamp(wipe_timestamp) if wipe_timestamp else None
+                            utc_datetime_from_timestamp(wipe_timestamp) if wipe_timestamp else None
                         ),
                     )
                     .where(
-                        AssetKeyTable.c.asset_key == asset_key.to_string(),  # pyright: ignore[reportOptionalMemberAccess]
+                        AssetKeyTable.c.asset_key == asset_key.to_string(),
                     )
                 )
             else:
@@ -148,19 +150,19 @@ def migrate_asset_keys_index_columns(event_log_storage, print_fn=None):
                     AssetKeyTable.update()
                     .values(
                         last_materialization=serialize_value(event),
-                        last_materialization_timestamp=datetime_from_timestamp(event.timestamp),
+                        last_materialization_timestamp=utc_datetime_from_timestamp(event.timestamp),
                         wipe_timestamp=(
-                            datetime_from_timestamp(wipe_timestamp) if wipe_timestamp else None
+                            utc_datetime_from_timestamp(wipe_timestamp) if wipe_timestamp else None
                         ),
                     )
                     .where(
-                        AssetKeyTable.c.asset_key == asset_key.to_string(),  # pyright: ignore[reportOptionalMemberAccess]
+                        AssetKeyTable.c.asset_key == asset_key.to_string(),
                     )
                 )
 
 
 def sql_asset_event_generator(conn, cursor=None, batch_size=1000):
-    from dagster._core.storage.event_log.schema import SqlEventLogStorageTable
+    from .schema import SqlEventLogStorageTable
 
     while True:
         query = db_select([SqlEventLogStorageTable.c.id, SqlEventLogStorageTable.c.event]).where(

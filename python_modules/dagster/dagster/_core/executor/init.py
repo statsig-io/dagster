@@ -1,5 +1,4 @@
-from collections.abc import Mapping
-from typing import NamedTuple
+from typing import Mapping, NamedTuple
 
 import dagster._check as check
 from dagster._annotations import PublicAttr
@@ -20,7 +19,7 @@ class InitExecutorContext(
 ):
     """Executor-specific initialization context.
 
-    Args:
+    Attributes:
         job (IJob): The job to be executed.
         executor_def (ExecutorDefinition): The definition of the executor currently being
             constructed.
@@ -35,7 +34,7 @@ class InitExecutorContext(
         executor_config: Mapping[str, object],
         instance: DagsterInstance,
     ):
-        return super().__new__(
+        return super(InitExecutorContext, cls).__new__(
             cls,
             job=check.inst_param(job, "job", IJob),
             executor_def=check.inst_param(executor_def, "executor_def", ExecutorDefinition),

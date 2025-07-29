@@ -22,16 +22,14 @@ export const ColumnWidthsContext = React.createContext({
 });
 
 export class ColumnWidthsProvider extends React.Component<
-  {children: React.ReactNode; onWidthsChanged?: (widths: typeof ColumnWidths) => void},
+  {children: React.ReactNode; onWidthsChanged: (widths: typeof ColumnWidths) => void},
   typeof ColumnWidths
 > {
   state = ColumnWidths;
 
   onWidthsChangedFromContext = (columnWidths: typeof ColumnWidths) => {
     window.localStorage.setItem(ColumnWidthsStorageKey, JSON.stringify(columnWidths));
-    if (this.props.onWidthsChanged) {
-      this.props.onWidthsChanged(columnWidths);
-    }
+    this.props.onWidthsChanged(columnWidths);
     this.setState(columnWidths);
   };
 
@@ -96,9 +94,7 @@ export class Header extends React.Component<HeaderProps, HeaderState> {
 
   onMouseUp = () => {
     const {isDragging} = this.state;
-    if (isDragging) {
-      this.setState({isDragging: false});
-    }
+    isDragging && this.setState({isDragging: false});
     document.removeEventListener('mousemove', this.onMouseMove);
     document.removeEventListener('mouseup', this.onMouseUp);
   };
@@ -148,10 +144,10 @@ export const Headers = () => {
 
 export const HeadersContainer = styled.div`
   display: flex;
-  color: ${Colors.textLight()};
+  color: ${Colors.Gray400};
   text-transform: uppercase;
   font-size: 12px;
-  border-bottom: 1px solid ${Colors.keylineDefault()};
+  border-bottom: 1px solid ${Colors.KeylineGray};
   z-index: 2;
 `;
 
@@ -180,7 +176,7 @@ const HeaderDragHandle = styled.div<{
   & > div {
     width: 1px;
     height: 100%;
-    background: ${({isDragging}) => (isDragging ? Colors.accentGray() : Colors.keylineDefault())};
+    background: ${({isDragging}) => (isDragging ? Colors.Gray400 : Colors.KeylineGray)};
   }
 `;
 

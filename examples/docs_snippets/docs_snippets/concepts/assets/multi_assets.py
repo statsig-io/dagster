@@ -2,13 +2,17 @@
 
 
 # start_basic_multi_asset
-from dagster import AssetSpec, multi_asset
+from dagster import AssetOut, multi_asset
 
 
-@multi_asset(specs=[AssetSpec("users"), AssetSpec("orders")])
+@multi_asset(
+    outs={
+        "my_string_asset": AssetOut(),
+        "my_int_asset": AssetOut(),
+    }
+)
 def my_function():
-    # some code that writes out data to the users table and the orders table
-    ...
+    return "abc", 123
 
 
 # end_basic_multi_asset
@@ -30,36 +34,41 @@ def my_assets():
 # end_io_manager_multi_asset
 
 # start_subsettable_multi_asset
-from dagster import AssetExecutionContext, AssetSpec, MaterializeResult, multi_asset
+from dagster import AssetOut, Output, multi_asset
 
 
 @multi_asset(
-    specs=[AssetSpec("asset1", skippable=True), AssetSpec("asset2", skippable=True)],
+    outs={
+        "a": AssetOut(is_required=False),
+        "b": AssetOut(is_required=False),
+    },
     can_subset=True,
 )
-def split_actions(context: AssetExecutionContext):
-    if "asset1" in context.op_execution_context.selected_asset_keys:
-        yield MaterializeResult(asset_key="asset1")
-    if "asset2" in context.op_execution_context.selected_asset_keys:
-        yield MaterializeResult(asset_key="asset2")
+def split_actions(context):
+    if "a" in context.selected_output_names:
+        yield Output(value=123, output_name="a")
+    if "b" in context.selected_output_names:
+        yield Output(value=456, output_name="b")
 
 
 # end_subsettable_multi_asset
 
 # start_asset_deps_multi_asset
-from dagster import AssetSpec, asset, multi_asset
+from dagster import AssetKey, AssetOut, Output, multi_asset
 
 
-@asset
-def a(): ...
-
-
-@asset
-def b(): ...
-
-
-@multi_asset(specs=[AssetSpec("c", deps=["b"]), AssetSpec("d", deps=["a"])])
-def my_complex_assets(): ...
+@multi_asset(
+    outs={"c": AssetOut(), "d": AssetOut()},
+    internal_asset_deps={
+        "c": {AssetKey("a")},
+        "d": {AssetKey("b")},
+    },
+)
+def my_complex_assets(a, b):
+    # c only depends on a
+    yield Output(value=a + 1, output_name="c")
+    # d only depends on b
+    yield Output(value=b + 1, output_name="d")
 
 
 # end_asset_deps_multi_asset

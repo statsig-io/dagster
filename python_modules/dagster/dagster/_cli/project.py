@@ -1,34 +1,37 @@
 import os
 import sys
-from collections.abc import Sequence
-from typing import NamedTuple, Optional, Union
+from typing import NamedTuple, Optional, Sequence
 
 import click
+import requests
 
-from dagster._generate import download_example_from_github, generate_project, generate_repository
+from dagster._generate import (
+    download_example_from_github,
+    generate_code_location,
+    generate_project,
+    generate_repository,
+)
 from dagster._generate.download import AVAILABLE_EXAMPLES
 from dagster.version import __version__ as dagster_version
 
 
 @click.group(name="project")
-def project_cli() -> None:
+def project_cli():
     """Commands for bootstrapping new Dagster projects and code locations."""
 
 
 # Keywords to flag in package names. When a project name contains one of these keywords, we check
 # if a conflicting PyPI package exists.
 FLAGGED_PACKAGE_KEYWORDS = ["dagster", "dbt"]
-VALID_EXCLUDES: list[str] = ["readme.md", "setup", "tests"]  # all lower case
 
 scaffold_repository_command_help_text = (
-    "(DEPRECATED; Use `dagster project scaffold --excludes README.md` instead) "
+    "(DEPRECATED; Use `dagster project scaffold-code-location` instead) "
     "Create a folder structure with a single Dagster repository, in the current directory. "
     "This CLI helps you to scaffold a new Dagster repository within a folder structure that "
     "includes multiple Dagster repositories"
 )
 
 scaffold_code_location_command_help_text = (
-    "(DEPRECATED; Use `dagster project scaffold --excludes README.md` instead) "
     "Create a folder structure with a single Dagster code location, in the current directory. "
     "This CLI helps you to scaffold a new Dagster code location within a folder structure that "
     "includes multiple Dagster code locations."
@@ -61,12 +64,9 @@ def check_if_pypi_package_conflict_exists(project_name: str) -> PackageConflictC
     Raises an error regardless of hyphen or underscore (i.e. dagster_dbt vs dagster-dbt). Both
     are invalid and cause import errors.
     """
-    # defer for import performance
-    import requests
-
     if any(keyword in project_name for keyword in FLAGGED_PACKAGE_KEYWORDS):
         try:
-            res = requests.get(f"https://pypi.org/pypi/{project_name}/json")
+            res = requests.get(f"https://pypi.org/pypi/{project_name}")
             if res.status_code == 200:
                 return PackageConflictCheckResult(request_error_msg=None, conflict_exists=True)
         except Exception as e:
@@ -75,10 +75,63 @@ def check_if_pypi_package_conflict_exists(project_name: str) -> PackageConflictC
     return PackageConflictCheckResult(request_error_msg=None, conflict_exists=False)
 
 
-def _check_and_error_on_package_conflicts(project_name: str) -> None:
-    package_check_result: PackageConflictCheckResult = check_if_pypi_package_conflict_exists(
-        project_name
+@project_cli.command(
+    name="scaffold-repository",
+    short_help=scaffold_repository_command_help_text,
+    help=scaffold_repository_command_help_text,
+)
+@click.option(
+    "--name",
+    required=True,
+    type=click.STRING,
+    help="Name of the new Dagster repository",
+)
+def scaffold_repository_command(name: str):
+    dir_abspath = os.path.abspath(name)
+    if os.path.isdir(dir_abspath) and os.path.exists(dir_abspath):
+        click.echo(
+            click.style(f"The directory {dir_abspath} already exists. ", fg="red")
+            + "\nPlease delete the contents of this path or choose another location."
+        )
+        sys.exit(1)
+
+    click.echo(
+        click.style(
+            "WARNING: This command is deprecated. Use `dagster project scaffold-code-location`"
+            " instead.",
+            fg="yellow",
+        )
     )
+    generate_repository(dir_abspath)
+    click.echo(_styled_success_statement(name, dir_abspath))
+
+
+@project_cli.command(
+    name="scaffold-code-location",
+    short_help=scaffold_code_location_command_help_text,
+    help=scaffold_code_location_command_help_text,
+)
+@click.option(
+    "--name",
+    required=True,
+    type=click.STRING,
+    help="Name of the new Dagster code location",
+)
+def scaffold_code_location_command(name: str):
+    dir_abspath = os.path.abspath(name)
+    if os.path.isdir(dir_abspath) and os.path.exists(dir_abspath):
+        click.echo(
+            click.style(f"The directory {dir_abspath} already exists. ", fg="red")
+            + "\nPlease delete the contents of this path or choose another location."
+        )
+        sys.exit(1)
+
+    generate_code_location(dir_abspath)
+    click.echo(_styled_success_statement(name, dir_abspath))
+
+
+def _check_and_error_on_package_conflicts(project_name: str) -> None:
+    package_check_result = check_if_pypi_package_conflict_exists(project_name)
     if package_check_result.request_error_msg:
         click.echo(
             click.style(
@@ -107,58 +160,6 @@ def _check_and_error_on_package_conflicts(project_name: str) -> None:
 
 
 @project_cli.command(
-    name="scaffold-repository",
-    short_help=scaffold_repository_command_help_text,
-    help=scaffold_repository_command_help_text,
-)
-@click.option(
-    "--name",
-    required=True,
-    type=click.STRING,
-    help="Name of the new Dagster repository",
-)
-def scaffold_repository_command(name: str) -> None:
-    dir_abspath = os.path.abspath(name)
-    if os.path.isdir(dir_abspath) and os.path.exists(dir_abspath):
-        click.echo(
-            click.style(f"The directory {dir_abspath} already exists. ", fg="red")
-            + "\nPlease delete the contents of this path or choose another location."
-        )
-        sys.exit(1)
-
-    click.echo(
-        click.style(
-            "WARNING: command is deprecated. Use `dagster project scaffold --excludes readme` instead.",
-            fg="yellow",
-        )
-    )
-    generate_repository(dir_abspath)
-    click.echo(_styled_success_statement(name, dir_abspath))
-
-
-@project_cli.command(
-    name="scaffold-code-location",
-    short_help=scaffold_code_location_command_help_text,
-    help=scaffold_code_location_command_help_text,
-)
-@click.option(
-    "--name",
-    required=True,
-    type=click.STRING,
-    help="Name of the new Dagster code location",
-)
-@click.pass_context
-def scaffold_code_location_command(context, name: str):
-    click.echo(
-        click.style(
-            "WARNING: command is deprecated. Use `dagster project scaffold --excludes readme` instead.",
-            fg="yellow",
-        )
-    )
-    context.invoke(scaffold_command, name=name, excludes=["README.md"])
-
-
-@project_cli.command(
     name="scaffold",
     short_help=scaffold_command_help_text,
     help=scaffold_command_help_text,
@@ -170,23 +171,12 @@ def scaffold_code_location_command(context, name: str):
     help="Name of the new Dagster project",
 )
 @click.option(
-    "--excludes",
-    multiple=True,
-    type=click.STRING,
-    default=[],
-    help=f"Exclude case-insensitive file patterns from the project template. Valid patterns: {VALID_EXCLUDES}",
-)
-@click.option(
     "--ignore-package-conflict",
     is_flag=True,
     default=False,
     help="Controls whether the project name can conflict with an existing PyPI package.",
 )
-def scaffold_command(
-    name: str,
-    excludes: Optional[Union[list[str], tuple]] = None,
-    ignore_package_conflict: bool = False,
-) -> None:
+def scaffold_command(name: str, ignore_package_conflict: bool):
     dir_abspath = os.path.abspath(name)
     if os.path.isdir(dir_abspath) and os.path.exists(dir_abspath):
         click.echo(
@@ -195,26 +185,10 @@ def scaffold_command(
         )
         sys.exit(1)
 
-    if isinstance(excludes, tuple):
-        excludes = list(excludes)
-    excludes = [] if not excludes else [item for item in excludes]
-
-    invalid_excludes = [item for item in excludes if item.lower() not in VALID_EXCLUDES]
-    if invalid_excludes:
-        click.echo(
-            click.style(
-                f"The following strings are invalid options for the excludes tag: {invalid_excludes}",
-                fg="red",
-            )
-            + f"Choose from {VALID_EXCLUDES}. Case-insensitive. "
-        )
-        sys.exit(1)
-    excludes = [item.lower() for item in excludes if item in VALID_EXCLUDES]
-
     if not ignore_package_conflict:
         _check_and_error_on_package_conflicts(name)
 
-    generate_project(dir_abspath, excludes=excludes)
+    generate_project(dir_abspath)
     click.echo(_styled_success_statement(name, dir_abspath))
 
 
@@ -245,7 +219,7 @@ def scaffold_command(
     default=dagster_version,
     show_default=True,
 )
-def from_example_command(name: Optional[str], example: str, version: str) -> None:
+def from_example_command(name: Optional[str], example: str, version: str):
     name = name or example
     dir_abspath = os.path.abspath(name) + "/"
     if os.path.isdir(dir_abspath) and os.path.exists(dir_abspath):
@@ -255,7 +229,7 @@ def from_example_command(name: Optional[str], example: str, version: str) -> Non
         )
         sys.exit(1)
     else:
-        os.makedirs(dir_abspath, exist_ok=True)
+        os.mkdir(dir_abspath)
 
     download_example_from_github(dir_abspath, example, version)
 
@@ -267,7 +241,7 @@ def from_example_command(name: Optional[str], example: str, version: str) -> Non
     short_help=list_examples_command_help_text,
     help=list_examples_command_help_text,
 )
-def from_example_list_command() -> None:
+def from_example_list_command():
     click.echo("Examples available in `dagster project from-example`:")
 
     click.echo(_styled_list_examples_prints(AVAILABLE_EXAMPLES))
@@ -277,7 +251,7 @@ def _styled_list_examples_prints(examples: Sequence[str]) -> str:
     return "\n".join([f"* {name}" for name in examples])
 
 
-def _styled_success_statement(name: str, path: str) -> str:
+def _styled_success_statement(name: str, path: str):
     return (
         click.style("Success!", fg="green")
         + " Created "

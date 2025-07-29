@@ -3,7 +3,6 @@ from typing import Any
 import pytest
 from dagster import DagsterEventType, job, op
 from dagster._core.definitions.metadata import MetadataValue
-
 from dagster_aws.s3 import (
     S3FileHandle,
     S3FileManagerResource,

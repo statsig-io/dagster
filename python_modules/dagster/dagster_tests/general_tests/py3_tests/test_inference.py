@@ -1,15 +1,26 @@
-# ruff: noqa: D416, UP006, UP035
+# ruff: noqa: D416
+
 from typing import Any, Dict, List, Optional, Tuple
 
-import dagster as dg
 import pytest
+from dagster import (
+    DagsterInvalidDefinitionError,
+    DagsterType,
+    In,
+    Int,
+    graph,
+    job,
+    make_python_type_usable_as_dagster_type,
+    op,
+    usable_as_dagster_type,
+)
 from dagster._core.definitions.inference import infer_input_props, infer_output_props
 from dagster._core.types.dagster_type import DagsterTypeKind
 from dagster._utils.test import wrap_op_in_graph_and_execute
 
 
 def test_infer_op_description_from_docstring():
-    @dg.op
+    @op
     def my_op(_):
         """Here is some docstring."""
 
@@ -17,7 +28,7 @@ def test_infer_op_description_from_docstring():
 
 
 def test_infer_op_description_no_docstring():
-    @dg.op
+    @op
     def my_op(_):
         pass
 
@@ -25,7 +36,7 @@ def test_infer_op_description_no_docstring():
 
 
 def test_docstring_does_not_override():
-    @dg.op(description="abc")
+    @op(description="abc")
     def my_op(_):
         """Here is some docstring."""
 
@@ -33,11 +44,11 @@ def test_docstring_does_not_override():
 
 
 def test_single_typed_input():
-    @dg.op
+    @op
     def add_one_infer(_context, num: int):
         return num + 1
 
-    @dg.op(ins={"num": dg.In(dg.Int)})
+    @op(ins={"num": In(Int)})
     def add_one_ex(_context, num):
         return num + 1
 
@@ -51,7 +62,7 @@ def test_single_typed_input():
 
 
 def test_precedence():
-    @dg.op(ins={"num": dg.In(dg.Int)})
+    @op(ins={"num": In(Int)})
     def add_one(_context, num: Any):
         return num + 1
 
@@ -59,7 +70,7 @@ def test_precedence():
 
 
 def test_double_typed_input():
-    @dg.op
+    @op
     def subtract(_context, num_one: int, num_two: int):
         return num_one + num_two
 
@@ -73,7 +84,7 @@ def test_double_typed_input():
 
 
 def test_single_typed_input_and_output():
-    @dg.op
+    @op
     def add_one(_context, num: int) -> int:
         return num + 1
 
@@ -87,7 +98,7 @@ def test_single_typed_input_and_output():
 
 
 def test_single_typed_input_and_output_lambda():
-    @dg.op
+    @op
     def add_one(num: int) -> int:
         return num + 1
 
@@ -101,7 +112,7 @@ def test_single_typed_input_and_output_lambda():
 
 
 def test_string_typed_input_and_output():
-    @dg.op
+    @op
     def add_one(_context, num: "Optional[int]") -> "int":
         return num + 1 if num else 1
 
@@ -126,13 +137,13 @@ def _make_foo():
 
 def test_invalid_string_typed_input():
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError, match='Failed to resolve type annotation "Foo"'
+        DagsterInvalidDefinitionError, match='Failed to resolve type annotation "Foo"'
     ):
-        dg.op(_make_foo())
+        op(_make_foo())
 
 
 def test_wrapped_input_and_output_lambda():
-    @dg.op
+    @op
     def add_one(nums: List[int]) -> Optional[List[int]]:
         return [num + 1 for num in nums]
 
@@ -140,19 +151,19 @@ def test_wrapped_input_and_output_lambda():
     assert len(add_one.input_defs) == 1
     assert add_one.input_defs[0].name == "nums"
     assert add_one.input_defs[0].dagster_type.kind == DagsterTypeKind.LIST
-    assert add_one.input_defs[0].dagster_type.inner_type.unique_name == "Int"  # pyright: ignore[reportAttributeAccessIssue]
+    assert add_one.input_defs[0].dagster_type.inner_type.unique_name == "Int"
 
     assert len(add_one.output_defs) == 1
     assert add_one.output_defs[0].dagster_type.kind == DagsterTypeKind.NULLABLE
-    assert add_one.output_defs[0].dagster_type.inner_type.kind == DagsterTypeKind.LIST  # pyright: ignore[reportAttributeAccessIssue]
+    assert add_one.output_defs[0].dagster_type.inner_type.kind == DagsterTypeKind.LIST
 
 
 def test_kitchen_sink():
-    @dg.usable_as_dagster_type
+    @usable_as_dagster_type
     class Custom:
         pass
 
-    @dg.op
+    @op
     def sink(
         n: int,
         f: float,
@@ -191,15 +202,15 @@ def test_kitchen_sink():
 
 
 def test_composites():
-    @dg.op
+    @op
     def emit_one() -> int:
         return 1
 
-    @dg.op
+    @op
     def subtract(n1: int, n2: int) -> int:
         return n1 - n2
 
-    @dg.graph
+    @graph
     def add_one(a: int) -> int:
         return subtract(a, emit_one())
 
@@ -207,7 +218,7 @@ def test_composites():
 
 
 def test_emit_dict():
-    @dg.op
+    @op
     def emit_dict() -> dict:
         return {"foo": "bar"}
 
@@ -217,7 +228,7 @@ def test_emit_dict():
 
 
 def test_dict_input():
-    @dg.op
+    @op
     def intake_dict(inp: dict) -> str:
         return inp["foo"]
 
@@ -226,7 +237,7 @@ def test_dict_input():
 
 
 def test_emit_dagster_dict():
-    @dg.op
+    @op
     def emit_dagster_dict() -> Dict:
         return {"foo": "bar"}
 
@@ -236,7 +247,7 @@ def test_emit_dagster_dict():
 
 
 def test_dict_dagster_input():
-    @dg.op
+    @op
     def intake_dagster_dict(inp: Dict) -> str:
         return inp["foo"]
 
@@ -247,7 +258,7 @@ def test_dict_dagster_input():
 
 
 def test_python_tuple_input():
-    @dg.op
+    @op
     def intake_tuple(inp: tuple) -> int:
         return inp[1]
 
@@ -257,7 +268,7 @@ def test_python_tuple_input():
 
 
 def test_python_tuple_output():
-    @dg.op
+    @op
     def emit_tuple() -> tuple:
         return (4, 5)
 
@@ -265,7 +276,7 @@ def test_python_tuple_output():
 
 
 def test_nested_kitchen_sink():
-    @dg.op
+    @op
     def no_execute() -> Optional[List[Tuple[List[int], str, Dict[str, Optional[List[str]]]]]]:
         pass
 
@@ -283,7 +294,7 @@ def test_nested_kitchen_sink():
 def test_infer_input_description_from_docstring_failure():
     # docstring is invalid because has a dash instead of a colon to delimit the argument type and
     # description
-    @dg.op
+    @op
     def my_op(_arg1):
         """
         Args:
@@ -294,7 +305,7 @@ def test_infer_input_description_from_docstring_failure():
 
 
 def test_infer_input_description_from_docstring_rest():
-    @dg.op
+    @op
     def rest(_context, hello: str, optional: int = 5):
         """
         :param str hello: hello world param
@@ -302,7 +313,7 @@ def test_infer_input_description_from_docstring_rest():
         """  # noqa: D212
         return hello + str(optional)
 
-    defs = infer_input_props(rest.compute_fn.decorated_fn, context_arg_provided=True)  # pyright: ignore[reportFunctionMemberAccess]
+    defs = infer_input_props(rest.compute_fn.decorated_fn, context_arg_provided=True)
     assert len(defs) == 2
 
     hello_param = defs[0]
@@ -316,7 +327,7 @@ def test_infer_input_description_from_docstring_rest():
 
 
 def test_infer_descriptions_from_docstring_numpy():
-    @dg.op
+    @op
     def good_numpy(_context, hello: str, optional: int = 5):
         """
         Test.
@@ -330,7 +341,7 @@ def test_infer_descriptions_from_docstring_numpy():
         """  # noqa: D212
         return hello + str(optional)
 
-    defs = infer_input_props(good_numpy.compute_fn.decorated_fn, context_arg_provided=True)  # pyright: ignore[reportFunctionMemberAccess]
+    defs = infer_input_props(good_numpy.compute_fn.decorated_fn, context_arg_provided=True)
     assert len(defs) == 2
 
     hello_param = defs[0]
@@ -346,7 +357,7 @@ def test_infer_descriptions_from_docstring_numpy():
 
 
 def test_infer_descriptions_from_docstring_google():
-    @dg.op
+    @op
     def good_google(_context, hello: str, optional: int = 5):
         """Test.
 
@@ -356,7 +367,7 @@ def test_infer_descriptions_from_docstring_google():
         """
         return hello + str(optional)
 
-    defs = infer_input_props(good_google.compute_fn.decorated_fn, context_arg_provided=True)  # pyright: ignore[reportFunctionMemberAccess]
+    defs = infer_input_props(good_google.compute_fn.decorated_fn, context_arg_provided=True)
     assert len(defs) == 2
 
     hello_param = defs[0]
@@ -374,7 +385,7 @@ def test_infer_descriptions_from_docstring_google():
 def test_infer_output_description_from_docstring_failure():
     # docstring is invalid because has a dash instead of a colon to delimit the return type and
     # description
-    @dg.op
+    @op
     def google() -> int:
         """
         Returns:
@@ -386,7 +397,7 @@ def test_infer_output_description_from_docstring_failure():
 
 
 def test_infer_output_description_from_docstring_numpy():
-    @dg.op
+    @op
     def numpy(_context) -> int:
         """
         Returns
@@ -396,26 +407,26 @@ def test_infer_output_description_from_docstring_numpy():
         """  # noqa: D212
         return 1
 
-    props = infer_output_props(numpy.compute_fn.decorated_fn)  # pyright: ignore[reportFunctionMemberAccess]
+    props = infer_output_props(numpy.compute_fn.decorated_fn)
     assert props.description == "a number."
     assert props.annotation == int
 
 
 def test_infer_output_description_from_docstring_rest():
-    @dg.op
+    @op
     def rest(_context) -> int:
         """
         :return int: a number.
         """  # noqa: D212
         return 1
 
-    props = infer_output_props(rest.compute_fn.decorated_fn)  # pyright: ignore[reportFunctionMemberAccess]
+    props = infer_output_props(rest.compute_fn.decorated_fn)
     assert props.description == "a number."
     assert props.annotation == int
 
 
 def test_infer_output_description_from_docstring_google():
-    @dg.op
+    @op
     def google(_context) -> int:
         """
         Returns:
@@ -423,14 +434,14 @@ def test_infer_output_description_from_docstring_google():
         """  # noqa: D212
         return 1
 
-    props = infer_output_props(google.compute_fn.decorated_fn)  # pyright: ignore[reportFunctionMemberAccess]
+    props = infer_output_props(google.compute_fn.decorated_fn)
 
     assert props.description == "a number."
     assert props.annotation == int
 
 
 def test_job_api_stability():
-    @dg.job
+    @job
     def empty() -> None:
         pass
 
@@ -442,14 +453,14 @@ def test_unregistered_type_annotation_output():
     class MyClass:
         pass
 
-    @dg.op
+    @op
     def my_op(_) -> MyClass:
         return MyClass()
 
     assert my_op.output_defs[0].dagster_type.display_name == "MyClass"
     assert my_op.output_defs[0].dagster_type.typing_type == MyClass
 
-    @dg.job
+    @job
     def my_job():
         my_op()
 
@@ -460,15 +471,15 @@ def test_unregistered_type_annotation_input():
     class MyClass:
         pass
 
-    @dg.op
+    @op
     def op1(_):
         return MyClass()
 
-    @dg.op
+    @op
     def op2(_, _input1: MyClass):
         pass
 
-    @dg.job
+    @job
     def my_job():
         op2(op1())
 
@@ -480,7 +491,7 @@ def test_unregistered_type_annotation_input_op():
     class MyClass:
         pass
 
-    @dg.op
+    @op
     def op2(_, _input1: MyClass):
         pass
 
@@ -491,7 +502,7 @@ def test_unregistered_type_annotation_input_op_merge():
     class MyClass:
         pass
 
-    @dg.op(ins={"_input1": dg.In()})
+    @op(ins={"_input1": In()})
     def op2(_input1: MyClass):
         pass
 
@@ -502,15 +513,15 @@ def test_use_auto_type_twice():
     class MyClass:
         pass
 
-    @dg.op
+    @op
     def my_op(_) -> MyClass:
         return MyClass()
 
-    @dg.op
+    @op
     def my_op_2(_) -> MyClass:
         return MyClass()
 
-    @dg.job
+    @job
     def my_job():
         my_op()
         my_op_2()
@@ -522,14 +533,14 @@ def test_register_after_op_definition():
     class MyClass:
         pass
 
-    @dg.op
+    @op
     def _my_op(_) -> MyClass:
         return MyClass()
 
-    my_dagster_type = dg.DagsterType(name="aaaa", type_check_fn=lambda _, _a: True)
+    my_dagster_type = DagsterType(name="aaaa", type_check_fn=lambda _, _a: True)
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
-        dg.make_python_type_usable_as_dagster_type(MyClass, my_dagster_type)
+    with pytest.raises(DagsterInvalidDefinitionError):
+        make_python_type_usable_as_dagster_type(MyClass, my_dagster_type)
 
 
 def test_same_name_different_modules():
@@ -538,15 +549,15 @@ def test_same_name_different_modules():
 
     from dagster_tests.general_tests.py3_tests.other_module import MyClass as OtherModuleMyClass
 
-    @dg.op
+    @op
     def my_op(_) -> MyClass:
         return MyClass()
 
-    @dg.op
+    @op
     def my_op_2(_) -> OtherModuleMyClass:
         return OtherModuleMyClass()
 
-    @dg.job
+    @job
     def my_job():
         my_op()
         my_op_2()
@@ -558,15 +569,15 @@ def test_fan_in():
     class MyClass:
         pass
 
-    @dg.op
+    @op
     def upstream_op(_):
         return MyClass()
 
-    @dg.op
+    @op
     def downstream_op(_, _input: List[MyClass]):
         pass
 
-    @dg.job
+    @job
     def my_job():
         downstream_op([upstream_op.alias("a")(), upstream_op.alias("b")()])
 
@@ -580,15 +591,15 @@ def test_composites_user_defined_type():
     class MyClass:
         pass
 
-    @dg.op
+    @op
     def emit_one() -> MyClass:
         return MyClass()
 
-    @dg.op
+    @op
     def subtract(_n1: MyClass, _n2: MyClass) -> MyClass:
         return MyClass()
 
-    @dg.graph
+    @graph
     def add_one(a: MyClass) -> MyClass:
         return subtract(a, emit_one())
 

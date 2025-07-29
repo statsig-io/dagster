@@ -1,30 +1,48 @@
+import {gql, useLazyQuery} from '@apollo/client';
 import {
   Box,
   Button,
   ButtonLink,
   Colors,
-  Dialog,
   DialogBody,
   DialogFooter,
-  ExternalAnchorButton,
+  Dialog,
   Group,
   Icon,
-  Menu,
   MenuItem,
+  Menu,
   NonIdealState,
   Popover,
   Spinner,
-  Subheading,
   Table,
+  Subheading,
+  ExternalAnchorButton,
+  StyledRawCodeMirror,
 } from '@dagster-io/ui-components';
-import {StyledRawCodeMirror} from '@dagster-io/ui-components/editor';
 import qs from 'qs';
-import {memo, useEffect, useState} from 'react';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
+import {showSharedToaster} from '../app/DomUtils';
+import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
+import {PythonErrorInfo} from '../app/PythonErrorInfo';
+import {useCopyToClipboard} from '../app/browser';
+import {InstigationStatus} from '../graphql/types';
+import {PipelineReference} from '../pipelines/PipelineReference';
+import {RunTags} from '../runs/RunTags';
+import {MenuLink} from '../ui/MenuLink';
+import {
+  findRepositoryAmongOptions,
+  isThisThingAJob,
+  useRepository,
+  useRepositoryOptions,
+} from '../workspace/WorkspaceContext';
+import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
+import {RepoAddress} from '../workspace/types';
+import {workspacePathFromAddress} from '../workspace/workspacePath';
+
 import {TimestampDisplay} from './TimestampDisplay';
-import {gql, useLazyQuery} from '../apollo-client';
 import {
   RepositoryForNextTicksFragment,
   ScheduleFutureTickEvaluationResultFragment,
@@ -33,22 +51,6 @@ import {
   ScheduleTickConfigQuery,
   ScheduleTickConfigQueryVariables,
 } from './types/SchedulesNextTicks.types';
-import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
-import {PythonErrorInfo} from '../app/PythonErrorInfo';
-import {InstigationStatus} from '../graphql/types';
-import {PipelineReference} from '../pipelines/PipelineReference';
-import {RunTags} from '../runs/RunTags';
-import {CopyButton} from '../ui/CopyButton';
-import {MenuLink} from '../ui/MenuLink';
-import {
-  findRepositoryAmongOptions,
-  isThisThingAJob,
-  useRepository,
-  useRepositoryOptions,
-} from '../workspace/WorkspaceContext/util';
-import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
-import {RepoAddress} from '../workspace/types';
-import {workspacePathFromAddress} from '../workspace/workspacePath';
 
 interface ScheduleTick {
   schedule: ScheduleNextFiveTicksFragment;
@@ -56,11 +58,9 @@ interface ScheduleTick {
   repoAddress: RepoAddress;
 }
 
-interface Props {
+export const SchedulesNextTicks: React.FC<{
   repos: RepositoryForNextTicksFragment[];
-}
-
-export const SchedulesNextTicks = memo(({repos}: Props) => {
+}> = React.memo(({repos}) => {
   const nextTicks: ScheduleTick[] = [];
   let anyPipelines = false;
   let anySchedules = false;
@@ -187,18 +187,16 @@ export const SchedulesNextTicks = memo(({repos}: Props) => {
   );
 });
 
-interface NextTickMenuProps {
+const NextTickMenu: React.FC<{
   repoAddress: RepoAddress;
   schedule: ScheduleNextFiveTicksFragment;
   tickTimestamp: number;
-}
-
-const NextTickMenu = memo(({repoAddress, schedule, tickTimestamp}: NextTickMenuProps) => {
+}> = React.memo(({repoAddress, schedule, tickTimestamp}) => {
   const scheduleSelector = {
     ...repoAddressToSelector(repoAddress),
     scheduleName: schedule.name,
   };
-  const [isOpen, setOpen] = useState<boolean>(false);
+  const [isOpen, setOpen] = React.useState<boolean>(false);
   const [loadTickConfig, {called, loading, data}] = useLazyQuery<
     ScheduleTickConfigQuery,
     ScheduleTickConfigQueryVariables
@@ -251,19 +249,13 @@ const NextTickMenu = memo(({repoAddress, schedule, tickTimestamp}: NextTickMenuP
   );
 });
 
-const NextTickMenuItems = ({
-  repoAddress,
-  schedule,
-  evaluationResult,
-  loading,
-  onItemOpen,
-}: {
+const NextTickMenuItems: React.FC<{
   repoAddress: RepoAddress;
   evaluationResult: ScheduleFutureTickEvaluationResultFragment | null;
   schedule: ScheduleNextFiveTicksFragment;
   loading: boolean;
   onItemOpen: (value: boolean) => void;
-}) => {
+}> = ({repoAddress, schedule, evaluationResult, loading, onItemOpen}) => {
   if (!evaluationResult) {
     return <MenuItem text="Could not preview tick for this schedule" />;
   }
@@ -317,32 +309,27 @@ const NextTickMenuItems = ({
   );
 };
 
-const NextTickDialog = ({
-  repoAddress,
-  evaluationResult,
-  schedule,
-  tickTimestamp,
-  setOpen,
-  isOpen,
-}: {
+const NextTickDialog: React.FC<{
   repoAddress: RepoAddress;
   isOpen: boolean;
   setOpen: (value: boolean) => void;
   evaluationResult: ScheduleFutureTickEvaluationResultFragment | null;
   schedule: ScheduleNextFiveTicksFragment;
   tickTimestamp: number;
-}) => {
+}> = ({repoAddress, evaluationResult, schedule, tickTimestamp, setOpen, isOpen}) => {
   const [selectedRunRequest, setSelectedRunRequest] =
-    useState<ScheduleFutureTickRunRequestFragment | null>(
+    React.useState<ScheduleFutureTickRunRequestFragment | null>(
       evaluationResult && evaluationResult.runRequests && evaluationResult.runRequests.length === 1
         ? evaluationResult.runRequests[0]!
         : null,
     );
 
+  const copy = useCopyToClipboard();
+
   const repo = useRepository(repoAddress);
   const isJob = isThisThingAJob(repo, schedule.pipelineName);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (
       evaluationResult &&
       evaluationResult.runRequests &&
@@ -415,10 +402,10 @@ const NextTickDialog = ({
                     <td>
                       <ButtonLink
                         onClick={() => setSelectedRunRequest(runRequest)}
-                        underline="never"
+                        underline={false}
                       >
                         <Group direction="row" spacing={8} alignItems="center">
-                          <Icon name="open_in_new" color={Colors.textLight()} />
+                          <Icon name="open_in_new" color={Colors.Gray400} />
                           <span>View config</span>
                         </Group>
                       </ButtonLink>
@@ -430,6 +417,7 @@ const NextTickDialog = ({
                             <MenuLink
                               text="Open in Launchpad..."
                               icon="edit"
+                              target="_blank"
                               to={workspacePathFromAddress(
                                 repoAddress,
                                 `/${isJob ? 'jobs' : 'pipelines'}/${
@@ -473,7 +461,19 @@ const NextTickDialog = ({
       {body}
       <DialogFooter topBorder>
         {selectedRunRequest ? (
-          <CopyButton value={selectedRunRequest.runConfigYaml}>Copy config</CopyButton>
+          <Button
+            autoFocus={false}
+            onClick={async () => {
+              copy(selectedRunRequest.runConfigYaml);
+              await showSharedToaster({
+                intent: 'success',
+                icon: 'copy_to_clipboard_done',
+                message: 'Copied!',
+              });
+            }}
+          >
+            Copy config
+          </Button>
         ) : null}
         <Button intent="primary" autoFocus={true} onClick={() => close()}>
           OK
@@ -561,7 +561,7 @@ const RunRequestBody = styled.div`
 `;
 
 const SkipWrapper = styled.div`
-  background-color: ${Colors.backgroundYellow()};
-  border: 1px solid ${Colors.accentYellow()};
+  background-color: #fdfcf2;
+  border: 1px solid ${Colors.Yellow500};
   border-radius: 3px;
 `;

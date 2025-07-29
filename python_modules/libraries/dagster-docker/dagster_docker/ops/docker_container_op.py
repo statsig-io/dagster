@@ -1,16 +1,14 @@
-from collections.abc import Mapping, Sequence
-from typing import Any, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 import docker
-import docker.errors
 from dagster import Field, In, Nothing, OpExecutionContext, StringSource, op
-from dagster._annotations import beta
+from dagster._annotations import experimental
 from dagster._core.utils import parse_env_var
-from dagster_shared.serdes.utils import hash_str
+from dagster._serdes.utils import hash_str
 
-from dagster_docker.container_context import DockerContainerContext
-from dagster_docker.docker_run_launcher import DockerRunLauncher
-from dagster_docker.utils import DOCKER_CONFIG_SCHEMA, validate_docker_image
+from ..container_context import DockerContainerContext
+from ..docker_run_launcher import DockerRunLauncher
+from ..utils import DOCKER_CONFIG_SCHEMA, validate_docker_image
 
 DOCKER_CONTAINER_OP_CONFIG = {
     **DOCKER_CONFIG_SCHEMA,
@@ -73,7 +71,7 @@ def _create_container(
     )
 
 
-@beta
+@experimental
 def execute_docker_container(
     context: OpExecutionContext,
     image: str,
@@ -150,7 +148,7 @@ def execute_docker_container(
 
 
 @op(ins={"start_after": In(Nothing)}, config_schema=DOCKER_CONTAINER_OP_CONFIG)
-@beta
+@experimental
 def docker_container_op(context):
     """An op that runs a Docker container using the docker Python API.
 

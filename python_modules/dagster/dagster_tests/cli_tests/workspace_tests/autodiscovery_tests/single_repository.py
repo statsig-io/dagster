@@ -1,6 +1,6 @@
-import dagster as dg
+from dagster import repository
 
 
-@dg.repository
+@repository
 def single_repository():
     return []

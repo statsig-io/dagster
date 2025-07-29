@@ -1,19 +1,18 @@
 import json
-from collections.abc import Iterable, Mapping
 from itertools import chain
-from typing import Any, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import dagster._check as check
 from dagster import ResourceDefinition
-from dagster._annotations import beta, deprecated
+from dagster._annotations import experimental
 from dagster._core.execution.context.init import build_init_resource_context
 from dagster_managed_elements import ManagedElementCheckResult, ManagedElementDiff
 from dagster_managed_elements.types import ManagedElementReconciler, is_key_secret
 from dagster_managed_elements.utils import diff_dicts
 
 from dagster_fivetran import FivetranResource
-from dagster_fivetran.managed.types import (
-    MANAGED_ELEMENTS_DEPRECATION_MSG,
+
+from .types import (
     FivetranConnector,
     FivetranDestination,
     InitializedFivetranConnector,
@@ -30,7 +29,7 @@ def _ignore_secrets_compare_fn(k: str, _cv: Any, dv: Any) -> Optional[bool]:
 
 
 def _diff_configs(
-    config_dict: dict[str, Any], dst_dict: dict[str, Any], ignore_secrets: bool = True
+    config_dict: Dict[str, Any], dst_dict: Dict[str, Any], ignore_secrets: bool = True
 ) -> ManagedElementDiff:
     return diff_dicts(
         config_dict=config_dict,
@@ -72,9 +71,7 @@ def diff_connectors(
         name = (
             config_conn.schema_name
             if config_conn
-            else curr_conn.schema_name
-            if curr_conn
-            else "Unknown"
+            else curr_conn.schema_name if curr_conn else "Unknown"
         )
         return ManagedElementDiff().with_nested(name, diff)
 
@@ -164,13 +161,13 @@ def reconcile_destinations(
     dry_run: bool,
     should_delete: bool,
     ignore_secrets: bool,
-) -> tuple[Mapping[str, InitializedFivetranDestination], ManagedElementCheckResult]:
+) -> Tuple[Mapping[str, InitializedFivetranDestination], ManagedElementCheckResult]:
     """Generates a diff of the configured and existing destinations and reconciles them to match the
     configured state if dry_run is False.
     """
     diff = ManagedElementDiff()
 
-    initialized_destinations: dict[str, InitializedFivetranDestination] = {}
+    initialized_destinations: Dict[str, InitializedFivetranDestination] = {}
     for destination_name in set(config_destinations.keys()).union(existing_destinations.keys()):
         configured_destination = config_destinations.get(destination_name)
         existing_destination = existing_destinations.get(destination_name)
@@ -263,7 +260,7 @@ def reconcile_destinations(
     return initialized_destinations, diff
 
 
-def get_connectors_for_group(res: FivetranResource, group_id: str) -> list[dict[str, Any]]:
+def get_connectors_for_group(res: FivetranResource, group_id: str) -> List[Dict[str, Any]]:
     connector_ids = {
         conn["id"] for conn in res.make_request("GET", f"groups/{group_id}/connectors")["items"]
     }
@@ -276,7 +273,7 @@ def get_connectors_for_group(res: FivetranResource, group_id: str) -> list[dict[
 
 def reconcile_config(
     res: FivetranResource,
-    objects: list[FivetranConnector],
+    objects: List[FivetranConnector],
     dry_run: bool = False,
     should_delete: bool = False,
     ignore_secrets: bool = True,
@@ -297,7 +294,7 @@ def reconcile_config(
         group["name"]: dict(res.make_request("GET", f"destinations/{group['id']}"))
         for group in existing_groups
     }
-    existing_dests: dict[str, InitializedFivetranDestination] = {
+    existing_dests: Dict[str, InitializedFivetranDestination] = {
         dest_name: InitializedFivetranDestination.from_api_json(dest_name, dest_json)
         for dest_name, dest_json in existing_dests_raw.items()
     }
@@ -332,8 +329,7 @@ def reconcile_config(
     return ManagedElementDiff().join(dests_diff).join(connectors_diff)  # type: ignore
 
 
-@beta
-@deprecated(breaking_version="2.0", additional_warn_text=MANAGED_ELEMENTS_DEPRECATION_MSG)
+@experimental
 class FivetranManagedElementReconciler(ManagedElementReconciler):
     def __init__(
         self,

@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 # start_mock
 # resources.py
@@ -18,14 +18,14 @@ class StubHNClient:
             2: {"id": 2, "type": "story", "title": "an awesome story", "by": "user2"},
         }
 
-    def fetch_item_by_id(self, item_id: int) -> Optional[dict[str, Any]]:
+    def fetch_item_by_id(self, item_id: int) -> Optional[Dict[str, Any]]:
         return self.data.get(item_id)
 
     def fetch_max_item_id(self) -> int:
         return 2
 
     @property
-    def item_field_names(self) -> list:
+    def item_field_names(self):
         return ["id", "type", "title", "by"]
 
 

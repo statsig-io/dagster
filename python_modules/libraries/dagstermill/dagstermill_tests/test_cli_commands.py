@@ -1,7 +1,10 @@
+# encoding: utf-8
+
 import contextlib
 import json
 import os
 import re
+import sys
 
 import pytest
 from click.testing import CliRunner
@@ -13,7 +16,7 @@ EXPECTED_IMPORT_STATEMENT = "from dagstermill.examples.repository import define_
 
 
 def check_notebook_expected_output(notebook_path):
-    with open(notebook_path, encoding="utf8") as f:
+    with open(notebook_path, "r", encoding="utf8") as f:
         notebook_content = json.loads(f.read())
         assert set(notebook_content.keys()) == {"cells", "metadata", "nbformat", "nbformat_minor"}
         assert notebook_content["metadata"] == {
@@ -45,13 +48,13 @@ def scaffold(notebook_name=None, kernel=None):
         raise res.exception
     assert res.exit_code == 0
 
-    yield os.path.abspath(notebook_name)  # pyright: ignore[reportArgumentType]
+    yield os.path.abspath(notebook_name)
 
-    if os.path.exists(notebook_name):  # pyright: ignore[reportArgumentType]
-        os.unlink(notebook_name)  # pyright: ignore[reportArgumentType]
+    if os.path.exists(notebook_name):
+        os.unlink(notebook_name)
 
-    if os.path.exists(notebook_name + ".ipynb"):  # pyright: ignore[reportOptionalOperand]
-        os.unlink(notebook_name + ".ipynb")  # pyright: ignore[reportOptionalOperand]
+    if os.path.exists(notebook_name + ".ipynb"):
+        os.unlink(notebook_name + ".ipynb")
 
 
 def test_scaffold():
@@ -72,19 +75,23 @@ def test_scaffold():
 
 
 def test_invalid_filename_example():
-    with scaffold(notebook_name="notebooks/CLI!!~@您好") as _notebook_name:
-        assert True
+    if sys.version_info > (3,):
+        with scaffold(notebook_name="notebooks/CLI!!~@您好") as _notebook_name:
+            assert True
+    else:
+        with scaffold(notebook_name="notebooks/CLI!! ~@") as _notebook_name:
+            assert True
 
 
 def test_retroactive_scaffold():
     notebook_path = file_relative_path(__file__, "notebooks/retroactive.ipynb")
-    with open(notebook_path, encoding="utf8") as fd:
+    with open(notebook_path, "r", encoding="utf8") as fd:
         retroactive_notebook = fd.read()
     try:
         runner = CliRunner()
         args = ["--notebook", notebook_path]
         runner.invoke(retroactively_scaffold_notebook, args)
-        with open(notebook_path, encoding="utf8") as fd:
+        with open(notebook_path, "r", encoding="utf8") as fd:
             scaffolded = json.loads(fd.read())
             assert [
                 x
@@ -110,5 +117,5 @@ def test_double_scaffold():
         assert res.exception.code == 1
         assert "already exists and continuing will overwrite the existing notebook." in res.output
     finally:
-        if os.path.exists(notebook_path):  # pyright: ignore[reportPossiblyUnboundVariable]
-            os.unlink(notebook_path)  # pyright: ignore[reportPossiblyUnboundVariable]
+        if os.path.exists(notebook_path):
+            os.unlink(notebook_path)

@@ -1,12 +1,13 @@
-import datetime
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor
 from signal import Signals
+from typing import TYPE_CHECKING
 
+import pendulum
 import pytest
+from dagster._core.host_representation.external import ExternalRepository
 from dagster._core.instance import DagsterInstance
 from dagster._core.instance.ref import InstanceRef
-from dagster._core.remote_representation.external import RemoteRepository
 from dagster._core.scheduler.instigation import TickStatus
 from dagster._core.storage.dagster_run import DagsterRunStatus
 from dagster._core.storage.tags import SCHEDULED_EXECUTION_TIME_TAG
@@ -14,22 +15,23 @@ from dagster._core.test_utils import (
     SingleThreadPoolExecutor,
     cleanup_test_instance,
     create_test_daemon_workspace_context,
-    freeze_time,
     get_crash_signals,
 )
-from dagster._time import create_datetime, get_current_datetime
+from dagster._seven import IS_WINDOWS
+from dagster._seven.compat.pendulum import create_pendulum_time
 from dagster._utils import DebugCrashFlags, get_terminate_signal
-from dagster._vendored.dateutil.relativedelta import relativedelta
-from dagster_shared.seven import IS_WINDOWS
 
-from dagster_tests.scheduler_tests.conftest import workspace_load_target
-from dagster_tests.scheduler_tests.test_scheduler_run import (
+from .conftest import workspace_load_target
+from .test_scheduler_run import (
     evaluate_schedules,
     feb_27_2019_start_of_day,
     validate_run_exists,
     validate_tick,
     wait_for_all_runs_to_start,
 )
+
+if TYPE_CHECKING:
+    from pendulum.datetime import DateTime
 
 spawn_ctx = multiprocessing.get_context("spawn")
 
@@ -49,7 +51,7 @@ def get_schedule_executor_names():
 
 def _test_launch_scheduled_runs_in_subprocess(
     instance_ref: InstanceRef,
-    execution_datetime: datetime.datetime,
+    execution_datetime: "DateTime",
     debug_crash_flags: DebugCrashFlags,
     executor_name: str,
 ) -> None:
@@ -59,11 +61,11 @@ def _test_launch_scheduled_runs_in_subprocess(
             with create_test_daemon_workspace_context(
                 workspace_load_target(), instance
             ) as workspace_context:
-                with freeze_time(execution_datetime):
+                with pendulum.test(execution_datetime):
                     evaluate_schedules(
                         workspace_context,
                         executor,
-                        get_current_datetime(),
+                        pendulum.now("UTC"),
                         debug_crash_flags=debug_crash_flags,
                     )
         finally:
@@ -78,7 +80,7 @@ def _test_launch_scheduled_runs_in_subprocess(
 @pytest.mark.parametrize("executor", get_schedule_executor_names())
 def test_failure_recovery_before_run_created(
     instance: DagsterInstance,
-    remote_repo: RemoteRepository,
+    external_repo: ExternalRepository,
     crash_location: str,
     crash_signal: Signals,
     executor: ThreadPoolExecutor,
@@ -86,14 +88,13 @@ def test_failure_recovery_before_run_created(
     # Verify that if the scheduler crashes or is interrupted before a run is created,
     # it will create exactly one tick/run when it is re-launched
     initial_datetime = feb_27_2019_start_of_day()
+    freeze_datetime = initial_datetime.add()
 
-    freeze_datetime = initial_datetime
+    external_schedule = external_repo.get_external_schedule("simple_schedule")
+    with pendulum.test(freeze_datetime):
+        instance.start_schedule(external_schedule)
 
-    schedule = remote_repo.get_schedule("simple_schedule")
-    with freeze_time(freeze_datetime):
-        instance.start_schedule(schedule)
-
-        debug_crash_flags = {schedule.name: {crash_location: crash_signal}}
+        debug_crash_flags = {external_schedule.name: {crash_location: crash_signal}}
 
         scheduler_process = spawn_ctx.Process(
             target=_test_launch_scheduled_runs_in_subprocess,
@@ -104,15 +105,16 @@ def test_failure_recovery_before_run_created(
 
         assert scheduler_process.exitcode != 0
 
-        ticks = instance.get_ticks(schedule.get_remote_origin_id(), schedule.selector_id)
+        ticks = instance.get_ticks(
+            external_schedule.get_external_origin_id(), external_schedule.selector_id
+        )
         assert len(ticks) == 1
         assert ticks[0].status == TickStatus.STARTED
 
         assert instance.get_runs_count() == 0
 
-    freeze_datetime = freeze_datetime + relativedelta(minutes=5)
-
-    with freeze_time(freeze_datetime):
+    freeze_datetime = freeze_datetime.add(minutes=5)
+    with pendulum.test(freeze_datetime):
         scheduler_process = spawn_ctx.Process(
             target=_test_launch_scheduled_runs_in_subprocess,
             args=[instance.get_ref(), freeze_datetime, None, executor],
@@ -128,11 +130,13 @@ def test_failure_recovery_before_run_created(
             execution_time=initial_datetime,
         )
 
-        ticks = instance.get_ticks(schedule.get_remote_origin_id(), schedule.selector_id)
+        ticks = instance.get_ticks(
+            external_schedule.get_external_origin_id(), external_schedule.selector_id
+        )
         assert len(ticks) == 1
         validate_tick(
             ticks[0],
-            schedule,
+            external_schedule,
             initial_datetime,
             TickStatus.SUCCESS,
             [instance.get_runs()[0].run_id],
@@ -147,20 +151,20 @@ def test_failure_recovery_before_run_created(
 @pytest.mark.parametrize("executor", get_schedule_executor_names())
 def test_failure_recovery_after_run_created(
     instance: DagsterInstance,
-    remote_repo: RemoteRepository,
+    external_repo: ExternalRepository,
     crash_location: str,
     crash_signal: Signals,
     executor: ThreadPoolExecutor,
 ):
     # Verify that if the scheduler crashes or is interrupted after a run is created,
     # it will just re-launch the already-created run when it runs again
-    initial_datetime = create_datetime(year=2019, month=2, day=27, hour=0, minute=0, second=0)
-    freeze_datetime = initial_datetime
-    schedule = remote_repo.get_schedule("simple_schedule")
-    with freeze_time(freeze_datetime):
-        instance.start_schedule(schedule)
+    initial_datetime = create_pendulum_time(year=2019, month=2, day=27, hour=0, minute=0, second=0)
+    freeze_datetime = initial_datetime.add()
+    external_schedule = external_repo.get_external_schedule("simple_schedule")
+    with pendulum.test(freeze_datetime):
+        instance.start_schedule(external_schedule)
 
-        debug_crash_flags = {schedule.name: {crash_location: crash_signal}}
+        debug_crash_flags = {external_schedule.name: {crash_location: crash_signal}}
 
         scheduler_process = spawn_ctx.Process(
             target=_test_launch_scheduled_runs_in_subprocess,
@@ -171,7 +175,9 @@ def test_failure_recovery_after_run_created(
 
         assert scheduler_process.exitcode != 0
 
-        ticks = instance.get_ticks(schedule.get_remote_origin_id(), schedule.selector_id)
+        ticks = instance.get_ticks(
+            external_schedule.get_external_origin_id(), external_schedule.selector_id
+        )
         assert len(ticks) == 1
         assert ticks[0].status == TickStatus.STARTED
 
@@ -198,8 +204,8 @@ def test_failure_recovery_after_run_created(
             run = instance.get_runs()[0]
             validate_run_exists(instance.get_runs()[0], freeze_datetime)
 
-    freeze_datetime = freeze_datetime + relativedelta(minutes=5)
-    with freeze_time(freeze_datetime):
+    freeze_datetime = freeze_datetime.add(minutes=5)
+    with pendulum.test(freeze_datetime):
         # Running again just launches the existing run and marks the tick as success
         scheduler_process = spawn_ctx.Process(
             target=_test_launch_scheduled_runs_in_subprocess,
@@ -213,11 +219,13 @@ def test_failure_recovery_after_run_created(
         wait_for_all_runs_to_start(instance)
         validate_run_exists(instance.get_runs()[0], initial_datetime)
 
-        ticks = instance.get_ticks(schedule.get_remote_origin_id(), schedule.selector_id)
+        ticks = instance.get_ticks(
+            external_schedule.get_external_origin_id(), external_schedule.selector_id
+        )
         assert len(ticks) == 1
         validate_tick(
             ticks[0],
-            schedule,
+            external_schedule,
             initial_datetime,
             TickStatus.SUCCESS,
             [instance.get_runs()[0].run_id],
@@ -232,18 +240,18 @@ def test_failure_recovery_after_run_created(
 @pytest.mark.parametrize("executor", get_schedule_executor_names())
 def test_failure_recovery_after_tick_success(
     instance: DagsterInstance,
-    remote_repo: RemoteRepository,
+    external_repo: ExternalRepository,
     crash_location: str,
     crash_signal: Signals,
     executor: ThreadPoolExecutor,
 ):
-    initial_datetime = create_datetime(year=2019, month=2, day=27, hour=0, minute=0, second=0)
-    freeze_datetime = initial_datetime
-    schedule = remote_repo.get_schedule("simple_schedule")
-    with freeze_time(freeze_datetime):
-        instance.start_schedule(schedule)
+    initial_datetime = create_pendulum_time(year=2019, month=2, day=27, hour=0, minute=0, second=0)
+    freeze_datetime = initial_datetime.add()
+    external_schedule = external_repo.get_external_schedule("simple_schedule")
+    with pendulum.test(freeze_datetime):
+        instance.start_schedule(external_schedule)
 
-        debug_crash_flags = {schedule.name: {crash_location: crash_signal}}
+        debug_crash_flags = {external_schedule.name: {crash_location: crash_signal}}
 
         scheduler_process = spawn_ctx.Process(
             target=_test_launch_scheduled_runs_in_subprocess,
@@ -262,7 +270,9 @@ def test_failure_recovery_after_tick_success(
         assert instance.get_runs_count() == 1
         validate_run_exists(instance.get_runs()[0], initial_datetime)
 
-        ticks = instance.get_ticks(schedule.get_remote_origin_id(), schedule.selector_id)
+        ticks = instance.get_ticks(
+            external_schedule.get_external_origin_id(), external_schedule.selector_id
+        )
         assert len(ticks) == 1
 
         if crash_signal == get_terminate_signal():
@@ -272,14 +282,14 @@ def test_failure_recovery_after_tick_success(
 
         validate_tick(
             ticks[0],
-            schedule,
+            external_schedule,
             initial_datetime,
             TickStatus.STARTED,
             run_ids,
         )
 
-    freeze_datetime = freeze_datetime + relativedelta(minutes=1)
-    with freeze_time(freeze_datetime):
+    freeze_datetime = freeze_datetime.add(minutes=1)
+    with pendulum.test(freeze_datetime):
         # Running again just marks the tick as success since the run has already started
         scheduler_process = spawn_ctx.Process(
             target=_test_launch_scheduled_runs_in_subprocess,
@@ -292,11 +302,13 @@ def test_failure_recovery_after_tick_success(
         assert instance.get_runs_count() == 1
         validate_run_exists(instance.get_runs()[0], initial_datetime)
 
-        ticks = instance.get_ticks(schedule.get_remote_origin_id(), schedule.selector_id)
+        ticks = instance.get_ticks(
+            external_schedule.get_external_origin_id(), external_schedule.selector_id
+        )
         assert len(ticks) == 1
         validate_tick(
             ticks[0],
-            schedule,
+            external_schedule,
             initial_datetime,
             TickStatus.SUCCESS,
             [instance.get_runs()[0].run_id],
@@ -311,18 +323,18 @@ def test_failure_recovery_after_tick_success(
 @pytest.mark.parametrize("executor", get_schedule_executor_names())
 def test_failure_recovery_between_multi_runs(
     instance: DagsterInstance,
-    remote_repo: RemoteRepository,
+    external_repo: ExternalRepository,
     crash_location: str,
     crash_signal: Signals,
     executor: ThreadPoolExecutor,
 ):
-    initial_datetime = create_datetime(year=2019, month=2, day=28, hour=0, minute=0, second=0)
-    freeze_datetime = initial_datetime
-    schedule = remote_repo.get_schedule("multi_run_schedule")
-    with freeze_time(freeze_datetime):
-        instance.start_schedule(schedule)
+    initial_datetime = create_pendulum_time(year=2019, month=2, day=28, hour=0, minute=0, second=0)
+    freeze_datetime = initial_datetime.add()
+    external_schedule = external_repo.get_external_schedule("multi_run_schedule")
+    with pendulum.test(freeze_datetime):
+        instance.start_schedule(external_schedule)
 
-        debug_crash_flags = {schedule.name: {crash_location: crash_signal}}
+        debug_crash_flags = {external_schedule.name: {crash_location: crash_signal}}
 
         scheduler_process = spawn_ctx.Process(
             target=_test_launch_scheduled_runs_in_subprocess,
@@ -337,11 +349,13 @@ def test_failure_recovery_between_multi_runs(
         assert instance.get_runs_count() == 1
         validate_run_exists(instance.get_runs()[0], initial_datetime)
 
-        ticks = instance.get_ticks(schedule.get_remote_origin_id(), schedule.selector_id)
+        ticks = instance.get_ticks(
+            external_schedule.get_external_origin_id(), external_schedule.selector_id
+        )
         assert len(ticks) == 1
 
-    freeze_datetime = freeze_datetime + relativedelta(minutes=1)
-    with freeze_time(freeze_datetime):
+    freeze_datetime = freeze_datetime.add(minutes=1)
+    with pendulum.test(freeze_datetime):
         scheduler_process = spawn_ctx.Process(
             target=_test_launch_scheduled_runs_in_subprocess,
             args=[instance.get_ref(), freeze_datetime, None, executor],
@@ -351,11 +365,13 @@ def test_failure_recovery_between_multi_runs(
         assert scheduler_process.exitcode == 0
         assert instance.get_runs_count() == 2
         validate_run_exists(instance.get_runs()[0], initial_datetime)
-        ticks = instance.get_ticks(schedule.get_remote_origin_id(), schedule.selector_id)
+        ticks = instance.get_ticks(
+            external_schedule.get_external_origin_id(), external_schedule.selector_id
+        )
         assert len(ticks) == 1
         validate_tick(
             ticks[0],
-            schedule,
+            external_schedule,
             initial_datetime,
             TickStatus.SUCCESS,
             [run.run_id for run in instance.get_runs()],

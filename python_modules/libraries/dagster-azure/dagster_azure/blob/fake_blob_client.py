@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from unittest import mock
 
-from dagster_azure.blob.utils import ResourceNotFoundError
+from .utils import ResourceNotFoundError
 
 
 class FakeBlobServiceClient:
@@ -30,10 +30,6 @@ class FakeBlobServiceClient:
     @property
     def containers(self):
         return self._containers
-
-    @property
-    def url(self):
-        return f"https://{self.account_name}.blob.core.windows.net"
 
     def get_container_client(self, container):
         return self._containers.setdefault(
@@ -65,10 +61,6 @@ class FakeBlobContainerClient:
     @property
     def container_name(self):
         return self._container_name
-
-    @property
-    def url(self):
-        return f"https://{self.account_name}.blob.core.windows.net/{self.container_name}"
 
     def keys(self):
         return self._container.keys()

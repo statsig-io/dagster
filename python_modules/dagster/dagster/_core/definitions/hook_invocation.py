@@ -1,13 +1,13 @@
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Sequence
 
 import dagster._check as check
-from dagster._core.definitions.resource_requirement import ensure_requirements_satisfied
-from dagster._core.execution.context.hook import BoundHookContext, UnboundHookContext
+
+from ..execution.context.hook import BoundHookContext, UnboundHookContext
+from .resource_requirement import ensure_requirements_satisfied
 
 if TYPE_CHECKING:
-    from dagster._core.definitions.hook_definition import HookDefinition
-    from dagster._core.events import DagsterEvent
+    from ..events import DagsterEvent
+    from .hook_definition import HookDefinition
 
 
 def hook_invocation_result(
@@ -23,8 +23,7 @@ def hook_invocation_result(
     # Validate that all required resources are provided in the context
 
     ensure_requirements_satisfied(
-        hook_context._resource_defs,  # noqa: SLF001
-        list(hook_def.get_resource_requirements(attached_to=None)),
+        hook_context._resource_defs, list(hook_def.get_resource_requirements())  # noqa: SLF001
     )
 
     bound_context = BoundHookContext(

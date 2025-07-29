@@ -1,38 +1,31 @@
 import click
-import dagster as dg
 import pytest
 from click.testing import CliRunner
-from dagster._cli.utils import assert_no_remaining_opts
 from dagster._cli.workspace.cli_target import (
-    RepositoryOpts,
-    get_repository_from_cli_opts,
-    get_workspace_from_cli_opts,
-    repository_options,
+    get_external_repository_from_kwargs,
+    get_workspace_from_kwargs,
+    repository_target_argument,
 )
+from dagster._core.host_representation import ExternalRepository
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation import RemoteRepository
+from dagster._core.test_utils import instance_for_test
 from dagster._core.workspace.context import WorkspaceRequestContext
-from dagster_shared.cli import WorkspaceOpts, workspace_options
+from dagster._utils import file_relative_path
 
 
 def load_repository_via_cli_runner(cli_args, repo_assert_fn=None):
     @click.command(name="test_repository_command")
-    @workspace_options
-    @repository_options
-    def command(**opts: object):
-        workspace_opts = WorkspaceOpts.extract_from_cli_options(opts)
-        repository_opts = RepositoryOpts.extract_from_cli_options(opts)
-        assert_no_remaining_opts(opts)
-        with get_repository_from_cli_opts(
+    @repository_target_argument
+    def command(**kwargs):
+        with get_external_repository_from_kwargs(
             DagsterInstance.get(),
             version="",
-            workspace_opts=workspace_opts,
-            repository_opts=repository_opts,
-        ) as repo:
+            kwargs=kwargs,
+        ) as external_repo:
             if repo_assert_fn:
-                repo_assert_fn(repo)
+                repo_assert_fn(external_repo)
 
-    with dg.instance_for_test():
+    with instance_for_test():
         runner = CliRunner()
         result = runner.invoke(command, cli_args)
 
@@ -41,20 +34,18 @@ def load_repository_via_cli_runner(cli_args, repo_assert_fn=None):
 
 def load_workspace_via_cli_runner(cli_args, workspace_assert_fn=None):
     @click.command(name="test_workspace_command")
-    @workspace_options
-    def command(**opts: object):
-        workspace_opts = WorkspaceOpts.extract_from_cli_options(opts)
-        assert_no_remaining_opts(opts)
-        with get_workspace_from_cli_opts(
+    @repository_target_argument
+    def command(**kwargs):
+        with get_workspace_from_kwargs(
             DagsterInstance.get(),
             version="",
-            workspace_opts=workspace_opts,
+            kwargs=kwargs,
         ) as workspace:
             assert isinstance(workspace, WorkspaceRequestContext)
             if workspace_assert_fn:
                 workspace_assert_fn(workspace)
 
-    with dg.instance_for_test():
+    with instance_for_test():
         runner = CliRunner()
         result = runner.invoke(command, cli_args)
 
@@ -62,17 +53,17 @@ def load_workspace_via_cli_runner(cli_args, workspace_assert_fn=None):
 
 
 def successfully_load_repository_via_cli(cli_args, repo_assert_fn=None):
-    def wrapped_repo_assert(remote_repo):
-        assert isinstance(remote_repo, RemoteRepository)
+    def wrapped_repo_assert(external_repo):
+        assert isinstance(external_repo, ExternalRepository)
         if repo_assert_fn:
-            repo_assert_fn(remote_repo)
+            repo_assert_fn(external_repo)
 
     result = load_repository_via_cli_runner(cli_args, wrapped_repo_assert)
     assert result.exit_code == 0
     return result
 
 
-PYTHON_FILE_IN_NAMED_LOCATION_WORKSPACE = dg.file_relative_path(
+PYTHON_FILE_IN_NAMED_LOCATION_WORKSPACE = file_relative_path(
     __file__, "hello_world_in_file/python_file_with_named_location_workspace.yaml"
 )
 
@@ -111,8 +102,8 @@ def test_multiple_module_load_with_attribute():
 
 
 def test_multiple_file_load():
-    FILE_ONE = dg.file_relative_path(__file__, "hello_world_in_file/hello_world_repository.py")
-    FILE_TWO = dg.file_relative_path(__file__, "definitions_test_cases/defs_file.py")
+    FILE_ONE = file_relative_path(__file__, "hello_world_in_file/hello_world_repository.py")
+    FILE_TWO = file_relative_path(__file__, "definitions_test_cases/defs_file.py")
 
     executed = {}
 
@@ -132,8 +123,8 @@ def test_multiple_file_load():
 
 
 def test_multiple_file_load_with_attribute():
-    FILE_ONE = dg.file_relative_path(__file__, "hello_world_in_file/hello_world_repository.py")
-    FILE_TWO = dg.file_relative_path(__file__, "definitions_test_cases/defs_file.py")
+    FILE_ONE = file_relative_path(__file__, "hello_world_in_file/hello_world_repository.py")
+    FILE_TWO = file_relative_path(__file__, "definitions_test_cases/defs_file.py")
 
     result = load_workspace_via_cli_runner(
         ["-f", FILE_ONE, "-f", FILE_TWO, "-a", "defs"],
@@ -192,13 +183,13 @@ def test_repository_target_argument_one_location_and_specified_wrong():
     ) in result.stdout
 
 
-MULTI_LOCATION_WORKSPACE = dg.file_relative_path(__file__, "multi_location/multi_location.yaml")
+MULTI_LOCATION_WORKSPACE = file_relative_path(__file__, "multi_location/multi_location.yaml")
 
 
 def test_valid_multi_location_from_file():
-    def the_assert(remote_repository):
-        assert remote_repository.name == "hello_world_repository"
-        assert remote_repository.handle.location_name == "loaded_from_file"
+    def the_assert(external_repository):
+        assert external_repository.name == "hello_world_repository"
+        assert external_repository.handle.location_name == "loaded_from_file"
 
     successfully_load_repository_via_cli(
         ["-w", MULTI_LOCATION_WORKSPACE, "-l", "loaded_from_file"], the_assert
@@ -206,9 +197,9 @@ def test_valid_multi_location_from_file():
 
 
 def test_valid_multi_location_from_module():
-    def the_assert(remote_repository):
-        assert remote_repository.name == "hello_world_repository"
-        assert remote_repository.handle.location_name == "loaded_from_module"
+    def the_assert(external_repository):
+        assert external_repository.name == "hello_world_repository"
+        assert external_repository.handle.location_name == "loaded_from_module"
 
     successfully_load_repository_via_cli(
         ["-w", MULTI_LOCATION_WORKSPACE, "-l", "loaded_from_module"], the_assert
@@ -226,19 +217,19 @@ def test_missing_location_name_multi_location():
     ) in result.stdout
 
 
-SINGLE_LOCATION_MULTI_REPO_WORKSPACE = dg.file_relative_path(__file__, "multi_repo/multi_repo.yaml")
+SINGLE_LOCATION_MULTI_REPO_WORKSPACE = file_relative_path(__file__, "multi_repo/multi_repo.yaml")
 
 
 def test_valid_multi_repo():
-    def the_assert(remote_repository):
-        assert remote_repository.name == "repo_one"
+    def the_assert(external_repository):
+        assert external_repository.name == "repo_one"
 
     successfully_load_repository_via_cli(
         ["-w", SINGLE_LOCATION_MULTI_REPO_WORKSPACE, "-r", "repo_one"], the_assert
     )
 
-    def the_assert_two(remote_repository):
-        assert remote_repository.name == "repo_two"
+    def the_assert_two(external_repository):
+        assert external_repository.name == "repo_two"
 
     successfully_load_repository_via_cli(
         ["-w", SINGLE_LOCATION_MULTI_REPO_WORKSPACE, "-r", "repo_two"], the_assert_two
@@ -257,10 +248,10 @@ def test_missing_repo_name_in_multi_repo_code_location():
 
 
 def test_pending_repo():
-    pending_location = dg.file_relative_path(__file__, "pending_repo/pending_repo.yaml")
+    pending_location = file_relative_path(__file__, "pending_repo/pending_repo.yaml")
 
-    def the_assert(remote_repository):
-        assert remote_repository.name == "pending_repo"
+    def the_assert(external_repository):
+        assert external_repository.name == "pending_repo"
 
     successfully_load_repository_via_cli(["-w", pending_location, "-r", "pending_repo"], the_assert)
 
@@ -268,9 +259,7 @@ def test_pending_repo():
 def test_local_directory_module():
     cli_args = [
         "-w",
-        dg.file_relative_path(
-            __file__, "hello_world_in_module/local_directory_module_workspace.yaml"
-        ),
+        file_relative_path(__file__, "hello_world_in_module/local_directory_module_workspace.yaml"),
     ]
     result = load_repository_via_cli_runner(cli_args)
 
@@ -285,21 +274,21 @@ def test_local_directory_module():
         # load workspace with explicit working directory
         [
             "-w",
-            dg.file_relative_path(
+            file_relative_path(
                 __file__, "hello_world_file_in_directory/working_directory_workspace.yaml"
             ),
         ],
         # load workspace with default working directory
         [
             "-w",
-            dg.file_relative_path(
+            file_relative_path(
                 __file__, "hello_world_file_in_directory/default_working_dir_workspace.yaml"
             ),
         ],
         # load workspace with multiple working directory file targets
         [
             "-w",
-            dg.file_relative_path(__file__, "multi_file_target_workspace/workspace.yaml"),
+            file_relative_path(__file__, "multi_file_target_workspace/workspace.yaml"),
             "-l",
             "one",
         ],
@@ -310,13 +299,13 @@ def test_local_directory_file(cli_args):
 
 
 def test_dagster_definitions():
-    cli_args = ["-f", dg.file_relative_path(__file__, "definitions_test_cases/defs_file.py")]
+    cli_args = ["-f", file_relative_path(__file__, "definitions_test_cases/defs_file.py")]
 
     executed = {}
 
-    def the_assert(remote_repo: RemoteRepository):
-        assert remote_repo.name == "__repository__"
-        assert len(remote_repo.get_asset_node_snaps()) == 1
+    def the_assert(external_repo: ExternalRepository):
+        assert external_repo.name == "__repository__"
+        assert len(external_repo.get_external_asset_nodes()) == 1
         executed["yes"] = True
 
     assert successfully_load_repository_via_cli(cli_args, the_assert)

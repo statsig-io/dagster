@@ -3,11 +3,10 @@
 These make very heavy use of fixture dependency and scope. If you're unfamiliar with pytest
 fixtures, read: https://docs.pytest.org/en/latest/fixture.html.
 """
-
 import importlib
 import time
-from collections.abc import Generator
 from datetime import datetime
+from typing import Generator
 
 import airflow
 import pytest
@@ -15,7 +14,9 @@ from airflow.utils import db
 from dagster import DagsterInstance
 from dagster._core.test_utils import environ, instance_for_test
 from dagster._utils import file_relative_path
-from dagster_airflow.utils import is_airflow_2_loaded_in_environment
+from dagster_airflow.utils import (
+    is_airflow_2_loaded_in_environment,
+)
 from sqlalchemy.exc import OperationalError
 
 

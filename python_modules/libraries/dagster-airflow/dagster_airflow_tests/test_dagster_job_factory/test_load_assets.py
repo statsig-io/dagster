@@ -5,8 +5,9 @@ import pytest
 from airflow import __version__ as airflow_version
 from airflow.models import DagBag
 from dagster import AssetKey, asset, materialize
-from dagster._check import CheckError
 from dagster_airflow import load_assets_from_airflow_dag, make_ephemeral_airflow_db_resource
+
+from dagster_airflow_tests.marks import requires_local_db
 
 ASSET_DAG = """
 from airflow import models
@@ -23,8 +24,16 @@ with models.DAG(
         task_id="foo", bash_command="echo foo"
     )
 
+    bar = BashOperator(
+        task_id="bar", bash_command="echo bar"
+    )
+
     biz = BashOperator(
         task_id="biz", bash_command="echo biz"
+    )
+
+    baz = BashOperator(
+        task_id="baz", bash_command="echo baz"
     )
 
 with models.DAG(
@@ -37,7 +46,7 @@ with models.DAG(
 
 
 @pytest.mark.skipif(airflow_version >= "2.0.0", reason="requires airflow 1")
-@pytest.mark.requires_local_db
+@requires_local_db
 def test_load_assets_from_airflow_dag():
     with tempfile.TemporaryDirectory(suffix="assets") as tmpdir_path:
         with open(os.path.join(tmpdir_path, "dag.py"), "wb") as f:
@@ -54,10 +63,10 @@ def test_load_assets_from_airflow_dag():
             return 1
 
         assets = load_assets_from_airflow_dag(
-            dag=asset_dag,  # pyright: ignore[reportArgumentType]
+            dag=asset_dag,
             task_ids_by_asset_key={
-                AssetKey("foo_asset"): {"foo"},
-                AssetKey("biz_asset"): {"biz"},
+                AssetKey("foo_asset"): {"foo", "bar"},
+                AssetKey("biz_asset"): {"biz", "baz"},
             },
             upstream_dependencies_by_asset_key={
                 AssetKey("foo_asset"): {
@@ -68,7 +77,7 @@ def test_load_assets_from_airflow_dag():
 
         other_dag = dag_bag.get_dag(dag_id="other_dag")
         other_assets = load_assets_from_airflow_dag(
-            dag=other_dag,  # pyright: ignore[reportArgumentType]
+            dag=other_dag,
         )
 
         result = materialize(
@@ -77,34 +86,3 @@ def test_load_assets_from_airflow_dag():
             resources={"airflow_db": make_ephemeral_airflow_db_resource()},
         )
         assert result.success
-
-
-@pytest.mark.skipif(airflow_version >= "2.0.0", reason="requires airflow 1")
-@pytest.mark.requires_local_db
-def test_load_assets_from_airflow_dag_multiple_tasks_per_asset():
-    with tempfile.TemporaryDirectory(suffix="assets") as tmpdir_path:
-        with open(os.path.join(tmpdir_path, "dag.py"), "wb") as f:
-            f.write(bytes(ASSET_DAG.encode("utf-8")))
-
-        dag_bag = DagBag(
-            dag_folder=tmpdir_path,
-            include_examples=False,
-        )
-        asset_dag = dag_bag.get_dag(dag_id="asset_dag")
-
-        @asset
-        def new_upstream_asset():
-            return 1
-
-        with pytest.raises(CheckError, match="Each asset key must have no more than one task ID"):
-            load_assets_from_airflow_dag(
-                dag=asset_dag,  # pyright: ignore[reportArgumentType]
-                task_ids_by_asset_key={
-                    AssetKey("foo_asset"): {"foo", "biz"},
-                },
-                upstream_dependencies_by_asset_key={
-                    AssetKey("foo_asset"): {
-                        AssetKey("new_upstream_asset"),
-                    },
-                },
-            )

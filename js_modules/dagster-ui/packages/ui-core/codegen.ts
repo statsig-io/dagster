@@ -18,7 +18,6 @@ const config: CodegenConfig = {
         namingConvention: {
           enumValues: 'keep',
         },
-        useImplementingTypes: true,
       },
       plugins: [
         'typescript',
@@ -35,7 +34,6 @@ const config: CodegenConfig = {
             typeNames: 'keep',
             enumValues: 'keep',
             terminateCircularRelationships: true,
-            useImplementingTypes: true,
           },
         },
       ],
@@ -59,16 +57,6 @@ const config: CodegenConfig = {
         {
           add: {
             content: `// Generated GraphQL types, do not edit manually.\n`,
-          },
-        },
-      ],
-    },
-    './client.json': {
-      plugins: [
-        {
-          'persisted-query-ids': {
-            algorithm: 'sha256',
-            output: 'client',
           },
         },
       ],

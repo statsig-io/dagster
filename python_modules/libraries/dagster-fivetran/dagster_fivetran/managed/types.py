@@ -1,13 +1,6 @@
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import dagster._check as check
-from dagster._annotations import deprecated
-
-MANAGED_ELEMENTS_DEPRECATION_MSG = (
-    "Dagster is deprecating support for ingestion-as-code."
-    " We suggest using the Fivetran terraform provider:"
-    " https://registry.terraform.io/providers/fivetran/fivetran/latest/docs."
-)
 
 
 class FivetranDestination:
@@ -18,7 +11,7 @@ class FivetranDestination:
         name: str,
         destination_type: str,
         region: str,
-        destination_configuration: dict[str, Any],
+        destination_configuration: Dict[str, Any],
         time_zone_offset: Optional[int] = None,
     ):
         self.name = check.str_param(name, "name")
@@ -39,7 +32,7 @@ class InitializedFivetranDestination:
         self.destination_id = destination_id
 
     @classmethod
-    def from_api_json(cls, name: str, api_json: dict[str, Any]):
+    def from_api_json(cls, name: str, api_json: Dict[str, Any]):
         return cls(
             destination=FivetranDestination(
                 name=name,
@@ -52,15 +45,14 @@ class InitializedFivetranDestination:
         )
 
 
-@deprecated(breaking_version="2.0", additional_warn_text=MANAGED_ELEMENTS_DEPRECATION_MSG)
 class FivetranConnector:
     def __init__(
         self,
         schema_name: str,
         source_type: str,
-        source_configuration: dict[str, Any],
+        source_configuration: Dict[str, Any],
         destination: Optional[FivetranDestination],
-        auth_configuration: Optional[dict[str, Any]] = None,
+        auth_configuration: Optional[Dict[str, Any]] = None,
     ):
         self.schema_name = check.str_param(schema_name, "schema_name")
         self.source_type = check.str_param(source_type, "source_type")
@@ -83,7 +75,7 @@ class InitializedFivetranConnector:
         self.connector_id = connector_id
 
     @classmethod
-    def from_api_json(cls, api_json: dict[str, Any]):
+    def from_api_json(cls, api_json: Dict[str, Any]):
         return cls(
             connector=FivetranConnector(
                 schema_name=api_json["schema"],

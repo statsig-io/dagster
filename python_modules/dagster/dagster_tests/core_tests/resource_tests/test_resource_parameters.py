@@ -1,31 +1,36 @@
 import sys
 from typing import Any
 
-import dagster as dg
 import pytest
-from dagster import ResourceDefinition
+from dagster import AssetsDefinition, ResourceDefinition, asset, job, op, resource, with_resources
 from dagster._check import ParameterCheckError
+from dagster._config.pythonic_config import Config
+from dagster._core.definitions.asset_out import AssetOut
+from dagster._core.definitions.assets_job import build_assets_job
+from dagster._core.definitions.decorators.asset_decorator import multi_asset
+from dagster._core.definitions.resource_annotation import ResourceParam
+from dagster._core.errors import DagsterInvalidDefinitionError
 
 
 def test_filter_out_resources():
-    @dg.op
-    def requires_resource_a(context, a: dg.ResourceParam[str]):
+    @op
+    def requires_resource_a(context, a: ResourceParam[str]):
         assert a
         assert context.resources.a
         assert not hasattr(context.resources, "b")
 
-    @dg.op
-    def requires_resource_b(context, b: dg.ResourceParam[str]):
+    @op
+    def requires_resource_b(context, b: ResourceParam[str]):
         assert b
         assert not hasattr(context.resources, "a")
         assert context.resources.b
 
-    @dg.op
+    @op
     def not_resources(context):
         assert not hasattr(context.resources, "a")
         assert not hasattr(context.resources, "b")
 
-    @dg.job(
+    @job(
         resource_defs={
             "a": ResourceDefinition.hardcoded_resource("foo"),
             "b": ResourceDefinition.hardcoded_resource("bar"),
@@ -42,25 +47,25 @@ def test_filter_out_resources():
 def test_init_resources():
     resources_initted = {}
 
-    @dg.resource
+    @resource
     def resource_a(_):
         resources_initted["a"] = True
         yield "A"
 
-    @dg.resource
+    @resource
     def resource_b(_):
         resources_initted["b"] = True
         yield "B"
 
-    @dg.op
-    def consumes_resource_a(a: dg.ResourceParam[str]):
+    @op
+    def consumes_resource_a(a: ResourceParam[str]):
         assert a == "A"
 
-    @dg.op
-    def consumes_resource_b(b: dg.ResourceParam[str]):
+    @op
+    def consumes_resource_b(b: ResourceParam[str]):
         assert b == "B"
 
-    @dg.job(
+    @job(
         resource_defs={
             "a": resource_a,
             "b": resource_b,
@@ -78,34 +83,34 @@ def test_init_resources():
 def test_ops_with_dependencies():
     completed = set()
 
-    @dg.op
-    def first_op(foo: dg.ResourceParam[str]):
+    @op
+    def first_op(foo: ResourceParam[str]):
         assert foo == "foo"
         completed.add("first_op")
         return "hello"
 
-    @dg.op
-    def second_op(foo: dg.ResourceParam[str], first_op_result: str):
+    @op
+    def second_op(foo: ResourceParam[str], first_op_result: str):
         assert foo == "foo"
         assert first_op_result == "hello"
         completed.add("second_op")
         return first_op_result + " world"
 
-    @dg.op
+    @op
     def third_op():
         completed.add("third_op")
         return "!"
 
     # Ensure ordering of resource args doesn't matter
-    @dg.op
-    def fourth_op(context, second_op_result: str, foo: dg.ResourceParam[str], third_op_result: str):
+    @op
+    def fourth_op(context, second_op_result: str, foo: ResourceParam[str], third_op_result: str):
         assert foo == "foo"
         assert second_op_result == "hello world"
         assert third_op_result == "!"
         completed.add("fourth_op")
         return second_op_result + third_op_result
 
-    @dg.job(
+    @job(
         resource_defs={"foo": ResourceDefinition.hardcoded_resource("foo")},
     )
     def op_dependencies_job():
@@ -119,15 +124,15 @@ def test_ops_with_dependencies():
 def test_assets():
     executed = {}
 
-    @dg.asset
-    def the_asset(context, foo: dg.ResourceParam[str]):
+    @asset
+    def the_asset(context, foo: ResourceParam[str]):
         assert context.resources.foo == "blah"
         assert foo == "blah"
         executed["the_asset"] = True
         return "hello"
 
-    @dg.asset
-    def the_other_asset(context, the_asset, foo: dg.ResourceParam[str]):
+    @asset
+    def the_other_asset(context, the_asset, foo: ResourceParam[str]):
         assert context.resources.foo == "blah"
         assert foo == "blah"
         assert the_asset == "hello"
@@ -135,20 +140,20 @@ def test_assets():
         return "world"
 
     # Ensure ordering of resource args doesn't matter
-    @dg.asset
-    def the_third_asset(context, the_asset, foo: dg.ResourceParam[str], the_other_asset):
+    @asset
+    def the_third_asset(context, the_asset, foo: ResourceParam[str], the_other_asset):
         assert context.resources.foo == "blah"
         assert foo == "blah"
         assert the_asset == "hello"
         assert the_other_asset == "world"
         executed["the_third_asset"] = True
 
-    transformed_assets = dg.with_resources(
+    transformed_assets = with_resources(
         [the_asset, the_other_asset, the_third_asset],
         {"foo": ResourceDefinition.hardcoded_resource("blah")},
     )
 
-    assert dg.materialize(transformed_assets).success
+    assert build_assets_job("the_job", transformed_assets).execute_in_process().success
     assert executed["the_asset"]
     assert executed["the_other_asset"]
     assert executed["the_third_asset"]
@@ -157,71 +162,71 @@ def test_assets():
 def test_multi_assets():
     executed = {}
 
-    @dg.multi_asset(outs={"a": dg.AssetOut(key="asset_a"), "b": dg.AssetOut(key="asset_b")})
-    def two_assets(context, foo: dg.ResourceParam[str]):
+    @multi_asset(outs={"a": AssetOut(key="asset_a"), "b": AssetOut(key="asset_b")})
+    def two_assets(context, foo: ResourceParam[str]):
         assert context.resources.foo == "blah"
         assert foo == "blah"
         executed["two_assets"] = True
         return 1, 2
 
-    transformed_assets = dg.with_resources(
+    transformed_assets = with_resources(
         [two_assets],
         {"foo": ResourceDefinition.hardcoded_resource("blah")},
     )[0]
-    assert isinstance(transformed_assets, dg.AssetsDefinition)
+    assert isinstance(transformed_assets, AssetsDefinition)
 
-    assert dg.materialize([transformed_assets]).success
+    assert build_assets_job("the_job", [transformed_assets]).execute_in_process().success
     assert executed["two_assets"]
 
 
 def test_resource_not_provided():
-    @dg.asset
+    @asset
     def consumes_nonexistent_resource(
-        not_provided: dg.ResourceParam[str],
+        not_provided: ResourceParam[str],
     ):
         pass
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="resource with key 'not_provided' required by op 'consumes_nonexistent_resource'",
     ):
-        dg.with_resources([consumes_nonexistent_resource], {})
+        with_resources([consumes_nonexistent_resource], {})
 
 
 def test_resource_class():
     resource_called = {}
 
-    class MyResource(dg.ResourceDefinition):
+    class MyResource(ResourceDefinition):
         def __init__(self):
             super().__init__(resource_fn=lambda *_, **__: self)
 
         def do_something(self):
             resource_called["called"] = True
 
-    @dg.op
-    def do_something_op(my_resource: dg.ResourceParam[MyResource]):
+    @op
+    def do_something_op(my_resource: ResourceParam[MyResource]):
         my_resource.do_something()
 
-    @dg.job(resource_defs={"my_resource": MyResource()})
+    @job(resource_defs={"my_resource": MyResource()})
     def my_job():
         do_something_op()
 
     assert my_job.execute_in_process().success
     assert resource_called["called"]
 
-    @dg.asset
+    @asset
     def consumes_nonexistent_resource_class(
-        not_provided: dg.ResourceParam[MyResource],
+        not_provided: ResourceParam[MyResource],
     ):
         pass
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match=(
             "resource with key 'not_provided' required by op 'consumes_nonexistent_resource_class'"
         ),
     ):
-        dg.with_resources([consumes_nonexistent_resource_class], {})
+        with_resources([consumes_nonexistent_resource_class], {})
 
 
 def test_both_decorator_and_argument_error():
@@ -233,8 +238,8 @@ def test_both_decorator_and_argument_error():
         ),
     ):
 
-        @dg.asset(required_resource_keys={"foo"})
-        def my_asset(bar: dg.ResourceParam[Any]):
+        @asset(required_resource_keys={"foo"})
+        def my_asset(bar: ResourceParam[Any]):
             pass
 
     with pytest.raises(
@@ -245,11 +250,11 @@ def test_both_decorator_and_argument_error():
         ),
     ):
 
-        @dg.multi_asset(
-            outs={"a": dg.AssetOut(key="asset_a"), "b": dg.AssetOut(key="asset_b")},
+        @multi_asset(
+            outs={"a": AssetOut(key="asset_a"), "b": AssetOut(key="asset_b")},
             required_resource_keys={"foo"},
         )
-        def my_assets(bar: dg.ResourceParam[Any]):
+        def my_assets(bar: ResourceParam[Any]):
             pass
 
     with pytest.raises(
@@ -260,37 +265,42 @@ def test_both_decorator_and_argument_error():
         ),
     ):
 
-        @dg.op(required_resource_keys={"foo"})
-        def my_op(bar: dg.ResourceParam[Any]):
+        @op(required_resource_keys={"foo"})
+        def my_op(bar: ResourceParam[Any]):
             pass
 
 
 def test_asset_with_structured_config():
-    class AnAssetConfig(dg.Config):
+    class AnAssetConfig(Config):
         a_string: str
         an_int: int
 
     executed = {}
 
-    @dg.asset
-    def the_asset(context, config: AnAssetConfig, foo: dg.ResourceParam[str]):
+    @asset
+    def the_asset(context, config: AnAssetConfig, foo: ResourceParam[str]):
         assert context.resources.foo == "blah"
         assert foo == "blah"
-        assert context.op_execution_context.op_config["a_string"] == "foo"
+        assert context.op_config["a_string"] == "foo"
         assert config.a_string == "foo"
         assert config.an_int == 2
         executed["the_asset"] = True
 
-    transformed_asset = dg.with_resources(
+    transformed_asset = with_resources(
         [the_asset],
         {"foo": ResourceDefinition.hardcoded_resource("blah")},
     )[0]
-    assert isinstance(transformed_asset, dg.AssetsDefinition)
+    assert isinstance(transformed_asset, AssetsDefinition)
 
-    assert dg.materialize(
-        [transformed_asset],
-        run_config={"ops": {"the_asset": {"config": {"a_string": "foo", "an_int": 2}}}},
-    ).success
+    assert (
+        build_assets_job(
+            "the_job",
+            [transformed_asset],
+            config={"ops": {"the_asset": {"config": {"a_string": "foo", "an_int": 2}}}},
+        )
+        .execute_in_process()
+        .success
+    )
     assert executed["the_asset"]
 
 
@@ -303,26 +313,26 @@ def test_no_err_builtin_annotations():
 
     executed = {}
 
-    @dg.asset
-    def the_asset(context, foo: dg.ResourceParam[str]):
+    @asset
+    def the_asset(context, foo: ResourceParam[str]):
         assert context.resources.foo == "blah"
         assert foo == "blah"
         executed["the_asset"] = True
         return [{"hello": "world"}]
 
-    @dg.asset
-    def the_other_asset(context, the_asset: list[dict[str, str]], foo: dg.ResourceParam[str]):
+    @asset
+    def the_other_asset(context, the_asset: list[dict[str, str]], foo: ResourceParam[str]):  # type: ignore
         assert context.resources.foo == "blah"
         assert foo == "blah"
         assert the_asset == [{"hello": "world"}]
         executed["the_other_asset"] = True
         return "world"
 
-    transformed_assets = dg.with_resources(
+    transformed_assets = with_resources(
         [the_asset, the_other_asset],
         {"foo": ResourceDefinition.hardcoded_resource("blah")},
     )
 
-    assert dg.materialize(transformed_assets).success
+    assert build_assets_job("the_job", transformed_assets).execute_in_process().success
     assert executed["the_asset"]
     assert executed["the_other_asset"]

@@ -6,9 +6,9 @@ from contextlib import contextmanager
 
 import pytest
 from dagster._core.execution.api import execute_job
-from dagster._core.test_utils import environ
 from dagster._utils.merger import merge_dicts
-from dagster_shared.yaml_utils import merge_yamls
+from dagster._utils.test.postgres_instance import postgres_instance_for_test
+from dagster._utils.yaml_utils import merge_yamls
 from dagster_test.test_project import (
     find_local_test_image,
     get_buildkite_registry_config,
@@ -20,28 +20,25 @@ from dagster_test.test_project import (
 IS_BUILDKITE = os.getenv("BUILDKITE") is not None
 
 
-@pytest.fixture
-def celery_docker_postgres_instance(postgres_instance):
-    @contextmanager
-    def _instance(overrides=None):
-        with postgres_instance(overrides=overrides) as instance:
-            yield instance
-
-    return _instance
+@contextmanager
+def celery_docker_postgres_instance(overrides=None):
+    with postgres_instance_for_test(
+        __file__, "test-postgres-db-celery-docker", overrides=overrides
+    ) as instance:
+        yield instance
 
 
 @pytest.mark.integration
-def test_execute_celery_docker_image_on_executor_config(
-    celery_docker_postgres_instance, aws_env_from_pytest, aws_env_from_dagster_container, bucket
-):
+def test_execute_celery_docker_image_on_executor_config(aws_creds):
     docker_image = get_test_project_docker_image()
     docker_config = {
         "image": docker_image,
-        "network": "container:postgres",
+        "network": "container:test-postgres-db-celery-docker",
         "container_kwargs": {
             "environment": {
                 "FIND_ME": "here!",
-                **aws_env_from_dagster_container,
+                "AWS_ACCESS_KEY_ID": aws_creds["aws_access_key_id"],
+                "AWS_SECRET_ACCESS_KEY": aws_creds["aws_secret_access_key"],
             },
             # "auto_remove": False # uncomment when debugging to view container logs after execution
         },
@@ -70,7 +67,7 @@ def test_execute_celery_docker_image_on_executor_config(
         },
     )
 
-    with celery_docker_postgres_instance() as instance, environ(aws_env_from_pytest):
+    with celery_docker_postgres_instance() as instance:
         with execute_job(
             get_test_project_recon_job("docker_celery_job"),
             run_config=run_config,
@@ -81,16 +78,15 @@ def test_execute_celery_docker_image_on_executor_config(
 
 
 @pytest.mark.integration
-def test_execute_celery_docker_image_on_job_config(
-    celery_docker_postgres_instance, aws_env_from_pytest, aws_env_from_dagster_container, bucket
-):
+def test_execute_celery_docker_image_on_job_config(aws_creds):
     docker_image = get_test_project_docker_image()
     docker_config = {
-        "network": "container:postgres",
+        "network": "container:test-postgres-db-celery-docker",
         "container_kwargs": {
             "environment": [
                 "FIND_ME=here!",
-                *[f"{k}={v}" for k, v in aws_env_from_dagster_container.items()],
+                f"AWS_ACCESS_KEY_ID={aws_creds['aws_access_key_id']}",
+                f"AWS_SECRET_ACCESS_KEY={aws_creds['aws_secret_access_key']}",
             ],
             # "auto_remove": False # uncomment when debugging to view container logs after execution
         },
@@ -120,7 +116,7 @@ def test_execute_celery_docker_image_on_job_config(
         },
     )
 
-    with celery_docker_postgres_instance() as instance, environ(aws_env_from_pytest):
+    with celery_docker_postgres_instance() as instance:
         with execute_job(
             get_test_project_recon_job("docker_celery_job", docker_image),
             run_config=run_config,

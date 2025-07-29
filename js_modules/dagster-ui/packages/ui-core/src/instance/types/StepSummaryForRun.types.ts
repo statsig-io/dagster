@@ -3,7 +3,7 @@
 import * as Types from '../../graphql/types';
 
 export type StepSummaryForRunQueryVariables = Types.Exact<{
-  runId: Types.Scalars['ID']['input'];
+  runId: Types.Scalars['ID'];
 }>;
 
 export type StepSummaryForRunQuery = {
@@ -23,5 +23,3 @@ export type StepSummaryForRunQuery = {
       }
     | {__typename: 'RunNotFoundError'};
 };
-
-export const StepSummaryForRunQueryVersion = '2890d0cd46c1f4d8b350a5fec57a0558ac3054e0ca93278998d66a54b2ebedbd';

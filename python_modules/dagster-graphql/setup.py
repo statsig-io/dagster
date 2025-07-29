@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: dict[str, str] = {}
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_graphql/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -23,24 +24,21 @@ setup(
     description="The GraphQL frontend to python dagster.",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/dagster-graphql",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: 3.13",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
     packages=find_packages(exclude=["dagster_graphql_tests*"]),
     include_package_data=True,
-    python_requires=">=3.9,<3.14",
     install_requires=[
-        f"dagster{pin}",
-        "graphene>=3,<4",
-        "gql[requests]>=3,<4",
+        "dagster==1.4.16",
+        "graphene>=3",
+        "gql[requests]>=3.0.0",
         "requests",
         "starlette",  # used for run_in_threadpool utility fn
     ],
-    extras_require={"test": ["dagster-test"]},
     entry_points={"console_scripts": ["dagster-graphql = dagster_graphql.cli:main"]},
 )

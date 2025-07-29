@@ -2,7 +2,7 @@
 
 import * as Types from '../../graphql/types';
 
-export type TypeExplorerFragment_ListDagsterType = {
+export type TypeExplorerFragment_ListDagsterType_ = {
   __typename: 'ListDagsterType';
   name: string | null;
   description: string | null;
@@ -20,20 +20,6 @@ export type TypeExplorerFragment_ListDagsterType = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -43,14 +29,6 @@ export type TypeExplorerFragment_ListDagsterType = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -75,27 +53,12 @@ export type TypeExplorerFragment_ListDagsterType = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -111,7 +74,6 @@ export type TypeExplorerFragment_ListDagsterType = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -134,7 +96,6 @@ export type TypeExplorerFragment_ListDagsterType = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -146,12 +107,6 @@ export type TypeExplorerFragment_ListDagsterType = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   inputSchemaType:
@@ -1252,7 +1207,7 @@ export type TypeExplorerFragment_ListDagsterType = {
     | null;
 };
 
-export type TypeExplorerFragment_NullableDagsterType = {
+export type TypeExplorerFragment_NullableDagsterType_ = {
   __typename: 'NullableDagsterType';
   name: string | null;
   description: string | null;
@@ -1270,20 +1225,6 @@ export type TypeExplorerFragment_NullableDagsterType = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -1293,14 +1234,6 @@ export type TypeExplorerFragment_NullableDagsterType = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -1325,27 +1258,12 @@ export type TypeExplorerFragment_NullableDagsterType = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -1361,7 +1279,6 @@ export type TypeExplorerFragment_NullableDagsterType = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -1384,7 +1301,6 @@ export type TypeExplorerFragment_NullableDagsterType = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -1396,12 +1312,6 @@ export type TypeExplorerFragment_NullableDagsterType = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   inputSchemaType:
@@ -2502,7 +2412,7 @@ export type TypeExplorerFragment_NullableDagsterType = {
     | null;
 };
 
-export type TypeExplorerFragment_RegularDagsterType = {
+export type TypeExplorerFragment_RegularDagsterType_ = {
   __typename: 'RegularDagsterType';
   name: string | null;
   description: string | null;
@@ -2520,20 +2430,6 @@ export type TypeExplorerFragment_RegularDagsterType = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -2543,14 +2439,6 @@ export type TypeExplorerFragment_RegularDagsterType = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -2575,27 +2463,12 @@ export type TypeExplorerFragment_RegularDagsterType = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -2611,7 +2484,6 @@ export type TypeExplorerFragment_RegularDagsterType = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -2634,7 +2506,6 @@ export type TypeExplorerFragment_RegularDagsterType = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -2646,12 +2517,6 @@ export type TypeExplorerFragment_RegularDagsterType = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   inputSchemaType:
@@ -3753,6 +3618,6 @@ export type TypeExplorerFragment_RegularDagsterType = {
 };
 
 export type TypeExplorerFragment =
-  | TypeExplorerFragment_ListDagsterType
-  | TypeExplorerFragment_NullableDagsterType
-  | TypeExplorerFragment_RegularDagsterType;
+  | TypeExplorerFragment_ListDagsterType_
+  | TypeExplorerFragment_NullableDagsterType_
+  | TypeExplorerFragment_RegularDagsterType_;

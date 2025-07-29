@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: dict[str, str] = {}
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_databricks/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -23,6 +24,7 @@ setup(
     description="Package for Databricks-specific Dagster framework op and resource components.",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-databricks",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: Apache Software License",
@@ -30,12 +32,13 @@ setup(
     ],
     packages=find_packages(exclude=["dagster_databricks_tests*"]),
     include_package_data=True,
-    python_requires=">=3.9,<3.14",
     install_requires=[
-        f"dagster{pin}",
-        f"dagster-pipes{pin}",
-        f"dagster-pyspark{pin}",
-        "databricks-sdk>=0.41,<0.48.0",  # dbt-databricks is pinned to this version
+        "dagster==1.4.16",
+        "dagster-ext-process==1.4.16",
+        "dagster-pyspark==0.20.16",
+        "databricks-cli~=0.17",  # TODO: Remove this dependency in the next minor release.
+        "databricks_api",  # TODO: Remove this dependency in the next minor release.
+        "databricks-sdk<0.9",  # Breaking changes occur in minor versions.
     ],
     zip_safe=False,
 )

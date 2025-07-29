@@ -1,4 +1,4 @@
-import {createContext} from 'react';
+import * as React from 'react';
 
 import {DeploymentStatusType} from '../instance/DeploymentStatusProvider';
 
@@ -8,10 +8,9 @@ export type AppContextValue = {
   rootServerURI: string;
   telemetryEnabled: boolean;
   statusPolling?: Set<DeploymentStatusType>;
-  localCacheIdPrefix?: string;
 };
 
-export const AppContext = createContext<AppContextValue>({
+export const AppContext = React.createContext<AppContextValue>({
   basePath: '',
   rootServerURI: '',
   telemetryEnabled: false,

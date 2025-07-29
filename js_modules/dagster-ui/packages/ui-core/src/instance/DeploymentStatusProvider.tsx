@@ -1,12 +1,13 @@
 import * as React from 'react';
 
+import {useCodeLocationsStatus} from '../nav/useCodeLocationsStatus';
+
 import {StatusAndMessage} from './DeploymentStatusType';
 import {useDaemonStatus} from './useDaemonStatus';
-import {useCodeLocationsStatus} from '../nav/useCodeLocationsStatus';
 
 export type DeploymentStatusType = 'code-locations' | 'daemons';
 
-export type DeploymentStatus = {
+type DeploymentStatus = {
   codeLocations: StatusAndMessage | null;
   daemons: StatusAndMessage | null;
 };
@@ -21,10 +22,10 @@ interface Props {
   include: Set<DeploymentStatusType>;
 }
 
-export const DeploymentStatusProvider = (props: Props) => {
+export const DeploymentStatusProvider: React.FC<Props> = (props) => {
   const {children, include} = props;
 
-  const codeLocations = useCodeLocationsStatus();
+  const codeLocations = useCodeLocationsStatus(!include.has('code-locations'));
   const daemons = useDaemonStatus(!include.has('daemons'));
 
   const value = React.useMemo(() => ({codeLocations, daemons}), [daemons, codeLocations]);

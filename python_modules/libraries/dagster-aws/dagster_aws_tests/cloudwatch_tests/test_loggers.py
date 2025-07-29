@@ -3,9 +3,8 @@ import json
 import boto3
 import pytest
 from dagster import job, op
-from moto import mock_logs
-
 from dagster_aws.cloudwatch import cloudwatch_logger
+from moto import mock_logs
 
 
 @op
@@ -94,7 +93,8 @@ def test_cloudwatch_logging_bad_region(log_group, log_stream):
     with pytest.raises(
         Exception,
         match=(
-            f"Failed to initialize Cloudwatch logger: Could not find log group with name {log_group}"
+            "Failed to initialize Cloudwatch logger: Could not find log group with name {log_group}"
+            .format(log_group=log_group)
         ),
     ):
         hello_cloudwatch.execute_in_process(

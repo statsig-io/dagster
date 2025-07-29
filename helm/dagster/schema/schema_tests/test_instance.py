@@ -20,11 +20,9 @@ from schema.charts.dagster.subschema.compute_log_manager import (
     ComputeLogManagerConfig,
     ComputeLogManagerType,
     GCSComputeLogManager as GCSComputeLogManagerModel,
-    LocalComputeLogManager as LocalComputeLogManagerModel,
     S3ComputeLogManager as S3ComputeLogManagerModel,
 )
 from schema.charts.dagster.subschema.daemon import (
-    BlockOpConcurrencyLimitedRuns,
     ConfigurableClass,
     Daemon,
     QueuedRunCoordinatorConfig,
@@ -35,7 +33,11 @@ from schema.charts.dagster.subschema.daemon import (
 )
 from schema.charts.dagster.subschema.postgresql import PostgreSQL, Service
 from schema.charts.dagster.subschema.python_logs import PythonLogs
-from schema.charts.dagster.subschema.retention import Retention, TickRetention, TickRetentionByType
+from schema.charts.dagster.subschema.retention import (
+    Retention,
+    TickRetention,
+    TickRetentionByType,
+)
 from schema.charts.dagster.subschema.run_launcher import (
     CeleryK8sRunLauncherConfig,
     K8sRunLauncherConfig,
@@ -46,7 +48,6 @@ from schema.charts.dagster.subschema.run_launcher import (
 )
 from schema.charts.dagster.subschema.telemetry import Telemetry
 from schema.charts.dagster.values import DagsterHelmValues
-from schema.charts.utils import kubernetes
 from schema.utils.helm_template import HelmTemplate
 
 
@@ -235,33 +236,6 @@ def test_k8s_run_launcher_resources(template: HelmTemplate):
     assert run_launcher_config["config"]["resources"] == resources
 
 
-def test_k8s_run_launcher_job_image(template: HelmTemplate):
-    image = {"repository": "test_repo", "tag": "test_tag", "pullPolicy": "Always"}
-
-    helm_values = DagsterHelmValues.construct(
-        runLauncher=RunLauncher.construct(
-            type=RunLauncherType.K8S,
-            config=RunLauncherConfig.construct(
-                k8sRunLauncher=K8sRunLauncherConfig.construct(
-                    image=image,
-                    imagePullPolicy="Always",
-                    loadInclusterConfig=True,
-                    envConfigMaps=[],
-                    envSecrets=[],
-                    envVars=[],
-                    volumeMounts=[],
-                    volumes=[],
-                )
-            ),
-        )
-    )
-    configmaps = template.render(helm_values)
-    instance = yaml.full_load(configmaps[0].data["dagster.yaml"])
-    run_launcher_config = instance["run_launcher"]
-
-    assert run_launcher_config["config"]["job_image"] == "test_repo:test_tag"
-
-
 def _check_valid_run_launcher_yaml(dagster_config, instance_class=K8sRunLauncher):
     with environ(
         {
@@ -341,7 +315,7 @@ def test_k8s_run_launcher_security_context(template: HelmTemplate):
                     envVars=[],
                     volumeMounts=[],
                     volumes=[],
-                    securityContext=kubernetes.SecurityContext.parse_obj(sacred_rites_of_debugging),
+                    securityContext=sacred_rites_of_debugging,
                 )
             ),
         )
@@ -604,10 +578,6 @@ def test_queued_run_coordinator_config(
                         dequeueIntervalSeconds=dequeue_interval_seconds,
                         dequeueUseThreads=True,
                         dequeueNumWorkers=dequeue_num_workers,
-                        blockOpConcurrencyLimitedRuns=BlockOpConcurrencyLimitedRuns(
-                            enabled=True,
-                            opConcurrencySlotBuffer=0,
-                        ),
                     )
                 ),
             )
@@ -620,6 +590,7 @@ def test_queued_run_coordinator_config(
 
     _check_valid_run_coordinator_yaml(instance)
 
+    assert ("run_coordinator" in instance) == enabled
     if enabled:
         assert instance["run_coordinator"]["module"] == "dagster.core.run_coordinator"
         assert instance["run_coordinator"]["class"] == "QueuedRunCoordinator"
@@ -637,20 +608,6 @@ def test_queued_run_coordinator_config(
         assert run_coordinator_config["tag_concurrency_limits"] == [
             tag_concurrency_limit.dict() for tag_concurrency_limit in tag_concurrency_limits
         ]
-        assert run_coordinator_config["block_op_concurrency_limited_runs"]
-        assert run_coordinator_config["block_op_concurrency_limited_runs"]["enabled"] is True
-        assert (
-            run_coordinator_config["block_op_concurrency_limited_runs"][
-                "op_concurrency_slot_buffer"
-            ]
-            == 0
-        )
-    else:
-        assert (
-            instance["run_coordinator"]["module"]
-            == "dagster._core.run_coordinator.sync_in_memory_run_coordinator"
-        )
-        assert instance["run_coordinator"]["class"] == "SyncInMemoryRunCoordinator"
 
 
 def test_custom_run_coordinator_config(template: HelmTemplate):
@@ -700,9 +657,8 @@ def test_noop_compute_log_manager(template: HelmTemplate):
 def test_azure_blob_compute_log_manager(template: HelmTemplate):
     storage_account = "account"
     container = "container"
-    secret_credential = {"client_id": "id", "client_secret": "secret", "tenant_id": "tenant"}
+    secret_key = "secret_key"
     default_azure_credential = {"exclude_cli_credential": True}
-    access_key_or_sas_token = "token"
     local_dir = "/dir"
     prefix = "prefix"
     upload_interval = 30
@@ -713,13 +669,11 @@ def test_azure_blob_compute_log_manager(template: HelmTemplate):
                 azureBlobComputeLogManager=AzureBlobComputeLogManagerModel(
                     storageAccount=storage_account,
                     container=container,
-                    secretCredential=secret_credential,
+                    secretKey=secret_key,
                     defaultAzureCredential=default_azure_credential,
-                    accessKeyOrSasToken=access_key_or_sas_token,
                     localDir=local_dir,
                     prefix=prefix,
                     uploadInterval=upload_interval,
-                    showUrlOnly=True,
                 )
             ),
         )
@@ -735,13 +689,11 @@ def test_azure_blob_compute_log_manager(template: HelmTemplate):
     assert compute_logs_config["config"] == {
         "storage_account": storage_account,
         "container": container,
-        "secret_credential": secret_credential,
+        "secret_key": secret_key,
         "default_azure_credential": default_azure_credential,
         "local_dir": local_dir,
         "prefix": prefix,
         "upload_interval": upload_interval,
-        "access_key_or_sas_token": access_key_or_sas_token,
-        "show_url_only": True,
     }
 
     # Test all config fields in configurable class
@@ -753,8 +705,6 @@ def test_gcs_compute_log_manager(template: HelmTemplate):
     prefix = "prefix"
     json_credentials_envvar = "ENV_VAR"
     upload_interval = 30
-    show_url_only = True
-
     helm_values = DagsterHelmValues.construct(
         computeLogManager=ComputeLogManager.construct(
             type=ComputeLogManagerType.GCS,
@@ -765,7 +715,6 @@ def test_gcs_compute_log_manager(template: HelmTemplate):
                     prefix=prefix,
                     jsonCredentialsEnvvar=json_credentials_envvar,
                     uploadInterval=upload_interval,
-                    showUrlOnly=show_url_only,
                 )
             ),
         )
@@ -783,7 +732,6 @@ def test_gcs_compute_log_manager(template: HelmTemplate):
         "prefix": prefix,
         "json_credentials_envvar": json_credentials_envvar,
         "upload_interval": upload_interval,
-        "show_url_only": True,
     }
 
     # Test all config fields in configurable class
@@ -888,34 +836,6 @@ def test_s3_compute_log_manager_no_verify(template: HelmTemplate):
         "bucket": bucket,
         "local_dir": local_dir,
         "verify": False,
-    }
-
-
-def test_local_compute_log_manager(template: HelmTemplate):
-    base_dir = "/dir"
-    polling_timeout = 10
-
-    helm_values = DagsterHelmValues.construct(
-        computeLogManager=ComputeLogManager.construct(
-            type=ComputeLogManagerType.LOCAL,
-            config=ComputeLogManagerConfig.construct(
-                localComputeLogManager=LocalComputeLogManagerModel(
-                    baseDir=base_dir,
-                    pollingTimeout=polling_timeout,
-                ),
-            ),
-        )
-    )
-
-    configmaps = template.render(helm_values)
-    instance = yaml.full_load(configmaps[0].data["dagster.yaml"])
-    compute_logs_config = instance["compute_logs"]
-
-    assert compute_logs_config["module"] == "dagster.core.storage.local_compute_log_manager"
-    assert compute_logs_config["class"] == "LocalComputeLogManager"
-    assert compute_logs_config["config"] == {
-        "base_dir": base_dir,
-        "polling_timeout": polling_timeout,
     }
 
 
@@ -1052,14 +972,6 @@ def test_retention(template: HelmTemplate):
                     started=30,
                 ),
             ),
-            autoMaterialize=TickRetention.construct(
-                purgeAfterDays=TickRetentionByType(
-                    skipped=1,
-                    success=2,
-                    failure=3,
-                    started=4,
-                ),
-            ),
         )
     )
 
@@ -1072,12 +984,6 @@ def test_retention(template: HelmTemplate):
     assert instance["retention"]["sensor"]["purge_after_days"]["skipped"] == 7
     assert instance["retention"]["sensor"]["purge_after_days"]["success"] == 30
     assert instance["retention"]["sensor"]["purge_after_days"]["failure"] == 30
-    assert instance["retention"]["auto_materialize"]["purge_after_days"] == {
-        "skipped": 1,
-        "success": 2,
-        "failure": 3,
-        "started": 4,
-    }
 
 
 def _check_valid_instance_yaml(dagster_config, instance_class=K8sRunLauncher):

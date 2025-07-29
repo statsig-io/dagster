@@ -1,29 +1,325 @@
+import {PartitionDefinitionType, PartitionRangeStatus} from '../../graphql/types';
 import {AssetPartitionStatus, emptyAssetPartitionStatusCounts} from '../AssetPartitionStatus';
+import {PartitionHealthQuery} from '../types/usePartitionHealthData.types';
 import {
-  DIMENSION_ONE_KEYS,
-  DIMENSION_TWO_KEYS,
-  NO_DIMENSIONAL_ASSET,
-  ONE_DIMENSIONAL_ASSET,
-  TWO_DIMENSIONAL_ASSET,
-  TWO_DIMENSIONAL_ASSET_BOTH_STATIC,
-  TWO_DIMENSIONAL_ASSET_EMPTY,
-  TWO_DIMENSIONAL_ASSET_REVERSED_DIMENSIONS,
-} from '../__fixtures__/PartitionHealth.fixtures';
-import {
-  PartitionDimensionSelection,
-  PartitionDimensionSelectionRange,
-  PartitionHealthDimension,
   Range,
   buildPartitionHealthData,
-  keyCountByStateInSelection,
-  keyCountInRanges,
-  partitionStatusAtIndex,
+  PartitionDimensionSelectionRange,
   partitionStatusGivenRanges,
   rangeClippedToSelection,
   rangesForKeys,
+  partitionStatusAtIndex,
+  keyCountByStateInSelection,
+  PartitionHealthDimension,
+  PartitionDimensionSelection,
+  keyCountInRanges,
 } from '../usePartitionHealthData';
 
 const {MATERIALIZED, FAILED, MISSING} = AssetPartitionStatus;
+
+const DIMENSION_ONE_KEYS = [
+  '2022-01-01',
+  '2022-01-02',
+  '2022-01-03',
+  '2022-01-04',
+  '2022-01-05',
+  '2022-01-06',
+];
+
+const DIMENSION_TWO_KEYS = ['TN', 'CA', 'VA', 'NY', 'MN'];
+
+const NO_DIMENSIONAL_ASSET: PartitionHealthQuery = {
+  __typename: 'Query',
+  assetNodeOrError: {
+    __typename: 'AssetNode',
+    id: '1234',
+    partitionKeysByDimension: [],
+    assetPartitionStatuses: {
+      __typename: 'DefaultPartitionStatuses',
+      materializedPartitions: [],
+      materializingPartitions: [],
+      failedPartitions: [],
+    },
+  },
+};
+
+const ONE_DIMENSIONAL_ASSET: PartitionHealthQuery = {
+  __typename: 'Query',
+  assetNodeOrError: {
+    __typename: 'AssetNode',
+    id: '1234',
+    partitionKeysByDimension: [
+      {
+        __typename: 'DimensionPartitionKeys',
+        name: 'default',
+        partitionKeys: DIMENSION_ONE_KEYS,
+        type: PartitionDefinitionType.TIME_WINDOW,
+      },
+    ],
+    assetPartitionStatuses: {
+      __typename: 'TimePartitionStatuses',
+      ranges: [
+        {
+          __typename: 'TimePartitionRangeStatus',
+          status: PartitionRangeStatus.MATERIALIZED,
+          startKey: '2022-01-04',
+          startTime: new Date('2022-01-04').getTime(),
+          endKey: '2022-01-05',
+          endTime: new Date('2022-01-04').getTime(),
+        },
+        {
+          __typename: 'TimePartitionRangeStatus',
+          status: PartitionRangeStatus.FAILED,
+          startKey: '2022-01-05',
+          startTime: new Date('2022-01-05').getTime(),
+          endKey: '2022-01-06',
+          endTime: new Date('2022-01-06').getTime(),
+        },
+      ],
+    },
+  },
+};
+
+const TWO_DIMENSIONAL_ASSET: PartitionHealthQuery = {
+  __typename: 'Query',
+  assetNodeOrError: {
+    __typename: 'AssetNode',
+    id: '1234',
+    partitionKeysByDimension: [
+      {
+        __typename: 'DimensionPartitionKeys',
+        name: 'time',
+        partitionKeys: DIMENSION_ONE_KEYS,
+        type: PartitionDefinitionType.TIME_WINDOW,
+      },
+      {
+        __typename: 'DimensionPartitionKeys',
+        name: 'state',
+        partitionKeys: DIMENSION_TWO_KEYS,
+        type: PartitionDefinitionType.STATIC,
+      },
+    ],
+    assetPartitionStatuses: {
+      __typename: 'MultiPartitionStatuses',
+      primaryDimensionName: 'time',
+      ranges: [
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: '2022-01-01',
+          primaryDimStartTime: new Date('2022-01-01').getTime(),
+          primaryDimEndKey: '2022-01-01',
+          primaryDimEndTime: new Date('2022-01-01').getTime(),
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['NY', 'MN'],
+            materializingPartitions: [],
+            failedPartitions: [],
+          },
+        },
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: '2022-01-02',
+          primaryDimStartTime: new Date('2022-01-02').getTime(),
+          primaryDimEndKey: '2022-01-03',
+          primaryDimEndTime: new Date('2022-01-03').getTime(),
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['MN'],
+            materializingPartitions: [],
+            failedPartitions: [],
+          },
+        },
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: '2022-01-04',
+          primaryDimStartTime: new Date('2022-01-04').getTime(),
+          primaryDimEndKey: '2022-01-04',
+          primaryDimEndTime: new Date('2022-01-04').getTime(),
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['TN', 'CA', 'VA', 'NY', 'MN'],
+            materializingPartitions: [],
+            failedPartitions: [],
+          },
+        },
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: '2022-01-05',
+          primaryDimStartTime: new Date('2022-01-05').getTime(),
+          primaryDimEndKey: '2022-01-06',
+          primaryDimEndTime: new Date('2022-01-06').getTime(),
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['MN'],
+            materializingPartitions: [],
+            failedPartitions: ['NY', 'VA'],
+          },
+        },
+      ],
+    },
+  },
+};
+
+const TWO_DIMENSIONAL_ASSET_REVERSED_DIMENSIONS: PartitionHealthQuery = {
+  __typename: 'Query',
+  assetNodeOrError: {
+    __typename: 'AssetNode',
+    id: '1234',
+    partitionKeysByDimension: [
+      {
+        __typename: 'DimensionPartitionKeys',
+        name: 'state',
+        partitionKeys: DIMENSION_TWO_KEYS,
+        type: PartitionDefinitionType.STATIC,
+      },
+      {
+        __typename: 'DimensionPartitionKeys',
+        name: 'time',
+        partitionKeys: DIMENSION_ONE_KEYS,
+        type: PartitionDefinitionType.TIME_WINDOW,
+      },
+    ],
+    assetPartitionStatuses: {
+      __typename: 'MultiPartitionStatuses',
+      primaryDimensionName: 'time',
+      ranges: [
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: '2022-01-01',
+          primaryDimStartTime: new Date('2022-01-01').getTime(),
+          primaryDimEndKey: '2022-01-01',
+          primaryDimEndTime: new Date('2022-01-01').getTime(),
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['NY', 'MN'],
+            materializingPartitions: [],
+            failedPartitions: [],
+          },
+        },
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: '2022-01-02',
+          primaryDimStartTime: new Date('2022-01-02').getTime(),
+          primaryDimEndKey: '2022-01-03',
+          primaryDimEndTime: new Date('2022-01-03').getTime(),
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['MN'],
+            materializingPartitions: [],
+            failedPartitions: [],
+          },
+        },
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: '2022-01-04',
+          primaryDimStartTime: new Date('2022-01-04').getTime(),
+          primaryDimEndKey: '2022-01-04',
+          primaryDimEndTime: new Date('2022-01-04').getTime(),
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['TN', 'CA', 'VA', 'NY', 'MN'],
+            materializingPartitions: [],
+            failedPartitions: [],
+          },
+        },
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: '2022-01-05',
+          primaryDimStartTime: new Date('2022-01-05').getTime(),
+          primaryDimEndKey: '2022-01-06',
+          primaryDimEndTime: new Date('2022-01-06').getTime(),
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['MN'],
+            materializingPartitions: [],
+            failedPartitions: ['NY', 'VA'],
+          },
+        },
+      ],
+    },
+  },
+};
+
+const TWO_DIMENSIONAL_ASSET_BOTH_STATIC: PartitionHealthQuery = {
+  __typename: 'Query',
+  assetNodeOrError: {
+    __typename: 'AssetNode',
+    id: '1234',
+    partitionKeysByDimension: [
+      {
+        __typename: 'DimensionPartitionKeys',
+        name: 'state1',
+        partitionKeys: DIMENSION_TWO_KEYS,
+        type: PartitionDefinitionType.STATIC,
+      },
+      {
+        __typename: 'DimensionPartitionKeys',
+        name: 'state2',
+        partitionKeys: DIMENSION_TWO_KEYS,
+        type: PartitionDefinitionType.STATIC,
+      },
+    ],
+    assetPartitionStatuses: {
+      __typename: 'MultiPartitionStatuses',
+      primaryDimensionName: 'state1',
+      ranges: [
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: 'TN',
+          primaryDimEndKey: 'CA',
+          primaryDimEndTime: null,
+          primaryDimStartTime: null,
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['TN', 'CA', 'VA'],
+            materializingPartitions: [],
+            failedPartitions: ['MN'],
+          },
+        },
+        {
+          __typename: 'MaterializedPartitionRangeStatuses2D',
+          primaryDimStartKey: 'VA',
+          primaryDimEndKey: 'MN',
+          primaryDimEndTime: null,
+          primaryDimStartTime: null,
+          secondaryDim: {
+            __typename: 'DefaultPartitionStatuses',
+            materializedPartitions: ['CA', 'MN'],
+            materializingPartitions: [],
+            failedPartitions: [],
+          },
+        },
+      ],
+    },
+  },
+};
+
+const TWO_DIMENSIONAL_ASSET_EMPTY: PartitionHealthQuery = {
+  __typename: 'Query',
+  assetNodeOrError: {
+    __typename: 'AssetNode',
+    id: '1234',
+    partitionKeysByDimension: [
+      {
+        __typename: 'DimensionPartitionKeys',
+        name: 'time',
+        partitionKeys: DIMENSION_ONE_KEYS,
+        type: PartitionDefinitionType.STATIC,
+      },
+      {
+        __typename: 'DimensionPartitionKeys',
+        name: 'state',
+        partitionKeys: DIMENSION_TWO_KEYS,
+        type: PartitionDefinitionType.STATIC,
+      },
+    ],
+    assetPartitionStatuses: {
+      __typename: 'MultiPartitionStatuses',
+      primaryDimensionName: 'time',
+      ranges: [],
+    },
+  },
+};
 
 function selectionWithSlice(
   dim: PartitionHealthDimension,
@@ -395,29 +691,6 @@ describe('usePartitionHealthData', () => {
 
       // These should safely no-op
       expect(assetHealth.stateForKey(['2022-01-01'])).toEqual(MISSING);
-    });
-
-    it('should return MISSING in all cases where the partition key is invalid / not present', () => {
-      const twoStatic = buildPartitionHealthData(TWO_DIMENSIONAL_ASSET_BOTH_STATIC, {
-        path: ['asset'],
-      });
-      expect(twoStatic.stateForKey(['NOPE', 'TN'])).toEqual(MISSING);
-      expect(twoStatic.stateForKeyIdx([10000, 1])).toEqual(MISSING);
-      expect(twoStatic.stateForKey(['CA', 'NOPE'])).toEqual(MISSING);
-      expect(twoStatic.stateForKeyIdx([1, 10000])).toEqual(MISSING);
-      expect(twoStatic.stateForKey(['NOPE', 'NOPE'])).toEqual(MISSING);
-      expect(twoStatic.stateForKeyIdx([10000, 10000])).toEqual(MISSING);
-
-      const twoD = buildPartitionHealthData(TWO_DIMENSIONAL_ASSET_EMPTY, {path: ['asset']});
-      expect(twoD.assetKey).toEqual({path: ['asset']});
-      expect(twoD.stateForKey(['2050-01-01', 'TN'])).toEqual(MISSING);
-      expect(twoD.stateForKeyIdx([10000, 1])).toEqual(MISSING);
-      expect(twoD.stateForKey(['2022-01-01', 'NOPE'])).toEqual(MISSING);
-      expect(twoD.stateForKeyIdx([1, 10000])).toEqual(MISSING);
-
-      const oneD = buildPartitionHealthData(ONE_DIMENSIONAL_ASSET, {path: ['asset']});
-      expect(oneD.stateForKey(['2050-01-01'])).toEqual(MISSING);
-      expect(oneD.stateForKeyIdx([10000])).toEqual(MISSING);
     });
   });
 });

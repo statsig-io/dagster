@@ -1,17 +1,18 @@
 // eslint-disable-next-line no-restricted-imports
 import {Overlay} from '@blueprintjs/core';
-import {Colors, FontFamily, Icon, Spinner} from '@dagster-io/ui-components';
+import {Box, Colors, Icon, Spinner, FontFamily} from '@dagster-io/ui-components';
 import Fuse from 'fuse.js';
 import debounce from 'lodash/debounce';
 import * as React from 'react';
-import {useHistory} from 'react-router-dom';
+import {useHistory, useLocation} from 'react-router-dom';
 import styled from 'styled-components';
+
+import {ShortcutHandler} from '../app/ShortcutHandler';
+import {useTrackEvent} from '../app/analytics';
 
 import {SearchResults} from './SearchResults';
 import {SearchResult} from './types';
 import {useGlobalSearch} from './useGlobalSearch';
-import {__updateSearchVisibility} from './useSearchVisibility';
-import {useTrackEvent} from '../app/analytics';
 
 const MAX_DISPLAYED_RESULTS = 50;
 
@@ -70,64 +71,57 @@ const initialState: State = {
 
 const DEBOUNCE_MSEC = 100;
 
-// sort by Fuse score ascending, lower is better
-const sortResultsByFuseScore = (
-  a: Fuse.FuseResult<SearchResult>,
-  b: Fuse.FuseResult<SearchResult>,
-) => {
-  return (a.score ?? 0) - (b.score ?? 0);
-};
-
-export const useSearchDialog = () => {
+export const SearchDialog: React.FC<{searchPlaceholder: string}> = ({searchPlaceholder}) => {
+  const location = useLocation();
   const history = useHistory();
-  const {loading, searchPrimary, searchSecondary} = useGlobalSearch({
-    searchContext: 'global',
-  });
+  const {initialize, loading, searchPrimary, searchSecondary} = useGlobalSearch();
   const trackEvent = useTrackEvent();
 
   const [state, dispatch] = React.useReducer(reducer, initialState);
   const {shown, queryString, primaryResults, secondaryResults, highlight} = state;
 
-  const {renderedResults, numRenderedResults} = React.useMemo(() => {
-    const results = [...primaryResults, ...secondaryResults].sort(sortResultsByFuseScore);
-    const renderedResults = results.slice(0, MAX_DISPLAYED_RESULTS);
-    return {renderedResults, numRenderedResults: renderedResults.length};
-  }, [primaryResults, secondaryResults]);
+  const results = [...primaryResults, ...secondaryResults];
+  const renderedResults = results.slice(0, MAX_DISPLAYED_RESULTS);
+  const numRenderedResults = renderedResults.length;
 
   const openSearch = React.useCallback(() => {
-    trackEvent('open-global-search');
     trackEvent('searchOpen');
+    initialize();
     dispatch({type: 'show-dialog'});
-  }, [trackEvent]);
+  }, [initialize, trackEvent]);
 
-  React.useEffect(() => {
-    __updateSearchVisibility(shown);
-  }, [shown]);
+  const searchAndHandlePrimary = React.useCallback(
+    async (queryString: string) => {
+      const {queryString: queryStringForResults, results} = await searchPrimary(queryString);
+      dispatch({type: 'complete-primary', queryString: queryStringForResults, results});
+    },
+    [searchPrimary],
+  );
+
+  const searchAndHandleSecondary = React.useCallback(
+    async (queryString: string) => {
+      const {queryString: queryStringForResults, results} = await searchSecondary(queryString);
+      dispatch({type: 'complete-secondary', queryString: queryStringForResults, results});
+    },
+    [searchSecondary],
+  );
 
   const debouncedSearch = React.useMemo(() => {
     return debounce(async (queryString: string) => {
-      const [secondaryResults, primaryResults] = await Promise.all([
-        searchSecondary(queryString),
-        searchPrimary(queryString),
-      ]);
-      dispatch({
-        type: 'complete-primary',
-        queryString: primaryResults.queryString,
-        results: primaryResults.results,
-      });
-      dispatch({
-        type: 'complete-secondary',
-        queryString: secondaryResults.queryString,
-        results: secondaryResults.results,
-      });
+      searchAndHandlePrimary(queryString);
+      searchAndHandleSecondary(queryString);
     }, DEBOUNCE_MSEC);
-  }, [searchPrimary, searchSecondary]);
+  }, [searchAndHandlePrimary, searchAndHandleSecondary]);
 
   const onChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     dispatch({type: 'change-query', queryString: newValue});
     debouncedSearch(newValue);
   };
+
+  React.useEffect(() => {
+    dispatch({type: 'hide-dialog'});
+  }, [location.pathname]);
 
   const onClickResult = React.useCallback(
     (result: Fuse.FuseResult<SearchResult>) => {
@@ -136,6 +130,18 @@ export const useSearchDialog = () => {
     },
     [history],
   );
+
+  const shortcutFilter = React.useCallback((e: KeyboardEvent) => {
+    if (e.altKey || e.shiftKey) {
+      return false;
+    }
+
+    if (e.ctrlKey || e.metaKey) {
+      return e.code === 'KeyK';
+    }
+
+    return e.code === 'Slash';
+  }, []);
 
   const highlightedResult = renderedResults[highlight] || null;
 
@@ -176,20 +182,41 @@ export const useSearchDialog = () => {
     }
   };
 
-  return {
-    openSearch,
-    overlay: (
+  return (
+    <>
+      <ShortcutHandler onShortcut={openSearch} shortcutLabel="/" shortcutFilter={shortcutFilter}>
+        <SearchTrigger onClick={openSearch}>
+          <Box flex={{justifyContent: 'space-between', alignItems: 'center'}}>
+            <Box flex={{alignItems: 'center', gap: 8}}>
+              <div
+                style={{
+                  background: Colors.Gray900,
+                  borderRadius: '12px',
+                  height: '24px',
+                  width: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon name="search" color={Colors.Gray50} />
+              </div>
+              <Placeholder>{searchPlaceholder}</Placeholder>
+            </Box>
+            <SlashShortcut>/</SlashShortcut>
+          </Box>
+        </SearchTrigger>
+      </ShortcutHandler>
       <Overlay
-        backdropProps={{style: {backgroundColor: Colors.dialogBackground()}}}
+        backdropProps={{style: {backgroundColor: Colors.WashGray}}}
         isOpen={shown}
         onClose={() => dispatch({type: 'hide-dialog'})}
         transitionDuration={100}
       >
         <Container>
-          <SearchBox $hasQueryString={!!queryString.length}>
-            <Icon name="search" color={Colors.accentGray()} size={20} />
+          <SearchBox hasQueryString={!!queryString.length}>
+            <Icon name="search" color={Colors.Gray200} size={20} />
             <SearchInput
-              data-search-input="1"
               autoFocus
               spellCheck={false}
               onChange={onChange}
@@ -205,20 +232,40 @@ export const useSearchDialog = () => {
             queryString={queryString}
             results={renderedResults}
             onClickResult={onClickResult}
-            searching={loading || state.searching}
           />
         </Container>
       </Overlay>
-    ),
-  };
+    </>
+  );
 };
 
+const SearchTrigger = styled.button`
+  background-color: ${Colors.Gray800};
+  border-radius: 24px;
+  border: none;
+  color: ${Colors.Gray50};
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 16px 4px 4px;
+  outline: none;
+  user-select: none;
+  width: 188px;
+  height: 32px;
+
+  :focus {
+    border-color: ${Colors.Gray100};
+  }
+`;
+
+const Placeholder = styled.div`
+  position: relative;
+  top: -1px;
+`;
+
 const Container = styled.div`
-  background-color: ${Colors.backgroundDefault()};
-  border-radius: 8px;
-  box-shadow:
-    2px 2px 8px ${Colors.shadowDefault()},
-    ${Colors.keylineDefault()} inset 0px 0px 0px 1px;
+  background-color: ${Colors.White};
+  border-radius: 4px;
+  box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.1);
   max-height: 60vh;
   left: calc(50% - 300px);
   overflow: hidden;
@@ -226,33 +273,20 @@ const Container = styled.div`
   top: 20vh;
 `;
 
-export interface SearchBoxProps {
-  readonly $hasQueryString: boolean;
+interface SearchBoxProps {
+  readonly hasQueryString: boolean;
 }
 
-export const SearchBox = styled.div<SearchBoxProps>`
-  background: ${Colors.backgroundDefault()};
-  border-radius: ${({$hasQueryString}) => ($hasQueryString ? '8px 8px 0 0' : '8px')};
-  border: none;
+const SearchBox = styled.div<SearchBoxProps>`
   align-items: center;
-  box-shadow: ${({$hasQueryString}) =>
-      $hasQueryString ? Colors.keylineDefault() : Colors.borderDefault()}
-    inset 0px 0px 0px 1px;
+  border-bottom: ${({hasQueryString}) => (hasQueryString ? `1px solid ${Colors.Gray100}` : 'none')};
   display: flex;
   padding: 12px 20px 12px 12px;
-  transition: all 100ms linear;
-
-  :hover {
-    box-shadow: ${({$hasQueryString}) =>
-        $hasQueryString ? Colors.keylineDefault() : Colors.borderHover()}
-      0 0 0 1px inset;
-  }
 `;
 
-export const SearchInput = styled.input`
-  background-color: transparent;
+const SearchInput = styled.input`
   border: none;
-  color: ${Colors.textDefault()};
+  color: ${Colors.Gray600};
   font-family: ${FontFamily.default};
   font-size: 18px;
   margin-left: 4px;
@@ -260,10 +294,15 @@ export const SearchInput = styled.input`
   width: 100%;
 
   &::placeholder {
-    color: ${Colors.textDisabled()};
+    color: ${Colors.Gray200};
   }
+`;
 
-  ::focus {
-    outline: none;
-  }
+const SlashShortcut = styled.div`
+  background-color: ${Colors.Gray700};
+  border-radius: 3px;
+  color: ${Colors.Gray100};
+  font-size: 14px;
+  font-family: ${FontFamily.monospace};
+  padding: 2px 6px;
 `;

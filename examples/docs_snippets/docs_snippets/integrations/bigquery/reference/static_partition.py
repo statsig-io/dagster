@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from dagster import AssetExecutionContext, StaticPartitionsDefinition, asset
+from dagster import StaticPartitionsDefinition, asset
 
 
 @asset(
@@ -11,8 +11,8 @@ from dagster import AssetExecutionContext, StaticPartitionsDefinition, asset
     ),
     metadata={"partition_expr": "SPECIES"},
 )
-def iris_data_partitioned(context: AssetExecutionContext) -> pd.DataFrame:
-    species = context.partition_key
+def iris_data_partitioned(context) -> pd.DataFrame:
+    species = context.asset_partition_key_for_output()
 
     full_df = pd.read_csv(
         "https://docs.dagster.io/assets/iris.csv",

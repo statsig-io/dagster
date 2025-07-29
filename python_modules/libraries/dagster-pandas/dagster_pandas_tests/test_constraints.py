@@ -11,11 +11,11 @@ from dagster_pandas.constraints import (
     StrictColumnsConstraint,
     UniqueColumnConstraint,
 )
-from numpy import nan
+from numpy import NaN
 from pandas import DataFrame
 
 NAN_VALUES = [
-    nan,
+    NaN,
     None,
 ]
 

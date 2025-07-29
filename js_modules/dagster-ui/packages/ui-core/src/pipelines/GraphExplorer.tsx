@@ -1,36 +1,41 @@
+import {gql} from '@apollo/client';
 // eslint-disable-next-line no-restricted-imports
 import {Breadcrumbs} from '@blueprintjs/core';
 import {
   Checkbox,
   Colors,
-  ErrorBoundary,
   SplitPanelContainer,
   TextInput,
+  ErrorBoundary,
 } from '@dagster-io/ui-components';
+import Color from 'color';
 import qs from 'qs';
-import {useEffect, useMemo, useState} from 'react';
+import * as React from 'react';
+import {Route} from 'react-router-dom';
 import styled from 'styled-components';
 
-import {EmptyDAGNotice, EntirelyFilteredDAGNotice, LoadingNotice} from './GraphNotices';
+import {filterByQuery} from '../app/GraphQueryImpl';
+import {isHiddenAssetGroupJob} from '../asset-graph/Utils';
+import {OpGraph, OP_GRAPH_OP_FRAGMENT} from '../graph/OpGraph';
+import {useOpLayout} from '../graph/asyncGraphLayout';
+import {OpNameOrPath} from '../ops/OpNameOrPath';
+import {GraphQueryInput} from '../ui/GraphQueryInput';
+import {RepoAddress} from '../workspace/types';
+
+import {
+  EmptyDAGNotice,
+  EntirelyFilteredDAGNotice,
+  LargeDAGNotice,
+  LoadingNotice,
+} from './GraphNotices';
 import {ExplorerPath} from './PipelinePathUtils';
 import {SIDEBAR_ROOT_CONTAINER_FRAGMENT} from './SidebarContainerOverview';
 import {SidebarRoot} from './SidebarRoot';
-import {gql} from '../apollo-client';
-import {OpGraphSelectionInput} from './OpGraphSelectionInput';
 import {GraphExplorerFragment, GraphExplorerSolidHandleFragment} from './types/GraphExplorer.types';
-import {filterByQuery} from '../app/GraphQueryImpl';
-import {Route} from '../app/Route';
-import {isHiddenAssetGroupJob} from '../asset-graph/Utils';
-import {OP_GRAPH_OP_FRAGMENT, OpGraph} from '../graph/OpGraph';
-import {useOpLayout} from '../graph/asyncGraphLayout';
-import {filterOpSelectionByQuery} from '../op-selection/AntlrOpSelection';
-import {OpNameOrPath} from '../ops/OpNameOrPath';
-import {RepoAddress} from '../workspace/types';
 
 export interface GraphExplorerOptions {
   explodeComposites: boolean;
   preferAssetRendering: boolean;
-  isExternal?: boolean;
 }
 
 interface GraphExplorerProps {
@@ -46,7 +51,7 @@ interface GraphExplorerProps {
   isGraph: boolean;
 }
 
-export const GraphExplorer = (props: GraphExplorerProps) => {
+export const GraphExplorer: React.FC<GraphExplorerProps> = (props) => {
   const {
     getInvocations,
     handles,
@@ -59,13 +64,13 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
     repoAddress,
     isGraph,
   } = props;
-  const [nameMatch, setNameMatch] = useState('');
+  const [nameMatch, setNameMatch] = React.useState('');
 
   const handleQueryChange = (opsQuery: string) => {
     onChangeExplorerPath({...explorerPath, opsQuery}, 'replace');
   };
 
-  const handleAdjustPath = useMemo(
+  const handleAdjustPath = React.useMemo(
     () => (fn: (opNames: string[]) => void) => {
       const opNames = [...explorerPath.opNames];
       const retValue = fn(opNames);
@@ -91,7 +96,7 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
         if (arg.path[0] !== '..') {
           opNames.length = 0;
         }
-        if (arg.path[0] === '..') {
+        if (arg.path[0] === '..' && opNames[opNames.length - 1] !== '') {
           opNames.pop(); // remove the last path component indicating selection
         }
         while (arg.path[0] === '..') {
@@ -141,7 +146,7 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
   const invalidParent =
     parentHandle && parentHandle.solid.definition.__typename !== 'CompositeSolidDefinition';
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (invalidSelection || invalidParent) {
       handleAdjustPath((opNames) => {
         opNames.pop();
@@ -149,7 +154,7 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
     }
   }, [handleAdjustPath, invalidSelection, invalidParent]);
 
-  const solids = useMemo(() => handles.map((h) => h.solid), [handles]);
+  const solids = React.useMemo(() => handles.map((h) => h.solid), [handles]);
   const solidsQueryEnabled = !parentHandle && !explorerPath.snapshotId;
   const showAssetRenderingOption =
     !isGraph && solids.some((s) => s.definition.assetNodes.length > 0);
@@ -158,14 +163,15 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
     (options.explodeComposites ||
       solids.some((f) => f.definition.__typename === 'CompositeSolidDefinition'));
 
-  const queryResultOps = useMemo(() => {
-    if (solidsQueryEnabled) {
-      return filterOpSelectionByQuery(solids, opsQuery);
-    }
-    return filterByQuery(solids, opsQuery);
-  }, [opsQuery, solids, solidsQueryEnabled]);
+  const queryResultOps = React.useMemo(
+    () =>
+      solidsQueryEnabled
+        ? filterByQuery(solids, opsQuery)
+        : {all: solids, focus: [], applyingEmptyDefault: false},
+    [opsQuery, solids, solidsQueryEnabled],
+  );
 
-  const highlightedOps = useMemo(
+  const highlightedOps = React.useMemo(
     () => queryResultOps.all.filter((s) => s.name.toLowerCase().includes(nameMatch.toLowerCase())),
     [nameMatch, queryResultOps.all],
   );
@@ -173,7 +179,7 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
   const parentOp = parentHandle && parentHandle.solid;
   const {layout, loading, async} = useOpLayout(queryResultOps.all, parentOp);
 
-  const breadcrumbs = useMemo(() => {
+  const breadcrumbs = React.useMemo(() => {
     const opNames = explorerPath.opNames;
     const breadcrumbs = opNames.map((name, idx) => ({
       text: name,
@@ -191,15 +197,17 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
 
   return (
     <SplitPanelContainer
-      identifier="graph-explorer"
+      identifier="explorer"
       firstInitialPercent={70}
       first={
         <ErrorBoundary region="op graph">
           {solidsQueryEnabled ? (
             <QueryOverlay>
-              <OpGraphSelectionInput
+              <GraphQueryInput
                 items={solids}
                 value={explorerPath.opsQuery}
+                placeholder="Type an op subset…"
+                popoverPosition="bottom-left"
                 onChange={handleQueryChange}
               />
             </QueryOverlay>
@@ -254,6 +262,8 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
 
           {solids.length === 0 ? (
             <EmptyDAGNotice nodeType="op" isGraph={isGraph} />
+          ) : queryResultOps.applyingEmptyDefault ? (
+            <LargeDAGNotice nodeType="op" />
           ) : Object.keys(queryResultOps.all).length === 0 ? (
             <EntirelyFilteredDAGNotice nodeType="op" />
           ) : undefined}
@@ -275,7 +285,6 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
               onEnterSubgraph={handleEnterCompositeSolid}
               onLeaveSubgraph={handleLeaveCompositeSolid}
               layout={layout}
-              isExternal={options.isExternal}
             />
           )}
         </ErrorBoundary>
@@ -294,7 +303,6 @@ export const GraphExplorer = (props: GraphExplorerProps) => {
                 onEnterSubgraph={handleEnterCompositeSolid}
                 onClickOp={handleClickOp}
                 repoAddress={repoAddress}
-                isExternal={options.isExternal}
                 {...qs.parse(location.search || '', {ignoreQueryPrefix: true})}
               />
             )}
@@ -353,7 +361,7 @@ export const RightInfoPanel = styled.div`
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: ${Colors.backgroundDefault()};
+  background: ${Colors.White};
 `;
 
 export const RightInfoPanelContent = styled.div`
@@ -362,7 +370,7 @@ export const RightInfoPanelContent = styled.div`
 `;
 
 export const OptionsOverlay = styled.div`
-  background-color: ${Colors.popoverBackground()};
+  background-color: ${Color(Colors.White).fade(0.6).toString()};
   z-index: 2;
   padding: 15px 20px;
   display: inline-flex;
@@ -375,7 +383,7 @@ export const OptionsOverlay = styled.div`
 `;
 
 const HighlightOverlay = styled.div`
-  background-color: ${Colors.popoverBackground()};
+  background-color: ${Color(Colors.White).fade(0.6).toString()};
   z-index: 2;
   padding: 8px 12px 0 0;
   display: inline-flex;
@@ -396,7 +404,7 @@ export const QueryOverlay = styled.div`
 `;
 
 const BreadcrumbsOverlay = styled.div`
-  background-color: ${Colors.popoverBackground()};
+  background-color: ${Color(Colors.White).fade(0.6).toString()};
   z-index: 2;
   padding: 12px 0 0 20px;
   height: 42px;

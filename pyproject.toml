@@ -1,4 +1,27 @@
 # ########################
+# ##### BLACK
+# ########################
+
+# [Docs root]
+#   https://black.readthedocs.io/en/stable/
+# [Config option reference]
+#   https://black.readthedocs.io/en/stable/usage_and_configuration/the_basics.html#command-line-options
+
+[tool.black]
+line-length = 100
+
+# Enable "preview" mode-- this adds style rules likely to be incorporated into black's next major
+# release. The reason for enabling this, as of 2022-12-04, is to turn on formatting of long string
+# literals.
+preview = true
+
+# Black will refuse to run if it's not this version.
+required-version = "23.9.1"
+
+# Ensure black's output will be compatible with all listed versions.
+target-versions = ['py38', 'py39', 'py310', 'py311']
+
+# ########################
 # ##### PYRIGHT
 # ########################
 
@@ -12,9 +35,9 @@
 
 [tool.pyright]
 
-typeCheckingMode = "standard"
-
 include = [
+  ".buildkite/dagster-buildkite",
+  "docs/dagster-ui-screenshot",
   "docs/sphinx/_ext/dagster-sphinx",
   "python_modules",
   "examples",
@@ -29,11 +52,10 @@ exclude = [
   "**/__pycache__",
   "**/__generated__",
   "**/vendor",
-  "**/_vendored",
   "**/.tox",
   ".git",
   "**/.venv*",
-  "**/build",
+  "**/build"
 ]
 
 # These two settings point pyright to a python environment to resolve imports against. This virtual
@@ -42,11 +64,18 @@ exclude = [
 venv = ".venv"
 venvPath = "pyright/master"
 
+# Set to false to help us during the transition from mypy to pyright. Mypy does
+# not analyze unannotated functions by default, and so as of 2023-02 the codebase contains a large
+# number of type errors in unannotated functions. Eventually we can turn off this setting.
+analyzeUnannotatedFunctions = false
 
 # Minimum version of Python on which code must run. This determines the standard library stubs used by
 # pyright.
-pythonVersion = "3.9"
+pythonVersion = "3.8"
 
+# Use "basic" ruleset. This differs from strict in several ways, but most
+# importantly it does not flag untyped code as an error.
+typeCheckingMode = "basic"
 
 # Disable reading type annotations from libraries that are not explicitly marked as typed (i.e. that
 # include a py.typed file). All imports from these libraries are given the `Unknown` type (i.e.
@@ -64,13 +93,6 @@ reportPrivateImportUsage = false
 # recognize.
 reportUnnecessaryTypeIgnoreComment = "warning"
 
-# Skip analyzing unannotated code in examples to facilitate terse code.
-executionEnvironments = [
-  { root = "examples", analyzeUnannotatedFunctions=false },
-  { root = "python_modules" },
-  { root = "integration_tests" }
-]
-
 # ########################
 # ##### PYTEST
 # ########################
@@ -78,13 +100,11 @@ executionEnvironments = [
 [tool.pytest.ini_options]
 
 filterwarnings = [
+  "ignore::dagster.ExperimentalWarning",
   "ignore::DeprecationWarning",
   "ignore::UserWarning",
   "ignore::pytest.PytestCollectionWarning",
 ]
-
-timeout = 240
-addopts = "-ra --force-flaky --max-runs=2 --no-success-flaky-report"
 
 # ########################
 # ##### RUFF
@@ -100,31 +120,13 @@ addopts = "-ra --force-flaky --max-runs=2 --no-success-flaky-report"
 
 [tool.ruff]
 
-target-version = "py39"
-
-# *.py, *.ipy are included by default
-extend-include = ["*.ipynb"]
+target-version = "py38"
 
 extend-exclude = [
   "*/__generated__/*",
   "*/dagster_airflow/vendor/*",
-  "*/_vendored/*",
-  "*/snapshots/*",
-  "python_modules/libraries/dagstermill/dagstermill_tests/notebooks/cli_test_scaffold.ipynb",
-  ".buildkite/",
+  "*/snapshots/*"
 ]
-
-# Codebase-wide default line length. Override in package-specific pyproject.toml where a different
-# length is desired.
-line-length = 100
-
-# Fail if Ruff is not running this version.
-required-version = "0.11.5"
-
-[tool.ruff.lint]
-
-# we only want to format notebooks, not lint them
-exclude = ["*.ipynb"]
 
 ignore = [
 
@@ -147,8 +149,8 @@ ignore = [
   # warnings.filterwarings calls before imports.
   "E402",
 
-  # (line too long): This fires for comments, which the ruff formatter won't auto-wrap. Disabling
-  # until there is an autoformat solution available for comments.
+  # (line too long): This fires for comments, which black won't wrap.
+  # Disabling until there is an autoformat solution available for comments.
   "E501",
 
   # (no type comparison): There are a few places where we use `== type(None)` which are more clear
@@ -158,7 +160,7 @@ ignore = [
   # (bare exception): There are many places where we want to catch a maximally generic exception.
   'E722',
 
-  # (no assign lambda): existing code assigns lambdas in a few places. With ruff formatting
+  # (no assign lambda): existing code assigns lambdas in a few places. With black formatting
   # requiring extra empty lines between defs, disallowing lambda assignment can make code less
   # readable.
   "E731",
@@ -177,14 +179,17 @@ ignore = [
 
   # (assorted docstring rules) There are too many violations of these to enable
   # right now, but we should enable after fixing the violations.
-  "D200", # (one-line docstring should fit)
-  "D205", # (blank line after summary)
-  "D417", # (missing arg in docstring)
+  "D200",  # (one-line docstring should fit)
+  "D205",  # (blank line after summary)
+  "D417",  # (missing arg in docstring)
 
   # (assorted perf rules) We have a lot of violations, enable when autofix is available
-  "PERF401", # (manual-list-comprehension)
-  "PERF402", # (manual-list-copy)
+  "PERF401",  # (manual-list-comprehension)
+  "PERF402",  # (manual-list-copy)
 ]
+
+# Match black. Note that this also checks comment line length, but black does not format comments.
+line-length = 100
 
 # By default, ruff only uses all "E" (pycodestyle) and "F" (pyflakes) rules.
 # Here we append to the defaults.
@@ -197,9 +202,6 @@ select = [
 
   # (useless expression): Expressions that aren't assigned to anything are typically bugs.
   "B018",
-
-  # (static key dict comprehension): Flag reuse of a key in dict comprehensions.
-  "B035",
 
   # (pydocstyle) Docstring-related rules. A large subset of these are ignored by the
   # "convention=google" setting, we set under tool.ruff.pydocstyle.
@@ -214,9 +216,6 @@ select = [
   # (isort) detect improperly sorted imports
   "I001",
 
-  # ban relative imports
-  "TID252",
-
   # (performance) perflint rules
   "PERF",
 
@@ -224,9 +223,6 @@ select = [
   # currently implements only a subset of pylint's rules)
   "PLE",
   "PLW",
-
-  # Packages have __init__.py files
-  "INP001",
 
   # (no commented out code) keep commented out code blocks out of the codebase
   # "ERA001",
@@ -238,7 +234,7 @@ select = [
   # (private member access) Flag access to `_`-prefixed symbols. By default the various special
   # methods on `NamedTuple` are ignored (e.g. `_replace`).
   "SLF001",
-
+  
   # (flake8-type-checking) Auto-sort imports into TYPE_CHECKING blocks depending on whether
   # they are runtime or type-only imports.
   "TCH",
@@ -249,66 +245,46 @@ select = [
   # (disallow print statements) keep debugging statements out of the codebase
   "T20",
 
-  # (pyupgrade) auto-upgrade syntax to newer versions of Python
-  "UP",
+  # (f-strings) use f-strings instead of .format()
+  "UP032",
 
   # (invalid escape sequence) flag errant backslashes
   "W605",
 ]
 
-[tool.ruff.lint.flake8-builtins]
+# Fail if Ruff is not running this version.
+required-version = "0.0.289"
+
+[tool.ruff.flake8-builtins]
 
 # We use `id` in many places and almost never want to use the python builtin.
 builtins-ignorelist = ["id"]
 
-[tool.ruff.lint.flake8-tidy-imports.banned-api]
+[tool.ruff.flake8-tidy-imports.banned-api]
 
 "__future__.annotations".msg = "Directly quote annotations instead."
 
-[tool.ruff.lint.isort]
+[tool.ruff.isort]
 
 # Combine multiple `from foo import bar as baz` statements with the same source
 # (`foo`) into a single statement.
 combine-as-imports = true
 
-# In cases where imports are automatically removed, allows the imports to be automatically collapsed
-split-on-trailing-comma = false
-
 # Imports of the form `from foo import bar as baz` show one `import bar as baz`
 # per line. Useful for __init__.py files that just re-export symbols.
 force-wrap-aliases = true
 
-[tool.ruff.lint.flake8-tidy-imports]
-# Disallow all relative imports.
-ban-relative-imports = "all"
-
-[tool.ruff.lint.per-file-ignores]
+[tool.ruff.per-file-ignores]
 
 # Don't format docstrings in alembic migrations.
 "**/alembic/versions/*.py" = ["D"]
-"examples/docs_snippets/docs_snippets/guides/etl/transform-dbt/dbt_definitions*.py" = ["I001"]
 
-# Modules where it is expected for there to be no __init.py__
-"**/*test*/**/" = ["INP001"]
-"**/setup.py" = ["INP001"]
-"**/conftest.py" = ["INP001"]
-"examples/**" = ["INP001"]
-"docs/**" = ["INP001"]
-"**/scripts/**" = ["INP001"]
-"python_modules/dagster/dagster/_core/storage/alembic/env.py" = ["INP001"]
-"python_modules/libraries/dagster-airlift/kitchen-sink/**" = ["INP001"]
-# There is an __init__.py.tmpl
-"python_modules/dagster/dagster/_generate/templates/REPO_NAME_PLACEHOLDER/REPO_NAME_PLACEHOLDER/assets.py" = ["INP001"]
-
-[tool.ruff.lint.pydocstyle]
+[tool.ruff.pydocstyle]
 
 # Enforce google-style docstrings. This is equivalent to ignoring a large number of pydocstyle (D)
 # rules incompatible with google-style docstrings. See:
 # https://google.github.io/styleguide/pyguide.html#383-functions-and-methods
 convention = "google"
-
-[tool.ruff.format]
-exclude = ["examples/docs_snippets/docs_snippets/guides/etl/transform-dbt/dbt_definitions*.py"]
 
 [tool.dagster]
 module_name = "dagster_test.toys.repo"

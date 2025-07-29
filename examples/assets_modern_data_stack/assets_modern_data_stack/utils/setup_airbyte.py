@@ -4,8 +4,7 @@ create an Airbyte Connection between the source database and destination databas
 """
 
 import random
-from collections.abc import Mapping
-from typing import Any
+from typing import Any, Dict, Mapping
 
 import dagster._check as check
 import numpy as np
@@ -21,7 +20,7 @@ N_ORDERS = 10000
 
 
 def _safe_request(
-    client: AirbyteResource, endpoint: str, data: dict[str, object]
+    client: AirbyteResource, endpoint: str, data: Dict[str, object]
 ) -> Mapping[str, Any]:
     response = client.make_request(endpoint, data)
     assert response, "Request returned null response"

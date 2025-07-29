@@ -11,8 +11,9 @@ export type AssetGroupMetadataQuery = {
   assetNodes: Array<{
     __typename: 'AssetNode';
     id: string;
-    automationCondition: {__typename: 'AutomationCondition'} | null;
+    autoMaterializePolicy: {
+      __typename: 'AutoMaterializePolicy';
+      policyType: Types.AutoMaterializePolicyType;
+    } | null;
   }>;
 };
-
-export const AssetGroupMetadataQueryVersion = '649fd8034ea453acebec574365ec19b678930cdbc976f5da2addfe40f985886f';

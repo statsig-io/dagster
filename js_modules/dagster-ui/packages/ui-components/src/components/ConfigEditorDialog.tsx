@@ -1,3 +1,5 @@
+import * as React from 'react';
+
 import {Button} from './Button';
 import {ConfigEditorWithSchema} from './ConfigEditorWithSchema';
 import {Dialog, DialogFooter} from './Dialog';
@@ -20,7 +22,7 @@ interface Props {
   isOpen: boolean;
 }
 
-export const ConfigEditorDialog = ({
+export const ConfigEditorDialog: React.FC<Props> = ({
   config,
   configSchema,
   isLoading,
@@ -33,7 +35,7 @@ export const ConfigEditorDialog = ({
   title,
   saveText,
   isOpen,
-}: Props) => {
+}) => {
   return (
     <Dialog
       isOpen={isOpen}

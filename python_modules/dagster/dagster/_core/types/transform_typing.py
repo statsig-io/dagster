@@ -1,9 +1,5 @@
 import typing
 
-from dagster._core.types.dagster_type import List, Optional
-from dagster._core.types.python_dict import Dict, create_typed_runtime_dict
-from dagster._core.types.python_set import Set
-from dagster._core.types.python_tuple import Tuple, create_typed_tuple
 from dagster._utils.typing_api import (
     get_dict_key_value_types,
     get_list_inner_type,
@@ -16,6 +12,11 @@ from dagster._utils.typing_api import (
     is_closed_python_set_type,
     is_closed_python_tuple_type,
 )
+
+from .dagster_type import List, Optional
+from .python_dict import Dict, create_typed_runtime_dict
+from .python_set import Set
+from .python_tuple import Tuple, create_typed_tuple
 
 
 def transform_typing_type(type_annotation):

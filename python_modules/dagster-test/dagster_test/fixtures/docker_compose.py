@@ -5,32 +5,18 @@ import subprocess
 from contextlib import contextmanager
 
 import pytest
-import yaml
 
-from dagster_test.fixtures.utils import BUILDKITE
+from .utils import BUILDKITE
 
 
 @contextmanager
 def docker_compose_cm(
-    docker_compose_yml,
-    network_name=None,
-    docker_context=None,
-    service=None,
-    env_file=None,
-    no_build: bool = False,
+    docker_compose_yml, network_name=None, docker_context=None, service=None, env_file=None
 ):
     if not network_name:
         network_name = network_name_from_yml(docker_compose_yml)
-
     try:
-        try:
-            docker_compose_up(
-                docker_compose_yml, docker_context, service, env_file, no_build=no_build
-            )
-        except:
-            dump_docker_compose_logs(docker_context, docker_compose_yml)
-            raise
-
+        docker_compose_up(docker_compose_yml, docker_context, service, env_file)
         if BUILDKITE:
             # When running in a container on Buildkite, we need to first connect our container
             # and our network and then yield a dict of container name to the container's
@@ -45,21 +31,6 @@ def docker_compose_cm(
         docker_compose_down(docker_compose_yml, docker_context, service, env_file)
 
 
-def dump_docker_compose_logs(context, docker_compose_yml):
-    if context:
-        compose_command = ["docker", "--context", context, "compose"]
-    else:
-        compose_command = ["docker", "compose"]
-
-    compose_command += [
-        "--file",
-        str(docker_compose_yml),
-        "logs",
-    ]
-
-    subprocess.run(compose_command, check=False)
-
-
 @pytest.fixture(scope="module", name="docker_compose_cm")
 def docker_compose_cm_fixture(test_directory):
     @contextmanager
@@ -69,12 +40,11 @@ def docker_compose_cm_fixture(test_directory):
         docker_context=None,
         service=None,
         env_file=None,
-        no_build: bool = False,
     ):
         if not docker_compose_yml:
             docker_compose_yml = default_docker_compose_yml(test_directory)
         with docker_compose_cm(
-            docker_compose_yml, network_name, docker_context, service, env_file, no_build
+            docker_compose_yml, network_name, docker_context, service, env_file
         ) as hostnames:
             yield hostnames
 
@@ -87,11 +57,11 @@ def docker_compose(docker_compose_cm):
         yield docker_compose
 
 
-def docker_compose_up(docker_compose_yml, context, service, env_file, no_build: bool = False):
+def docker_compose_up(docker_compose_yml, context, service, env_file):
     if context:
         compose_command = ["docker", "--context", context, "compose"]
     else:
-        compose_command = ["docker", "compose"]
+        compose_command = ["docker-compose"]
 
     if env_file:
         compose_command += ["--env-file", env_file]
@@ -103,9 +73,6 @@ def docker_compose_up(docker_compose_yml, context, service, env_file, no_build: 
         "--detach",
     ]
 
-    if no_build:
-        compose_command += ["--no-build"]
-
     if service:
         compose_command.append(service)
 
@@ -116,15 +83,17 @@ def docker_compose_down(docker_compose_yml, context, service, env_file):
     if context:
         compose_command = ["docker", "--context", context, "compose"]
     else:
-        compose_command = ["docker", "compose"]
+        compose_command = ["docker-compose"]
 
     if env_file:
         compose_command += ["--env-file", env_file]
 
     if service:
-        compose_command += ["--file", str(docker_compose_yml), "down", "--volumes", service]
-        subprocess.check_call(compose_command)
+        compose_command += ["--file", str(docker_compose_yml), "rm", "--volumes"]
 
+        compose_command.append(service)
+
+        subprocess.check_call(compose_command)
     else:
         compose_command += [
             "--file",
@@ -133,6 +102,7 @@ def docker_compose_down(docker_compose_yml, context, service, env_file):
             "--volumes",
             "--remove-orphans",
         ]
+
         subprocess.check_call(compose_command)
 
 
@@ -194,24 +164,14 @@ def buildkite_hostnames_cm(network):
         disconnect_container_from_network(container, network)
 
 
-def default_docker_compose_yml(default_directory) -> str:
+def default_docker_compose_yml(default_directory):
     if os.path.isfile("docker-compose.yml"):
         return os.path.join(os.getcwd(), "docker-compose.yml")
     else:
         return os.path.join(default_directory, "docker-compose.yml")
 
 
-def network_name_from_yml(docker_compose_yml) -> str:
-    with open(docker_compose_yml) as f:
-        config = yaml.safe_load(f)
-    if "name" in config:
-        name = config["name"]
-    else:
-        dirname = os.path.dirname(docker_compose_yml)
-        name = os.path.basename(dirname)
-    if "networks" in config:
-        network_name = next(iter(config["networks"].keys()))
-    else:
-        network_name = "default"
-
-    return f"{name}_{network_name}"
+def network_name_from_yml(docker_compose_yml):
+    dirname = os.path.dirname(docker_compose_yml)
+    basename = os.path.basename(dirname)
+    return basename + "_default"

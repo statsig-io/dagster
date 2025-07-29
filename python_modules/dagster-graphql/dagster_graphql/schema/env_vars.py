@@ -1,9 +1,13 @@
-from collections.abc import Sequence
+from typing import List, Sequence
 
 import graphene
-from dagster._core.remote_representation.external_data import EnvVarConsumer
+from dagster._core.host_representation.external_data import (
+    EnvVarConsumer,
+)
 
-from dagster_graphql.schema.errors import GraphenePythonError
+from dagster_graphql.schema.errors import (
+    GraphenePythonError,
+)
 from dagster_graphql.schema.util import non_null_list
 
 
@@ -43,7 +47,7 @@ class GrapheneEnvVarWithConsumers(graphene.ObjectType):
         self.envVarName = name
         self.consumers = consumers
 
-    def resolve_envVarConsumers(self, _graphene_info) -> list[GrapheneEnvVarConsumer]:
+    def resolve_envVarConsumers(self, _graphene_info) -> List[GrapheneEnvVarConsumer]:
         return [GrapheneEnvVarConsumer(consumer) for consumer in self.consumers]
 
 
@@ -58,16 +62,3 @@ class GrapheneEnvVarWithConsumersListOrError(graphene.Union):
     class Meta:
         types = (GrapheneEnvVarWithConsumersList, GraphenePythonError)
         name = "EnvVarWithConsumersOrError"
-
-
-class GrapheneLocationDocsJson(graphene.ObjectType):
-    class Meta:
-        name = "LocationDocsJson"
-
-    json = graphene.NonNull(graphene.JSONString)
-
-
-class GrapheneLocationDocsJsonOrError(graphene.Union):
-    class Meta:
-        types = (GrapheneLocationDocsJson, GraphenePythonError)
-        name = "LocationDocsJsonOrError"

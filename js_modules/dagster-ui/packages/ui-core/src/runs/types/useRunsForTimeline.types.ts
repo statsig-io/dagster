@@ -2,34 +2,16 @@
 
 import * as Types from '../../graphql/types';
 
-export type RunTimelineFragment = {
-  __typename: 'Run';
-  id: string;
-  pipelineName: string;
-  externalJobSource: string | null;
-  status: Types.RunStatus;
-  creationTime: number;
-  startTime: number | null;
-  endTime: number | null;
-  updateTime: number | null;
-  tags: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
-  repositoryOrigin: {
-    __typename: 'RepositoryOrigin';
-    id: string;
-    repositoryName: string;
-    repositoryLocationName: string;
-  } | null;
-};
-
-export type OngoingRunTimelineQueryVariables = Types.Exact<{
+export type RunTimelineQueryVariables = Types.Exact<{
   inProgressFilter: Types.RunsFilter;
-  limit: Types.Scalars['Int']['input'];
-  cursor?: Types.InputMaybe<Types.Scalars['String']['input']>;
+  terminatedFilter: Types.RunsFilter;
+  tickCursor?: Types.InputMaybe<Types.Scalars['Float']>;
+  ticksUntil?: Types.InputMaybe<Types.Scalars['Float']>;
 }>;
 
-export type OngoingRunTimelineQuery = {
+export type RunTimelineQuery = {
   __typename: 'Query';
-  ongoing:
+  unterminated:
     | {__typename: 'InvalidPipelineRunsFilterError'}
     | {__typename: 'PythonError'}
     | {
@@ -38,13 +20,10 @@ export type OngoingRunTimelineQuery = {
           __typename: 'Run';
           id: string;
           pipelineName: string;
-          externalJobSource: string | null;
           status: Types.RunStatus;
-          creationTime: number;
           startTime: number | null;
           endTime: number | null;
           updateTime: number | null;
-          tags: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
           repositoryOrigin: {
             __typename: 'RepositoryOrigin';
             id: string;
@@ -53,17 +32,7 @@ export type OngoingRunTimelineQuery = {
           } | null;
         }>;
       };
-};
-
-export type CompletedRunTimelineQueryVariables = Types.Exact<{
-  completedFilter: Types.RunsFilter;
-  limit: Types.Scalars['Int']['input'];
-  cursor?: Types.InputMaybe<Types.Scalars['String']['input']>;
-}>;
-
-export type CompletedRunTimelineQuery = {
-  __typename: 'Query';
-  completed:
+  terminated:
     | {__typename: 'InvalidPipelineRunsFilterError'}
     | {__typename: 'PythonError'}
     | {
@@ -72,13 +41,10 @@ export type CompletedRunTimelineQuery = {
           __typename: 'Run';
           id: string;
           pipelineName: string;
-          externalJobSource: string | null;
           status: Types.RunStatus;
-          creationTime: number;
           startTime: number | null;
           endTime: number | null;
           updateTime: number | null;
-          tags: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
           repositoryOrigin: {
             __typename: 'RepositoryOrigin';
             id: string;
@@ -87,15 +53,6 @@ export type CompletedRunTimelineQuery = {
           } | null;
         }>;
       };
-};
-
-export type FutureTicksQueryVariables = Types.Exact<{
-  tickCursor?: Types.InputMaybe<Types.Scalars['Float']['input']>;
-  ticksUntil?: Types.InputMaybe<Types.Scalars['Float']['input']>;
-}>;
-
-export type FutureTicksQuery = {
-  __typename: 'Query';
   workspaceOrError:
     | {__typename: 'PythonError'}
     | {
@@ -105,6 +62,8 @@ export type FutureTicksQuery = {
           __typename: 'WorkspaceLocationEntry';
           id: string;
           name: string;
+          loadStatus: Types.RepositoryLocationLoadStatus;
+          displayMetadata: Array<{__typename: 'RepositoryMetadata'; key: string; value: string}>;
           locationOrLoadError:
             | {__typename: 'PythonError'}
             | {
@@ -146,9 +105,3 @@ export type FutureTicksQuery = {
         }>;
       };
 };
-
-export const OngoingRunTimelineQueryVersion = '7437e39dbde776b1bbaa231d1cfdd4611117e72eabd0f8fc9f64d13ec150c82b';
-
-export const CompletedRunTimelineQueryVersion = '1f34f13f13209633691baabedf021000f45052a8cc5499108393013cae3e1f00';
-
-export const FutureTicksQueryVersion = '9b947053273ecaa20ef19df02f0aa8e6f33b8a1628175987670e3c73a350e640';

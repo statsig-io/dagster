@@ -1,11 +1,11 @@
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import ConfigDict
+from pydantic import Extra
 
-from schema.charts.dagster.subschema.config import IntSource
-from schema.charts.utils import kubernetes
-from schema.charts.utils.utils import BaseModel, ConfigurableClass, create_json_schema_conditionals
+from ...utils import kubernetes
+from ...utils.utils import BaseModel, ConfigurableClass, create_json_schema_conditionals
+from .config import IntSource
 
 
 class RunCoordinatorType(str, Enum):
@@ -13,33 +13,36 @@ class RunCoordinatorType(str, Enum):
     CUSTOM = "CustomRunCoordinator"
 
 
-class TagConcurrencyLimitConfig(BaseModel, extra="forbid"):
+class TagConcurrencyLimitConfig(BaseModel):
     applyLimitPerUniqueValue: bool
 
+    class Config:
+        extra = Extra.forbid
 
-class TagConcurrencyLimit(BaseModel, extra="forbid"):
+
+class TagConcurrencyLimit(BaseModel):
     key: str
-    value: Optional[Union[str, TagConcurrencyLimitConfig]] = None
+    value: Optional[Union[str, TagConcurrencyLimitConfig]]
     limit: int
 
-
-class BlockOpConcurrencyLimitedRuns(BaseModel):
-    enabled: bool
-    opConcurrencySlotBuffer: int
+    class Config:
+        extra = Extra.forbid
 
 
-class QueuedRunCoordinatorConfig(BaseModel, extra="forbid"):
-    maxConcurrentRuns: Optional[IntSource] = None
-    tagConcurrencyLimits: Optional[list[TagConcurrencyLimit]] = None
-    dequeueIntervalSeconds: Optional[IntSource] = None
-    dequeueNumWorkers: Optional[IntSource] = None
-    dequeueUseThreads: Optional[bool] = None
-    blockOpConcurrencyLimitedRuns: Optional[BlockOpConcurrencyLimitedRuns] = None
+class QueuedRunCoordinatorConfig(BaseModel):
+    maxConcurrentRuns: Optional[IntSource]
+    tagConcurrencyLimits: Optional[List[TagConcurrencyLimit]]
+    dequeueIntervalSeconds: Optional[IntSource]
+    dequeueNumWorkers: Optional[IntSource]
+    dequeueUseThreads: Optional[bool]
+
+    class Config:
+        extra = Extra.forbid
 
 
 class RunCoordinatorConfig(BaseModel):
-    queuedRunCoordinator: Optional[QueuedRunCoordinatorConfig] = None
-    customRunCoordinator: Optional[ConfigurableClass] = None
+    queuedRunCoordinator: Optional[QueuedRunCoordinatorConfig]
+    customRunCoordinator: Optional[ConfigurableClass]
 
 
 class RunCoordinator(BaseModel):
@@ -47,72 +50,57 @@ class RunCoordinator(BaseModel):
     type: RunCoordinatorType
     config: RunCoordinatorConfig
 
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
+    class Config:
+        extra = Extra.forbid
+        schema_extra = {
             "allOf": create_json_schema_conditionals(
                 {
                     RunCoordinatorType.QUEUED: "queuedRunCoordinator",
                     RunCoordinatorType.CUSTOM: "customRunCoordinator",
                 }
             )
-        },
-    )
+        }
 
 
 class Sensors(BaseModel):
     useThreads: bool
-    numWorkers: Optional[int] = None
-    numSubmitWorkers: Optional[int] = None
+    numWorkers: Optional[int]
+    numSubmitWorkers: Optional[int]
 
 
 class Schedules(BaseModel):
     useThreads: bool
-    numWorkers: Optional[int] = None
-    numSubmitWorkers: Optional[int] = None
+    numWorkers: Optional[int]
+    numSubmitWorkers: Optional[int]
 
 
-class Backfills(BaseModel):
-    useThreads: bool
-    numWorkers: Optional[int] = None
-    numSubmitWorkers: Optional[int] = None
-
-
-class RunRetries(BaseModel):
-    enabled: bool
-    maxRetries: Optional[int] = None
-    retryOnAssetOrOpFailure: Optional[bool] = None
-
-
-class Daemon(BaseModel, extra="forbid"):
+class Daemon(BaseModel):
     enabled: bool
     image: kubernetes.Image
     runCoordinator: RunCoordinator
     heartbeatTolerance: int
-    env: Union[dict[str, str], list[kubernetes.EnvVar]]
-    envConfigMaps: list[kubernetes.ConfigMapEnvSource]
-    envSecrets: list[kubernetes.SecretEnvSource]
-    deploymentLabels: dict[str, str]
-    labels: dict[str, str]
+    env: Union[Dict[str, str], List[kubernetes.EnvVar]]
+    envConfigMaps: List[kubernetes.ConfigMapEnvSource]
+    envSecrets: List[kubernetes.SecretEnvSource]
+    deploymentLabels: Dict[str, str]
+    labels: Dict[str, str]
     nodeSelector: kubernetes.NodeSelector
     affinity: kubernetes.Affinity
     tolerations: kubernetes.Tolerations
     podSecurityContext: kubernetes.PodSecurityContext
     securityContext: kubernetes.SecurityContext
     resources: kubernetes.Resources
-    checkDbReadyInitContainer: Optional[bool] = None
     livenessProbe: kubernetes.LivenessProbe
     readinessProbe: kubernetes.ReadinessProbe
     startupProbe: kubernetes.StartupProbe
     annotations: kubernetes.Annotations
-    runMonitoring: dict[str, Any]
-    runRetries: RunRetries
+    runMonitoring: Dict[str, Any]
+    runRetries: Dict[str, Any]
     sensors: Sensors
     schedules: Schedules
-    backfills: Optional[Backfills] = None
-    schedulerName: Optional[str] = None
-    volumeMounts: Optional[list[kubernetes.VolumeMount]] = None
-    volumes: Optional[list[kubernetes.Volume]] = None
-    initContainerResources: Optional[kubernetes.Resources] = None
-    extraContainers: Optional[list[kubernetes.Container]] = None
-    extraPrependedInitContainers: Optional[list[kubernetes.InitContainer]] = None
+    schedulerName: Optional[str]
+    volumeMounts: Optional[List[kubernetes.VolumeMount]]
+    volumes: Optional[List[kubernetes.Volume]]
+
+    class Config:
+        extra = Extra.forbid

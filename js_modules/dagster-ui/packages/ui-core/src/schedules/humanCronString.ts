@@ -10,23 +10,17 @@ const formatOptions = memoize((language: string) => {
   return {use24HourTimeFormat};
 });
 
-type CronTimezoneConfig = {
-  longTimezoneName?: string;
-  tzOffset?: number;
-};
+const convertSingleCronString = (cronSchedule: string, longTimezone?: string) => {
+  let human = convertString(cronSchedule);
 
-const convertSingleCronString = (cronSchedule: string, timezoneConfig?: CronTimezoneConfig) => {
-  const {longTimezoneName, tzOffset} = timezoneConfig || {};
-  let human = convertString(cronSchedule, tzOffset);
-
-  if (longTimezoneName) {
+  if (longTimezone) {
     // Find the "At XX:YY" string and insert the timezone abbreviation.
     const timeMatch = human.match(/[0-9]{1,2}:[0-9]{2}( [A|P]M)?/g);
     if (timeMatch) {
       let shortTimezone: string | null;
       try {
-        shortTimezone = timezoneAbbreviation(longTimezoneName);
-      } catch {
+        shortTimezone = timezoneAbbreviation(longTimezone);
+      } catch (e) {
         // Failed to extract a timezone abbreviation. Skip rendering the timezone.
         shortTimezone = null;
       }
@@ -43,10 +37,10 @@ const convertSingleCronString = (cronSchedule: string, timezoneConfig?: CronTime
   return human;
 };
 
-export const humanCronString = (cronSchedule: string, timezoneConfig?: CronTimezoneConfig) => {
+export const humanCronString = (cronSchedule: string, longTimezone?: string) => {
   const cronArray = cronScheduleToArray(cronSchedule);
   return cronArray
-    .map((singleCron) => convertSingleCronString(singleCron, timezoneConfig))
+    .map((singleCron) => convertSingleCronString(singleCron, longTimezone))
     .join('; ');
 };
 
@@ -68,15 +62,10 @@ const cronScheduleToArray = (cronSchedule: string) => {
   return [cronSchedule];
 };
 
-// NOTE: Days may be incorrect for timezone offsets.
-// https://github.com/bradymholt/cRonstrue/issues/313
-const convertString = (cronSchedule: string, tzOffset?: number) => {
+const convertString = (cronSchedule: string) => {
   const standardCronString = convertIfSpecial(cronSchedule);
   try {
-    return cronstrue.toString(standardCronString, {
-      ...formatOptions(navigator.language),
-      tzOffset,
-    });
+    return cronstrue.toString(standardCronString, formatOptions(navigator.language));
   } catch {
     return 'Invalid cron string';
   }

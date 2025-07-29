@@ -1,7 +1,7 @@
 Snowflake (dagster-snowflake)
 -----------------------------
 
-This library provides an integration with the `Snowflake <https://www.snowflake.com>`_ data
+This library provides an integration with the `Snowflake <https://www.snowflake.com/>`_ data
 warehouse.
 
 To use this library, you should first ensure that you have an appropriate `Snowflake user
@@ -10,10 +10,10 @@ your data warehouse.
 
 Related Guides:
 
-* `Using Dagster with Snowflake <https://docs.dagster.io/integrations/libraries/snowflake>`_
-* `Snowflake I/O manager reference <https://docs.dagster.io/integrations/libraries/snowflake/reference>`_
-* `Transitioning data pipelines from development to production <https://docs.dagster.io/guides/deploy/dev-to-prod>`_
-* `Testing against production with Dagster+ Branch Deployments <https://docs.dagster.io/deployment/dagster-plus/ci-cd/branch-deployments>`_
+* `Using Dagster with Snowflake </integrations/snowflake>`_
+* `Snowflake I/O manager reference </integrations/snowflake/reference>`_
+* `Transitioning Data Pipelines from Development to Production </guides/dagster/transitioning-data-pipelines-from-development-to-production>`_
+* `Testing Against Production with Dagster Cloud Branch Deployments </guides/dagster/branch_deployments>`_
 
 
 .. currentmodule:: dagster_snowflake
@@ -23,19 +23,14 @@ I/O Manager
 .. autoconfigurable:: SnowflakeIOManager
   :annotation: IOManagerDefinition
 
-Resources
-=========
+Resource
+========
 
 .. autoconfigurable:: SnowflakeResource
   :annotation: ResourceDefinition
 
 .. autoclass:: SnowflakeConnection
   :members:
-
-Data Freshness 
-==============
-
-.. autofunction:: fetch_last_updated_timestamps
 
 Ops
 ===

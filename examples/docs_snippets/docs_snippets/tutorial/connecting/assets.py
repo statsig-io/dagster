@@ -1,6 +1,6 @@
 import pandas as pd
 
-from dagster import MaterializeResult, MetadataValue, asset
+from dagster import AssetExecutionContext, MetadataValue, asset
 
 # start_add_signsup_asset
 from .resources import DataGeneratorResource
@@ -9,12 +9,12 @@ from .resources import DataGeneratorResource
 
 
 @asset
-def signups(hackernews_api: DataGeneratorResource) -> MaterializeResult:
+def signups(
+    context: AssetExecutionContext, hackernews_api: DataGeneratorResource
+) -> pd.DataFrame:
     signups = pd.DataFrame(hackernews_api.get_signups())
 
-    signups.to_csv("data/signups.csv")
-
-    return MaterializeResult(
+    context.add_output_metadata(
         metadata={
             "Record Count": len(signups),
             "Preview": MetadataValue.md(signups.head().to_markdown()),
@@ -22,6 +22,8 @@ def signups(hackernews_api: DataGeneratorResource) -> MaterializeResult:
             "Latest Signup": signups["registered_at"].max(),
         }
     )
+
+    return signups
 
 
 # end_add_signsup_asset

@@ -4,14 +4,16 @@ from dagster import Definitions
 from .resources import DataGeneratorResource
 
 # start_add_config_to_resource
-import dagster as dg
+from dagster import (
+    # .. your existing imports go here
+    EnvVar,
+)
 
+# ... the existing portion of your `__init__.py` goes here.
 
-# ... the dg.existing portion of dg.your `definitions.py` goes dg.here.
-
-# Configure the resource with an environment variable dg.here
+# Configure the resource with an environment variable here
 datagen = DataGeneratorResource(
-    num_days=dg.EnvVar.int("HACKERNEWS_NUM_DAYS_WINDOW"),
+    num_days=EnvVar.int("HACKERNEWS_NUM_DAYS_WINDOW"),
 )
 
 defs = Definitions(

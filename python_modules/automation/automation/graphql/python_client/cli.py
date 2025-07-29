@@ -1,6 +1,6 @@
 import click
 
-from automation.graphql.python_client.query import query
+from .query import query
 
 CLI_HELP = """This CLI is used for commands related to the Dagster GraphQL client
 """

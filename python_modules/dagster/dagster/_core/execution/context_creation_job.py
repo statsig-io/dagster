@@ -1,41 +1,34 @@
-import asyncio
 import logging
 import sys
 from abc import ABC, abstractmethod
-from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import (  # noqa: UP035
+from typing import (
     TYPE_CHECKING,
     AbstractSet,
     Any,
     Callable,
+    Dict,
+    Generator,
     Generic,
+    Iterable,
+    Iterator,
+    Mapping,
     NamedTuple,
     Optional,
+    Sequence,
+    Type,
     TypeVar,
     Union,
     cast,
 )
 
-from dagster_shared.error import DagsterError
-
 import dagster._check as check
 from dagster._core.definitions import ExecutorDefinition, JobDefinition
 from dagster._core.definitions.executor_definition import check_cross_process_constraints
 from dagster._core.definitions.job_base import IJob
-from dagster._core.definitions.repository_definition.repository_definition import (
-    RepositoryDefinition,
-)
 from dagster._core.definitions.resource_definition import ScopedResourcesBuilder
-from dagster._core.events import DagsterEvent, RunFailureReason
-from dagster._core.execution.context.logger import InitLoggerContext
-from dagster._core.execution.context.system import (
-    ExecutionData,
-    IPlanContext,
-    PlanData,
-    PlanExecutionContext,
-    PlanOrchestrationContext,
-)
+from dagster._core.errors import DagsterError, DagsterUserCodeExecutionError
+from dagster._core.events import DagsterEvent
 from dagster._core.execution.memoization import validate_reexecution_memoization
 from dagster._core.execution.plan.plan import ExecutionPlan
 from dagster._core.execution.resources_init import (
@@ -45,27 +38,30 @@ from dagster._core.execution.resources_init import (
 from dagster._core.execution.retries import RetryMode
 from dagster._core.executor.init import InitExecutorContext
 from dagster._core.instance import DagsterInstance
+from dagster._core.log_manager import DagsterLogManager
 from dagster._core.storage.dagster_run import DagsterRun
 from dagster._core.system_config.objects import ResolvedRunConfig
 from dagster._loggers import default_loggers, default_system_loggers
 from dagster._utils import EventGenerationManager
 from dagster._utils.error import serializable_error_info_from_exc_info
 
+from .context.logger import InitLoggerContext
+from .context.system import (
+    ExecutionData,
+    IPlanContext,
+    PlanData,
+    PlanExecutionContext,
+    PlanOrchestrationContext,
+)
+
 if TYPE_CHECKING:
-    from dagster._core.errors import DagsterUserCodeExecutionError
     from dagster._core.execution.plan.outputs import StepOutputHandle
     from dagster._core.executor.base import Executor
-
-    # Import within functions so that we can mock the class in tests using freeze_time.
-    # Essentially, we want to be able to control the timestamp of the log records.
-    from dagster._core.log_manager import DagsterLogManager
 
 
 def initialize_console_manager(
     dagster_run: Optional[DagsterRun], instance: Optional[DagsterInstance] = None
-) -> "DagsterLogManager":
-    from dagster._core.log_manager import DagsterLogManager
-
+) -> DagsterLogManager:
     # initialize default colored console logger
     loggers = []
     for logger_def, logger_config in default_system_loggers(instance):
@@ -97,10 +93,6 @@ class ContextCreationData(NamedTuple):
     @property
     def job_def(self) -> JobDefinition:
         return self.job.get_definition()
-
-    @property
-    def repository_def(self) -> Optional[RepositoryDefinition]:
-        return self.job.get_repository_definition()
 
 
 def create_context_creation_data(
@@ -147,7 +139,6 @@ def create_execution_data(
         scoped_resources_builder=scoped_resources_builder,
         resolved_run_config=context_creation_data.resolved_run_config,
         job_def=context_creation_data.job_def,
-        repository_def=context_creation_data.repository_def,
     )
 
 
@@ -166,7 +157,7 @@ class ExecutionContextManager(Generic[TContextType], ABC):
 
     @property
     @abstractmethod
-    def context_type(self) -> type[TContextType]:
+    def context_type(self) -> Type[TContextType]:
         pass
 
     def prepare_context(self) -> Iterable[DagsterEvent]:  # ode to Preparable
@@ -193,10 +184,10 @@ def execution_context_event_generator(
         Callable[..., EventGenerationManager[ScopedResourcesBuilder]]
     ] = None,
     raise_on_error: Optional[bool] = False,
-    output_capture: Optional[dict["StepOutputHandle", Any]] = None,
+    output_capture: Optional[Dict["StepOutputHandle", Any]] = None,
 ) -> Generator[Union[DagsterEvent, PlanExecutionContext], None, None]:
     scoped_resources_builder_cm = cast(
-        "Callable[..., EventGenerationManager[ScopedResourcesBuilder]]",
+        Callable[..., EventGenerationManager[ScopedResourcesBuilder]],
         check.opt_callable_param(
             scoped_resources_builder_cm,
             "scoped_resources_builder_cm",
@@ -223,48 +214,31 @@ def execution_context_event_generator(
 
     log_manager = create_log_manager(context_creation_data)
     resource_defs = job_def.get_required_resource_defs()
-    event_loop = asyncio.new_event_loop()
-    try:
-        resources_manager = scoped_resources_builder_cm(
-            resource_defs=resource_defs,
-            resource_configs=context_creation_data.resolved_run_config.resources,
-            log_manager=log_manager,
-            execution_plan=execution_plan,
-            dagster_run=context_creation_data.dagster_run,
-            resource_keys_to_init=context_creation_data.resource_keys_to_init,
-            instance=instance,
-            emit_persistent_events=True,
-            event_loop=event_loop,
-        )
-        yield from resources_manager.generate_setup_events()
-        scoped_resources_builder = check.inst(
-            resources_manager.get_object(), ScopedResourcesBuilder
-        )
 
-        execution_context = PlanExecutionContext(
-            plan_data=create_plan_data(context_creation_data, raise_on_error, retry_mode),
-            execution_data=create_execution_data(context_creation_data, scoped_resources_builder),
-            log_manager=log_manager,
-            output_capture=output_capture,
-            event_loop=event_loop,
-        )
+    resources_manager = scoped_resources_builder_cm(
+        resource_defs=resource_defs,
+        resource_configs=context_creation_data.resolved_run_config.resources,
+        log_manager=log_manager,
+        execution_plan=execution_plan,
+        dagster_run=context_creation_data.dagster_run,
+        resource_keys_to_init=context_creation_data.resource_keys_to_init,
+        instance=instance,
+        emit_persistent_events=True,
+    )
+    yield from resources_manager.generate_setup_events()
+    scoped_resources_builder = check.inst(resources_manager.get_object(), ScopedResourcesBuilder)
 
-        _validate_plan_with_context(execution_context, execution_plan)
+    execution_context = PlanExecutionContext(
+        plan_data=create_plan_data(context_creation_data, raise_on_error, retry_mode),
+        execution_data=create_execution_data(context_creation_data, scoped_resources_builder),
+        log_manager=log_manager,
+        output_capture=output_capture,
+    )
 
-        yield execution_context
-        yield from resources_manager.generate_teardown_events()
+    _validate_plan_with_context(execution_context, execution_plan)
 
-    finally:
-        try:
-            # If are running in another active event loop than this cleanup
-            # will throw RuntimeError('Cannot run the event loop while another loop is running')
-            # There is no public API that does not throw to check for this condition, so just run
-            # the cleanup and ignore the exception.
-            event_loop.run_until_complete(event_loop.shutdown_asyncgens())
-        except RuntimeError:
-            pass
-
-        event_loop.close()
+    yield execution_context
+    yield from resources_manager.generate_teardown_events()
 
 
 class PlanOrchestrationContextManager(ExecutionContextManager[PlanOrchestrationContext]):
@@ -280,7 +254,7 @@ class PlanOrchestrationContextManager(ExecutionContextManager[PlanOrchestrationC
         dagster_run: DagsterRun,
         instance: DagsterInstance,
         raise_on_error: Optional[bool] = False,
-        output_capture: Optional[dict["StepOutputHandle", Any]] = None,
+        output_capture: Optional[Dict["StepOutputHandle", Any]] = None,
         executor_defs: Optional[Sequence[ExecutorDefinition]] = None,
         resume_from_failure=False,
     ):
@@ -295,10 +269,10 @@ class PlanOrchestrationContextManager(ExecutionContextManager[PlanOrchestrationC
             output_capture,
             resume_from_failure=resume_from_failure,
         )
-        super().__init__(event_generator)
+        super(PlanOrchestrationContextManager, self).__init__(event_generator)
 
     @property
-    def context_type(self) -> type[PlanOrchestrationContext]:
+    def context_type(self) -> Type[PlanOrchestrationContext]:
         return PlanOrchestrationContext
 
 
@@ -310,7 +284,7 @@ def orchestration_context_event_generator(
     instance: DagsterInstance,
     raise_on_error: bool,
     executor_defs: Optional[Sequence[ExecutorDefinition]],
-    output_capture: Optional[dict["StepOutputHandle", Any]],
+    output_capture: Optional[Dict["StepOutputHandle", Any]],
     resume_from_failure: bool = False,
 ) -> Iterator[Union[DagsterEvent, PlanOrchestrationContext]]:
     check.invariant(executor_defs is None)
@@ -339,21 +313,22 @@ def orchestration_context_event_generator(
 
         yield execution_context
     except DagsterError as dagster_error:
-        dagster_error = cast("DagsterUserCodeExecutionError", dagster_error)
+        dagster_error = cast(DagsterUserCodeExecutionError, dagster_error)
         user_facing_exc_info = (
             # pylint does not know original_exc_info exists is is_user_code_error is true
-            dagster_error.original_exc_info if dagster_error.is_user_code_error else sys.exc_info()
+            dagster_error.original_exc_info
+            if dagster_error.is_user_code_error
+            else sys.exc_info()
         )
         error_info = serializable_error_info_from_exc_info(user_facing_exc_info)
 
         event = DagsterEvent.job_failure(
             job_context_or_name=dagster_run.job_name,
             context_msg=(
-                "Failure during initialization for job"
+                "Pipeline failure during initialization for pipeline"
                 f' "{dagster_run.job_name}". This may be due to a failure in initializing the'
                 " executor or one of the loggers."
             ),
-            failure_reason=RunFailureReason.JOB_INITIALIZATION_FAILURE,
             error_info=error_info,
         )
         log_manager.log_dagster_event(
@@ -378,9 +353,9 @@ class PlanExecutionContextManager(ExecutionContextManager[PlanExecutionContext])
             Callable[..., EventGenerationManager[ScopedResourcesBuilder]]
         ] = None,
         raise_on_error: Optional[bool] = False,
-        output_capture: Optional[dict["StepOutputHandle", Any]] = None,
+        output_capture: Optional[Dict["StepOutputHandle", Any]] = None,
     ):
-        super().__init__(
+        super(PlanExecutionContextManager, self).__init__(
             execution_context_event_generator(
                 job,
                 execution_plan,
@@ -395,7 +370,7 @@ class PlanExecutionContextManager(ExecutionContextManager[PlanExecutionContext])
         )
 
     @property
-    def context_type(self) -> type[PlanExecutionContext]:
+    def context_type(self) -> Type[PlanExecutionContext]:
         return PlanExecutionContext
 
 
@@ -465,12 +440,10 @@ def scoped_job_context(
 
 def create_log_manager(
     context_creation_data: ContextCreationData,
-) -> "DagsterLogManager":
-    from dagster._core.log_manager import DagsterLogManager
-
+) -> DagsterLogManager:
     check.inst_param(context_creation_data, "context_creation_data", ContextCreationData)
 
-    job_def, resolved_run_config, dagster_run = (
+    pipeline_def, resolved_run_config, dagster_run = (
         context_creation_data.job_def,
         context_creation_data.resolved_run_config,
         context_creation_data.dagster_run,
@@ -482,14 +455,14 @@ def create_log_manager(
     # via ConfigurableDefinition (@configured) to incoming logger configs. See docstring for more details.
 
     loggers = []
-    for logger_key, logger_def in job_def.loggers.items() or default_loggers().items():
+    for logger_key, logger_def in pipeline_def.loggers.items() or default_loggers().items():
         if logger_key in resolved_run_config.loggers:
             loggers.append(
                 logger_def.logger_fn(
                     InitLoggerContext(
                         resolved_run_config.loggers.get(logger_key, {}).get("config"),
                         logger_def,
-                        job_def=job_def,
+                        job_def=pipeline_def,
                         run_id=dagster_run.run_id,
                     )
                 )
@@ -502,7 +475,7 @@ def create_log_manager(
                     InitLoggerContext(
                         logger_config,
                         logger_def,
-                        job_def=job_def,
+                        job_def=pipeline_def,
                         run_id=dagster_run.run_id,
                     )
                 )
@@ -515,7 +488,7 @@ def create_log_manager(
 
 def create_context_free_log_manager(
     instance: DagsterInstance, dagster_run: DagsterRun
-) -> "DagsterLogManager":
+) -> DagsterLogManager:
     """In the event of pipeline initialization failure, we want to be able to log the failure
     without a dependency on the PlanExecutionContext to initialize DagsterLogManager.
 
@@ -523,8 +496,6 @@ def create_context_free_log_manager(
         dagster_run (PipelineRun)
         pipeline_def (JobDefinition)
     """
-    from dagster._core.log_manager import DagsterLogManager
-
     check.inst_param(instance, "instance", DagsterInstance)
     check.inst_param(dagster_run, "dagster_run", DagsterRun)
 

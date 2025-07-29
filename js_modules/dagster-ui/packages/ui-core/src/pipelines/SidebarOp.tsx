@@ -1,11 +1,15 @@
+import {gql, useQuery} from '@apollo/client';
 import {Box, Colors, NonIdealState} from '@dagster-io/ui-components';
+import * as React from 'react';
+
+import {OpNameOrPath} from '../ops/OpNameOrPath';
+import {LoadingSpinner} from '../ui/Loading';
+import {RepoAddress} from '../workspace/types';
 
 import {ExplorerPath} from './PipelinePathUtils';
-import {SidebarSection} from './SidebarComponents';
-import {SIDEBAR_OP_DEFINITION_FRAGMENT, SidebarOpDefinition} from './SidebarOpDefinition';
+import {SidebarOpDefinition, SIDEBAR_OP_DEFINITION_FRAGMENT} from './SidebarOpDefinition';
 import {SidebarOpExecutionGraphs} from './SidebarOpExecutionGraphs';
-import {SIDEBAR_OP_INVOCATION_FRAGMENT, SidebarOpInvocation} from './SidebarOpInvocation';
-import {gql, useQuery} from '../apollo-client';
+import {SidebarOpInvocation, SIDEBAR_OP_INVOCATION_FRAGMENT} from './SidebarOpInvocation';
 import {
   SidebarGraphOpQuery,
   SidebarGraphOpQueryVariables,
@@ -13,10 +17,6 @@ import {
   SidebarPipelineOpQuery,
   SidebarPipelineOpQueryVariables,
 } from './types/SidebarOp.types';
-import {PoolTag} from '../instance/PoolTag';
-import {OpNameOrPath} from '../ops/OpNameOrPath';
-import {LoadingSpinner} from '../ui/Loading';
-import {RepoAddress} from '../workspace/types';
 
 interface SidebarOpProps {
   handleID: string;
@@ -87,7 +87,7 @@ const useSidebarOpQuery = (
   };
 };
 
-export const SidebarOp = ({
+export const SidebarOp: React.FC<SidebarOpProps> = ({
   handleID,
   explorerPath,
   getInvocations,
@@ -96,7 +96,7 @@ export const SidebarOp = ({
   onClickOp,
   repoAddress,
   isGraph,
-}: SidebarOpProps) => {
+}) => {
   const {error, solidContainer, isLoading} = useSidebarOpQuery(
     explorerPath.pipelineName,
     handleID,
@@ -117,12 +117,12 @@ export const SidebarOp = ({
 
   if (!solidContainer) {
     return (
-      <Box padding={{vertical: 16, horizontal: 24}} style={{color: Colors.textLight()}}>
+      <Box padding={{vertical: 16, horizontal: 24}} style={{color: Colors.Gray500}}>
         Could not load ops.
       </Box>
     );
   }
-  const pools = solidContainer!.solidHandle!.solid.definition.pools;
+
   return (
     <>
       <SidebarOpInvocation
@@ -134,17 +134,6 @@ export const SidebarOp = ({
             : undefined
         }
       />
-
-      {!!pools.length && (
-        <SidebarSection title={isGraph ? 'Pools' : 'Pool'}>
-          <Box margin={{horizontal: 24, vertical: 12}} flex={{gap: 4}}>
-            {pools.map((pool) => (
-              <PoolTag key={pool} pool={pool} />
-            ))}
-          </Box>
-        </SidebarSection>
-      )}
-
       {!isGraph && repoAddress && (
         <SidebarOpExecutionGraphs
           key={`${handleID}-graphs`}

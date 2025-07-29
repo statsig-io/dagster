@@ -1,11 +1,11 @@
-import dagster as dg
+from dagster import repository
 
 
-@dg.repository(name="repo_one")
+@repository(name="repo_one")
 def repo_one_symbol():
     return []
 
 
-@dg.repository
+@repository
 def repo_two():
     return []

@@ -8,12 +8,15 @@ import {
   Mono,
   Spinner,
 } from '@dagster-io/ui-components';
-import {useMemo, useState} from 'react';
-import * as React from 'react';
+import React, {useState} from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
+import {DagsterEventType} from '../graphql/types';
+import {useSupportsCapturedLogs} from '../instance/useSupportsCapturedLogs';
+
 import {CapturedOrExternalLogPanel} from './CapturedLogPanel';
+import {ComputeLogPanel} from './ComputeLogPanel';
 import {DefaultLogLevels} from './LogLevel';
 import {LogFilter, LogsProvider, LogsProviderLogs} from './LogsProvider';
 import {LogsScrollingTable} from './LogsScrollingTable';
@@ -21,8 +24,6 @@ import {LogType, LogsToolbar} from './LogsToolbar';
 import {IRunMetadataDict, RunMetadataProvider} from './RunMetadataProvider';
 import {titleForRun} from './RunUtils';
 import {useComputeLogFileKeyForSelection} from './useComputeLogFileKeyForSelection';
-import {DagsterEventType} from '../graphql/types';
-import {flattenOneLevel} from '../util/flattenOneLevel';
 
 export function useStepLogs({runId, stepKeys}: {runId?: string; stepKeys?: string[]}) {
   const [showingLogs, setShowingLogs] = React.useState<{runId: string; stepKeys: string[]} | null>(
@@ -43,22 +44,22 @@ export function useStepLogs({runId, stepKeys}: {runId?: string; stepKeys?: strin
     ),
     button:
       runId && stepKeys ? (
-        <Button icon={<Icon name="wysiwyg" />} onClick={() => setShowingLogs({runId, stepKeys})}>
+        <Button
+          small
+          icon={<Icon name="wysiwyg" />}
+          onClick={() => setShowingLogs({runId, stepKeys})}
+        >
           View logs
         </Button>
       ) : undefined,
   };
 }
 
-export const StepLogsDialog = ({
-  runId,
-  stepKeys,
-  onClose,
-}: {
+export const StepLogsDialog: React.FC<{
   runId?: string;
   stepKeys: string[];
   onClose: () => void;
-}) => {
+}> = ({runId, stepKeys, onClose}) => {
   return (
     <Dialog
       isOpen={!!runId}
@@ -72,7 +73,7 @@ export const StepLogsDialog = ({
           {(logs) => (
             <RunMetadataProvider logs={logs}>
               {(metadata) => (
-                <StepLogsDialogContent
+                <StepLogsModalContent
                   runId={runId}
                   metadata={metadata}
                   stepKeys={stepKeys}
@@ -85,7 +86,7 @@ export const StepLogsDialog = ({
       ) : (
         ''
       )}
-      <div style={{zIndex: 2, background: Colors.backgroundDefault()}}>
+      <div style={{zIndex: 2, background: Colors.White}}>
         <DialogFooter topBorder>
           <Button intent="primary" onClick={onClose}>
             Done
@@ -96,28 +97,19 @@ export const StepLogsDialog = ({
   );
 };
 
-export const StepLogsDialogContent = ({
-  runId,
-  stepKeys,
-  metadata,
-  logs,
-}: {
+export const StepLogsModalContent: React.FC<{
   runId: string;
   stepKeys: string[];
   metadata: IRunMetadataDict;
   logs: LogsProviderLogs;
-}) => {
+}> = ({runId, stepKeys, metadata, logs}) => {
+  const supportsCapturedLogs = useSupportsCapturedLogs();
   const [logType, setComputeLogType] = useState<LogType>(LogType.structured);
   const [computeLogUrl, setComputeLogUrl] = React.useState<string | null>(null);
 
-  const flatLogs = useMemo(() => flattenOneLevel(logs.allNodeChunks), [logs]);
-
-  const stepKeysSet = useMemo(() => new Set(stepKeys), [stepKeys]);
-
-  const firstLogForStep = flatLogs.find(
-    (l) => l.eventType === DagsterEventType.STEP_START && l.stepKey && stepKeysSet.has(l.stepKey),
+  const firstLogForStep = logs.allNodes.find(
+    (l) => l.eventType === DagsterEventType.STEP_START && l.stepKey && stepKeys.includes(l.stepKey),
   );
-
   const firstLogForStepTime = firstLogForStep ? Number(firstLogForStep.timestamp) : 0;
 
   const [filter, setFilter] = useState<LogFilter>({
@@ -159,18 +151,27 @@ export const StepLogsDialogContent = ({
               <Spinner purpose="body-text" />
             )}
             View Run <Mono>{titleForRun({id: runId})}</Mono>
-            <Icon name="open_in_new" color={Colors.linkDefault()} />
+            <Icon name="open_in_new" color={Colors.Link} />
           </Box>
         </Link>
       </LogsToolbar>
 
       {logType !== LogType.structured ? (
-        <CapturedOrExternalLogPanel
-          logKey={computeLogFileKey ? [runId, 'compute_logs', computeLogFileKey] : []}
-          logCaptureInfo={logCaptureInfo}
-          visibleIOType={LogType[logType]}
-          onSetDownloadUrl={setComputeLogUrl}
-        />
+        supportsCapturedLogs ? (
+          <CapturedOrExternalLogPanel
+            logKey={computeLogFileKey ? [runId, 'compute_logs', computeLogFileKey] : []}
+            logCaptureInfo={logCaptureInfo}
+            visibleIOType={LogType[logType]}
+            onSetDownloadUrl={setComputeLogUrl}
+          />
+        ) : (
+          <ComputeLogPanel
+            runId={runId}
+            computeLogFileKey={computeLogFileKey}
+            ioType={LogType[logType]}
+            setComputeLogUrl={setComputeLogUrl}
+          />
+        )
       ) : (
         <LogsScrollingTable
           logs={logs}

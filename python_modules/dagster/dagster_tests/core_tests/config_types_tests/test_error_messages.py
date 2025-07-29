@@ -1,16 +1,17 @@
 import re
 
-import dagster as dg
 import pytest
+from dagster import DagsterInvalidDefinitionError, Dict, List, Noneable, Optional, op
+from dagster._core.errors import DagsterInvalidConfigDefinitionError
 
 
 def test_invalid_optional_in_config():
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match=re.escape("You have passed an instance of DagsterType Int? to the config system"),
     ):
 
-        @dg.op(config_schema=dg.Optional[int])  # pyright: ignore[reportArgumentType]
+        @op(config_schema=Optional[int])
         def _op(_):
             pass
 
@@ -19,41 +20,41 @@ def test_invalid_dict_call():
     # prior to 0.7.0 dicts in config contexts were callable
     with pytest.raises(TypeError, match=re.escape("'DagsterDictApi' object is not callable")):
 
-        @dg.op(config_schema=dg.Dict({"foo": int}))  # pyright: ignore[reportCallIssue]
+        @op(config_schema=Dict({"foo": int}))
         def _op(_):
             pass
 
 
 def test_list_in_config():
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match=re.escape(
             "Cannot use List in the context of config. Please use a python "
             "list (e.g. [int]) or dagster.Array (e.g. Array(int)) instead."
         ),
     ):
 
-        @dg.op(config_schema=dg.List[int])  # pyright: ignore[reportArgumentType]
+        @op(config_schema=List[int])
         def _op(_):
             pass
 
 
 def test_invalid_list_element():
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match=re.escape(
             "Invalid type: dagster_type must be an instance of DagsterType or a Python type: "
         ),
     ):
-        _ = dg.List[dg.Noneable(int)]
+        _ = List[Noneable(int)]
 
 
 def test_non_scalar_key_map():
     with pytest.raises(
-        dg.DagsterInvalidConfigDefinitionError,
+        DagsterInvalidConfigDefinitionError,
         match=re.escape("Map dict must have a scalar type as its only key."),
     ):
 
-        @dg.op(config_schema={dg.Noneable(int): str})  # pyright: ignore[reportArgumentType]
+        @op(config_schema={Noneable(int): str})
         def _op(_):
             pass

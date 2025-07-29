@@ -1,4 +1,4 @@
-import {useMemo} from 'react';
+import React from 'react';
 
 import {AssetViewParams} from './types';
 
@@ -13,7 +13,7 @@ export function usePartitionKeyInParams({
   dimensionCount: number;
   defaultKeyInDimension: (idx: number) => string;
 }) {
-  const focusedDimensionKeys = useMemo(
+  const focusedDimensionKeys = React.useMemo(
     () =>
       params.partition
         ? dimensionCount > 1

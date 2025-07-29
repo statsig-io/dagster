@@ -1,34 +1,22 @@
-import {useContext} from 'react';
+import * as React from 'react';
 import {Redirect, useLocation, useParams} from 'react-router-dom';
 
-import {explorerPathFromString} from './PipelinePathUtils';
-import {PermissionsContext} from '../app/Permissions';
-import {useBlockTraceUntilTrue} from '../performance/TraceContext';
-import {WorkspaceContext} from '../workspace/WorkspaceContext/WorkspaceContext';
-import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext/util';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
+
+import {explorerPathFromString} from './PipelinePathUtils';
 
 interface Props {
   repoAddress: RepoAddress;
 }
 
-export const PipelineOrJobDisambiguationRoot = (props: Props) => {
+export const PipelineOrJobDisambiguationRoot: React.FC<Props> = (props) => {
   const {repoAddress} = props;
   const location = useLocation();
   const {pipelinePath} = useParams<{pipelinePath: string}>();
 
-  const {loadingNonAssets: loading} = useContext(WorkspaceContext);
-  const {loading: permissionsLoading} = useContext(PermissionsContext);
-  const repo = useRepository(repoAddress);
-
-  useBlockTraceUntilTrue('Workspace', !loading);
-  useBlockTraceUntilTrue('Permissions', !permissionsLoading);
-
-  if (loading || permissionsLoading) {
-    return null;
-  }
-
   const {pipelineName: pipelineOrJobName} = explorerPathFromString(pipelinePath);
+  const repo = useRepository(repoAddress);
   const isJob = isThisThingAJob(repo, pipelineOrJobName);
   const {pathname, search} = location;
 

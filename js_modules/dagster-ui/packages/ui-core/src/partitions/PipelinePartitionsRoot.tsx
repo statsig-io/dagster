@@ -1,20 +1,22 @@
 import {Box, NonIdealState} from '@dagster-io/ui-components';
+import * as React from 'react';
 import {useParams} from 'react-router-dom';
 
-import {AssetJobPartitionsView} from './AssetJobPartitionsView';
-import {OpJobPartitionsView} from './OpJobPartitionsView';
 import {usePartitionNameForPipeline} from '../assets/usePartitionNameForPipeline';
 import {explorerPathFromString, useStripSnapshotFromPath} from '../pipelines/PipelinePathUtils';
 import {useJobTitle} from '../pipelines/useJobTitle';
 import {LoadingSpinner} from '../ui/Loading';
-import {useRepository} from '../workspace/WorkspaceContext/util';
+import {useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
+
+import {AssetJobPartitionsView} from './AssetJobPartitionsView';
+import {OpJobPartitionsView} from './OpJobPartitionsView';
 
 interface Props {
   repoAddress: RepoAddress;
 }
 
-export const PipelinePartitionsRoot = (props: Props) => {
+export const PipelinePartitionsRoot: React.FC<Props> = (props) => {
   const {repoAddress} = props;
   const params = useParams<{pipelinePath: string}>();
   const {pipelinePath} = params;

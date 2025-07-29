@@ -1,5 +1,6 @@
 import {MockedProvider} from '@apollo/client/testing';
 import {render, screen} from '@testing-library/react';
+import * as React from 'react';
 
 import {buildRepoAddress} from '../../workspace/buildRepoAddress';
 import {OpJobPartitionsViewContent} from '../OpJobPartitionsView';
@@ -19,17 +20,11 @@ jest.mock('../../graph/asyncGraphLayout', () => ({}));
 describe('OpJobPartitionsViewContent', () => {
   it('does not error when partition statuses are in an error state', async () => {
     const fragment = buildOpJobPartitionSetFragmentWithError();
-    const mockResult: any = {
-      refresh: () => {},
-      loading: false,
-    };
-
     render(
       <MockedProvider>
         <OpJobPartitionsViewContent
           partitionNames={['lorem', 'ipsum']}
           partitionSet={fragment}
-          partitionsQueryResult={mockResult}
           repoAddress={buildRepoAddress('foo', 'bar')}
         />
       </MockedProvider>,

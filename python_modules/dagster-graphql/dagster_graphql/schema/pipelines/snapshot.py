@@ -1,22 +1,19 @@
 import dagster._check as check
 import graphene
-from dagster._core.remote_representation import RepresentedJob
+from dagster._core.host_representation import RepresentedJob
 
-from dagster_graphql.schema.errors import (
+from ..errors import (
     GraphenePipelineNotFoundError,
     GraphenePipelineSnapshotNotFoundError,
     GraphenePythonError,
 )
-from dagster_graphql.schema.pipelines.pipeline import (
-    GrapheneIPipelineSnapshot,
-    GrapheneIPipelineSnapshotMixin,
-)
-from dagster_graphql.schema.pipelines.pipeline_ref import GraphenePipelineReference
-from dagster_graphql.schema.solids import GrapheneSolidContainer
+from ..solids import GrapheneSolidContainer
+from .pipeline import GrapheneIPipelineSnapshot, GrapheneIPipelineSnapshotMixin
+from .pipeline_ref import GraphenePipelineReference
 
 
 class GraphenePipelineSnapshot(GrapheneIPipelineSnapshotMixin, graphene.ObjectType):
-    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
+    class Meta:
         interfaces = (GrapheneSolidContainer, GrapheneIPipelineSnapshot, GraphenePipelineReference)
         name = "PipelineSnapshot"
 

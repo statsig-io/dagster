@@ -1,31 +1,26 @@
-from collections.abc import Sequence
 from enum import Enum
-from typing import TYPE_CHECKING, AbstractSet, NamedTuple, Optional  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Dict, FrozenSet, NamedTuple, Optional, Sequence
 
-from dagster_shared.serdes.serdes import (
+import dagster._check as check
+from dagster._annotations import experimental, public
+from dagster._serdes.serdes import (
     NamedTupleSerializer,
     UnpackContext,
     UnpackedValue,
     whitelist_for_serdes,
 )
 
-import dagster._check as check
-from dagster._annotations import deprecated, public
-
 if TYPE_CHECKING:
     from dagster._core.definitions.auto_materialize_rule import (
         AutoMaterializeRule,
         AutoMaterializeRuleSnapshot,
     )
-    from dagster._core.definitions.declarative_automation.automation_condition import (
-        AutomationCondition,
-    )
 
 
 class AutoMaterializePolicySerializer(NamedTupleSerializer):
     def before_unpack(
-        self, context: UnpackContext, unpacked_dict: dict[str, UnpackedValue]
-    ) -> dict[str, UnpackedValue]:
+        self, context: UnpackContext, unpacked_dict: Dict[str, UnpackedValue]
+    ) -> Dict[str, UnpackedValue]:
         from dagster._core.definitions.auto_materialize_rule import AutoMaterializeRule
 
         backcompat_map = {
@@ -40,8 +35,6 @@ class AutoMaterializePolicySerializer(NamedTupleSerializer):
             rules = {
                 AutoMaterializeRule.skip_on_parent_outdated(),
                 AutoMaterializeRule.skip_on_parent_missing(),
-                AutoMaterializeRule.skip_on_required_but_nonexistent_parents(),
-                AutoMaterializeRule.skip_on_backfill_in_progress(),
             }
             for backcompat_key, rule in backcompat_map.items():
                 if unpacked_dict.get(backcompat_key):
@@ -56,18 +49,17 @@ class AutoMaterializePolicyType(Enum):
     LAZY = "LAZY"
 
 
+@experimental
 @whitelist_for_serdes(
     old_fields={"time_window_partition_scope_minutes": 1e-6},
     serializer=AutoMaterializePolicySerializer,
 )
-@deprecated(breaking_version="1.10.0")
 class AutoMaterializePolicy(
     NamedTuple(
         "_AutoMaterializePolicy",
         [
-            ("rules", frozenset["AutoMaterializeRule"]),
+            ("rules", FrozenSet["AutoMaterializeRule"]),
             ("max_materializations_per_minute", Optional[int]),
-            ("asset_condition", Optional["AutomationCondition"]),
         ],
     )
 ):
@@ -130,7 +122,6 @@ class AutoMaterializePolicy(
         cls,
         rules: AbstractSet["AutoMaterializeRule"],
         max_materializations_per_minute: Optional[int] = 1,
-        asset_condition: Optional["AutomationCondition"] = None,
     ):
         from dagster._core.definitions.auto_materialize_rule import AutoMaterializeRule
 
@@ -139,30 +130,16 @@ class AutoMaterializePolicy(
             "max_materializations_per_minute must be positive. To disable rate-limiting, set it"
             " to None. To disable auto materializing, remove the policy.",
         )
-        check.param_invariant(
-            bool(rules) ^ bool(asset_condition),
-            "asset_condition",
-            "Must specify exactly one of `rules` or `asset_condition`.",
-        )
-        if asset_condition is not None:
-            check.param_invariant(
-                max_materializations_per_minute is None,
-                "max_materializations_per_minute",
-                "`max_materializations_per_minute` is not supported when using `asset_condition`.",
-            )
 
-        return super().__new__(
+        return super(AutoMaterializePolicy, cls).__new__(
             cls,
             rules=frozenset(check.set_param(rules, "rules", of_type=AutoMaterializeRule)),
             max_materializations_per_minute=max_materializations_per_minute,
-            asset_condition=asset_condition,
         )
 
     @property
     def materialize_rules(self) -> AbstractSet["AutoMaterializeRule"]:
-        from dagster._core.definitions.auto_materialize_rule_evaluation import (
-            AutoMaterializeDecisionType,
-        )
+        from dagster._core.definitions.auto_materialize_rule import AutoMaterializeDecisionType
 
         return {
             rule
@@ -172,35 +149,14 @@ class AutoMaterializePolicy(
 
     @property
     def skip_rules(self) -> AbstractSet["AutoMaterializeRule"]:
-        from dagster._core.definitions.auto_materialize_rule_evaluation import (
-            AutoMaterializeDecisionType,
-        )
+        from dagster._core.definitions.auto_materialize_rule import AutoMaterializeDecisionType
 
         return {
             rule for rule in self.rules if rule.decision_type == AutoMaterializeDecisionType.SKIP
         }
 
-    @staticmethod
-    def from_automation_condition(
-        automation_condition: "AutomationCondition",
-    ) -> "AutoMaterializePolicy":
-        """Constructs an AutoMaterializePolicy which will materialize an asset partition whenever
-        the provided automation_condition evaluates to True.
-
-        Args:
-            automation_condition (AutomationCondition): The condition which determines whether an asset
-                partition should be materialized.
-        """
-        return AutoMaterializePolicy(
-            rules=set(), max_materializations_per_minute=None, asset_condition=automation_condition
-        )
-
     @public
     @staticmethod
-    @deprecated(
-        breaking_version="1.10.0",
-        additional_warn_text="Use `AutomationCondition.eager()` instead.",
-    )
     def eager(max_materializations_per_minute: Optional[int] = 1) -> "AutoMaterializePolicy":
         """Constructs an eager AutoMaterializePolicy.
 
@@ -219,8 +175,6 @@ class AutoMaterializePolicy(
                 AutoMaterializeRule.materialize_on_required_for_freshness(),
                 AutoMaterializeRule.skip_on_parent_outdated(),
                 AutoMaterializeRule.skip_on_parent_missing(),
-                AutoMaterializeRule.skip_on_required_but_nonexistent_parents(),
-                AutoMaterializeRule.skip_on_backfill_in_progress(),
             },
             max_materializations_per_minute=check.opt_int_param(
                 max_materializations_per_minute, "max_materializations_per_minute"
@@ -229,12 +183,8 @@ class AutoMaterializePolicy(
 
     @public
     @staticmethod
-    @deprecated(
-        breaking_version="1.10.0",
-        additional_warn_text="Use `AutomationCondition.any_downstream_conditions()` instead.",
-    )
     def lazy(max_materializations_per_minute: Optional[int] = 1) -> "AutoMaterializePolicy":
-        """(Deprecated) Constructs a lazy AutoMaterializePolicy.
+        """Constructs a lazy AutoMaterializePolicy.
 
         Args:
             max_materializations_per_minute (Optional[int]): The maximum number of
@@ -249,8 +199,6 @@ class AutoMaterializePolicy(
                 AutoMaterializeRule.materialize_on_required_for_freshness(),
                 AutoMaterializeRule.skip_on_parent_outdated(),
                 AutoMaterializeRule.skip_on_parent_missing(),
-                AutoMaterializeRule.skip_on_required_but_nonexistent_parents(),
-                AutoMaterializeRule.skip_on_backfill_in_progress(),
             },
             max_materializations_per_minute=check.opt_int_param(
                 max_materializations_per_minute, "max_materializations_per_minute"
@@ -275,15 +223,8 @@ class AutoMaterializePolicy(
 
     @public
     def with_rules(self, *rules_to_add: "AutoMaterializeRule") -> "AutoMaterializePolicy":
-        """Constructs a copy of this policy with the specified rules added. If an instance of a
-        provided rule with the same type exists on this policy, it will be replaced.
-        """
-        new_rule_types = {type(rule) for rule in rules_to_add}
-        return self._replace(
-            rules=set(rules_to_add).union(
-                {rule for rule in self.rules if type(rule) not in new_rule_types}
-            )
-        )
+        """Constructs a copy of this policy with the specified rules added."""
+        return self._replace(rules=self.rules.union(set(rules_to_add)))
 
     @property
     def policy_type(self) -> AutoMaterializePolicyType:
@@ -296,48 +237,3 @@ class AutoMaterializePolicy(
     @property
     def rule_snapshots(self) -> Sequence["AutoMaterializeRuleSnapshot"]:
         return [rule.to_snapshot() for rule in self.rules]
-
-    def to_automation_condition(self) -> "AutomationCondition":
-        """Converts a set of materialize / skip rules into a single binary expression."""
-        from dagster._core.definitions.auto_materialize_rule_impls import (
-            DiscardOnMaxMaterializationsExceededRule,
-        )
-        from dagster._core.definitions.declarative_automation.operators import (
-            AndAutomationCondition,
-            NotAutomationCondition,
-            OrAutomationCondition,
-        )
-
-        if self.asset_condition is not None:
-            return self.asset_condition
-
-        materialize_condition = OrAutomationCondition(
-            operands=[
-                rule.to_asset_condition()
-                for rule in sorted(self.materialize_rules, key=lambda rule: rule.description)
-            ]
-        )
-        skip_condition = OrAutomationCondition(
-            operands=[
-                rule.to_asset_condition()
-                for rule in sorted(self.skip_rules, key=lambda rule: rule.description)
-            ]
-        )
-        children = [
-            materialize_condition,
-            NotAutomationCondition(operand=skip_condition),
-        ]
-        if self.max_materializations_per_minute:
-            discard_condition = DiscardOnMaxMaterializationsExceededRule(
-                self.max_materializations_per_minute
-            ).to_asset_condition()
-            children.append(NotAutomationCondition(operand=discard_condition))
-
-        # results in an expression of the form (m1 | m2 | ... | mn) & ~(s1 | s2 | ... | sn) & ~d
-        return AndAutomationCondition(operands=children)
-
-    def __eq__(self, other) -> bool:
-        return (
-            super().__eq__(other)
-            or self.to_automation_condition() == other.to_automation_condition()
-        )

@@ -55,7 +55,7 @@ class S3FakeSession:
 
     def get_object(self, Bucket, Key, *args, **kwargs):
         if not self.has_object(Bucket, Key):
-            raise ClientError({}, None)  # pyright: ignore[reportArgumentType]
+            raise ClientError({}, None)
 
         self.mock_extras.get_object(*args, **kwargs)
         return {"Body": self._get_byte_stream(Bucket, Key)}
@@ -70,9 +70,9 @@ class S3FakeSession:
         with open(Filename, "rb") as fileobj:
             self.buckets[Bucket][Key] = fileobj.read()
 
-    def upload_fileobj(self, Fileobj, Bucket, Key, *args, **kwargs):
+    def upload_fileobj(self, fileobj, bucket, key, *args, **kwargs):
         self.mock_extras.upload_fileobj(*args, **kwargs)
-        self.buckets[Bucket][Key] = Fileobj.read()
+        self.buckets[bucket][key] = fileobj.read()
 
     def has_object(self, bucket, key):
         return bucket in self.buckets and key in self.buckets[bucket]

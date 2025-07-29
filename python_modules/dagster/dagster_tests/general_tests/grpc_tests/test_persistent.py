@@ -3,36 +3,42 @@ import os
 import re
 import subprocess
 import sys
-import time
 
-import dagster as dg
 import pytest
+from dagster import _seven
 from dagster._api.list_repositories import sync_list_repositories_grpc
 from dagster._core.errors import DagsterUserCodeUnreachableError
-from dagster._core.remote_representation.external_data import SensorExecutionErrorSnap
-from dagster._core.remote_representation.origin import (
+from dagster._core.host_representation.origin import (
+    ExternalJobOrigin,
+    ExternalRepositoryOrigin,
     GrpcServerCodeLocationOrigin,
     RegisteredCodeLocationOrigin,
-    RemoteJobOrigin,
-    RemoteRepositoryOrigin,
 )
 from dagster._core.storage.dagster_run import DagsterRunStatus
-from dagster._core.test_utils import create_run_for_test, environ, new_cwd, poll_for_finished_run
+from dagster._core.test_utils import (
+    create_run_for_test,
+    environ,
+    instance_for_test,
+    new_cwd,
+    poll_for_finished_run,
+)
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._grpc.client import DagsterGrpcClient
-from dagster._grpc.constants import GrpcServerCommand
-from dagster._grpc.server import ExecuteExternalJobArgs, open_server_process, wait_for_grpc_server
-from dagster._grpc.types import (
-    JobSubsetSnapshotArgs,
-    ListRepositoriesResponse,
-    SensorExecutionArgs,
-    StartRunResult,
+from dagster._grpc.server import (
+    ExecuteExternalJobArgs,
+    open_server_process,
+    wait_for_grpc_server,
 )
-from dagster._utils import find_free_port, safe_tempfile_path_unmanaged
+from dagster._grpc.types import ListRepositoriesResponse, SensorExecutionArgs, StartRunResult
+from dagster._serdes import serialize_value
+from dagster._serdes.serdes import deserialize_value
+from dagster._utils import (
+    file_relative_path,
+    find_free_port,
+    safe_tempfile_path_unmanaged,
+)
 from dagster._utils.error import SerializableErrorInfo
 from dagster.version import __version__ as dagster_version
-from dagster_shared import seven
-from dagster_shared.version import __version__ as dagster_shared_version
 
 
 def entrypoints():
@@ -45,7 +51,7 @@ def entrypoints():
 @pytest.mark.parametrize("entrypoint", entrypoints())
 def test_load_grpc_server(entrypoint):
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
 
     subprocess_args = entrypoint + [
         "--port",
@@ -60,10 +66,7 @@ def test_load_grpc_server(entrypoint):
         client = DagsterGrpcClient(port=port, host="localhost")
 
         wait_for_grpc_server(process, client, subprocess_args)
-        assert client.ping("foobar") == {
-            "echo": "foobar",
-            "serialized_server_utilization_metrics": "",
-        }
+        assert client.ping("foobar") == "foobar"
 
         list_repositories_response = sync_list_repositories_grpc(client)
         assert list_repositories_response.entry_point == ["dagster"]
@@ -93,46 +96,41 @@ def test_grpc_connection_error():
 
 def test_python_environment_args():
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
     loadable_target_origin = LoadableTargetOrigin(
         executable_path=sys.executable, python_file=python_file
     )
 
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         process = None
         try:
             process = open_server_process(
-                server_command=GrpcServerCommand.API_GRPC,
-                instance_ref=instance.get_ref(),
-                port=port,
-                socket=None,
-                loadable_target_origin=loadable_target_origin,
+                instance.get_ref(), port, socket=None, loadable_target_origin=loadable_target_origin
             )
-            assert process.args[:5] == [sys.executable, "-m", "dagster", "api", "grpc"]  # pyright: ignore[reportIndexIssue]
+            assert process.args[:5] == [sys.executable, "-m", "dagster", "api", "grpc"]
         finally:
             if process:
                 process.terminate()
                 process.wait()
 
 
-@pytest.mark.skipif(seven.IS_WINDOWS, reason="Windows requires ports")
+@pytest.mark.skipif(_seven.IS_WINDOWS, reason="Windows requires ports")
 def test_env_var_port_collision():
     port = find_free_port()
     socket = safe_tempfile_path_unmanaged()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
     loadable_target_origin = LoadableTargetOrigin(
         executable_path=sys.executable, python_file=python_file
     )
 
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         process = None
         try:
             # env var that would cause a collision with port if we are not careful
             with environ({"DAGSTER_GRPC_SOCKET": str(socket)}):
                 process = open_server_process(
-                    instance_ref=instance.get_ref(),
-                    port=port,
-                    server_command=GrpcServerCommand.API_GRPC,
+                    instance.get_ref(),
+                    port,
                     socket=None,
                     loadable_target_origin=loadable_target_origin,
                 )
@@ -147,8 +145,7 @@ def test_env_var_port_collision():
             # env var that would cause a collision with socket if we are not careful
             with environ({"DAGSTER_GRPC_PORT": str(port)}):
                 process = open_server_process(
-                    instance_ref=instance.get_ref(),
-                    server_command=GrpcServerCommand.API_GRPC,
+                    instance.get_ref(),
                     port=None,
                     socket=socket,
                     loadable_target_origin=loadable_target_origin,
@@ -163,20 +160,16 @@ def test_env_var_port_collision():
 
 def test_empty_executable_args():
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
     loadable_target_origin = LoadableTargetOrigin(executable_path="", python_file=python_file)
     # with an empty executable_path, the args change
     process = None
-    with dg.instance_for_test() as instance:
+    with instance_for_test() as instance:
         try:
             process = open_server_process(
-                instance_ref=instance.get_ref(),
-                port=port,
-                server_command=GrpcServerCommand.API_GRPC,
-                socket=None,
-                loadable_target_origin=loadable_target_origin,
+                instance.get_ref(), port, socket=None, loadable_target_origin=loadable_target_origin
             )
-            assert process.args[:5] == [sys.executable, "-m", "dagster", "api", "grpc"]  # pyright: ignore[reportIndexIssue]
+            assert process.args[:5] == [sys.executable, "-m", "dagster", "api", "grpc"]
 
             client = DagsterGrpcClient(port=port, host="localhost")
             list_repositories_response = sync_list_repositories_grpc(client)
@@ -191,7 +184,7 @@ def test_empty_executable_args():
 @pytest.mark.parametrize("entrypoint", entrypoints())
 def test_load_grpc_server_python_env(entrypoint):
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
 
     subprocess_args = entrypoint + [
         "--port",
@@ -219,7 +212,7 @@ def test_load_grpc_server_python_env(entrypoint):
 
 def test_load_via_auto_env_var_prefix():
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
 
     subprocess_args = ["dagster", "api", "grpc"]
 
@@ -248,10 +241,7 @@ def test_load_via_auto_env_var_prefix():
                 process, DagsterGrpcClient(port=port, host="localhost"), subprocess_args
             )
             client = DagsterGrpcClient(port=port)
-            assert client.ping("foobar") == {
-                "echo": "foobar",
-                "serialized_server_utilization_metrics": "",
-            }
+            assert client.ping("foobar") == "foobar"
 
             list_repositories_response = sync_list_repositories_grpc(client)
             assert list_repositories_response.container_image == container_image
@@ -264,7 +254,7 @@ def test_load_via_auto_env_var_prefix():
 
 def test_load_via_env_var():
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
 
     subprocess_args = ["dagster", "api", "grpc"]
 
@@ -292,10 +282,7 @@ def test_load_via_env_var():
             wait_for_grpc_server(
                 process, DagsterGrpcClient(port=port, host="localhost"), subprocess_args
             )
-            assert DagsterGrpcClient(port=port).ping("foobar") == {
-                "echo": "foobar",
-                "serialized_server_utilization_metrics": "",
-            }
+            assert DagsterGrpcClient(port=port).ping("foobar") == "foobar"
         finally:
             process.terminate()
             process.wait()
@@ -303,7 +290,7 @@ def test_load_via_env_var():
 
 def test_load_code_server_via_env_var():
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
 
     subprocess_args = ["dagster", "code-server", "start"]
 
@@ -331,10 +318,7 @@ def test_load_code_server_via_env_var():
             wait_for_grpc_server(
                 process, DagsterGrpcClient(port=port, host="localhost"), subprocess_args
             )
-            assert DagsterGrpcClient(port=port).ping("foobar") == {
-                "echo": "foobar",
-                "serialized_server_utilization_metrics": "",
-            }
+            assert DagsterGrpcClient(port=port).ping("foobar") == "foobar"
         finally:
             process.terminate()
             process.wait()
@@ -343,7 +327,7 @@ def test_load_code_server_via_env_var():
 @pytest.mark.parametrize("entrypoint", entrypoints())
 def test_load_with_invalid_param(capfd, entrypoint):
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
 
     subprocess_args = entrypoint + [
         "--port",
@@ -375,7 +359,7 @@ def test_load_with_invalid_param(capfd, entrypoint):
 
 def test_load_with_error(capfd):
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo_with_error.py")
+    python_file = file_relative_path(__file__, "grpc_repo_with_error.py")
 
     subprocess_args = [
         "dagster",
@@ -390,10 +374,10 @@ def test_load_with_error(capfd):
     process = subprocess.Popen(subprocess_args)
 
     try:
-        client = DagsterGrpcClient(port=port, host="localhost")
         with pytest.raises(Exception):
-            wait_for_grpc_server(process, client, subprocess_args)
-
+            wait_for_grpc_server(
+                process, DagsterGrpcClient(port=port, host="localhost"), subprocess_args
+            )
         process.wait()
 
         _, err = capfd.readouterr()
@@ -407,7 +391,7 @@ def test_load_with_error(capfd):
 def test_load_with_non_existant_file(capfd):
     port = find_free_port()
     # File that will fail if working directory isn't set to default
-    python_file = dg.file_relative_path(__file__, "made_up_file_does_not_exist.py")
+    python_file = file_relative_path(__file__, "made_up_file_does_not_exist.py")
 
     with pytest.raises(subprocess.CalledProcessError):
         subprocess.check_output(
@@ -416,7 +400,7 @@ def test_load_with_non_existant_file(capfd):
 
     _, err = capfd.readouterr()
 
-    if seven.IS_WINDOWS:
+    if _seven.IS_WINDOWS:
         assert "The system cannot find the file specified" in err
     else:
         assert "No such file or directory" in err
@@ -425,7 +409,7 @@ def test_load_with_non_existant_file(capfd):
 def test_load_with_empty_working_directory(capfd):
     port = find_free_port()
     # File that will fail if working directory isn't set to default
-    python_file = dg.file_relative_path(__file__, "grpc_repo_with_local_import.py")
+    python_file = file_relative_path(__file__, "grpc_repo_with_local_import.py")
 
     subprocess_args = [
         "dagster",
@@ -444,10 +428,7 @@ def test_load_with_empty_working_directory(capfd):
             wait_for_grpc_server(
                 process, DagsterGrpcClient(port=port, host="localhost"), subprocess_args
             )
-            assert DagsterGrpcClient(port=port).ping("foobar") == {
-                "echo": "foobar",
-                "serialized_server_utilization_metrics": "",
-            }
+            assert DagsterGrpcClient(port=port).ping("foobar") == "foobar"
         finally:
             process.terminate()
             process.wait()
@@ -483,10 +464,10 @@ def test_load_with_empty_working_directory(capfd):
                 process.wait()
 
 
-@pytest.mark.skipif(seven.IS_WINDOWS, reason="Crashes in subprocesses crash test runs on Windows")
+@pytest.mark.skipif(_seven.IS_WINDOWS, reason="Crashes in subprocesses crash test runs on Windows")
 def test_crash_during_load():
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "crashy_grpc_repo.py")
+    python_file = file_relative_path(__file__, "crashy_grpc_repo.py")
 
     subprocess_args = [
         "dagster",
@@ -518,7 +499,7 @@ def test_crash_during_load():
 
 def test_load_timeout():
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo_that_times_out.py")
+    python_file = file_relative_path(__file__, "grpc_repo_that_times_out.py")
 
     subprocess_args = [
         "dagster",
@@ -540,7 +521,7 @@ def test_load_timeout():
                 process,
                 DagsterGrpcClient(port=port, host="localhost"),
                 subprocess_args,
-                timeout=0.01,  # pyright: ignore[reportArgumentType]
+                timeout=0.01,
             )
             assert False, "server should have timed out"
         except Exception as e:
@@ -555,48 +536,9 @@ def test_load_timeout():
     assert "StatusCode.UNAVAILABLE" in str(timeout_exception)
 
 
-def test_server_heartbeat_timeout_code_server_cli() -> None:
-    """Test that without a heartbeat from the calling process, the server will eventually time out."""
+def test_load_timeout_code_server_cli():
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "slow_grpc_repo.py")
-
-    subprocess_args = [
-        "dagster",
-        "code-server",
-        "start",
-        "--port",
-        str(port),
-        "--python-file",
-        python_file,
-        "--heartbeat",
-        "--heartbeat-timeout",
-        "5",
-    ]
-
-    process = subprocess.Popen(subprocess_args)
-
-    try:
-        client = DagsterGrpcClient(port=port, host="localhost")
-        wait_for_grpc_server(
-            process,
-            DagsterGrpcClient(port=port, host="localhost"),
-            subprocess_args,
-        )
-        # Send out an initial heartbeat, ensure server is alive to begin with.
-        client.ping("foobar")
-        client.shutdown_server()
-        assert process.poll() is None
-        time.sleep(6)
-        assert process.poll() == 0
-
-    finally:
-        process.terminate()
-        process.wait()
-
-
-def test_load_timeout_code_server_cli() -> None:
-    port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo_that_times_out.py")
+    python_file = file_relative_path(__file__, "grpc_repo_that_times_out.py")
 
     subprocess_args = [
         "dagster",
@@ -613,18 +555,17 @@ def test_load_timeout_code_server_cli() -> None:
     process = subprocess.Popen(subprocess_args)
 
     try:
-        with pytest.raises(
-            Exception,
-        ) as exc_info:
-            wait_for_grpc_server(
-                process,
-                DagsterGrpcClient(port=port, host="localhost"),
-                subprocess_args,
-            )
-        assert "Timed out waiting for gRPC server to start" in str(exc_info.value)
-        assert "Most recent connection error: " in str(exc_info.value)
-        assert "StatusCode.UNKNOWN" in str(exc_info.value)
-
+        wait_for_grpc_server(
+            process,
+            DagsterGrpcClient(port=port, host="localhost"),
+            subprocess_args,
+        )
+        list_repositories_response = deserialize_value(
+            DagsterGrpcClient(port=port).list_repositories(), SerializableErrorInfo
+        )
+        assert "Timed out waiting for gRPC server to start" in list_repositories_response.message
+        assert "Most recent connection error: " in list_repositories_response.message
+        assert "StatusCode.UNAVAILABLE" in list_repositories_response.message
     finally:
         process.terminate()
         process.wait()
@@ -632,7 +573,7 @@ def test_load_timeout_code_server_cli() -> None:
 
 def test_lazy_load_with_error():
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo_with_error.py")
+    python_file = file_relative_path(__file__, "grpc_repo_with_error.py")
 
     subprocess_args = [
         "dagster",
@@ -648,36 +589,13 @@ def test_lazy_load_with_error():
     process = subprocess.Popen(subprocess_args)
 
     try:
-        client = DagsterGrpcClient(port=port, host="localhost")
-        wait_for_grpc_server(process, client, subprocess_args)
-        list_repositories_response = dg.deserialize_value(
+        wait_for_grpc_server(
+            process, DagsterGrpcClient(port=port, host="localhost"), subprocess_args
+        )
+        list_repositories_response = deserialize_value(
             DagsterGrpcClient(port=port).list_repositories(), SerializableErrorInfo
         )
         assert "Dagster recognizes standard cron expressions" in list_repositories_response.message
-
-        repo_origin = RemoteRepositoryOrigin(
-            code_location_origin=GrpcServerCodeLocationOrigin(port=port, host="localhost"),
-            repository_name="bar_repo",
-        )
-
-        sensor_execution_response = dg.deserialize_value(
-            client.external_sensor_execution(
-                sensor_execution_args=SensorExecutionArgs(
-                    repository_origin=repo_origin,
-                    instance_ref=None,
-                    sensor_name="nonexistant_sensor",
-                    last_tick_completion_time=None,
-                    last_run_key=None,
-                    cursor=None,
-                    last_sensor_start_time=None,
-                )
-            ),
-            SensorExecutionErrorSnap,
-        )
-        assert "Dagster recognizes standard cron expressions" in str(
-            sensor_execution_response.error
-        )
-
     finally:
         process.terminate()
         process.wait()
@@ -687,7 +605,7 @@ def test_lazy_load_with_error():
 def test_lazy_load_via_env_var(entrypoint):
     with environ({"DAGSTER_CLI_API_GRPC_LAZY_LOAD_USER_CODE": "1"}):
         port = find_free_port()
-        python_file = dg.file_relative_path(__file__, "grpc_repo_with_error.py")
+        python_file = file_relative_path(__file__, "grpc_repo_with_error.py")
 
         subprocess_args = entrypoint + [
             "--port",
@@ -702,7 +620,7 @@ def test_lazy_load_via_env_var(entrypoint):
             wait_for_grpc_server(
                 process, DagsterGrpcClient(port=port, host="localhost"), subprocess_args
             )
-            list_repositories_response = dg.deserialize_value(
+            list_repositories_response = deserialize_value(
                 DagsterGrpcClient(port=port).list_repositories(), SerializableErrorInfo
             )
             assert (
@@ -717,7 +635,7 @@ def test_lazy_load_via_env_var(entrypoint):
 def test_load_with_missing_env_var(entrypoint):
     port = find_free_port()
     client = DagsterGrpcClient(port=port)
-    python_file = dg.file_relative_path(__file__, "grpc_repo_with_env_vars.py")
+    python_file = file_relative_path(__file__, "grpc_repo_with_env_vars.py")
 
     with environ({"DAGSTER_CLI_API_GRPC_LAZY_LOAD_USER_CODE": "1"}):
         subprocess_args = entrypoint + [
@@ -730,10 +648,10 @@ def test_load_with_missing_env_var(entrypoint):
         process = subprocess.Popen(subprocess_args)
         try:
             wait_for_grpc_server(process, client, subprocess_args)
-            list_repositories_response = dg.deserialize_value(
+            list_repositories_response = deserialize_value(
                 client.list_repositories(), SerializableErrorInfo
             )
-            assert "Missing env var" in str(list_repositories_response)
+            assert "Missing env var" in list_repositories_response.message
         finally:
             client.shutdown_server()
             process.communicate(timeout=30)
@@ -746,7 +664,7 @@ def test_load_with_secrets_loader_instance_ref(entrypoint):
     client = DagsterGrpcClient(port=port)
 
     with environ({"DAGSTER_CLI_API_GRPC_LAZY_LOAD_USER_CODE": "1"}):
-        python_file = dg.file_relative_path(__file__, "grpc_repo_with_env_vars.py")
+        python_file = file_relative_path(__file__, "grpc_repo_with_env_vars.py")
         subprocess_args = entrypoint + [
             "--port",
             str(port),
@@ -754,8 +672,8 @@ def test_load_with_secrets_loader_instance_ref(entrypoint):
             python_file,
         ]
 
-        with environ({"FOO": None, "FOO_INSIDE_OP": None}):  # pyright: ignore[reportArgumentType]
-            with dg.instance_for_test(
+        with environ({"FOO": None, "FOO_INSIDE_OP": None}):
+            with instance_for_test(
                 set_dagster_home=False,
             ) as instance:
                 process = subprocess.Popen(
@@ -763,29 +681,29 @@ def test_load_with_secrets_loader_instance_ref(entrypoint):
                     + [
                         "--inject-env-vars-from-instance",
                         "--instance-ref",
-                        dg.serialize_value(instance.get_ref()),
+                        serialize_value(instance.get_ref()),
                     ],
                     cwd=os.path.dirname(__file__),
                 )
                 try:
                     wait_for_grpc_server(process, client, subprocess_args)
 
-                    dg.deserialize_value(client.list_repositories(), ListRepositoriesResponse)
+                    deserialize_value(client.list_repositories(), ListRepositoriesResponse)
 
                     # Launch a run and verify that it finishes
 
                     run = create_run_for_test(instance, job_name="needs_env_var_job")
                     run_id = run.run_id
 
-                    job_origin = RemoteJobOrigin(
+                    job_origin = ExternalJobOrigin(
                         job_name="needs_env_var_job",
-                        repository_origin=RemoteRepositoryOrigin(
+                        external_repository_origin=ExternalRepositoryOrigin(
                             repository_name="needs_env_var_repo",
                             code_location_origin=RegisteredCodeLocationOrigin("not_used"),
                         ),
                     )
 
-                    res = dg.deserialize_value(
+                    res = deserialize_value(
                         client.start_run(
                             ExecuteExternalJobArgs(
                                 job_origin=job_origin,
@@ -812,7 +730,7 @@ def test_load_with_secrets_loader_instance_ref(entrypoint):
 def test_load_with_secrets_loader_no_instance_ref(entrypoint):
     port = find_free_port()
     client = DagsterGrpcClient(port=port)
-    python_file = dg.file_relative_path(__file__, "grpc_repo_with_env_vars.py")
+    python_file = file_relative_path(__file__, "grpc_repo_with_env_vars.py")
 
     with environ({"DAGSTER_CLI_API_GRPC_LAZY_LOAD_USER_CODE": "1"}):
         subprocess_args = entrypoint + [
@@ -822,8 +740,8 @@ def test_load_with_secrets_loader_no_instance_ref(entrypoint):
             python_file,
         ]
 
-        with environ({"FOO": None}):  # pyright: ignore[reportArgumentType]
-            with dg.instance_for_test(
+        with environ({"FOO": None}):
+            with instance_for_test(
                 set_dagster_home=True,
             ):
                 process = subprocess.Popen(
@@ -835,7 +753,7 @@ def test_load_with_secrets_loader_no_instance_ref(entrypoint):
 
                 try:
                     wait_for_grpc_server(process, client, subprocess_args)
-                    dg.deserialize_value(
+                    deserialize_value(
                         DagsterGrpcClient(port=port).list_repositories(), ListRepositoriesResponse
                     )
 
@@ -847,7 +765,7 @@ def test_load_with_secrets_loader_no_instance_ref(entrypoint):
 @pytest.mark.parametrize("entrypoint", entrypoints())
 def test_streaming(entrypoint):
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
 
     subprocess_args = entrypoint + [
         "--port",
@@ -876,7 +794,7 @@ def test_streaming(entrypoint):
 @pytest.mark.parametrize("entrypoint", entrypoints())
 def test_sensor_timeout(entrypoint):
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
 
     subprocess_args = entrypoint + [
         "--port",
@@ -893,8 +811,8 @@ def test_sensor_timeout(entrypoint):
         )
         client = DagsterGrpcClient(port=port)
 
-        with dg.instance_for_test() as instance:
-            repo_origin = RemoteRepositoryOrigin(
+        with instance_for_test() as instance:
+            repo_origin = ExternalRepositoryOrigin(
                 code_location_origin=GrpcServerCodeLocationOrigin(port=port, host="localhost"),
                 repository_name="bar_repo",
             )
@@ -904,12 +822,11 @@ def test_sensor_timeout(entrypoint):
                         repository_origin=repo_origin,
                         instance_ref=instance.get_ref(),
                         sensor_name="slow_sensor",
-                        last_tick_completion_time=None,
+                        last_completion_time=None,
                         last_run_key=None,
                         cursor=None,
-                        timeout=2,
-                        last_sensor_start_time=None,
                     ),
+                    timeout=2,
                 )
 
             assert "Deadline Exceeded" in str(exc_info.getrepr())
@@ -920,10 +837,9 @@ def test_sensor_timeout(entrypoint):
                     repository_origin=repo_origin,
                     instance_ref=instance.get_ref(),
                     sensor_name="slow_sensor",
-                    last_tick_completion_time=None,
+                    last_completion_time=None,
                     last_run_key=None,
                     cursor=None,
-                    last_sensor_start_time=None,
                 ),
             )
     finally:
@@ -934,7 +850,7 @@ def test_sensor_timeout(entrypoint):
 @pytest.mark.parametrize("entrypoint", entrypoints())
 def test_load_with_container_context(entrypoint):
     port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
+    python_file = file_relative_path(__file__, "grpc_repo.py")
 
     container_context = {
         "k8s": {
@@ -958,75 +874,14 @@ def test_load_with_container_context(entrypoint):
         client = DagsterGrpcClient(port=port, host="localhost")
 
         wait_for_grpc_server(process, client, subprocess_args)
-        assert client.ping("foobar") == {
-            "echo": "foobar",
-            "serialized_server_utilization_metrics": "",
-        }
+        assert client.ping("foobar") == "foobar"
 
         list_repositories_response = sync_list_repositories_grpc(client)
         assert list_repositories_response.entry_point == ["dagster"]
         assert list_repositories_response.executable_path == sys.executable
         assert list_repositories_response.container_context == container_context
-        assert list_repositories_response.dagster_library_versions == {
-            "dagster": dagster_version,
-            "dagster-shared": dagster_shared_version,
-        }
+        assert list_repositories_response.dagster_library_versions == {"dagster": dagster_version}
 
     finally:
         process.terminate()
         process.wait()
-
-
-def test_load_with_error_logging(capfd):
-    port = find_free_port()
-    python_file = dg.file_relative_path(__file__, "grpc_repo.py")
-
-    subprocess_args = ["dagster", "api", "grpc"] + [
-        "--port",
-        str(port),
-        "--python-file",
-        python_file,
-    ]
-
-    process = subprocess.Popen(
-        subprocess_args,
-        env={**os.environ, "DAGSTER_CODE_SERVER_LOG_EXCEPTIONS": "1"},
-        text=True,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
-
-    try:
-        client = DagsterGrpcClient(port=port, host="localhost")
-
-        wait_for_grpc_server(process, client, subprocess_args)
-
-        missing_job_origin = RemoteJobOrigin(
-            job_name="missing_job_name",
-            repository_origin=RemoteRepositoryOrigin(
-                repository_name="missing_repo_name",
-                code_location_origin=RegisteredCodeLocationOrigin(
-                    location_name="missing_location_name"
-                ),
-            ),
-        )
-
-        result = dg.deserialize_value(
-            client.external_pipeline_subset(
-                pipeline_subset_snapshot_args=JobSubsetSnapshotArgs(
-                    job_origin=missing_job_origin,
-                    op_selection=None,
-                ),
-            )
-        )
-
-        assert result.error  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-        assert 'Could not find a repository called "missing_repo_name"' in str(result.error)  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-
-    finally:
-        process.terminate()
-        process.wait()
-
-    out, _err = capfd.readouterr()
-
-    assert 'Could not find a repository called "missing_repo_name"' in out

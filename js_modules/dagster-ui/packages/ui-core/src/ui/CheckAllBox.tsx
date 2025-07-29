@@ -1,4 +1,5 @@
 import {Checkbox, Tooltip} from '@dagster-io/ui-components';
+import * as React from 'react';
 
 interface Props {
   checkedCount: number;

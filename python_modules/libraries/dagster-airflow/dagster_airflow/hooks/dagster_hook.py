@@ -1,8 +1,7 @@
 import json
 import logging
 import time
-from collections.abc import Mapping
-from typing import Any, Optional, cast
+from typing import Any, Mapping, Optional, cast
 
 # Type errors ignored because some of these imports target deprecated modules for compatibility with
 # airflow 1.x and 2.x.
@@ -10,17 +9,11 @@ import requests
 from airflow.exceptions import AirflowException
 from airflow.hooks.base_hook import BaseHook  # type: ignore
 from airflow.models import Connection
-from dagster._annotations import superseded
 from dagster._core.storage.dagster_run import DagsterRunStatus
 
 from dagster_airflow.utils import is_airflow_2_loaded_in_environment
 
 
-@superseded(
-    additional_warn_text=(
-        "`DagsterHook` has been superseded by the functionality in the `dagster-airlift` library."
-    )
-)
 class DagsterHook(BaseHook):
     conn_name_attr = "dagster_conn_id"
     default_conn_name = "dagster_default"
@@ -108,7 +101,7 @@ class DagsterHook(BaseHook):
         self.url = f"{base_url}{self.organization_id}/{self.deployment_name}/graphql"
 
     def set_hook_for_oss(self, conn: Connection):
-        self.url = cast("str", conn.login)
+        self.url = cast(str, conn.login)
 
     def launch_run(
         self,
@@ -236,7 +229,7 @@ fragment PythonErrorFragment on PythonError {
                 status = response_json["data"]["runOrError"]["status"]
             else:
                 raise AirflowException(
-                    f"Error fetching run status: {response_json['data']['runOrError']['message']}"
+                    f'Error fetching run status: {response_json["data"]["runOrError"]["message"]}'
                 )
 
             if status == DagsterRunStatus.SUCCESS.value:
@@ -270,6 +263,10 @@ mutation Terminate($runId: String!, $terminatePolicy: TerminateRunPolicy) {
         canTerminate
         __typename
       }
+      __typename
+    }
+    ... on UnauthorizedError {
+      message
       __typename
     }
     ...PythonErrorFragment

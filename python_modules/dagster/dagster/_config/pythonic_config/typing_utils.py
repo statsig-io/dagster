@@ -1,17 +1,12 @@
-from typing import TYPE_CHECKING, Annotated, Any, Generic, Optional, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Generic, Optional, Type, TypeVar, Union, cast
 
+import pydantic
 from pydantic import Field
-from typing_extensions import Self, dataclass_transform, get_origin
+from typing_extensions import Annotated, dataclass_transform, get_origin
 
-from dagster._config.pythonic_config.type_check_utils import safe_is_subclass
 from dagster._core.errors import DagsterInvalidDagsterTypeInPythonicConfigDefinitionError
 
-try:
-    # Pydantic 1.x
-    from pydantic._internal._model_construction import ModelMetaclass
-except ImportError:
-    # Pydantic 2.x
-    from pydantic.main import ModelMetaclass
+from .inheritance_utils import safe_is_subclass
 
 if TYPE_CHECKING:
     from dagster._config.pythonic_config import PartialResource
@@ -30,29 +25,25 @@ class LateBoundTypesForResourceTypeChecking:
     class _Temp(Generic[_TResValue]):
         pass
 
-    _ResourceDep: type = _Temp
-    _Resource: type = _Temp
-    _PartialResource: type = _Temp
+    _ResourceDep: Type = _Temp
+    _Resource: Type = _Temp
+    _PartialResource: Type = _Temp
 
     @staticmethod
-    def get_resource_rep_type() -> type:
+    def get_resource_rep_type() -> Type:
         return LateBoundTypesForResourceTypeChecking._ResourceDep
 
     @staticmethod
-    def get_resource_type() -> type:
+    def get_resource_type() -> Type:
         return LateBoundTypesForResourceTypeChecking._Resource
 
     @staticmethod
-    def get_partial_resource_type(base: type) -> type:
-        # LateBoundTypesForResourceTypeChecking._PartialResource[base] would be the more
-        # correct thing to return, but to enable that deeper pydantic integration
-        # needs to be done on the PartialResource class
-        # https://github.com/dagster-io/dagster/issues/18017
-        return LateBoundTypesForResourceTypeChecking._PartialResource
+    def get_partial_resource_type(base: Type) -> Type:
+        return LateBoundTypesForResourceTypeChecking._PartialResource[base]
 
     @staticmethod
     def set_actual_types_for_type_checking(
-        resource_dep_type: type, resource_type: type, partial_resource_type: type
+        resource_dep_type: Type, resource_type: Type, partial_resource_type: Type
     ) -> None:
         LateBoundTypesForResourceTypeChecking._ResourceDep = resource_dep_type
         LateBoundTypesForResourceTypeChecking._Resource = resource_type
@@ -60,7 +51,7 @@ class LateBoundTypesForResourceTypeChecking:
 
 
 @dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
-class BaseConfigMeta(ModelMetaclass):  # type: ignore
+class BaseConfigMeta(pydantic.main.ModelMetaclass):
     def __new__(cls, name, bases, namespaces, **kwargs) -> Any:
         annotations = namespaces.get("__annotations__", {})
 
@@ -105,14 +96,11 @@ class BaseResourceMeta(BaseConfigMeta):
     """
 
     def __new__(cls, name, bases, namespaces, **kwargs) -> Any:
-        from pydantic.fields import FieldInfo
-
         # Gather all type annotations from the class and its base classes
         annotations = namespaces.get("__annotations__", {})
         for field in annotations:
             if not field.startswith("__"):
                 # Check if the annotation is a ResourceDependency
-
                 if (
                     get_origin(annotations[field])
                     == LateBoundTypesForResourceTypeChecking.get_resource_rep_type()
@@ -130,23 +118,17 @@ class BaseResourceMeta(BaseConfigMeta):
                     base = annotations[field]
                     annotations[field] = Annotated[
                         Union[
-                            base,
                             LateBoundTypesForResourceTypeChecking.get_partial_resource_type(base),
+                            base,
                         ],
                         "resource_dependency",
                     ]
-                    # Pydantic 2.5.0 changed the default union mode to "smart", which causes
-                    # partial resource initialization to fail, since Pydantic would attempt to
-                    # initialize a PartialResource with parameters which are invalid.
-                    # https://github.com/pydantic/pydantic-core/pull/867
-                    # Here, we explicitly set the union mode to "left_to_right".
-                    # https://docs.pydantic.dev/latest/concepts/unions/#left-to-right-mode
-                    namespaces[field] = FieldInfo(
-                        union_mode="left_to_right", annotation=annotations[field]
-                    )
 
         namespaces["__annotations__"] = annotations
         return super().__new__(cls, name, bases, namespaces, **kwargs)
+
+
+Self = TypeVar("Self", bound="TypecheckAllowPartialResourceInitParams")
 
 
 class TypecheckAllowPartialResourceInitParams:
@@ -184,21 +166,12 @@ class TypecheckAllowPartialResourceInitParams:
     def __set_name__(self, _owner, name):
         self._assigned_name = name
 
-    def __get__(self: Self, obj: Any, owner: Any) -> Self:
+    def __get__(self: "Self", obj: Any, __owner: Any) -> "Self":
         # no-op implementation (only used to affect type signature)
-        return cast("Self", getattr(obj, self._assigned_name))
+        return cast(Self, getattr(obj, self._assigned_name))
 
-    # The annotation her has been temporarily changed from:
-    #     value: Union[Self, "PartialResource[Self]"]
-    # to:
-    #     value: Union[Any, "PartialResource[Any]"]
-    # This is because of a bug in mypy that is incorrectly interpreting the
-    # signature and can cause a false positive type error for users. This only
-    # started being detected in our test_type_signatures.py tests on 2024-02-02
-    # when some annotations elsewhere were added, likely causing mypy to
-    # analyze code it was previously skipping. The annotation should be
-    # reverted when the bug is fixed or another solution that surface as type
-    # errors for mypy users is found.
-    def __set__(self, obj: Optional[object], value: Union[Any, "PartialResource[Any]"]) -> None:
+    def __set__(
+        self: "Self", obj: Optional[object], value: Union["Self", "PartialResource[Self]"]
+    ) -> None:
         # no-op implementation (only used to affect type signature)
         setattr(obj, self._assigned_name, value)

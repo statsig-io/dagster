@@ -1,22 +1,26 @@
-import {Box, PageHeader, Subtitle1, Tag} from '@dagster-io/ui-components';
-import {Link, useRouteMatch} from 'react-router-dom';
-import {buildJobTabs} from 'shared/pipelines/buildJobTabs.oss';
+import {Box, PageHeader, Tag, Heading} from '@dagster-io/ui-components';
+import React from 'react';
+import {useRouteMatch} from 'react-router-dom';
+
+import {usePermissionsForLocation} from '../app/Permissions';
+import {JobFeatureContext} from '../pipelines/JobFeatureContext';
+import {JobTabs} from '../pipelines/JobTabs';
+import {explorerPathFromString} from '../pipelines/PipelinePathUtils';
+import {useRepository} from '../workspace/WorkspaceContext';
+import {RepoAddress} from '../workspace/types';
 
 import {JobMetadata} from './JobMetadata';
 import {RepositoryLink} from './RepositoryLink';
-import {usePermissionsForLocation} from '../app/Permissions';
-import {JobTabs} from '../pipelines/JobTabs';
-import {explorerPathFromString} from '../pipelines/PipelinePathUtils';
-import {useRepository} from '../workspace/WorkspaceContext/util';
-import {RepoAddress} from '../workspace/types';
 
 interface Props {
   repoAddress: RepoAddress;
 }
 
-export const PipelineNav = (props: Props) => {
+export const PipelineNav: React.FC<Props> = (props) => {
   const {repoAddress} = props;
   const permissions = usePermissionsForLocation(repoAddress.location);
+
+  const {tabBuilder} = React.useContext(JobFeatureContext);
 
   const match = useRouteMatch<{tab?: string; selector: string}>([
     '/locations/:repoPath/pipelines/:selector/:tab?',
@@ -37,23 +41,17 @@ export const PipelineNav = (props: Props) => {
   // If using pipeline:mode tuple (crag flag), check for partition sets that are for this specific
   // pipeline:mode tuple. Otherwise, just check for a pipeline name match.
   const partitionSets = repo?.repository.partitionSets || [];
-  const hasLaunchpad = !isAssetJob && !repoJobEntry?.externalJobSource;
+  const hasLaunchpad = !isAssetJob;
   const hasPartitionSet = partitionSets.some(
     (partitionSet) => partitionSet.pipelineName === pipelineName,
   );
 
-  const tabs = buildJobTabs({hasLaunchpad, hasPartitionSet});
+  const tabs = tabBuilder({hasLaunchpad, hasPartitionSet});
 
   return (
     <>
       <PageHeader
-        title={
-          <Subtitle1 style={{display: 'flex', flexDirection: 'row', gap: 4}}>
-            <Link to="/jobs">Jobs</Link>
-            <span>/</span>
-            {pipelineName}
-          </Subtitle1>
-        }
+        title={<Heading>{pipelineName}</Heading>}
         tags={
           <Box flex={{direction: 'row', alignItems: 'center', gap: 8, wrap: 'wrap'}}>
             <Tag icon="job">

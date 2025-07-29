@@ -3,10 +3,16 @@ import logging
 import os
 
 import pytest
-from dagster import String, execute_job, job, logger, reconstructable
+from dagster import (
+    String,
+    _seven as seven,
+    execute_job,
+    job,
+    logger,
+    reconstructable,
+)
 from dagster._core.test_utils import instance_for_test
 from dagster._utils import safe_tempfile_path
-from dagster_shared import seven
 from dagstermill.examples.repository import hello_logging
 from dagstermill.io_managers import (
     ConfigurableLocalOutputNotebookIOManager,
@@ -20,14 +26,11 @@ class LogTestFileHandler(logging.Handler):
         if not os.path.isfile(self.file_path):
             with open(self.file_path, "a", encoding="utf8"):  # Create file if does not exist
                 pass
-        super().__init__()
+        super(LogTestFileHandler, self).__init__()
 
     def emit(self, record):
         with open(self.file_path, "a", encoding="utf8") as fd:
-            fd.write(
-                seven.json.dumps({"the_message": record.__dict__["dagster_meta"]["orig_message"]})
-                + "\n"
-            )
+            fd.write(seven.json.dumps(record.__dict__) + "\n")
 
 
 @logger(config_schema={"name": String, "log_level": String, "file_path": String})
@@ -106,24 +109,24 @@ def test_logging(hello_logging_job_type) -> None:
                     instance=instance,
                 )
 
-                with open(test_file_path, encoding="utf8") as test_file:
+                with open(test_file_path, "r", encoding="utf8") as test_file:
                     records = [
                         json.loads(line)
                         for line in test_file.read().strip("\n").split("\n")
                         if line
                     ]
 
-                with open(critical_file_path, encoding="utf8") as critical_file:
+                with open(critical_file_path, "r", encoding="utf8") as critical_file:
                     critical_records = [
                         json.loads(line)
                         for line in critical_file.read().strip("\n").split("\n")
                         if line
                     ]
 
-    messages = [x["the_message"] for x in records]
+    messages = [x["dagster_meta"]["orig_message"] for x in records]
 
     assert "Hello, there!" in messages
 
-    critical_messages = [x["the_message"] for x in critical_records]
+    critical_messages = [x["dagster_meta"]["orig_message"] for x in critical_records]
 
     assert "Hello, there!" not in critical_messages

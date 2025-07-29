@@ -12,9 +12,8 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 import wandb
+from fashion_data import fashion
 from torch.autograd import Variable
-
-from .fashion_data import fashion
 
 hyperparameter_defaults = dict(
     dropout=0.5,
@@ -31,7 +30,7 @@ config = wandb.config
 
 class CNNModel(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(CNNModel, self).__init__()
 
         # Convolution 1
         self.cnn1 = nn.Conv2d(

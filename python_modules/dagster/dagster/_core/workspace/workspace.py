@@ -1,14 +1,11 @@
-from collections.abc import Mapping
+from abc import ABC, abstractmethod
 from enum import Enum
-from functools import cached_property
-from typing import TYPE_CHECKING, Annotated, Optional
+from typing import TYPE_CHECKING, Mapping, NamedTuple, Optional, Sequence
 
-from dagster._record import ImportFrom, record
 from dagster._utils.error import SerializableErrorInfo
 
 if TYPE_CHECKING:
-    from dagster._core.definitions.assets.graph.remote_asset_graph import RemoteWorkspaceAssetGraph
-    from dagster._core.remote_representation import CodeLocation, CodeLocationOrigin
+    from dagster._core.host_representation import CodeLocation, CodeLocationOrigin
 
 
 # For locations that are loaded asynchronously
@@ -17,21 +14,16 @@ class CodeLocationLoadStatus(Enum):
     LOADED = "LOADED"  # Finished loading (may be an error)
 
 
-@record
-class CodeLocationEntry:
-    origin: Annotated["CodeLocationOrigin", ImportFrom("dagster._core.remote_representation")]
-    code_location: Optional[
-        Annotated["CodeLocation", ImportFrom("dagster._core.remote_representation")]
-    ]
+class CodeLocationEntry(NamedTuple):
+    origin: "CodeLocationOrigin"
+    code_location: Optional["CodeLocation"]
     load_error: Optional[SerializableErrorInfo]
     load_status: CodeLocationLoadStatus
     display_metadata: Mapping[str, str]
     update_timestamp: float
-    version_key: str
 
 
-@record
-class CodeLocationStatusEntry:
+class CodeLocationStatusEntry(NamedTuple):
     """Slimmer version of WorkspaceLocationEntry, containing the minimum set of information required
     to know whether the workspace needs reloading.
     """
@@ -39,23 +31,22 @@ class CodeLocationStatusEntry:
     location_name: str
     load_status: CodeLocationLoadStatus
     update_timestamp: float
-    version_key: str
 
 
-@record
-class CurrentWorkspace:
-    code_location_entries: Mapping[str, CodeLocationEntry]
+class IWorkspace(ABC):
+    """Manages a set of CodeLocations."""
 
-    @cached_property
-    def asset_graph(self) -> "RemoteWorkspaceAssetGraph":
-        from dagster._core.definitions.assets.graph.remote_asset_graph import (
-            RemoteWorkspaceAssetGraph,
-        )
+    @abstractmethod
+    def get_code_location(self, location_name: str) -> "CodeLocation":
+        """Return the CodeLocation for the given location name, or raise an error if there is an error loading it."""
 
-        return RemoteWorkspaceAssetGraph.build(self)
+    @abstractmethod
+    def get_workspace_snapshot(self) -> Mapping[str, CodeLocationEntry]:
+        """Return an entry for each location in the workspace."""
 
-    def with_code_location(self, name: str, entry: CodeLocationEntry) -> "CurrentWorkspace":
-        return CurrentWorkspace(code_location_entries={**self.code_location_entries, name: entry})
+    @abstractmethod
+    def get_code_location_statuses(self) -> Sequence[CodeLocationStatusEntry]:
+        pass
 
 
 def location_status_from_location_entry(
@@ -65,5 +56,4 @@ def location_status_from_location_entry(
         location_name=entry.origin.location_name,
         load_status=entry.load_status,
         update_timestamp=entry.update_timestamp,
-        version_key=entry.version_key,
     )

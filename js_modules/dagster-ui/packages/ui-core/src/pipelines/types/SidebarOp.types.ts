@@ -2,7 +2,7 @@
 
 import * as Types from '../../graphql/types';
 
-export type SidebarOpFragment_CompositeSolidDefinition = {
+export type SidebarOpFragment_CompositeSolidDefinition_ = {
   __typename: 'CompositeSolidDefinition';
   id: string;
   name: string;
@@ -17,7 +17,6 @@ export type SidebarOpFragment_CompositeSolidDefinition = {
             id: string;
             name: string;
             description: string | null;
-            pools: Array<string>;
             inputMappings: Array<{
               __typename: 'InputMapping';
               definition: {__typename: 'InputDefinition'; name: string};
@@ -96,7 +95,6 @@ export type SidebarOpFragment_CompositeSolidDefinition = {
             __typename: 'SolidDefinition';
             name: string;
             description: string | null;
-            pools: Array<string>;
             requiredResources: Array<{__typename: 'ResourceRequirement'; resourceKey: string}>;
             configField: {
               __typename: 'ConfigTypeField';
@@ -778,7 +776,7 @@ export type SidebarOpFragment_CompositeSolidDefinition = {
   } | null;
 };
 
-export type SidebarOpFragment_Graph = {
+export type SidebarOpFragment_Graph_ = {
   __typename: 'Graph';
   id: string;
   name: string;
@@ -793,7 +791,6 @@ export type SidebarOpFragment_Graph = {
             id: string;
             name: string;
             description: string | null;
-            pools: Array<string>;
             inputMappings: Array<{
               __typename: 'InputMapping';
               definition: {__typename: 'InputDefinition'; name: string};
@@ -872,7 +869,6 @@ export type SidebarOpFragment_Graph = {
             __typename: 'SolidDefinition';
             name: string;
             description: string | null;
-            pools: Array<string>;
             requiredResources: Array<{__typename: 'ResourceRequirement'; resourceKey: string}>;
             configField: {
               __typename: 'ConfigTypeField';
@@ -1554,7 +1550,7 @@ export type SidebarOpFragment_Graph = {
   } | null;
 };
 
-export type SidebarOpFragment_Job = {
+export type SidebarOpFragment_Job_ = {
   __typename: 'Job';
   id: string;
   name: string;
@@ -1569,7 +1565,6 @@ export type SidebarOpFragment_Job = {
             id: string;
             name: string;
             description: string | null;
-            pools: Array<string>;
             inputMappings: Array<{
               __typename: 'InputMapping';
               definition: {__typename: 'InputDefinition'; name: string};
@@ -1648,7 +1643,6 @@ export type SidebarOpFragment_Job = {
             __typename: 'SolidDefinition';
             name: string;
             description: string | null;
-            pools: Array<string>;
             requiredResources: Array<{__typename: 'ResourceRequirement'; resourceKey: string}>;
             configField: {
               __typename: 'ConfigTypeField';
@@ -2330,7 +2324,7 @@ export type SidebarOpFragment_Job = {
   } | null;
 };
 
-export type SidebarOpFragment_Pipeline = {
+export type SidebarOpFragment_Pipeline_ = {
   __typename: 'Pipeline';
   id: string;
   name: string;
@@ -2345,7 +2339,6 @@ export type SidebarOpFragment_Pipeline = {
             id: string;
             name: string;
             description: string | null;
-            pools: Array<string>;
             inputMappings: Array<{
               __typename: 'InputMapping';
               definition: {__typename: 'InputDefinition'; name: string};
@@ -2424,7 +2417,6 @@ export type SidebarOpFragment_Pipeline = {
             __typename: 'SolidDefinition';
             name: string;
             description: string | null;
-            pools: Array<string>;
             requiredResources: Array<{__typename: 'ResourceRequirement'; resourceKey: string}>;
             configField: {
               __typename: 'ConfigTypeField';
@@ -3106,7 +3098,7 @@ export type SidebarOpFragment_Pipeline = {
   } | null;
 };
 
-export type SidebarOpFragment_PipelineSnapshot = {
+export type SidebarOpFragment_PipelineSnapshot_ = {
   __typename: 'PipelineSnapshot';
   id: string;
   name: string;
@@ -3121,7 +3113,6 @@ export type SidebarOpFragment_PipelineSnapshot = {
             id: string;
             name: string;
             description: string | null;
-            pools: Array<string>;
             inputMappings: Array<{
               __typename: 'InputMapping';
               definition: {__typename: 'InputDefinition'; name: string};
@@ -3200,7 +3191,6 @@ export type SidebarOpFragment_PipelineSnapshot = {
             __typename: 'SolidDefinition';
             name: string;
             description: string | null;
-            pools: Array<string>;
             requiredResources: Array<{__typename: 'ResourceRequirement'; resourceKey: string}>;
             configField: {
               __typename: 'ConfigTypeField';
@@ -3883,15 +3873,15 @@ export type SidebarOpFragment_PipelineSnapshot = {
 };
 
 export type SidebarOpFragment =
-  | SidebarOpFragment_CompositeSolidDefinition
-  | SidebarOpFragment_Graph
-  | SidebarOpFragment_Job
-  | SidebarOpFragment_Pipeline
-  | SidebarOpFragment_PipelineSnapshot;
+  | SidebarOpFragment_CompositeSolidDefinition_
+  | SidebarOpFragment_Graph_
+  | SidebarOpFragment_Job_
+  | SidebarOpFragment_Pipeline_
+  | SidebarOpFragment_PipelineSnapshot_;
 
 export type SidebarPipelineOpQueryVariables = Types.Exact<{
   selector: Types.PipelineSelector;
-  handleID: Types.Scalars['String']['input'];
+  handleID: Types.Scalars['String'];
 }>;
 
 export type SidebarPipelineOpQuery = {
@@ -3913,7 +3903,6 @@ export type SidebarPipelineOpQuery = {
                   id: string;
                   name: string;
                   description: string | null;
-                  pools: Array<string>;
                   inputMappings: Array<{
                     __typename: 'InputMapping';
                     definition: {__typename: 'InputDefinition'; name: string};
@@ -3996,7 +3985,6 @@ export type SidebarPipelineOpQuery = {
                   __typename: 'SolidDefinition';
                   name: string;
                   description: string | null;
-                  pools: Array<string>;
                   requiredResources: Array<{
                     __typename: 'ResourceRequirement';
                     resourceKey: string;
@@ -4690,7 +4678,7 @@ export type SidebarPipelineOpQuery = {
 
 export type SidebarGraphOpQueryVariables = Types.Exact<{
   selector: Types.GraphSelector;
-  handleID: Types.Scalars['String']['input'];
+  handleID: Types.Scalars['String'];
 }>;
 
 export type SidebarGraphOpQuery = {
@@ -4711,7 +4699,6 @@ export type SidebarGraphOpQuery = {
                   id: string;
                   name: string;
                   description: string | null;
-                  pools: Array<string>;
                   inputMappings: Array<{
                     __typename: 'InputMapping';
                     definition: {__typename: 'InputDefinition'; name: string};
@@ -4794,7 +4781,6 @@ export type SidebarGraphOpQuery = {
                   __typename: 'SolidDefinition';
                   name: string;
                   description: string | null;
-                  pools: Array<string>;
                   requiredResources: Array<{
                     __typename: 'ResourceRequirement';
                     resourceKey: string;
@@ -5485,7 +5471,3 @@ export type SidebarGraphOpQuery = {
     | {__typename: 'GraphNotFoundError'}
     | {__typename: 'PythonError'};
 };
-
-export const SidebarPipelineOpQueryVersion = 'f2f757259ed45d1f13782138866817a5d8e6dd27e4e64253940a72cb60a345f4';
-
-export const SidebarGraphOpQueryVersion = 'd990aa216ec9ca839d65d14e400e00b57acdebfd96399b4daada499381296d34';

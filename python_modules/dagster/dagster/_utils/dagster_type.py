@@ -8,7 +8,8 @@ from dagster._core.execution.api import create_execution_plan
 from dagster._core.execution.context_creation_job import scoped_job_context
 from dagster._core.instance import DagsterInstance
 from dagster._core.types.dagster_type import resolve_dagster_type
-from dagster._utils.typing_api import is_typing_type
+
+from .typing_api import is_typing_type
 
 
 def check_dagster_type(dagster_type: Any, value: Any) -> TypeCheck:
@@ -53,6 +54,8 @@ def check_dagster_type(dagster_type: Any, value: Any) -> TypeCheck:
 
         if not isinstance(type_check, TypeCheck):
             raise DagsterInvariantViolationError(
-                f"Type checks can only return TypeCheck. Type {dagster_type.display_name} returned {type_check!r}."
+                "Type checks can only return TypeCheck. Type {type_name} returned {value}.".format(
+                    type_name=dagster_type.display_name, value=repr(type_check)
+                )
             )
         return type_check

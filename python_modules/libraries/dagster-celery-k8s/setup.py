@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: dict[str, str] = {}
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_celery_k8s/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -22,18 +23,17 @@ setup(
     description="A Dagster integration for celery-k8s-executor",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-celery-k8s",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
     packages=find_packages(exclude=["dagster_celery_k8s_tests*"]),
-    include_package_data=True,
-    python_requires=">=3.9,<3.14",
     install_requires=[
-        f"dagster{pin}",
-        f"dagster-k8s{pin}",
-        f"dagster-celery{pin}",
+        "dagster==1.4.16",
+        "dagster-k8s==0.20.16",
+        "dagster-celery==0.20.16",
     ],
     zip_safe=False,
 )

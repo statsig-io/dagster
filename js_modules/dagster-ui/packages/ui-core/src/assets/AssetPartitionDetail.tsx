@@ -1,3 +1,4 @@
+import {gql, useQuery} from '@apollo/client';
 import {
   Alert,
   Box,
@@ -5,69 +6,62 @@ import {
   Group,
   Heading,
   Icon,
-  MiddleTruncate,
   Mono,
   Spinner,
   Subheading,
   Tag,
 } from '@dagster-io/ui-components';
-import {useMemo} from 'react';
+import React from 'react';
 import {Link} from 'react-router-dom';
 
-import {AllIndividualEventsButton} from './AllIndividualEventsButton';
+import {Timestamp} from '../app/time/Timestamp';
+import {LiveDataForNode, isHiddenAssetGroupJob, stepKeyForAsset} from '../asset-graph/Utils';
+import {RunStatus, StaleStatus} from '../graphql/types';
+import {PipelineReference} from '../pipelines/PipelineReference';
+import {RunStatusWithStats} from '../runs/RunStatusDots';
+import {titleForRun, linkToRunEvent} from '../runs/RunUtils';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
+import {buildRepoAddress} from '../workspace/buildRepoAddress';
+
+import {AllIndividualEventsLink} from './AllIndividualEventsLink';
 import {AssetEventMetadataEntriesTable} from './AssetEventMetadataEntriesTable';
 import {AssetEventSystemTags} from './AssetEventSystemTags';
-import {ChangedReasonsTag} from './ChangedReasons';
+import {AssetMaterializationUpstreamData} from './AssetMaterializationUpstreamData';
 import {FailedRunSinceMaterializationBanner} from './FailedRunSinceMaterializationBanner';
-import {StaleReasonsTag} from './Stale';
+import {StaleReasonsTags} from './Stale';
 import {AssetEventGroup} from './groupByPartition';
 import {AssetKey} from './types';
 import {
+  AssetPartitionLatestRunFragment,
   AssetPartitionDetailQuery,
   AssetPartitionDetailQueryVariables,
-  AssetPartitionLatestRunFragment,
-  AssetPartitionStaleQuery,
-  AssetPartitionStaleQueryVariables,
 } from './types/AssetPartitionDetail.types';
-import {AssetObservationFragment} from './types/useRecentAssetEvents.types';
-import {
-  ASSET_OBSERVATION_FRAGMENT,
-  ASSET_SUCCESSFUL_MATERIALIZATION_FRAGMENT,
-} from './useRecentAssetEvents';
-import {gql, useQuery} from '../apollo-client';
-import {Timestamp} from '../app/time/Timestamp';
-import {AssetStaleDataFragment} from '../asset-data/types/AssetStaleStatusDataProvider.types';
-import {isHiddenAssetGroupJob, stepKeyForAsset} from '../asset-graph/Utils';
-import {ChangeReason, RunStatus, StaleStatus} from '../graphql/types';
-import {PipelineReference} from '../pipelines/PipelineReference';
-import {RunStatusWithStats} from '../runs/RunStatusDots';
-import {linkToRunEvent, titleForRun} from '../runs/RunUtils';
-import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext/util';
-import {buildRepoAddress} from '../workspace/buildRepoAddress';
+import {ASSET_MATERIALIZATION_FRAGMENT, ASSET_OBSERVATION_FRAGMENT} from './useRecentAssetEvents';
 
-export const AssetPartitionDetailLoader = (props: {assetKey: AssetKey; partitionKey: string}) => {
+export const AssetPartitionDetailLoader: React.FC<{assetKey: AssetKey; partitionKey: string}> = (
+  props,
+) => {
   const result = useQuery<AssetPartitionDetailQuery, AssetPartitionDetailQueryVariables>(
     ASSET_PARTITION_DETAIL_QUERY,
     {variables: {assetKey: props.assetKey, partitionKey: props.partitionKey}},
   );
 
-  const stale = useQuery<AssetPartitionStaleQuery, AssetPartitionStaleQueryVariables>(
-    ASSET_PARTITION_STALE_QUERY,
-    {variables: {assetKey: props.assetKey, partitionKey: props.partitionKey}},
-  );
-
-  const {materializations, observations, hasLineage, latestRunForPartition} = useMemo(() => {
+  const {materializations, observations, ...rest} = React.useMemo(() => {
     if (result.data?.assetNodeOrError?.__typename !== 'AssetNode') {
       return {
         materializations: [],
         observations: [],
         hasLineage: false,
+        staleCauses: [],
+        staleStatus: StaleStatus.FRESH,
         latestRunForPartition: null,
       };
     }
 
     return {
       stepKey: stepKeyForAsset(result.data.assetNodeOrError),
+      staleStatus: result.data.assetNodeOrError.staleStatus,
+      staleCauses: result.data.assetNodeOrError.staleCauses,
       latestRunForPartition: result.data.assetNodeOrError.latestRunForPartition,
       materializations: [...result.data.assetNodeOrError.assetMaterializations].sort(
         (a, b) => Number(b.timestamp) - Number(a.timestamp),
@@ -81,19 +75,6 @@ export const AssetPartitionDetailLoader = (props: {assetKey: AssetKey; partition
     };
   }, [result.data]);
 
-  const {staleStatus, staleCauses} = useMemo(() => {
-    if (stale.data?.assetNodeOrError?.__typename !== 'AssetNode') {
-      return {
-        staleCauses: [],
-        staleStatus: StaleStatus.FRESH,
-      };
-    }
-    return {
-      staleStatus: stale.data.assetNodeOrError.staleStatus,
-      staleCauses: stale.data.assetNodeOrError.staleCauses,
-    };
-  }, [stale.data]);
-
   const latest = materializations[0];
 
   if (result.loading || !result.data) {
@@ -102,11 +83,7 @@ export const AssetPartitionDetailLoader = (props: {assetKey: AssetKey; partition
 
   return (
     <AssetPartitionDetail
-      hasLineage={hasLineage}
-      hasStaleLoadingState={stale.loading}
-      latestRunForPartition={latestRunForPartition}
-      staleStatus={staleStatus}
-      staleCauses={staleCauses}
+      {...rest}
       assetKey={props.assetKey}
       group={{
         latest: latest || null,
@@ -126,6 +103,17 @@ export const ASSET_PARTITION_DETAIL_QUERY = gql`
       ... on AssetNode {
         id
         opNames
+        staleStatus(partition: $partitionKey)
+        staleCauses(partition: $partitionKey) {
+          key {
+            path
+          }
+          reason
+          category
+          dependency {
+            path
+          }
+        }
         latestRunForPartition(partition: $partitionKey) {
           id
           ...AssetPartitionLatestRunFragment
@@ -133,7 +121,7 @@ export const ASSET_PARTITION_DETAIL_QUERY = gql`
         assetMaterializations(partitions: [$partitionKey]) {
           ... on MaterializationEvent {
             runId
-            ...AssetSuccessfulMaterializationFragment
+            ...AssetMaterializationFragment
           }
         }
         assetObservations(partitions: [$partitionKey]) {
@@ -151,53 +139,28 @@ export const ASSET_PARTITION_DETAIL_QUERY = gql`
     endTime
   }
 
-  ${ASSET_SUCCESSFUL_MATERIALIZATION_FRAGMENT}
+  ${ASSET_MATERIALIZATION_FRAGMENT}
   ${ASSET_OBSERVATION_FRAGMENT}
 `;
 
-export const ASSET_PARTITION_STALE_QUERY = gql`
-  query AssetPartitionStaleQuery($assetKey: AssetKeyInput!, $partitionKey: String!) {
-    assetNodeOrError(assetKey: $assetKey) {
-      ... on AssetNode {
-        id
-        staleStatus(partition: $partitionKey)
-        staleCauses(partition: $partitionKey) {
-          key {
-            path
-          }
-          reason
-          category
-          dependency {
-            path
-          }
-        }
-      }
-    }
-  }
-`;
-
-export const AssetPartitionDetail = ({
-  assetKey,
-  stepKey,
-  group,
-  hasLineage,
-  hasLoadingState,
-  hasStaleLoadingState,
-  latestRunForPartition,
-  staleCauses,
-  staleStatus,
-  changedReasons,
-}: {
+export const AssetPartitionDetail: React.FC<{
   assetKey: AssetKey;
   group: AssetEventGroup;
   latestRunForPartition: AssetPartitionLatestRunFragment | null;
   hasLineage: boolean;
   hasLoadingState?: boolean;
-  hasStaleLoadingState?: boolean;
   stepKey?: string;
-  staleCauses?: AssetStaleDataFragment['staleCauses'];
-  staleStatus?: AssetStaleDataFragment['staleStatus'];
-  changedReasons?: ChangeReason[];
+  staleCauses?: LiveDataForNode['staleCauses'];
+  staleStatus?: LiveDataForNode['staleStatus'];
+}> = ({
+  assetKey,
+  stepKey,
+  group,
+  hasLineage,
+  hasLoadingState,
+  latestRunForPartition,
+  staleCauses,
+  staleStatus,
 }) => {
   const {latest, partition, all} = group;
 
@@ -209,12 +172,12 @@ export const AssetPartitionDetail = ({
     latestRunForPartition?.id !== latestEventRun?.id ? latestRunForPartition : null;
   const currentRunStatusMessage =
     currentRun?.status === RunStatus.STARTED
-      ? 'that targets this partition has started .'
+      ? 'has started and is refreshing this partition.'
       : currentRun?.status === RunStatus.STARTING
-        ? 'that targets this partition is starting.'
-        : currentRun?.status === RunStatus.QUEUED
-          ? 'that targets this partition is queued.'
-          : undefined;
+      ? 'is starting and will refresh this partition.'
+      : currentRun?.status === RunStatus.QUEUED
+      ? 'is queued and is refreshing this partition.'
+      : undefined;
 
   const repositoryOrigin = latestEventRun?.repositoryOrigin;
   const repoAddress = repositoryOrigin
@@ -224,59 +187,46 @@ export const AssetPartitionDetail = ({
 
   const observationsAboutLatest =
     latest?.__typename === 'MaterializationEvent'
-      ? (group.all.filter(
+      ? group.all.filter(
           (e) =>
             e.__typename === 'ObservationEvent' && Number(e.timestamp) > Number(latest.timestamp),
-        ) as AssetObservationFragment[])
+        )
       : [];
+
+  const prior = latest ? all.slice(all.indexOf(latest)) : all;
 
   return (
     <Box padding={{horizontal: 24, bottom: 24}} style={{flex: 1}}>
       <Box padding={{vertical: 24}} border="bottom" flex={{alignItems: 'center'}}>
         {partition ? (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr) auto auto',
-              gap: 12,
-              alignItems: 'center',
-            }}
-            data-tooltip={partition}
-            data-tooltip-style={PartitionHeadingTooltipStyle}
-          >
-            <Heading>
-              <MiddleTruncate text={partition} />
-            </Heading>
+          <Box flex={{gap: 12, alignItems: 'center'}}>
+            <Heading>{partition}</Heading>
             {hasLoadingState ? (
               <Spinner purpose="body-text" />
             ) : latest ? (
               <Tag intent="success">Materialized</Tag>
             ) : undefined}
-            {hasStaleLoadingState ? (
-              <Spinner purpose="body-text" />
-            ) : (
-              <Box flex={{direction: 'row', gap: 8, alignItems: 'center'}}>
-                <StaleReasonsTag
-                  liveData={staleCauses && staleStatus ? {staleCauses, staleStatus} : undefined}
-                  assetKey={assetKey}
-                />
-                <ChangedReasonsTag changedReasons={changedReasons} assetKey={assetKey} />
-              </Box>
-            )}
-          </div>
+            {staleCauses && staleStatus ? (
+              <StaleReasonsTags
+                liveData={{staleCauses, staleStatus}}
+                assetKey={assetKey}
+                include="all"
+              />
+            ) : undefined}
+          </Box>
         ) : (
-          <Heading color={Colors.textLight()}>No partition selected</Heading>
+          <Heading color={Colors.Gray400}>No partition selected</Heading>
         )}
         <div style={{flex: 1}} />
       </Box>
-      {currentRun?.status === RunStatus.FAILURE || currentRun?.status === RunStatus.CANCELED ? (
+      {currentRun?.status === RunStatus.FAILURE && (
         <FailedRunSinceMaterializationBanner
           run={currentRun}
           stepKey={stepKey}
           padding={{horizontal: 0, vertical: 16}}
           border="bottom"
         />
-      ) : null}
+      )}
       {currentRun && currentRunStatusMessage && (
         <Alert
           intent="info"
@@ -317,6 +267,11 @@ export const AssetPartitionDetail = ({
                 <Icon name="observation" />
               )}
               <Timestamp timestamp={{ms: Number(latest.timestamp)}} />
+              {prior.length > 0 && (
+                <AllIndividualEventsLink hasPartitions hasLineage={hasLineage} events={all}>
+                  {`(${prior.length - 1} prior ${prior.length - 1 === 1 ? 'event' : 'events'})`}
+                </AllIndividualEventsLink>
+              )}
             </Box>
           </Box>
         )}
@@ -347,7 +302,7 @@ export const AssetPartitionDetail = ({
                 />
               </Box>
               <Group direction="row" spacing={8} alignItems="center">
-                <Icon name="linear_scale" color={Colors.accentGray()} />
+                <Icon name="linear_scale" color={Colors.Gray400} />
                 <Link to={linkToRunEvent(latestEventRun, latest)}>{latest.stepKey}</Link>
               </Group>
             </Box>
@@ -355,28 +310,17 @@ export const AssetPartitionDetail = ({
             'None'
           )}
         </Box>
-        <Box style={{textAlign: 'right'}}>
-          <AllIndividualEventsButton
-            hasPartitions
-            hasLineage={hasLineage}
-            events={all}
-            disabled={all.length === 0}
-          >
-            {`View all historical events (${all.length})`}
-          </AllIndividualEventsButton>
-        </Box>
       </Box>
       <Box padding={{top: 24}} flex={{direction: 'column', gap: 8}}>
         <Subheading>Metadata</Subheading>
-        <AssetEventMetadataEntriesTable
-          event={latest}
-          observations={observationsAboutLatest}
-          repoAddress={repoAddress}
-          showDescriptions
-        />
+        <AssetEventMetadataEntriesTable event={latest} observations={observationsAboutLatest} />
       </Box>
       <Box padding={{top: 24}} flex={{direction: 'column', gap: 8}}>
-        <Subheading>Tags</Subheading>
+        <Subheading>Source data</Subheading>
+        <AssetMaterializationUpstreamData timestamp={latest?.timestamp} assetKey={assetKey} />
+      </Box>
+      <Box padding={{top: 24}} flex={{direction: 'column', gap: 8}}>
+        <Subheading>System tags</Subheading>
         <AssetEventSystemTags event={latest} collapsible />
       </Box>
     </Box>
@@ -392,11 +336,3 @@ export const AssetPartitionDetailEmpty = ({partitionKey}: {partitionKey?: string
     hasLoadingState
   />
 );
-
-const PartitionHeadingTooltipStyle = JSON.stringify({
-  background: Colors.backgroundLight(),
-  border: `1px solid ${Colors.borderDefault()}`,
-  fontSize: '18px',
-  fontWeight: '600',
-  color: Colors.textDefault(),
-});

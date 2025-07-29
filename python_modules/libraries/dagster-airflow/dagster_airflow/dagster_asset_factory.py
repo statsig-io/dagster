@@ -1,5 +1,4 @@
-from collections.abc import Mapping
-from typing import AbstractSet, Optional  # noqa: UP035
+from typing import AbstractSet, List, Mapping, Optional, Set, Tuple
 
 from airflow.models.connection import Connection
 from airflow.models.dag import DAG
@@ -9,14 +8,15 @@ from dagster import (
     GraphDefinition,
     OutputMapping,
     TimeWindowPartitionsDefinition,
-    _check as check,
 )
-from dagster._annotations import superseded
 from dagster._core.definitions.graph_definition import create_adjacency_lists
 from dagster._utils.schedules import is_valid_cron_schedule
 
 from dagster_airflow.dagster_job_factory import make_dagster_job_from_airflow_dag
-from dagster_airflow.utils import DagsterAirflowError, normalized_name
+from dagster_airflow.utils import (
+    DagsterAirflowError,
+    normalized_name,
+)
 
 
 def _build_asset_dependencies(
@@ -24,11 +24,11 @@ def _build_asset_dependencies(
     graph: GraphDefinition,
     task_ids_by_asset_key: Mapping[AssetKey, AbstractSet[str]],
     upstream_dependencies_by_asset_key: Mapping[AssetKey, AbstractSet[AssetKey]],
-) -> tuple[AbstractSet[OutputMapping], Mapping[str, AssetKey], Mapping[str, set[AssetKey]]]:
+) -> Tuple[AbstractSet[OutputMapping], Mapping[str, AssetKey], Mapping[str, Set[AssetKey]]]:
     """Builds the asset dependency graph for a given set of airflow task mappings and a dagster graph."""
     output_mappings = set()
     keys_by_output_name = {}
-    internal_asset_deps: dict[str, set[AssetKey]] = {}
+    internal_asset_deps: dict[str, Set[AssetKey]] = {}
 
     visited_nodes: dict[str, bool] = {}
     upstream_deps = set()
@@ -96,18 +96,13 @@ def _build_asset_dependencies(
     return (output_mappings, keys_by_output_name, internal_asset_deps)
 
 
-@superseded(
-    additional_warn_text=(
-        "`load_assets_from_airflow_dag` has been superseded by the functionality in the `dagster-airlift` library."
-    )
-)
 def load_assets_from_airflow_dag(
     dag: DAG,
     task_ids_by_asset_key: Mapping[AssetKey, AbstractSet[str]] = {},
     upstream_dependencies_by_asset_key: Mapping[AssetKey, AbstractSet[AssetKey]] = {},
-    connections: Optional[list[Connection]] = None,
-) -> list[AssetsDefinition]:
-    """Construct Dagster Assets for a given Airflow DAG.
+    connections: Optional[List[Connection]] = None,
+) -> List[AssetsDefinition]:
+    """[Experimental] Construct Dagster Assets for a given Airflow DAG.
 
     Args:
         dag (DAG): The Airflow DAG to compile into a Dagster job
@@ -115,7 +110,7 @@ def load_assets_from_airflow_dag(
             keys to task ids. Used break up the Airflow Dag into multiple SDAs
         upstream_dependencies_by_asset_key (Optional[Mapping[AssetKey, AbstractSet[AssetKey]]]): A
             mapping from upstream asset keys to assets provided in task_ids_by_asset_key. Used to
-            declare new upstream SDA dependencies.
+            declare new upstream SDA depenencies.
         connections (List[Connection]): List of Airflow Connections to be created in the Airflow DB
 
     Returns:
@@ -152,8 +147,7 @@ def load_assets_from_airflow_dag(
 
         mutated_task_ids_by_asset_key[AssetKey(dag.dag_id)] = leaf_nodes - used_nodes
 
-    for key, task_ids in task_ids_by_asset_key.items():
-        check.invariant(len(task_ids) <= 1, "Each asset key must have no more than one task ID")
+    for key in task_ids_by_asset_key:
         if key not in mutated_task_ids_by_asset_key:
             mutated_task_ids_by_asset_key[key] = set(task_ids_by_asset_key[key])
         else:

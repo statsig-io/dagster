@@ -1,8 +1,8 @@
 import sys
 
-import dagster as dg
+from dagster import repository
 
 
-@dg.repository
+@repository
 def crashy_repo():
     sys.exit(123)

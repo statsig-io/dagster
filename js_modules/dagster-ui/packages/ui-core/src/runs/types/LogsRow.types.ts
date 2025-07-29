@@ -2,7 +2,7 @@
 
 import * as Types from '../../graphql/types';
 
-export type LogsRowStructuredFragment_AlertFailureEvent = {
+export type LogsRowStructuredFragment_AlertFailureEvent_ = {
   __typename: 'AlertFailureEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -11,7 +11,7 @@ export type LogsRowStructuredFragment_AlertFailureEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_AlertStartEvent = {
+export type LogsRowStructuredFragment_AlertStartEvent_ = {
   __typename: 'AlertStartEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -20,7 +20,7 @@ export type LogsRowStructuredFragment_AlertStartEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_AlertSuccessEvent = {
+export type LogsRowStructuredFragment_AlertSuccessEvent_ = {
   __typename: 'AlertSuccessEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -29,7 +29,7 @@ export type LogsRowStructuredFragment_AlertSuccessEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_AssetCheckEvaluationEvent = {
+export type LogsRowStructuredFragment_AssetCheckEvaluationEvent_ = {
   __typename: 'AssetCheckEvaluationEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -60,20 +60,6 @@ export type LogsRowStructuredFragment_AssetCheckEvaluationEvent = {
           description: string | null;
         }
       | {
-          __typename: 'CodeReferencesMetadataEntry';
-          label: string;
-          description: string | null;
-          codeReferences: Array<
-            | {
-                __typename: 'LocalFileCodeReference';
-                filePath: string;
-                lineNumber: number | null;
-                label: string | null;
-              }
-            | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-          >;
-        }
-      | {
           __typename: 'FloatMetadataEntry';
           floatValue: number | null;
           label: string;
@@ -83,14 +69,6 @@ export type LogsRowStructuredFragment_AssetCheckEvaluationEvent = {
           __typename: 'IntMetadataEntry';
           intValue: number | null;
           intRepr: string;
-          label: string;
-          description: string | null;
-        }
-      | {
-          __typename: 'JobMetadataEntry';
-          jobName: string;
-          repositoryName: string | null;
-          locationName: string;
           label: string;
           description: string | null;
         }
@@ -120,27 +98,12 @@ export type LogsRowStructuredFragment_AssetCheckEvaluationEvent = {
           label: string;
           description: string | null;
         }
-      | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
       | {
           __typename: 'PythonArtifactMetadataEntry';
           module: string;
           name: string;
           label: string;
           description: string | null;
-        }
-      | {
-          __typename: 'TableColumnLineageMetadataEntry';
-          label: string;
-          description: string | null;
-          lineage: Array<{
-            __typename: 'TableColumnLineageEntry';
-            columnName: string;
-            columnDeps: Array<{
-              __typename: 'TableColumnDep';
-              columnName: string;
-              assetKey: {__typename: 'AssetKey'; path: Array<string>};
-            }>;
-          }>;
         }
       | {
           __typename: 'TableMetadataEntry';
@@ -156,7 +119,6 @@ export type LogsRowStructuredFragment_AssetCheckEvaluationEvent = {
                 name: string;
                 description: string | null;
                 type: string;
-                tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                 constraints: {
                   __typename: 'TableColumnConstraints';
                   nullable: boolean;
@@ -179,7 +141,6 @@ export type LogsRowStructuredFragment_AssetCheckEvaluationEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -191,18 +152,12 @@ export type LogsRowStructuredFragment_AssetCheckEvaluationEvent = {
           };
         }
       | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-      | {
-          __typename: 'TimestampMetadataEntry';
-          timestamp: number;
-          label: string;
-          description: string | null;
-        }
       | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
     >;
   };
 };
 
-export type LogsRowStructuredFragment_AssetCheckEvaluationPlannedEvent = {
+export type LogsRowStructuredFragment_AssetCheckEvaluationPlannedEvent_ = {
   __typename: 'AssetCheckEvaluationPlannedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -211,7 +166,7 @@ export type LogsRowStructuredFragment_AssetCheckEvaluationPlannedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_AssetMaterializationPlannedEvent = {
+export type LogsRowStructuredFragment_AssetMaterializationPlannedEvent_ = {
   __typename: 'AssetMaterializationPlannedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -220,7 +175,7 @@ export type LogsRowStructuredFragment_AssetMaterializationPlannedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_EngineEvent = {
+export type LogsRowStructuredFragment_EngineEvent_ = {
   __typename: 'EngineEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -245,20 +200,6 @@ export type LogsRowStructuredFragment_EngineEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -268,14 +209,6 @@ export type LogsRowStructuredFragment_EngineEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -300,27 +233,12 @@ export type LogsRowStructuredFragment_EngineEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -336,7 +254,6 @@ export type LogsRowStructuredFragment_EngineEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -359,7 +276,6 @@ export type LogsRowStructuredFragment_EngineEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -371,12 +287,6 @@ export type LogsRowStructuredFragment_EngineEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   error: {
@@ -391,7 +301,7 @@ export type LogsRowStructuredFragment_EngineEvent = {
   } | null;
 };
 
-export type LogsRowStructuredFragment_ExecutionStepFailureEvent = {
+export type LogsRowStructuredFragment_ExecutionStepFailureEvent_ = {
   __typename: 'ExecutionStepFailureEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -425,20 +335,6 @@ export type LogsRowStructuredFragment_ExecutionStepFailureEvent = {
           description: string | null;
         }
       | {
-          __typename: 'CodeReferencesMetadataEntry';
-          label: string;
-          description: string | null;
-          codeReferences: Array<
-            | {
-                __typename: 'LocalFileCodeReference';
-                filePath: string;
-                lineNumber: number | null;
-                label: string | null;
-              }
-            | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-          >;
-        }
-      | {
           __typename: 'FloatMetadataEntry';
           floatValue: number | null;
           label: string;
@@ -448,14 +344,6 @@ export type LogsRowStructuredFragment_ExecutionStepFailureEvent = {
           __typename: 'IntMetadataEntry';
           intValue: number | null;
           intRepr: string;
-          label: string;
-          description: string | null;
-        }
-      | {
-          __typename: 'JobMetadataEntry';
-          jobName: string;
-          repositoryName: string | null;
-          locationName: string;
           label: string;
           description: string | null;
         }
@@ -485,27 +373,12 @@ export type LogsRowStructuredFragment_ExecutionStepFailureEvent = {
           label: string;
           description: string | null;
         }
-      | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
       | {
           __typename: 'PythonArtifactMetadataEntry';
           module: string;
           name: string;
           label: string;
           description: string | null;
-        }
-      | {
-          __typename: 'TableColumnLineageMetadataEntry';
-          label: string;
-          description: string | null;
-          lineage: Array<{
-            __typename: 'TableColumnLineageEntry';
-            columnName: string;
-            columnDeps: Array<{
-              __typename: 'TableColumnDep';
-              columnName: string;
-              assetKey: {__typename: 'AssetKey'; path: Array<string>};
-            }>;
-          }>;
         }
       | {
           __typename: 'TableMetadataEntry';
@@ -521,7 +394,6 @@ export type LogsRowStructuredFragment_ExecutionStepFailureEvent = {
                 name: string;
                 description: string | null;
                 type: string;
-                tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                 constraints: {
                   __typename: 'TableColumnConstraints';
                   nullable: boolean;
@@ -544,7 +416,6 @@ export type LogsRowStructuredFragment_ExecutionStepFailureEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -556,18 +427,12 @@ export type LogsRowStructuredFragment_ExecutionStepFailureEvent = {
           };
         }
       | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-      | {
-          __typename: 'TimestampMetadataEntry';
-          timestamp: number;
-          label: string;
-          description: string | null;
-        }
       | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
     >;
   } | null;
 };
 
-export type LogsRowStructuredFragment_ExecutionStepInputEvent = {
+export type LogsRowStructuredFragment_ExecutionStepInputEvent_ = {
   __typename: 'ExecutionStepInputEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -594,20 +459,6 @@ export type LogsRowStructuredFragment_ExecutionStepInputEvent = {
           description: string | null;
         }
       | {
-          __typename: 'CodeReferencesMetadataEntry';
-          label: string;
-          description: string | null;
-          codeReferences: Array<
-            | {
-                __typename: 'LocalFileCodeReference';
-                filePath: string;
-                lineNumber: number | null;
-                label: string | null;
-              }
-            | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-          >;
-        }
-      | {
           __typename: 'FloatMetadataEntry';
           floatValue: number | null;
           label: string;
@@ -617,14 +468,6 @@ export type LogsRowStructuredFragment_ExecutionStepInputEvent = {
           __typename: 'IntMetadataEntry';
           intValue: number | null;
           intRepr: string;
-          label: string;
-          description: string | null;
-        }
-      | {
-          __typename: 'JobMetadataEntry';
-          jobName: string;
-          repositoryName: string | null;
-          locationName: string;
           label: string;
           description: string | null;
         }
@@ -654,27 +497,12 @@ export type LogsRowStructuredFragment_ExecutionStepInputEvent = {
           label: string;
           description: string | null;
         }
-      | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
       | {
           __typename: 'PythonArtifactMetadataEntry';
           module: string;
           name: string;
           label: string;
           description: string | null;
-        }
-      | {
-          __typename: 'TableColumnLineageMetadataEntry';
-          label: string;
-          description: string | null;
-          lineage: Array<{
-            __typename: 'TableColumnLineageEntry';
-            columnName: string;
-            columnDeps: Array<{
-              __typename: 'TableColumnDep';
-              columnName: string;
-              assetKey: {__typename: 'AssetKey'; path: Array<string>};
-            }>;
-          }>;
         }
       | {
           __typename: 'TableMetadataEntry';
@@ -690,7 +518,6 @@ export type LogsRowStructuredFragment_ExecutionStepInputEvent = {
                 name: string;
                 description: string | null;
                 type: string;
-                tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                 constraints: {
                   __typename: 'TableColumnConstraints';
                   nullable: boolean;
@@ -713,7 +540,6 @@ export type LogsRowStructuredFragment_ExecutionStepInputEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -725,18 +551,12 @@ export type LogsRowStructuredFragment_ExecutionStepInputEvent = {
           };
         }
       | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-      | {
-          __typename: 'TimestampMetadataEntry';
-          timestamp: number;
-          label: string;
-          description: string | null;
-        }
       | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
     >;
   };
 };
 
-export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
+export type LogsRowStructuredFragment_ExecutionStepOutputEvent_ = {
   __typename: 'ExecutionStepOutputEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -760,20 +580,6 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -783,14 +589,6 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -815,27 +613,12 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -851,7 +634,6 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -874,7 +656,6 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -886,12 +667,6 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   typeCheck: {
@@ -913,20 +688,6 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
           description: string | null;
         }
       | {
-          __typename: 'CodeReferencesMetadataEntry';
-          label: string;
-          description: string | null;
-          codeReferences: Array<
-            | {
-                __typename: 'LocalFileCodeReference';
-                filePath: string;
-                lineNumber: number | null;
-                label: string | null;
-              }
-            | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-          >;
-        }
-      | {
           __typename: 'FloatMetadataEntry';
           floatValue: number | null;
           label: string;
@@ -936,14 +697,6 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
           __typename: 'IntMetadataEntry';
           intValue: number | null;
           intRepr: string;
-          label: string;
-          description: string | null;
-        }
-      | {
-          __typename: 'JobMetadataEntry';
-          jobName: string;
-          repositoryName: string | null;
-          locationName: string;
           label: string;
           description: string | null;
         }
@@ -973,27 +726,12 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
           label: string;
           description: string | null;
         }
-      | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
       | {
           __typename: 'PythonArtifactMetadataEntry';
           module: string;
           name: string;
           label: string;
           description: string | null;
-        }
-      | {
-          __typename: 'TableColumnLineageMetadataEntry';
-          label: string;
-          description: string | null;
-          lineage: Array<{
-            __typename: 'TableColumnLineageEntry';
-            columnName: string;
-            columnDeps: Array<{
-              __typename: 'TableColumnDep';
-              columnName: string;
-              assetKey: {__typename: 'AssetKey'; path: Array<string>};
-            }>;
-          }>;
         }
       | {
           __typename: 'TableMetadataEntry';
@@ -1009,7 +747,6 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
                 name: string;
                 description: string | null;
                 type: string;
-                tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                 constraints: {
                   __typename: 'TableColumnConstraints';
                   nullable: boolean;
@@ -1032,7 +769,6 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -1044,18 +780,12 @@ export type LogsRowStructuredFragment_ExecutionStepOutputEvent = {
           };
         }
       | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-      | {
-          __typename: 'TimestampMetadataEntry';
-          timestamp: number;
-          label: string;
-          description: string | null;
-        }
       | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
     >;
   };
 };
 
-export type LogsRowStructuredFragment_ExecutionStepRestartEvent = {
+export type LogsRowStructuredFragment_ExecutionStepRestartEvent_ = {
   __typename: 'ExecutionStepRestartEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1064,7 +794,7 @@ export type LogsRowStructuredFragment_ExecutionStepRestartEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_ExecutionStepSkippedEvent = {
+export type LogsRowStructuredFragment_ExecutionStepSkippedEvent_ = {
   __typename: 'ExecutionStepSkippedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1073,7 +803,7 @@ export type LogsRowStructuredFragment_ExecutionStepSkippedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_ExecutionStepStartEvent = {
+export type LogsRowStructuredFragment_ExecutionStepStartEvent_ = {
   __typename: 'ExecutionStepStartEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1082,7 +812,7 @@ export type LogsRowStructuredFragment_ExecutionStepStartEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_ExecutionStepSuccessEvent = {
+export type LogsRowStructuredFragment_ExecutionStepSuccessEvent_ = {
   __typename: 'ExecutionStepSuccessEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1091,7 +821,7 @@ export type LogsRowStructuredFragment_ExecutionStepSuccessEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_ExecutionStepUpForRetryEvent = {
+export type LogsRowStructuredFragment_ExecutionStepUpForRetryEvent_ = {
   __typename: 'ExecutionStepUpForRetryEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1110,168 +840,7 @@ export type LogsRowStructuredFragment_ExecutionStepUpForRetryEvent = {
   } | null;
 };
 
-export type LogsRowStructuredFragment_FailedToMaterializeEvent = {
-  __typename: 'FailedToMaterializeEvent';
-  message: string;
-  eventType: Types.DagsterEventType | null;
-  timestamp: string;
-  level: Types.LogLevel;
-  stepKey: string | null;
-  label: string | null;
-  description: string | null;
-  partition: string | null;
-  metadataEntries: Array<
-    | {
-        __typename: 'AssetMetadataEntry';
-        label: string;
-        description: string | null;
-        assetKey: {__typename: 'AssetKey'; path: Array<string>};
-      }
-    | {
-        __typename: 'BoolMetadataEntry';
-        boolValue: boolean | null;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
-        __typename: 'FloatMetadataEntry';
-        floatValue: number | null;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'IntMetadataEntry';
-        intValue: number | null;
-        intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JsonMetadataEntry';
-        jsonString: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'MarkdownMetadataEntry';
-        mdStr: string;
-        label: string;
-        description: string | null;
-      }
-    | {__typename: 'NotebookMetadataEntry'; path: string; label: string; description: string | null}
-    | {__typename: 'NullMetadataEntry'; label: string; description: string | null}
-    | {__typename: 'PathMetadataEntry'; path: string; label: string; description: string | null}
-    | {
-        __typename: 'PipelineRunMetadataEntry';
-        runId: string;
-        label: string;
-        description: string | null;
-      }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
-    | {
-        __typename: 'PythonArtifactMetadataEntry';
-        module: string;
-        name: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
-      }
-    | {
-        __typename: 'TableMetadataEntry';
-        label: string;
-        description: string | null;
-        table: {
-          __typename: 'Table';
-          records: Array<string>;
-          schema: {
-            __typename: 'TableSchema';
-            columns: Array<{
-              __typename: 'TableColumn';
-              name: string;
-              description: string | null;
-              type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
-              constraints: {
-                __typename: 'TableColumnConstraints';
-                nullable: boolean;
-                unique: boolean;
-                other: Array<string>;
-              };
-            }>;
-            constraints: {__typename: 'TableConstraints'; other: Array<string>} | null;
-          };
-        };
-      }
-    | {
-        __typename: 'TableSchemaMetadataEntry';
-        label: string;
-        description: string | null;
-        schema: {
-          __typename: 'TableSchema';
-          columns: Array<{
-            __typename: 'TableColumn';
-            name: string;
-            description: string | null;
-            type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
-            constraints: {
-              __typename: 'TableColumnConstraints';
-              nullable: boolean;
-              unique: boolean;
-              other: Array<string>;
-            };
-          }>;
-          constraints: {__typename: 'TableConstraints'; other: Array<string>} | null;
-        };
-      }
-    | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
-    | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
-  >;
-  assetKey: {__typename: 'AssetKey'; path: Array<string>} | null;
-};
-
-export type LogsRowStructuredFragment_HandledOutputEvent = {
+export type LogsRowStructuredFragment_HandledOutputEvent_ = {
   __typename: 'HandledOutputEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1296,20 +865,6 @@ export type LogsRowStructuredFragment_HandledOutputEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -1319,14 +874,6 @@ export type LogsRowStructuredFragment_HandledOutputEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -1351,27 +898,12 @@ export type LogsRowStructuredFragment_HandledOutputEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -1387,7 +919,6 @@ export type LogsRowStructuredFragment_HandledOutputEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -1410,7 +941,6 @@ export type LogsRowStructuredFragment_HandledOutputEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -1422,178 +952,11 @@ export type LogsRowStructuredFragment_HandledOutputEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
 };
 
-export type LogsRowStructuredFragment_HealthChangedEvent = {
-  __typename: 'HealthChangedEvent';
-  message: string;
-  eventType: Types.DagsterEventType | null;
-  timestamp: string;
-  level: Types.LogLevel;
-  stepKey: string | null;
-  label: string | null;
-  description: string | null;
-  partition: string | null;
-  metadataEntries: Array<
-    | {
-        __typename: 'AssetMetadataEntry';
-        label: string;
-        description: string | null;
-        assetKey: {__typename: 'AssetKey'; path: Array<string>};
-      }
-    | {
-        __typename: 'BoolMetadataEntry';
-        boolValue: boolean | null;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
-        __typename: 'FloatMetadataEntry';
-        floatValue: number | null;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'IntMetadataEntry';
-        intValue: number | null;
-        intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JsonMetadataEntry';
-        jsonString: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'MarkdownMetadataEntry';
-        mdStr: string;
-        label: string;
-        description: string | null;
-      }
-    | {__typename: 'NotebookMetadataEntry'; path: string; label: string; description: string | null}
-    | {__typename: 'NullMetadataEntry'; label: string; description: string | null}
-    | {__typename: 'PathMetadataEntry'; path: string; label: string; description: string | null}
-    | {
-        __typename: 'PipelineRunMetadataEntry';
-        runId: string;
-        label: string;
-        description: string | null;
-      }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
-    | {
-        __typename: 'PythonArtifactMetadataEntry';
-        module: string;
-        name: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
-      }
-    | {
-        __typename: 'TableMetadataEntry';
-        label: string;
-        description: string | null;
-        table: {
-          __typename: 'Table';
-          records: Array<string>;
-          schema: {
-            __typename: 'TableSchema';
-            columns: Array<{
-              __typename: 'TableColumn';
-              name: string;
-              description: string | null;
-              type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
-              constraints: {
-                __typename: 'TableColumnConstraints';
-                nullable: boolean;
-                unique: boolean;
-                other: Array<string>;
-              };
-            }>;
-            constraints: {__typename: 'TableConstraints'; other: Array<string>} | null;
-          };
-        };
-      }
-    | {
-        __typename: 'TableSchemaMetadataEntry';
-        label: string;
-        description: string | null;
-        schema: {
-          __typename: 'TableSchema';
-          columns: Array<{
-            __typename: 'TableColumn';
-            name: string;
-            description: string | null;
-            type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
-            constraints: {
-              __typename: 'TableColumnConstraints';
-              nullable: boolean;
-              unique: boolean;
-              other: Array<string>;
-            };
-          }>;
-          constraints: {__typename: 'TableConstraints'; other: Array<string>} | null;
-        };
-      }
-    | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
-    | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
-  >;
-  assetKey: {__typename: 'AssetKey'; path: Array<string>} | null;
-};
-
-export type LogsRowStructuredFragment_HookCompletedEvent = {
+export type LogsRowStructuredFragment_HookCompletedEvent_ = {
   __typename: 'HookCompletedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1602,7 +965,7 @@ export type LogsRowStructuredFragment_HookCompletedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_HookErroredEvent = {
+export type LogsRowStructuredFragment_HookErroredEvent_ = {
   __typename: 'HookErroredEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1621,7 +984,7 @@ export type LogsRowStructuredFragment_HookErroredEvent = {
   } | null;
 };
 
-export type LogsRowStructuredFragment_HookSkippedEvent = {
+export type LogsRowStructuredFragment_HookSkippedEvent_ = {
   __typename: 'HookSkippedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1630,7 +993,7 @@ export type LogsRowStructuredFragment_HookSkippedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_LoadedInputEvent = {
+export type LogsRowStructuredFragment_LoadedInputEvent_ = {
   __typename: 'LoadedInputEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1657,20 +1020,6 @@ export type LogsRowStructuredFragment_LoadedInputEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -1680,14 +1029,6 @@ export type LogsRowStructuredFragment_LoadedInputEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -1712,27 +1053,12 @@ export type LogsRowStructuredFragment_LoadedInputEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -1748,7 +1074,6 @@ export type LogsRowStructuredFragment_LoadedInputEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -1771,7 +1096,6 @@ export type LogsRowStructuredFragment_LoadedInputEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -1783,17 +1107,11 @@ export type LogsRowStructuredFragment_LoadedInputEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
 };
 
-export type LogsRowStructuredFragment_LogMessageEvent = {
+export type LogsRowStructuredFragment_LogMessageEvent_ = {
   __typename: 'LogMessageEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1802,7 +1120,7 @@ export type LogsRowStructuredFragment_LogMessageEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_LogsCapturedEvent = {
+export type LogsRowStructuredFragment_LogsCapturedEvent_ = {
   __typename: 'LogsCapturedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1814,14 +1132,9 @@ export type LogsRowStructuredFragment_LogsCapturedEvent = {
   externalUrl: string | null;
   externalStdoutUrl: string | null;
   externalStderrUrl: string | null;
-  shellCmd: {
-    __typename: 'LogRetrievalShellCommand';
-    stdout: string | null;
-    stderr: string | null;
-  } | null;
 };
 
-export type LogsRowStructuredFragment_MaterializationEvent = {
+export type LogsRowStructuredFragment_MaterializationEvent_ = {
   __typename: 'MaterializationEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -1830,7 +1143,6 @@ export type LogsRowStructuredFragment_MaterializationEvent = {
   stepKey: string | null;
   label: string | null;
   description: string | null;
-  partition: string | null;
   metadataEntries: Array<
     | {
         __typename: 'AssetMetadataEntry';
@@ -1845,20 +1157,6 @@ export type LogsRowStructuredFragment_MaterializationEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -1868,14 +1166,6 @@ export type LogsRowStructuredFragment_MaterializationEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -1900,27 +1190,12 @@ export type LogsRowStructuredFragment_MaterializationEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -1936,7 +1211,6 @@ export type LogsRowStructuredFragment_MaterializationEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -1959,7 +1233,6 @@ export type LogsRowStructuredFragment_MaterializationEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -1971,18 +1244,12 @@ export type LogsRowStructuredFragment_MaterializationEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   assetKey: {__typename: 'AssetKey'; path: Array<string>} | null;
 };
 
-export type LogsRowStructuredFragment_ObjectStoreOperationEvent = {
+export type LogsRowStructuredFragment_ObjectStoreOperationEvent_ = {
   __typename: 'ObjectStoreOperationEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2006,20 +1273,6 @@ export type LogsRowStructuredFragment_ObjectStoreOperationEvent = {
           description: string | null;
         }
       | {
-          __typename: 'CodeReferencesMetadataEntry';
-          label: string;
-          description: string | null;
-          codeReferences: Array<
-            | {
-                __typename: 'LocalFileCodeReference';
-                filePath: string;
-                lineNumber: number | null;
-                label: string | null;
-              }
-            | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-          >;
-        }
-      | {
           __typename: 'FloatMetadataEntry';
           floatValue: number | null;
           label: string;
@@ -2029,14 +1282,6 @@ export type LogsRowStructuredFragment_ObjectStoreOperationEvent = {
           __typename: 'IntMetadataEntry';
           intValue: number | null;
           intRepr: string;
-          label: string;
-          description: string | null;
-        }
-      | {
-          __typename: 'JobMetadataEntry';
-          jobName: string;
-          repositoryName: string | null;
-          locationName: string;
           label: string;
           description: string | null;
         }
@@ -2066,27 +1311,12 @@ export type LogsRowStructuredFragment_ObjectStoreOperationEvent = {
           label: string;
           description: string | null;
         }
-      | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
       | {
           __typename: 'PythonArtifactMetadataEntry';
           module: string;
           name: string;
           label: string;
           description: string | null;
-        }
-      | {
-          __typename: 'TableColumnLineageMetadataEntry';
-          label: string;
-          description: string | null;
-          lineage: Array<{
-            __typename: 'TableColumnLineageEntry';
-            columnName: string;
-            columnDeps: Array<{
-              __typename: 'TableColumnDep';
-              columnName: string;
-              assetKey: {__typename: 'AssetKey'; path: Array<string>};
-            }>;
-          }>;
         }
       | {
           __typename: 'TableMetadataEntry';
@@ -2102,7 +1332,6 @@ export type LogsRowStructuredFragment_ObjectStoreOperationEvent = {
                 name: string;
                 description: string | null;
                 type: string;
-                tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                 constraints: {
                   __typename: 'TableColumnConstraints';
                   nullable: boolean;
@@ -2125,7 +1354,6 @@ export type LogsRowStructuredFragment_ObjectStoreOperationEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -2137,18 +1365,12 @@ export type LogsRowStructuredFragment_ObjectStoreOperationEvent = {
           };
         }
       | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-      | {
-          __typename: 'TimestampMetadataEntry';
-          timestamp: number;
-          label: string;
-          description: string | null;
-        }
       | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
     >;
   };
 };
 
-export type LogsRowStructuredFragment_ObservationEvent = {
+export type LogsRowStructuredFragment_ObservationEvent_ = {
   __typename: 'ObservationEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2157,7 +1379,6 @@ export type LogsRowStructuredFragment_ObservationEvent = {
   stepKey: string | null;
   label: string | null;
   description: string | null;
-  partition: string | null;
   metadataEntries: Array<
     | {
         __typename: 'AssetMetadataEntry';
@@ -2172,20 +1393,6 @@ export type LogsRowStructuredFragment_ObservationEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -2195,14 +1402,6 @@ export type LogsRowStructuredFragment_ObservationEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -2227,27 +1426,12 @@ export type LogsRowStructuredFragment_ObservationEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -2263,7 +1447,6 @@ export type LogsRowStructuredFragment_ObservationEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -2286,7 +1469,6 @@ export type LogsRowStructuredFragment_ObservationEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -2298,18 +1480,12 @@ export type LogsRowStructuredFragment_ObservationEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   assetKey: {__typename: 'AssetKey'; path: Array<string>} | null;
 };
 
-export type LogsRowStructuredFragment_ResourceInitFailureEvent = {
+export type LogsRowStructuredFragment_ResourceInitFailureEvent_ = {
   __typename: 'ResourceInitFailureEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2334,20 +1510,6 @@ export type LogsRowStructuredFragment_ResourceInitFailureEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -2357,14 +1519,6 @@ export type LogsRowStructuredFragment_ResourceInitFailureEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -2389,27 +1543,12 @@ export type LogsRowStructuredFragment_ResourceInitFailureEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -2425,7 +1564,6 @@ export type LogsRowStructuredFragment_ResourceInitFailureEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -2448,7 +1586,6 @@ export type LogsRowStructuredFragment_ResourceInitFailureEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -2460,12 +1597,6 @@ export type LogsRowStructuredFragment_ResourceInitFailureEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
   error: {
@@ -2480,7 +1611,7 @@ export type LogsRowStructuredFragment_ResourceInitFailureEvent = {
   } | null;
 };
 
-export type LogsRowStructuredFragment_ResourceInitStartedEvent = {
+export type LogsRowStructuredFragment_ResourceInitStartedEvent_ = {
   __typename: 'ResourceInitStartedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2505,20 +1636,6 @@ export type LogsRowStructuredFragment_ResourceInitStartedEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -2528,14 +1645,6 @@ export type LogsRowStructuredFragment_ResourceInitStartedEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -2560,27 +1669,12 @@ export type LogsRowStructuredFragment_ResourceInitStartedEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -2596,7 +1690,6 @@ export type LogsRowStructuredFragment_ResourceInitStartedEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -2619,7 +1712,6 @@ export type LogsRowStructuredFragment_ResourceInitStartedEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -2631,17 +1723,11 @@ export type LogsRowStructuredFragment_ResourceInitStartedEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
 };
 
-export type LogsRowStructuredFragment_ResourceInitSuccessEvent = {
+export type LogsRowStructuredFragment_ResourceInitSuccessEvent_ = {
   __typename: 'ResourceInitSuccessEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2666,20 +1752,6 @@ export type LogsRowStructuredFragment_ResourceInitSuccessEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -2689,14 +1761,6 @@ export type LogsRowStructuredFragment_ResourceInitSuccessEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -2721,27 +1785,12 @@ export type LogsRowStructuredFragment_ResourceInitSuccessEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -2757,7 +1806,6 @@ export type LogsRowStructuredFragment_ResourceInitSuccessEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -2780,7 +1828,6 @@ export type LogsRowStructuredFragment_ResourceInitSuccessEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -2792,36 +1839,20 @@ export type LogsRowStructuredFragment_ResourceInitSuccessEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
 };
 
-export type LogsRowStructuredFragment_RunCanceledEvent = {
+export type LogsRowStructuredFragment_RunCanceledEvent_ = {
   __typename: 'RunCanceledEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
   timestamp: string;
   level: Types.LogLevel;
   stepKey: string | null;
-  error: {
-    __typename: 'PythonError';
-    message: string;
-    stack: Array<string>;
-    errorChain: Array<{
-      __typename: 'ErrorChainLink';
-      isExplicitLink: boolean;
-      error: {__typename: 'PythonError'; message: string; stack: Array<string>};
-    }>;
-  } | null;
 };
 
-export type LogsRowStructuredFragment_RunCancelingEvent = {
+export type LogsRowStructuredFragment_RunCancelingEvent_ = {
   __typename: 'RunCancelingEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2830,7 +1861,7 @@ export type LogsRowStructuredFragment_RunCancelingEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_RunDequeuedEvent = {
+export type LogsRowStructuredFragment_RunDequeuedEvent_ = {
   __typename: 'RunDequeuedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2839,7 +1870,7 @@ export type LogsRowStructuredFragment_RunDequeuedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_RunEnqueuedEvent = {
+export type LogsRowStructuredFragment_RunEnqueuedEvent_ = {
   __typename: 'RunEnqueuedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2848,7 +1879,7 @@ export type LogsRowStructuredFragment_RunEnqueuedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_RunFailureEvent = {
+export type LogsRowStructuredFragment_RunFailureEvent_ = {
   __typename: 'RunFailureEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2867,7 +1898,7 @@ export type LogsRowStructuredFragment_RunFailureEvent = {
   } | null;
 };
 
-export type LogsRowStructuredFragment_RunStartEvent = {
+export type LogsRowStructuredFragment_RunStartEvent_ = {
   __typename: 'RunStartEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2876,7 +1907,7 @@ export type LogsRowStructuredFragment_RunStartEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_RunStartingEvent = {
+export type LogsRowStructuredFragment_RunStartingEvent_ = {
   __typename: 'RunStartingEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2885,7 +1916,7 @@ export type LogsRowStructuredFragment_RunStartingEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_RunSuccessEvent = {
+export type LogsRowStructuredFragment_RunSuccessEvent_ = {
   __typename: 'RunSuccessEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2894,7 +1925,7 @@ export type LogsRowStructuredFragment_RunSuccessEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowStructuredFragment_StepExpectationResultEvent = {
+export type LogsRowStructuredFragment_StepExpectationResultEvent_ = {
   __typename: 'StepExpectationResultEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -2920,20 +1951,6 @@ export type LogsRowStructuredFragment_StepExpectationResultEvent = {
           description: string | null;
         }
       | {
-          __typename: 'CodeReferencesMetadataEntry';
-          label: string;
-          description: string | null;
-          codeReferences: Array<
-            | {
-                __typename: 'LocalFileCodeReference';
-                filePath: string;
-                lineNumber: number | null;
-                label: string | null;
-              }
-            | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-          >;
-        }
-      | {
           __typename: 'FloatMetadataEntry';
           floatValue: number | null;
           label: string;
@@ -2943,14 +1960,6 @@ export type LogsRowStructuredFragment_StepExpectationResultEvent = {
           __typename: 'IntMetadataEntry';
           intValue: number | null;
           intRepr: string;
-          label: string;
-          description: string | null;
-        }
-      | {
-          __typename: 'JobMetadataEntry';
-          jobName: string;
-          repositoryName: string | null;
-          locationName: string;
           label: string;
           description: string | null;
         }
@@ -2980,27 +1989,12 @@ export type LogsRowStructuredFragment_StepExpectationResultEvent = {
           label: string;
           description: string | null;
         }
-      | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
       | {
           __typename: 'PythonArtifactMetadataEntry';
           module: string;
           name: string;
           label: string;
           description: string | null;
-        }
-      | {
-          __typename: 'TableColumnLineageMetadataEntry';
-          label: string;
-          description: string | null;
-          lineage: Array<{
-            __typename: 'TableColumnLineageEntry';
-            columnName: string;
-            columnDeps: Array<{
-              __typename: 'TableColumnDep';
-              columnName: string;
-              assetKey: {__typename: 'AssetKey'; path: Array<string>};
-            }>;
-          }>;
         }
       | {
           __typename: 'TableMetadataEntry';
@@ -3016,7 +2010,6 @@ export type LogsRowStructuredFragment_StepExpectationResultEvent = {
                 name: string;
                 description: string | null;
                 type: string;
-                tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                 constraints: {
                   __typename: 'TableColumnConstraints';
                   nullable: boolean;
@@ -3039,7 +2032,6 @@ export type LogsRowStructuredFragment_StepExpectationResultEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -3051,18 +2043,12 @@ export type LogsRowStructuredFragment_StepExpectationResultEvent = {
           };
         }
       | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-      | {
-          __typename: 'TimestampMetadataEntry';
-          timestamp: number;
-          label: string;
-          description: string | null;
-        }
       | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
     >;
   };
 };
 
-export type LogsRowStructuredFragment_StepWorkerStartedEvent = {
+export type LogsRowStructuredFragment_StepWorkerStartedEvent_ = {
   __typename: 'StepWorkerStartedEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -3087,20 +2073,6 @@ export type LogsRowStructuredFragment_StepWorkerStartedEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -3110,14 +2082,6 @@ export type LogsRowStructuredFragment_StepWorkerStartedEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -3142,27 +2106,12 @@ export type LogsRowStructuredFragment_StepWorkerStartedEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -3178,7 +2127,6 @@ export type LogsRowStructuredFragment_StepWorkerStartedEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -3201,7 +2149,6 @@ export type LogsRowStructuredFragment_StepWorkerStartedEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -3213,17 +2160,11 @@ export type LogsRowStructuredFragment_StepWorkerStartedEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
 };
 
-export type LogsRowStructuredFragment_StepWorkerStartingEvent = {
+export type LogsRowStructuredFragment_StepWorkerStartingEvent_ = {
   __typename: 'StepWorkerStartingEvent';
   message: string;
   eventType: Types.DagsterEventType | null;
@@ -3248,20 +2189,6 @@ export type LogsRowStructuredFragment_StepWorkerStartingEvent = {
         description: string | null;
       }
     | {
-        __typename: 'CodeReferencesMetadataEntry';
-        label: string;
-        description: string | null;
-        codeReferences: Array<
-          | {
-              __typename: 'LocalFileCodeReference';
-              filePath: string;
-              lineNumber: number | null;
-              label: string | null;
-            }
-          | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-        >;
-      }
-    | {
         __typename: 'FloatMetadataEntry';
         floatValue: number | null;
         label: string;
@@ -3271,14 +2198,6 @@ export type LogsRowStructuredFragment_StepWorkerStartingEvent = {
         __typename: 'IntMetadataEntry';
         intValue: number | null;
         intRepr: string;
-        label: string;
-        description: string | null;
-      }
-    | {
-        __typename: 'JobMetadataEntry';
-        jobName: string;
-        repositoryName: string | null;
-        locationName: string;
         label: string;
         description: string | null;
       }
@@ -3303,27 +2222,12 @@ export type LogsRowStructuredFragment_StepWorkerStartingEvent = {
         label: string;
         description: string | null;
       }
-    | {__typename: 'PoolMetadataEntry'; pool: string; label: string; description: string | null}
     | {
         __typename: 'PythonArtifactMetadataEntry';
         module: string;
         name: string;
         label: string;
         description: string | null;
-      }
-    | {
-        __typename: 'TableColumnLineageMetadataEntry';
-        label: string;
-        description: string | null;
-        lineage: Array<{
-          __typename: 'TableColumnLineageEntry';
-          columnName: string;
-          columnDeps: Array<{
-            __typename: 'TableColumnDep';
-            columnName: string;
-            assetKey: {__typename: 'AssetKey'; path: Array<string>};
-          }>;
-        }>;
       }
     | {
         __typename: 'TableMetadataEntry';
@@ -3339,7 +2243,6 @@ export type LogsRowStructuredFragment_StepWorkerStartingEvent = {
               name: string;
               description: string | null;
               type: string;
-              tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
               constraints: {
                 __typename: 'TableColumnConstraints';
                 nullable: boolean;
@@ -3362,7 +2265,6 @@ export type LogsRowStructuredFragment_StepWorkerStartingEvent = {
             name: string;
             description: string | null;
             type: string;
-            tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
             constraints: {
               __typename: 'TableColumnConstraints';
               nullable: boolean;
@@ -3374,60 +2276,52 @@ export type LogsRowStructuredFragment_StepWorkerStartingEvent = {
         };
       }
     | {__typename: 'TextMetadataEntry'; text: string; label: string; description: string | null}
-    | {
-        __typename: 'TimestampMetadataEntry';
-        timestamp: number;
-        label: string;
-        description: string | null;
-      }
     | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
   >;
 };
 
 export type LogsRowStructuredFragment =
-  | LogsRowStructuredFragment_AlertFailureEvent
-  | LogsRowStructuredFragment_AlertStartEvent
-  | LogsRowStructuredFragment_AlertSuccessEvent
-  | LogsRowStructuredFragment_AssetCheckEvaluationEvent
-  | LogsRowStructuredFragment_AssetCheckEvaluationPlannedEvent
-  | LogsRowStructuredFragment_AssetMaterializationPlannedEvent
-  | LogsRowStructuredFragment_EngineEvent
-  | LogsRowStructuredFragment_ExecutionStepFailureEvent
-  | LogsRowStructuredFragment_ExecutionStepInputEvent
-  | LogsRowStructuredFragment_ExecutionStepOutputEvent
-  | LogsRowStructuredFragment_ExecutionStepRestartEvent
-  | LogsRowStructuredFragment_ExecutionStepSkippedEvent
-  | LogsRowStructuredFragment_ExecutionStepStartEvent
-  | LogsRowStructuredFragment_ExecutionStepSuccessEvent
-  | LogsRowStructuredFragment_ExecutionStepUpForRetryEvent
-  | LogsRowStructuredFragment_FailedToMaterializeEvent
-  | LogsRowStructuredFragment_HandledOutputEvent
-  | LogsRowStructuredFragment_HealthChangedEvent
-  | LogsRowStructuredFragment_HookCompletedEvent
-  | LogsRowStructuredFragment_HookErroredEvent
-  | LogsRowStructuredFragment_HookSkippedEvent
-  | LogsRowStructuredFragment_LoadedInputEvent
-  | LogsRowStructuredFragment_LogMessageEvent
-  | LogsRowStructuredFragment_LogsCapturedEvent
-  | LogsRowStructuredFragment_MaterializationEvent
-  | LogsRowStructuredFragment_ObjectStoreOperationEvent
-  | LogsRowStructuredFragment_ObservationEvent
-  | LogsRowStructuredFragment_ResourceInitFailureEvent
-  | LogsRowStructuredFragment_ResourceInitStartedEvent
-  | LogsRowStructuredFragment_ResourceInitSuccessEvent
-  | LogsRowStructuredFragment_RunCanceledEvent
-  | LogsRowStructuredFragment_RunCancelingEvent
-  | LogsRowStructuredFragment_RunDequeuedEvent
-  | LogsRowStructuredFragment_RunEnqueuedEvent
-  | LogsRowStructuredFragment_RunFailureEvent
-  | LogsRowStructuredFragment_RunStartEvent
-  | LogsRowStructuredFragment_RunStartingEvent
-  | LogsRowStructuredFragment_RunSuccessEvent
-  | LogsRowStructuredFragment_StepExpectationResultEvent
-  | LogsRowStructuredFragment_StepWorkerStartedEvent
-  | LogsRowStructuredFragment_StepWorkerStartingEvent;
+  | LogsRowStructuredFragment_AlertFailureEvent_
+  | LogsRowStructuredFragment_AlertStartEvent_
+  | LogsRowStructuredFragment_AlertSuccessEvent_
+  | LogsRowStructuredFragment_AssetCheckEvaluationEvent_
+  | LogsRowStructuredFragment_AssetCheckEvaluationPlannedEvent_
+  | LogsRowStructuredFragment_AssetMaterializationPlannedEvent_
+  | LogsRowStructuredFragment_EngineEvent_
+  | LogsRowStructuredFragment_ExecutionStepFailureEvent_
+  | LogsRowStructuredFragment_ExecutionStepInputEvent_
+  | LogsRowStructuredFragment_ExecutionStepOutputEvent_
+  | LogsRowStructuredFragment_ExecutionStepRestartEvent_
+  | LogsRowStructuredFragment_ExecutionStepSkippedEvent_
+  | LogsRowStructuredFragment_ExecutionStepStartEvent_
+  | LogsRowStructuredFragment_ExecutionStepSuccessEvent_
+  | LogsRowStructuredFragment_ExecutionStepUpForRetryEvent_
+  | LogsRowStructuredFragment_HandledOutputEvent_
+  | LogsRowStructuredFragment_HookCompletedEvent_
+  | LogsRowStructuredFragment_HookErroredEvent_
+  | LogsRowStructuredFragment_HookSkippedEvent_
+  | LogsRowStructuredFragment_LoadedInputEvent_
+  | LogsRowStructuredFragment_LogMessageEvent_
+  | LogsRowStructuredFragment_LogsCapturedEvent_
+  | LogsRowStructuredFragment_MaterializationEvent_
+  | LogsRowStructuredFragment_ObjectStoreOperationEvent_
+  | LogsRowStructuredFragment_ObservationEvent_
+  | LogsRowStructuredFragment_ResourceInitFailureEvent_
+  | LogsRowStructuredFragment_ResourceInitStartedEvent_
+  | LogsRowStructuredFragment_ResourceInitSuccessEvent_
+  | LogsRowStructuredFragment_RunCanceledEvent_
+  | LogsRowStructuredFragment_RunCancelingEvent_
+  | LogsRowStructuredFragment_RunDequeuedEvent_
+  | LogsRowStructuredFragment_RunEnqueuedEvent_
+  | LogsRowStructuredFragment_RunFailureEvent_
+  | LogsRowStructuredFragment_RunStartEvent_
+  | LogsRowStructuredFragment_RunStartingEvent_
+  | LogsRowStructuredFragment_RunSuccessEvent_
+  | LogsRowStructuredFragment_StepExpectationResultEvent_
+  | LogsRowStructuredFragment_StepWorkerStartedEvent_
+  | LogsRowStructuredFragment_StepWorkerStartingEvent_;
 
-export type LogsRowUnstructuredFragment_AlertFailureEvent = {
+export type LogsRowUnstructuredFragment_AlertFailureEvent_ = {
   __typename: 'AlertFailureEvent';
   message: string;
   timestamp: string;
@@ -3435,7 +2329,7 @@ export type LogsRowUnstructuredFragment_AlertFailureEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_AlertStartEvent = {
+export type LogsRowUnstructuredFragment_AlertStartEvent_ = {
   __typename: 'AlertStartEvent';
   message: string;
   timestamp: string;
@@ -3443,7 +2337,7 @@ export type LogsRowUnstructuredFragment_AlertStartEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_AlertSuccessEvent = {
+export type LogsRowUnstructuredFragment_AlertSuccessEvent_ = {
   __typename: 'AlertSuccessEvent';
   message: string;
   timestamp: string;
@@ -3451,7 +2345,7 @@ export type LogsRowUnstructuredFragment_AlertSuccessEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_AssetCheckEvaluationEvent = {
+export type LogsRowUnstructuredFragment_AssetCheckEvaluationEvent_ = {
   __typename: 'AssetCheckEvaluationEvent';
   message: string;
   timestamp: string;
@@ -3459,7 +2353,7 @@ export type LogsRowUnstructuredFragment_AssetCheckEvaluationEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_AssetCheckEvaluationPlannedEvent = {
+export type LogsRowUnstructuredFragment_AssetCheckEvaluationPlannedEvent_ = {
   __typename: 'AssetCheckEvaluationPlannedEvent';
   message: string;
   timestamp: string;
@@ -3467,7 +2361,7 @@ export type LogsRowUnstructuredFragment_AssetCheckEvaluationPlannedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_AssetMaterializationPlannedEvent = {
+export type LogsRowUnstructuredFragment_AssetMaterializationPlannedEvent_ = {
   __typename: 'AssetMaterializationPlannedEvent';
   message: string;
   timestamp: string;
@@ -3475,7 +2369,7 @@ export type LogsRowUnstructuredFragment_AssetMaterializationPlannedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_EngineEvent = {
+export type LogsRowUnstructuredFragment_EngineEvent_ = {
   __typename: 'EngineEvent';
   message: string;
   timestamp: string;
@@ -3483,7 +2377,7 @@ export type LogsRowUnstructuredFragment_EngineEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ExecutionStepFailureEvent = {
+export type LogsRowUnstructuredFragment_ExecutionStepFailureEvent_ = {
   __typename: 'ExecutionStepFailureEvent';
   message: string;
   timestamp: string;
@@ -3491,7 +2385,7 @@ export type LogsRowUnstructuredFragment_ExecutionStepFailureEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ExecutionStepInputEvent = {
+export type LogsRowUnstructuredFragment_ExecutionStepInputEvent_ = {
   __typename: 'ExecutionStepInputEvent';
   message: string;
   timestamp: string;
@@ -3499,7 +2393,7 @@ export type LogsRowUnstructuredFragment_ExecutionStepInputEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ExecutionStepOutputEvent = {
+export type LogsRowUnstructuredFragment_ExecutionStepOutputEvent_ = {
   __typename: 'ExecutionStepOutputEvent';
   message: string;
   timestamp: string;
@@ -3507,7 +2401,7 @@ export type LogsRowUnstructuredFragment_ExecutionStepOutputEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ExecutionStepRestartEvent = {
+export type LogsRowUnstructuredFragment_ExecutionStepRestartEvent_ = {
   __typename: 'ExecutionStepRestartEvent';
   message: string;
   timestamp: string;
@@ -3515,7 +2409,7 @@ export type LogsRowUnstructuredFragment_ExecutionStepRestartEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ExecutionStepSkippedEvent = {
+export type LogsRowUnstructuredFragment_ExecutionStepSkippedEvent_ = {
   __typename: 'ExecutionStepSkippedEvent';
   message: string;
   timestamp: string;
@@ -3523,7 +2417,7 @@ export type LogsRowUnstructuredFragment_ExecutionStepSkippedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ExecutionStepStartEvent = {
+export type LogsRowUnstructuredFragment_ExecutionStepStartEvent_ = {
   __typename: 'ExecutionStepStartEvent';
   message: string;
   timestamp: string;
@@ -3531,7 +2425,7 @@ export type LogsRowUnstructuredFragment_ExecutionStepStartEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ExecutionStepSuccessEvent = {
+export type LogsRowUnstructuredFragment_ExecutionStepSuccessEvent_ = {
   __typename: 'ExecutionStepSuccessEvent';
   message: string;
   timestamp: string;
@@ -3539,7 +2433,7 @@ export type LogsRowUnstructuredFragment_ExecutionStepSuccessEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ExecutionStepUpForRetryEvent = {
+export type LogsRowUnstructuredFragment_ExecutionStepUpForRetryEvent_ = {
   __typename: 'ExecutionStepUpForRetryEvent';
   message: string;
   timestamp: string;
@@ -3547,15 +2441,7 @@ export type LogsRowUnstructuredFragment_ExecutionStepUpForRetryEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_FailedToMaterializeEvent = {
-  __typename: 'FailedToMaterializeEvent';
-  message: string;
-  timestamp: string;
-  level: Types.LogLevel;
-  stepKey: string | null;
-};
-
-export type LogsRowUnstructuredFragment_HandledOutputEvent = {
+export type LogsRowUnstructuredFragment_HandledOutputEvent_ = {
   __typename: 'HandledOutputEvent';
   message: string;
   timestamp: string;
@@ -3563,15 +2449,7 @@ export type LogsRowUnstructuredFragment_HandledOutputEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_HealthChangedEvent = {
-  __typename: 'HealthChangedEvent';
-  message: string;
-  timestamp: string;
-  level: Types.LogLevel;
-  stepKey: string | null;
-};
-
-export type LogsRowUnstructuredFragment_HookCompletedEvent = {
+export type LogsRowUnstructuredFragment_HookCompletedEvent_ = {
   __typename: 'HookCompletedEvent';
   message: string;
   timestamp: string;
@@ -3579,7 +2457,7 @@ export type LogsRowUnstructuredFragment_HookCompletedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_HookErroredEvent = {
+export type LogsRowUnstructuredFragment_HookErroredEvent_ = {
   __typename: 'HookErroredEvent';
   message: string;
   timestamp: string;
@@ -3587,7 +2465,7 @@ export type LogsRowUnstructuredFragment_HookErroredEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_HookSkippedEvent = {
+export type LogsRowUnstructuredFragment_HookSkippedEvent_ = {
   __typename: 'HookSkippedEvent';
   message: string;
   timestamp: string;
@@ -3595,7 +2473,7 @@ export type LogsRowUnstructuredFragment_HookSkippedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_LoadedInputEvent = {
+export type LogsRowUnstructuredFragment_LoadedInputEvent_ = {
   __typename: 'LoadedInputEvent';
   message: string;
   timestamp: string;
@@ -3603,7 +2481,7 @@ export type LogsRowUnstructuredFragment_LoadedInputEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_LogMessageEvent = {
+export type LogsRowUnstructuredFragment_LogMessageEvent_ = {
   __typename: 'LogMessageEvent';
   message: string;
   timestamp: string;
@@ -3611,7 +2489,7 @@ export type LogsRowUnstructuredFragment_LogMessageEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_LogsCapturedEvent = {
+export type LogsRowUnstructuredFragment_LogsCapturedEvent_ = {
   __typename: 'LogsCapturedEvent';
   message: string;
   timestamp: string;
@@ -3619,7 +2497,7 @@ export type LogsRowUnstructuredFragment_LogsCapturedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_MaterializationEvent = {
+export type LogsRowUnstructuredFragment_MaterializationEvent_ = {
   __typename: 'MaterializationEvent';
   message: string;
   timestamp: string;
@@ -3627,7 +2505,7 @@ export type LogsRowUnstructuredFragment_MaterializationEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ObjectStoreOperationEvent = {
+export type LogsRowUnstructuredFragment_ObjectStoreOperationEvent_ = {
   __typename: 'ObjectStoreOperationEvent';
   message: string;
   timestamp: string;
@@ -3635,7 +2513,7 @@ export type LogsRowUnstructuredFragment_ObjectStoreOperationEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ObservationEvent = {
+export type LogsRowUnstructuredFragment_ObservationEvent_ = {
   __typename: 'ObservationEvent';
   message: string;
   timestamp: string;
@@ -3643,7 +2521,7 @@ export type LogsRowUnstructuredFragment_ObservationEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ResourceInitFailureEvent = {
+export type LogsRowUnstructuredFragment_ResourceInitFailureEvent_ = {
   __typename: 'ResourceInitFailureEvent';
   message: string;
   timestamp: string;
@@ -3651,7 +2529,7 @@ export type LogsRowUnstructuredFragment_ResourceInitFailureEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ResourceInitStartedEvent = {
+export type LogsRowUnstructuredFragment_ResourceInitStartedEvent_ = {
   __typename: 'ResourceInitStartedEvent';
   message: string;
   timestamp: string;
@@ -3659,7 +2537,7 @@ export type LogsRowUnstructuredFragment_ResourceInitStartedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_ResourceInitSuccessEvent = {
+export type LogsRowUnstructuredFragment_ResourceInitSuccessEvent_ = {
   __typename: 'ResourceInitSuccessEvent';
   message: string;
   timestamp: string;
@@ -3667,7 +2545,7 @@ export type LogsRowUnstructuredFragment_ResourceInitSuccessEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_RunCanceledEvent = {
+export type LogsRowUnstructuredFragment_RunCanceledEvent_ = {
   __typename: 'RunCanceledEvent';
   message: string;
   timestamp: string;
@@ -3675,7 +2553,7 @@ export type LogsRowUnstructuredFragment_RunCanceledEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_RunCancelingEvent = {
+export type LogsRowUnstructuredFragment_RunCancelingEvent_ = {
   __typename: 'RunCancelingEvent';
   message: string;
   timestamp: string;
@@ -3683,7 +2561,7 @@ export type LogsRowUnstructuredFragment_RunCancelingEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_RunDequeuedEvent = {
+export type LogsRowUnstructuredFragment_RunDequeuedEvent_ = {
   __typename: 'RunDequeuedEvent';
   message: string;
   timestamp: string;
@@ -3691,7 +2569,7 @@ export type LogsRowUnstructuredFragment_RunDequeuedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_RunEnqueuedEvent = {
+export type LogsRowUnstructuredFragment_RunEnqueuedEvent_ = {
   __typename: 'RunEnqueuedEvent';
   message: string;
   timestamp: string;
@@ -3699,7 +2577,7 @@ export type LogsRowUnstructuredFragment_RunEnqueuedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_RunFailureEvent = {
+export type LogsRowUnstructuredFragment_RunFailureEvent_ = {
   __typename: 'RunFailureEvent';
   message: string;
   timestamp: string;
@@ -3707,7 +2585,7 @@ export type LogsRowUnstructuredFragment_RunFailureEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_RunStartEvent = {
+export type LogsRowUnstructuredFragment_RunStartEvent_ = {
   __typename: 'RunStartEvent';
   message: string;
   timestamp: string;
@@ -3715,7 +2593,7 @@ export type LogsRowUnstructuredFragment_RunStartEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_RunStartingEvent = {
+export type LogsRowUnstructuredFragment_RunStartingEvent_ = {
   __typename: 'RunStartingEvent';
   message: string;
   timestamp: string;
@@ -3723,7 +2601,7 @@ export type LogsRowUnstructuredFragment_RunStartingEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_RunSuccessEvent = {
+export type LogsRowUnstructuredFragment_RunSuccessEvent_ = {
   __typename: 'RunSuccessEvent';
   message: string;
   timestamp: string;
@@ -3731,7 +2609,7 @@ export type LogsRowUnstructuredFragment_RunSuccessEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_StepExpectationResultEvent = {
+export type LogsRowUnstructuredFragment_StepExpectationResultEvent_ = {
   __typename: 'StepExpectationResultEvent';
   message: string;
   timestamp: string;
@@ -3739,7 +2617,7 @@ export type LogsRowUnstructuredFragment_StepExpectationResultEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_StepWorkerStartedEvent = {
+export type LogsRowUnstructuredFragment_StepWorkerStartedEvent_ = {
   __typename: 'StepWorkerStartedEvent';
   message: string;
   timestamp: string;
@@ -3747,7 +2625,7 @@ export type LogsRowUnstructuredFragment_StepWorkerStartedEvent = {
   stepKey: string | null;
 };
 
-export type LogsRowUnstructuredFragment_StepWorkerStartingEvent = {
+export type LogsRowUnstructuredFragment_StepWorkerStartingEvent_ = {
   __typename: 'StepWorkerStartingEvent';
   message: string;
   timestamp: string;
@@ -3756,44 +2634,42 @@ export type LogsRowUnstructuredFragment_StepWorkerStartingEvent = {
 };
 
 export type LogsRowUnstructuredFragment =
-  | LogsRowUnstructuredFragment_AlertFailureEvent
-  | LogsRowUnstructuredFragment_AlertStartEvent
-  | LogsRowUnstructuredFragment_AlertSuccessEvent
-  | LogsRowUnstructuredFragment_AssetCheckEvaluationEvent
-  | LogsRowUnstructuredFragment_AssetCheckEvaluationPlannedEvent
-  | LogsRowUnstructuredFragment_AssetMaterializationPlannedEvent
-  | LogsRowUnstructuredFragment_EngineEvent
-  | LogsRowUnstructuredFragment_ExecutionStepFailureEvent
-  | LogsRowUnstructuredFragment_ExecutionStepInputEvent
-  | LogsRowUnstructuredFragment_ExecutionStepOutputEvent
-  | LogsRowUnstructuredFragment_ExecutionStepRestartEvent
-  | LogsRowUnstructuredFragment_ExecutionStepSkippedEvent
-  | LogsRowUnstructuredFragment_ExecutionStepStartEvent
-  | LogsRowUnstructuredFragment_ExecutionStepSuccessEvent
-  | LogsRowUnstructuredFragment_ExecutionStepUpForRetryEvent
-  | LogsRowUnstructuredFragment_FailedToMaterializeEvent
-  | LogsRowUnstructuredFragment_HandledOutputEvent
-  | LogsRowUnstructuredFragment_HealthChangedEvent
-  | LogsRowUnstructuredFragment_HookCompletedEvent
-  | LogsRowUnstructuredFragment_HookErroredEvent
-  | LogsRowUnstructuredFragment_HookSkippedEvent
-  | LogsRowUnstructuredFragment_LoadedInputEvent
-  | LogsRowUnstructuredFragment_LogMessageEvent
-  | LogsRowUnstructuredFragment_LogsCapturedEvent
-  | LogsRowUnstructuredFragment_MaterializationEvent
-  | LogsRowUnstructuredFragment_ObjectStoreOperationEvent
-  | LogsRowUnstructuredFragment_ObservationEvent
-  | LogsRowUnstructuredFragment_ResourceInitFailureEvent
-  | LogsRowUnstructuredFragment_ResourceInitStartedEvent
-  | LogsRowUnstructuredFragment_ResourceInitSuccessEvent
-  | LogsRowUnstructuredFragment_RunCanceledEvent
-  | LogsRowUnstructuredFragment_RunCancelingEvent
-  | LogsRowUnstructuredFragment_RunDequeuedEvent
-  | LogsRowUnstructuredFragment_RunEnqueuedEvent
-  | LogsRowUnstructuredFragment_RunFailureEvent
-  | LogsRowUnstructuredFragment_RunStartEvent
-  | LogsRowUnstructuredFragment_RunStartingEvent
-  | LogsRowUnstructuredFragment_RunSuccessEvent
-  | LogsRowUnstructuredFragment_StepExpectationResultEvent
-  | LogsRowUnstructuredFragment_StepWorkerStartedEvent
-  | LogsRowUnstructuredFragment_StepWorkerStartingEvent;
+  | LogsRowUnstructuredFragment_AlertFailureEvent_
+  | LogsRowUnstructuredFragment_AlertStartEvent_
+  | LogsRowUnstructuredFragment_AlertSuccessEvent_
+  | LogsRowUnstructuredFragment_AssetCheckEvaluationEvent_
+  | LogsRowUnstructuredFragment_AssetCheckEvaluationPlannedEvent_
+  | LogsRowUnstructuredFragment_AssetMaterializationPlannedEvent_
+  | LogsRowUnstructuredFragment_EngineEvent_
+  | LogsRowUnstructuredFragment_ExecutionStepFailureEvent_
+  | LogsRowUnstructuredFragment_ExecutionStepInputEvent_
+  | LogsRowUnstructuredFragment_ExecutionStepOutputEvent_
+  | LogsRowUnstructuredFragment_ExecutionStepRestartEvent_
+  | LogsRowUnstructuredFragment_ExecutionStepSkippedEvent_
+  | LogsRowUnstructuredFragment_ExecutionStepStartEvent_
+  | LogsRowUnstructuredFragment_ExecutionStepSuccessEvent_
+  | LogsRowUnstructuredFragment_ExecutionStepUpForRetryEvent_
+  | LogsRowUnstructuredFragment_HandledOutputEvent_
+  | LogsRowUnstructuredFragment_HookCompletedEvent_
+  | LogsRowUnstructuredFragment_HookErroredEvent_
+  | LogsRowUnstructuredFragment_HookSkippedEvent_
+  | LogsRowUnstructuredFragment_LoadedInputEvent_
+  | LogsRowUnstructuredFragment_LogMessageEvent_
+  | LogsRowUnstructuredFragment_LogsCapturedEvent_
+  | LogsRowUnstructuredFragment_MaterializationEvent_
+  | LogsRowUnstructuredFragment_ObjectStoreOperationEvent_
+  | LogsRowUnstructuredFragment_ObservationEvent_
+  | LogsRowUnstructuredFragment_ResourceInitFailureEvent_
+  | LogsRowUnstructuredFragment_ResourceInitStartedEvent_
+  | LogsRowUnstructuredFragment_ResourceInitSuccessEvent_
+  | LogsRowUnstructuredFragment_RunCanceledEvent_
+  | LogsRowUnstructuredFragment_RunCancelingEvent_
+  | LogsRowUnstructuredFragment_RunDequeuedEvent_
+  | LogsRowUnstructuredFragment_RunEnqueuedEvent_
+  | LogsRowUnstructuredFragment_RunFailureEvent_
+  | LogsRowUnstructuredFragment_RunStartEvent_
+  | LogsRowUnstructuredFragment_RunStartingEvent_
+  | LogsRowUnstructuredFragment_RunSuccessEvent_
+  | LogsRowUnstructuredFragment_StepExpectationResultEvent_
+  | LogsRowUnstructuredFragment_StepWorkerStartedEvent_
+  | LogsRowUnstructuredFragment_StepWorkerStartingEvent_;

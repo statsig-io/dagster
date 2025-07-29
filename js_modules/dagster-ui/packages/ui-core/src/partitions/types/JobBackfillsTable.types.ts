@@ -3,10 +3,10 @@
 import * as Types from '../../graphql/types';
 
 export type JobBackfillsQueryVariables = Types.Exact<{
-  partitionSetName: Types.Scalars['String']['input'];
+  partitionSetName: Types.Scalars['String'];
   repositorySelector: Types.RepositorySelector;
-  cursor?: Types.InputMaybe<Types.Scalars['String']['input']>;
-  limit?: Types.InputMaybe<Types.Scalars['Int']['input']>;
+  cursor?: Types.InputMaybe<Types.Scalars['String']>;
+  limit?: Types.InputMaybe<Types.Scalars['Int']>;
 }>;
 
 export type JobBackfillsQuery = {
@@ -22,27 +22,27 @@ export type JobBackfillsQuery = {
           status: Types.BulkActionStatus;
           isAssetBackfill: boolean;
           isValidSerialization: boolean;
+          partitionNames: Array<string> | null;
           numPartitions: number | null;
           timestamp: number;
           partitionSetName: string | null;
           hasCancelPermission: boolean;
           hasResumePermission: boolean;
-          partitionNames: Array<string> | null;
+          numCancelable: number;
           partitionSet: {
             __typename: 'PartitionSet';
             id: string;
-            mode: string;
             name: string;
             pipelineName: string;
+            mode: string;
             repositoryOrigin: {
               __typename: 'RepositoryOrigin';
-              id: string;
               repositoryName: string;
               repositoryLocationName: string;
+              id: string;
             };
           } | null;
           assetSelection: Array<{__typename: 'AssetKey'; path: Array<string>}> | null;
-          tags: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
           error: {
             __typename: 'PythonError';
             message: string;
@@ -58,5 +58,3 @@ export type JobBackfillsQuery = {
     | {__typename: 'PartitionSetNotFoundError'}
     | {__typename: 'PythonError'};
 };
-
-export const JobBackfillsQueryVersion = '7c0183fc088aaf2caafbf72dfc0ed87fafc4da9669f65ae537237203dbad7e75';

@@ -1,13 +1,10 @@
-from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Optional
-
-import dagster_shared.seven as seven
 
 import dagster._check as check
+import dagster._seven as seven
 
 
-def format_duration(milliseconds: float) -> str:
+def format_duration(milliseconds):
     """Given milliseconds, return human readable duration string such as:
     533ms, 2.1s, 4m52s, 34m12s, 1h4m.
     """
@@ -43,26 +40,22 @@ def format_duration(milliseconds: float) -> str:
 
 
 class TimerResult:
-    start_time: float
-    end_time: Optional[float]
-
     def __init__(self):
         self.start_time = seven.time_fn()
         self.end_time = None
 
     @property
-    def seconds(self) -> float:
-        if self.end_time is None:
-            check.failed("end time is not set")
+    def seconds(self):
+        check.invariant(self.end_time is not None, "end time is not set")
         return self.end_time - self.start_time
 
     @property
-    def millis(self) -> float:
+    def millis(self):
         return self.seconds * 1000
 
 
 @contextmanager
-def time_execution_scope() -> Iterator[TimerResult]:
+def time_execution_scope():
     """Context manager that times the execution of a block of code.
 
     Example:

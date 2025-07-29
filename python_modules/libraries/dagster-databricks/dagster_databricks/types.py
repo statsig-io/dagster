@@ -21,7 +21,6 @@ class DatabricksRunLifeCycleState(str, Enum):
 
     BLOCKED = "BLOCKED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
-    QUEUED = "QUEUED"
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     SKIPPED = "SKIPPED"
@@ -46,18 +45,18 @@ class DatabricksRunState(NamedTuple):
 
     life_cycle_state: Optional["DatabricksRunLifeCycleState"]
     result_state: Optional["DatabricksRunResultState"]
-    state_message: Optional[str]
+    state_message: str
 
     def has_terminated(self) -> bool:
         """Has the job terminated?"""
-        return self.life_cycle_state is not None and self.life_cycle_state.has_terminated()
+        return self.life_cycle_state.has_terminated()  # type: ignore  # (possible none)
 
     def is_skipped(self) -> bool:
-        return self.life_cycle_state is not None and self.life_cycle_state.is_skipped()
+        return self.life_cycle_state.is_skipped()  # type: ignore  # (possible none)
 
     def is_successful(self) -> bool:
         """Was the job successful?"""
-        return self.result_state is not None and self.result_state.is_successful()
+        return bool(self.result_state and self.result_state.is_successful())
 
     @classmethod
     def from_databricks(cls, run_state: jobs.RunState) -> "DatabricksRunState":

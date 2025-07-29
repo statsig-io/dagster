@@ -1,20 +1,27 @@
-import dagster as dg
+from dagster import (
+    AssetIn,
+    DailyPartitionsDefinition,
+    TimeWindowPartitionMapping,
+    asset,
+)
 
-partitions_def = dg.DailyPartitionsDefinition(start_date="2023-01-21")
+partitions_def = DailyPartitionsDefinition(start_date="2023-01-21")
 
 
-@dg.asset(partitions_def=partitions_def)
-def events(): ...
+@asset(partitions_def=partitions_def)
+def events():
+    ...
 
 
-@dg.asset(
+@asset(
     partitions_def=partitions_def,
     ins={
-        "events": dg.AssetIn(
-            partition_mapping=dg.TimeWindowPartitionMapping(
+        "events": AssetIn(
+            partition_mapping=TimeWindowPartitionMapping(
                 start_offset=-1, end_offset=-1
             ),
         )
     },
 )
-def yesterday_event_stats(events): ...
+def yesterday_event_stats(events):
+    ...

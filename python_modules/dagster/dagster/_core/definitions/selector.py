@@ -1,26 +1,28 @@
-from collections.abc import Iterable, Mapping, Sequence
-from typing import AbstractSet, Any, Optional  # noqa: UP035
+from typing import AbstractSet, Iterable, NamedTuple, Optional, Sequence
 
-from dagster_shared.utils.hash import make_hashable
+from typing_extensions import Self
 
 import dagster._check as check
-from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
+from dagster._core.definitions.asset_check_spec import AssetCheckHandle
 from dagster._core.definitions.events import AssetKey
 from dagster._core.definitions.repository_definition import SINGLETON_REPOSITORY_NAME
-from dagster._record import IHaveNew, record, record_custom
 from dagster._serdes import create_snapshot_id, whitelist_for_serdes
 
 
-@record_custom
-class JobSubsetSelector(IHaveNew):
+class JobSubsetSelector(
+    NamedTuple(
+        "_JobSubsetSelector",
+        [
+            ("location_name", str),
+            ("repository_name", str),
+            ("job_name", str),
+            ("op_selection", Optional[Sequence[str]]),
+            ("asset_selection", Optional[AbstractSet[AssetKey]]),
+            ("asset_check_selection", Optional[AbstractSet[AssetCheckHandle]]),
+        ],
+    )
+):
     """The information needed to resolve a job within a host process."""
-
-    location_name: str
-    repository_name: str
-    job_name: str
-    op_selection: Optional[Sequence[str]]
-    asset_selection: Optional[AbstractSet[AssetKey]]
-    asset_check_selection: Optional[AbstractSet[AssetCheckKey]]
 
     def __new__(
         cls,
@@ -29,21 +31,24 @@ class JobSubsetSelector(IHaveNew):
         job_name: str,
         op_selection: Optional[Sequence[str]],
         asset_selection: Optional[Iterable[AssetKey]] = None,
-        asset_check_selection: Optional[Iterable[AssetCheckKey]] = None,
+        asset_check_selection: Optional[Iterable[AssetCheckHandle]] = None,
     ):
-        # coerce iterables to sets
-        asset_selection = frozenset(asset_selection) if asset_selection else None
+        asset_selection = set(asset_selection) if asset_selection else None
         asset_check_selection = (
-            frozenset(asset_check_selection) if asset_check_selection is not None else None
+            set(asset_check_selection) if asset_check_selection is not None else None
         )
-        return super().__new__(
+        return super(JobSubsetSelector, cls).__new__(
             cls,
-            location_name=location_name,
-            repository_name=repository_name,
-            job_name=job_name,
-            op_selection=op_selection,
-            asset_selection=asset_selection,
-            asset_check_selection=asset_check_selection,
+            location_name=check.str_param(location_name, "location_name"),
+            repository_name=check.str_param(repository_name, "repository_name"),
+            job_name=check.str_param(job_name, "job_name"),
+            op_selection=check.opt_nullable_sequence_param(op_selection, "op_selection", str),
+            asset_selection=check.opt_nullable_set_param(
+                asset_selection, "asset_selection", AssetKey
+            ),
+            asset_check_selection=check.opt_nullable_set_param(
+                asset_check_selection, "asset_check_selection", AssetCheckHandle
+            ),
         )
 
     def to_graphql_input(self):
@@ -54,11 +59,7 @@ class JobSubsetSelector(IHaveNew):
             "solidSelection": self.op_selection,
         }
 
-    @property
-    def is_subset_selection(self) -> bool:
-        return bool(self.op_selection or self.asset_selection or self.asset_check_selection)
-
-    def with_op_selection(self, op_selection: Optional[Sequence[str]]) -> "JobSubsetSelector":
+    def with_op_selection(self, op_selection: Optional[Sequence[str]]) -> Self:
         check.invariant(
             self.op_selection is None,
             f"Can not invoke with_op_selection when op_selection={self.op_selection} is"
@@ -68,45 +69,35 @@ class JobSubsetSelector(IHaveNew):
             self.location_name, self.repository_name, self.job_name, op_selection
         )
 
-    @property
-    def repository_selector(self) -> "RepositorySelector":
-        return RepositorySelector(
-            location_name=self.location_name,
-            repository_name=self.repository_name,
-        )
-
-    def __hash__(self) -> int:
-        if not hasattr(self, "_hash"):
-            self._hash = hash(make_hashable(self))
-        return self._hash
-
 
 @whitelist_for_serdes
-@record_custom
-class JobSelector(IHaveNew):
-    location_name: str
-    repository_name: str
-    job_name: str
-
+class JobSelector(
+    NamedTuple(
+        "_JobSelector", [("location_name", str), ("repository_name", str), ("job_name", str)]
+    )
+):
     def __new__(
         cls,
         location_name: str,
         repository_name: Optional[str] = None,
         job_name: Optional[str] = None,
     ):
-        check.invariant(
-            job_name is not None,
-            "Must provide job_name argument even though it is marked as optional in the "
-            "function signature. repository_name, a truly optional parameter, is before "
-            "that argument and actually optional. Use of keyword arguments is "
-            "recommended to avoid confusion.",
-        )
-
-        return super().__new__(
+        return super(JobSelector, cls).__new__(
             cls,
-            location_name=location_name,
-            repository_name=repository_name or SINGLETON_REPOSITORY_NAME,
-            job_name=job_name,
+            location_name=check.str_param(location_name, "location_name"),
+            repository_name=check.opt_str_param(
+                repository_name,
+                "repository_name",
+                default=SINGLETON_REPOSITORY_NAME,
+            ),
+            job_name=check.str_param(
+                job_name,
+                "job_name",
+                "Must provide job_name argument even though it is marked as optional in the "
+                "function signature. repository_name, a truly optional parameter, is before "
+                "that argument and actually optional. Use of keyword arguments is "
+                "recommended to avoid confusion.",
+            ),
         )
 
     def to_graphql_input(self):
@@ -128,19 +119,17 @@ class JobSelector(IHaveNew):
             job_name=graphql_data["jobName"],
         )
 
-    @property
-    def repository_selector(self) -> "RepositorySelector":
-        return RepositorySelector(
-            location_name=self.location_name,
-            repository_name=self.repository_name,
-        )
-
 
 @whitelist_for_serdes
-@record
-class RepositorySelector:
-    location_name: str
-    repository_name: str
+class RepositorySelector(
+    NamedTuple("_RepositorySelector", [("location_name", str), ("repository_name", str)])
+):
+    def __new__(cls, location_name: str, repository_name: str):
+        return super(RepositorySelector, cls).__new__(
+            cls,
+            location_name=check.str_param(location_name, "location_name"),
+            repository_name=check.str_param(repository_name, "repository_name"),
+        )
 
     def to_graphql_input(self):
         return {
@@ -160,37 +149,32 @@ class RepositorySelector:
         )
 
 
-@record
-class AssetGroupSelector:
-    group_name: str
-    location_name: str
-    repository_name: str
-
-    @staticmethod
-    def from_graphql_input(graphql_data):
-        return AssetGroupSelector(
-            group_name=graphql_data["groupName"],
-            location_name=graphql_data["repositoryLocationName"],
-            repository_name=graphql_data["repositoryName"],
+class CodeLocationSelector(NamedTuple("_CodeLocationSelector", [("location_name", str)])):
+    def __new__(cls, location_name: str):
+        return super(CodeLocationSelector, cls).__new__(
+            cls,
+            location_name=check.str_param(location_name, "location_name"),
         )
-
-
-@record(kw_only=False)
-class CodeLocationSelector:
-    location_name: str
 
     def to_repository_selector(self) -> RepositorySelector:
         return RepositorySelector(
-            location_name=self.location_name,
-            repository_name=SINGLETON_REPOSITORY_NAME,
+            location_name=self.location_name, repository_name=SINGLETON_REPOSITORY_NAME
         )
 
 
-@record
-class ScheduleSelector:
-    location_name: str
-    repository_name: str
-    schedule_name: str
+class ScheduleSelector(
+    NamedTuple(
+        "_ScheduleSelector",
+        [("location_name", str), ("repository_name", str), ("schedule_name", str)],
+    )
+):
+    def __new__(cls, location_name: str, repository_name: str, schedule_name: str):
+        return super(ScheduleSelector, cls).__new__(
+            cls,
+            location_name=check.str_param(location_name, "location_name"),
+            repository_name=check.str_param(repository_name, "repository_name"),
+            schedule_name=check.str_param(schedule_name, "schedule_name"),
+        )
 
     def to_graphql_input(self):
         return {
@@ -198,10 +182,6 @@ class ScheduleSelector:
             "repositoryName": self.repository_name,
             "scheduleName": self.schedule_name,
         }
-
-    @property
-    def instigator_name(self) -> str:
-        return self.schedule_name
 
     @staticmethod
     def from_graphql_input(graphql_data):
@@ -212,8 +192,7 @@ class ScheduleSelector:
         )
 
 
-@record
-class ResourceSelector:
+class ResourceSelector(NamedTuple):
     location_name: str
     repository_name: str
     resource_name: str
@@ -234,11 +213,18 @@ class ResourceSelector:
         )
 
 
-@record
-class SensorSelector:
-    location_name: str
-    repository_name: str
-    sensor_name: str
+class SensorSelector(
+    NamedTuple(
+        "_SensorSelector", [("location_name", str), ("repository_name", str), ("sensor_name", str)]
+    )
+):
+    def __new__(cls, location_name: str, repository_name: str, sensor_name: str):
+        return super(SensorSelector, cls).__new__(
+            cls,
+            location_name=check.str_param(location_name, "location_name"),
+            repository_name=check.str_param(repository_name, "repository_name"),
+            sensor_name=check.str_param(sensor_name, "sensor_name"),
+        )
 
     def to_graphql_input(self):
         return {
@@ -255,17 +241,20 @@ class SensorSelector:
             sensor_name=graphql_data["sensorName"],
         )
 
-    @property
-    def instigator_name(self) -> str:
-        return self.sensor_name
-
 
 @whitelist_for_serdes
-@record
-class InstigatorSelector:
-    location_name: str
-    repository_name: str
-    name: str
+class InstigatorSelector(
+    NamedTuple(
+        "_InstigatorSelector", [("location_name", str), ("repository_name", str), ("name", str)]
+    )
+):
+    def __new__(cls, location_name: str, repository_name: str, name: str):
+        return super(InstigatorSelector, cls).__new__(
+            cls,
+            location_name=check.str_param(location_name, "location_name"),
+            repository_name=check.str_param(repository_name, "repository_name"),
+            name=check.str_param(name, "name"),
+        )
 
     def to_graphql_input(self):
         return {
@@ -282,17 +271,21 @@ class InstigatorSelector:
             name=graphql_data["name"],
         )
 
-    def get_id(self) -> str:
-        return create_snapshot_id(self)
 
-
-@record
-class GraphSelector:
+class GraphSelector(
+    NamedTuple(
+        "_GraphSelector", [("location_name", str), ("repository_name", str), ("graph_name", str)]
+    )
+):
     """The information needed to resolve a graph within a host process."""
 
-    location_name: str
-    repository_name: str
-    graph_name: str
+    def __new__(cls, location_name: str, repository_name: str, graph_name: str):
+        return super(GraphSelector, cls).__new__(
+            cls,
+            location_name=check.str_param(location_name, "location_name"),
+            repository_name=check.str_param(repository_name, "repository_name"),
+            graph_name=check.str_param(graph_name, "graph_name"),
+        )
 
     def to_graphql_input(self):
         return {
@@ -303,13 +296,21 @@ class GraphSelector:
 
 
 @whitelist_for_serdes
-@record
-class PartitionSetSelector:
+class PartitionSetSelector(
+    NamedTuple(
+        "_PartitionSetSelector",
+        [("location_name", str), ("repository_name", str), ("partition_set_name", str)],
+    )
+):
     """The information needed to resolve a partition set within a host process."""
 
-    location_name: str
-    repository_name: str
-    partition_set_name: str
+    def __new__(cls, location_name: str, repository_name: str, partition_set_name: str):
+        return super(PartitionSetSelector, cls).__new__(
+            cls,
+            location_name=check.str_param(location_name, "location_name"),
+            repository_name=check.str_param(repository_name, "repository_name"),
+            partition_set_name=check.str_param(partition_set_name, "partition_set_name"),
+        )
 
     def to_graphql_input(self):
         return {
@@ -319,12 +320,20 @@ class PartitionSetSelector:
         }
 
 
-@record(kw_only=False)
-class PartitionRangeSelector:
+class PartitionRangeSelector(
+    NamedTuple(
+        "_PartitionRangeSelector",
+        [("start", str), ("end", str)],
+    )
+):
     """The information needed to resolve a partition range."""
 
-    start: str
-    end: str
+    def __new__(cls, start: str, end: str):
+        return super(PartitionRangeSelector, cls).__new__(
+            cls,
+            start=check.inst_param(start, "start", str),
+            end=check.inst_param(end, "end", str),
+        )
 
     def to_graphql_input(self):
         return {
@@ -340,45 +349,51 @@ class PartitionRangeSelector:
         )
 
 
-@record(kw_only=False)
-class PartitionsSelector:
-    """The information needed to define selection partitions."""
+class PartitionsSelector(
+    NamedTuple(
+        "_PartitionsSelector",
+        [("partition_range", PartitionRangeSelector)],
+    )
+):
+    """The information needed to define selection partitions.
+    Using partition_range as property name to avoid shadowing Python 'range' builtin .
+    """
 
-    ranges: Sequence[PartitionRangeSelector]
+    def __new__(cls, partition_range: PartitionRangeSelector):
+        return super(PartitionsSelector, cls).__new__(
+            cls,
+            partition_range=check.inst_param(partition_range, "range", PartitionRangeSelector),
+        )
 
     def to_graphql_input(self):
-        return {"ranges": [partition_range.to_graphql_input() for partition_range in self.ranges]}
+        return {
+            "range": self.partition_range.to_graphql_input(),
+        }
 
     @staticmethod
-    def from_graphql_input(graphql_data: Mapping[str, Any]) -> "PartitionsSelector":
-        if "ranges" in graphql_data:
-            check.invariant(
-                "range" not in graphql_data,
-                "Received partitionsSelector with values for both 'range' and 'ranges'. Only one should be provided.",
-            )
-            return PartitionsSelector(
-                ranges=[
-                    PartitionRangeSelector.from_graphql_input(range_data)
-                    for range_data in graphql_data["ranges"]
-                ]
-            )
-
-        if "range" in graphql_data:
-            return PartitionsSelector(
-                ranges=[PartitionRangeSelector.from_graphql_input(graphql_data["range"])]
-            )
-
-        check.failed(
-            "Received partitionsSelector without values for either 'range' or 'ranges'. One should be provided.",
+    def from_graphql_input(graphql_data):
+        return PartitionsSelector(
+            partition_range=PartitionRangeSelector.from_graphql_input(graphql_data["range"])
         )
 
 
-@record
-class PartitionsByAssetSelector:
+class PartitionsByAssetSelector(
+    NamedTuple(
+        "PartitionsByAssetSelector",
+        [
+            ("asset_key", AssetKey),
+            ("partitions", Optional[PartitionsSelector]),
+        ],
+    )
+):
     """The information needed to define partitions selection for a given asset key."""
 
-    asset_key: AssetKey
-    partitions: Optional[PartitionsSelector] = None
+    def __new__(cls, asset_key: AssetKey, partitions: Optional[PartitionsSelector] = None):
+        return super(PartitionsByAssetSelector, cls).__new__(
+            cls,
+            asset_key=check.inst_param(asset_key, "asset_key", AssetKey),
+            partitions=check.opt_inst_param(partitions, "partitions", PartitionsSelector),
+        )
 
     def to_graphql_input(self):
         return {
@@ -387,7 +402,7 @@ class PartitionsByAssetSelector:
         }
 
     @staticmethod
-    def from_graphql_input(graphql_data) -> "PartitionsByAssetSelector":
+    def from_graphql_input(graphql_data):
         asset_key = graphql_data["assetKey"]
         partitions = graphql_data.get("partitions")
         return PartitionsByAssetSelector(

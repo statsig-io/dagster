@@ -1,51 +1,226 @@
-from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+import re
 from enum import Enum
-from typing import (  # noqa: UP035
+from typing import (
     TYPE_CHECKING,
     AbstractSet,
     Any,
     Callable,
     Generic,
+    List,
+    Mapping,
     NamedTuple,
     Optional,
+    Sequence,
     TypeVar,
     Union,
     cast,
 )
 
-from dagster_shared.serdes import NamedTupleSerializer
-from typing_extensions import Self
-
 import dagster._check as check
-from dagster._annotations import PublicAttr, beta_param, deprecated, public
-from dagster._core.definitions.asset_key import (
-    AssetKey as AssetKey,
-    CoercibleToAssetKey as CoercibleToAssetKey,
-    CoercibleToAssetKeyPrefix as CoercibleToAssetKeyPrefix,
-    parse_asset_key_string,
-)
-from dagster._core.definitions.data_version import (
-    _OLD_DATA_VERSION_TAG,
-    _OLD_INPUT_DATA_VERSION_TAG_PREFIX,
-    DATA_VERSION_TAG,
-    DataVersion,
-)
-from dagster._core.definitions.metadata import (
+import dagster._seven as seven
+from dagster._annotations import PublicAttr, deprecated, experimental_param, public
+from dagster._core.definitions.data_version import DataVersion
+from dagster._core.storage.tags import MULTIDIMENSIONAL_PARTITION_PREFIX, SYSTEM_TAG_PREFIX
+from dagster._serdes import whitelist_for_serdes
+from dagster._serdes.serdes import NamedTupleSerializer
+
+from .metadata import (
     MetadataFieldSerializer,
     MetadataMapping,
     MetadataValue,
     RawMetadataValue,
     normalize_metadata,
 )
-from dagster._core.definitions.partitions.partition_key_range import PartitionKeyRange
-from dagster._core.definitions.utils import DEFAULT_OUTPUT, check_valid_name
-from dagster._core.storage.tags import MULTIDIMENSIONAL_PARTITION_PREFIX, REPORTING_USER_TAG
-from dagster._record import IHaveNew, record_custom
-from dagster._serdes import whitelist_for_serdes
+from .utils import DEFAULT_OUTPUT, check_valid_name
 
 if TYPE_CHECKING:
+    from dagster._core.definitions.assets import AssetsDefinition
+    from dagster._core.definitions.source_asset import SourceAsset
     from dagster._core.execution.context.output import OutputContext
+
+
+ASSET_KEY_SPLIT_REGEX = re.compile("[^a-zA-Z0-9_]")
+ASSET_KEY_DELIMITER = "/"
+
+
+def parse_asset_key_string(s: str) -> Sequence[str]:
+    return list(filter(lambda x: x, re.split(ASSET_KEY_SPLIT_REGEX, s)))
+
+
+@whitelist_for_serdes
+class AssetKey(NamedTuple("_AssetKey", [("path", PublicAttr[Sequence[str]])])):
+    """Object representing the structure of an asset key.  Takes in a sanitized string, list of
+    strings, or tuple of strings.
+
+    Example usage:
+
+    .. code-block:: python
+
+        from dagster import op
+
+        @op
+        def emit_metadata(context, df):
+            yield AssetMaterialization(
+                asset_key=AssetKey('flat_asset_key'),
+                metadata={"text_metadata": "Text-based metadata for this event"},
+            )
+
+        @op
+        def structured_asset_key(context, df):
+            yield AssetMaterialization(
+                asset_key=AssetKey(['parent', 'child', 'grandchild']),
+                metadata={"text_metadata": "Text-based metadata for this event"},
+            )
+
+        @op
+        def structured_asset_key_2(context, df):
+            yield AssetMaterialization(
+                asset_key=AssetKey(('parent', 'child', 'grandchild')),
+                metadata={"text_metadata": "Text-based metadata for this event"},
+            )
+
+    Args:
+        path (Sequence[str]): String, list of strings, or tuple of strings.  A list of strings
+            represent the hierarchical structure of the asset_key.
+    """
+
+    def __new__(cls, path: Sequence[str]):
+        if isinstance(path, str):
+            path = [path]
+        else:
+            path = list(check.sequence_param(path, "path", of_type=str))
+
+        return super(AssetKey, cls).__new__(cls, path=path)
+
+    def __str__(self):
+        return f"AssetKey({self.path})"
+
+    def __repr__(self):
+        return f"AssetKey({self.path})"
+
+    def __hash__(self):
+        return hash(tuple(self.path))
+
+    def __eq__(self, other):
+        if not isinstance(other, AssetKey):
+            return False
+        if len(self.path) != len(other.path):
+            return False
+        for i in range(0, len(self.path)):
+            if self.path[i] != other.path[i]:
+                return False
+        return True
+
+    def to_string(self) -> str:
+        """E.g. '["first_component", "second_component"]'."""
+        return seven.json.dumps(self.path)
+
+    def to_user_string(self) -> str:
+        """E.g. "first_component/second_component"."""
+        return ASSET_KEY_DELIMITER.join(self.path)
+
+    def to_python_identifier(self, suffix: Optional[str] = None) -> str:
+        """Build a valid Python identifier based on the asset key that can be used for
+        operation names or I/O manager keys.
+        """
+        path = list(self.path)
+
+        if suffix is not None:
+            path.append(suffix)
+
+        return "__".join(path).replace("-", "_")
+
+    @staticmethod
+    def from_user_string(asset_key_string: str) -> "AssetKey":
+        return AssetKey(asset_key_string.split(ASSET_KEY_DELIMITER))
+
+    @staticmethod
+    def from_db_string(asset_key_string: Optional[str]) -> Optional["AssetKey"]:
+        if not asset_key_string:
+            return None
+        if asset_key_string[0] == "[":
+            # is a json string
+            try:
+                path = seven.json.loads(asset_key_string)
+            except seven.JSONDecodeError:
+                path = parse_asset_key_string(asset_key_string)
+        else:
+            path = parse_asset_key_string(asset_key_string)
+        return AssetKey(path)
+
+    @staticmethod
+    def get_db_prefix(path: Sequence[str]):
+        check.sequence_param(path, "path", of_type=str)
+        return seven.json.dumps(path)[:-2]  # strip trailing '"]' from json string
+
+    @staticmethod
+    def from_graphql_input(graphql_input_asset_key: Mapping[str, Sequence[str]]) -> "AssetKey":
+        return AssetKey(graphql_input_asset_key["path"])
+
+    def to_graphql_input(self) -> Mapping[str, Sequence[str]]:
+        return {"path": self.path}
+
+    @staticmethod
+    def from_coercible(arg: "CoercibleToAssetKey") -> "AssetKey":
+        if isinstance(arg, AssetKey):
+            return check.inst_param(arg, "arg", AssetKey)
+        elif isinstance(arg, str):
+            return AssetKey([arg])
+        elif isinstance(arg, list):
+            check.list_param(arg, "arg", of_type=str)
+            return AssetKey(arg)
+        elif isinstance(arg, tuple):
+            check.tuple_param(arg, "arg", of_type=str)
+            return AssetKey(arg)
+        else:
+            check.failed(f"Unexpected type for AssetKey: {type(arg)}")
+
+    @staticmethod
+    def from_coercible_or_definition(
+        arg: Union["CoercibleToAssetKey", "AssetsDefinition", "SourceAsset"]
+    ) -> "AssetKey":
+        from dagster._core.definitions.assets import AssetsDefinition
+        from dagster._core.definitions.source_asset import SourceAsset
+
+        if isinstance(arg, AssetsDefinition):
+            return arg.key
+        elif isinstance(arg, SourceAsset):
+            return arg.key
+        else:
+            return AssetKey.from_coercible(arg)
+
+    # @staticmethod
+    # def from_coercible_to_asset_dep(arg: "CoercibleToAssetDep") -> "AssetKey":
+    #     from dagster._core.definitions.asset_dep import AssetDep
+    #     from dagster._core.definitions.asset_spec import AssetSpec
+    #     from dagster._core.definitions.assets import AssetsDefinition
+    #     from dagster._core.definitions.source_asset import SourceAsset
+
+    #     if isinstance(arg, AssetsDefinition):
+    #         if len(arg.keys) > 1:
+    #             # Only AssetsDefinition with a single asset can be passed
+    #             raise DagsterInvalidDefinitionError(
+    #                 "Cannot pass a multi_asset AssetsDefinition as an argument to deps."
+    #                 " Instead, specify dependencies on the assets created by the multi_asset"
+    #                 f" via AssetKeys or strings. For the multi_asset {arg.node_def.name}, the"
+    #                 f" available keys are: {arg.keys}."
+    #             )
+    #         return arg.key
+    #     elif isinstance(arg, SourceAsset):
+    #         return arg.key
+    #     elif isinstance(arg, AssetDep):
+    #         return arg.asset_key
+    #     elif isinstance(arg, AssetSpec):
+    #         return arg.asset_key
+    #     else:
+    #         return AssetKey.from_coercible(arg)
+
+    def has_prefix(self, prefix: Sequence[str]) -> bool:
+        return len(self.path) >= len(prefix) and self.path[: len(prefix)] == prefix
+
+    def with_prefix(self, prefix: "CoercibleToAssetKeyPrefix") -> "AssetKey":
+        prefix = key_prefix_from_coercible(prefix)
+        return AssetKey(list(prefix) + list(self.path))
 
 
 class AssetKeyPartitionKey(NamedTuple):
@@ -57,13 +232,28 @@ class AssetKeyPartitionKey(NamedTuple):
     partition_key: Optional[str] = None
 
 
-# This is currently used only for the asset partition wipe codepath. In the future, we can rename
-# to AssetPartitionRange or similar for more general use.
-class AssetPartitionWipeRange(NamedTuple):
-    """An AssetKey with a partition range."""
+CoercibleToAssetKey = Union[AssetKey, str, Sequence[str]]
+CoercibleToAssetKeyPrefix = Union[str, Sequence[str]]
 
-    asset_key: AssetKey
-    partition_range: Optional[PartitionKeyRange]
+
+def check_opt_coercible_to_asset_key_prefix_param(
+    prefix: Optional[CoercibleToAssetKeyPrefix], param_name: str
+) -> Optional[Sequence[str]]:
+    try:
+        return key_prefix_from_coercible(prefix) if prefix is not None else None
+    except check.CheckError:
+        raise check.ParameterCheckError(
+            f'Param "{param_name}" is not a string or a sequence of strings'
+        )
+
+
+def key_prefix_from_coercible(key_prefix: CoercibleToAssetKeyPrefix) -> Sequence[str]:
+    if isinstance(key_prefix, str):
+        return [key_prefix]
+    elif isinstance(key_prefix, list):
+        return key_prefix
+    else:
+        check.failed(f"Unexpected type for key_prefix: {type(key_prefix)}")
 
 
 DynamicAssetKey = Callable[["OutputContext"], Optional[AssetKey]]
@@ -76,23 +266,15 @@ class AssetLineageInfo(
     def __new__(cls, asset_key: AssetKey, partitions: Optional[AbstractSet[str]] = None):
         asset_key = check.inst_param(asset_key, "asset_key", AssetKey)
         partitions = check.opt_set_param(partitions, "partitions", str)
-        return super().__new__(cls, asset_key=asset_key, partitions=partitions)
-
-
-class EventWithMetadata(ABC):
-    @abstractmethod
-    def with_metadata(self, metadata: Optional[Mapping[str, RawMetadataValue]]) -> Self:
-        """Returns a new instance of the event with the same properties as the original,
-        but with metadata replaced by the provided value.
-        """
+        return super(AssetLineageInfo, cls).__new__(cls, asset_key=asset_key, partitions=partitions)
 
 
 T = TypeVar("T")
 
 
-@beta_param(param="data_version")
-class Output(Generic[T], EventWithMetadata):
-    """Event corresponding to one of an op's outputs.
+@experimental_param(param="data_version")
+class Output(Generic[T]):
+    """Event corresponding to one of a op's outputs.
 
     Op compute functions must explicitly yield events of this type when they have more than
     one output, or when they also yield events of other types, or when defining a op using the
@@ -104,25 +286,22 @@ class Output(Generic[T], EventWithMetadata):
 
     Args:
         value (Any): The value returned by the compute function.
-        output_name (str): Name of the corresponding Out. (default: "result")
+        output_name (Optional[str]): Name of the corresponding out. (default:
+            "result")
         metadata (Optional[Dict[str, Union[str, float, int, MetadataValue]]]):
-            Arbitrary metadata about the output.  Keys are displayed string labels, and values are
+            Arbitrary metadata about the failure.  Keys are displayed string labels, and values are
             one of the following: string, float, int, JSON-serializable dict, JSON-serializable
             list, and one of the data classes returned by a MetadataValue static method.
-        data_version (Optional[DataVersion]): (Beta) A data version to manually set
+        data_version (Optional[DataVersion]): (Experimental) A data version to manually set
             for the asset.
-        tags (Optional[Mapping[str, str]]): Tags that will be attached to the asset
-            materialization event corresponding to this output, if there is one.
     """
 
     def __init__(
         self,
         value: T,
-        output_name: str = DEFAULT_OUTPUT,
+        output_name: Optional[str] = DEFAULT_OUTPUT,
         metadata: Optional[Mapping[str, RawMetadataValue]] = None,
         data_version: Optional[DataVersion] = None,
-        *,
-        tags: Optional[Mapping[str, str]] = None,
     ):
         self._value = value
         self._output_name = check.str_param(output_name, "output_name")
@@ -130,15 +309,10 @@ class Output(Generic[T], EventWithMetadata):
         self._metadata = normalize_metadata(
             check.opt_mapping_param(metadata, "metadata", key_type=str),
         )
-        self._tags = validate_asset_event_tags(tags)
 
     @property
     def metadata(self) -> MetadataMapping:
         return self._metadata
-
-    @property
-    def tags(self) -> Optional[Mapping[str, str]]:
-        return self._tags
 
     @public
     @property
@@ -164,19 +338,6 @@ class Output(Generic[T], EventWithMetadata):
             and self.value == other.value
             and self.output_name == other.output_name
             and self.metadata == other.metadata
-            and self.tags == other.tags
-        )
-
-    def with_metadata(self, metadata: Optional[Mapping[str, RawMetadataValue]]) -> "Output":
-        """Returns a new Output with the same value and output_name,
-        but with the provided metadata.
-        """
-        return self.__class__(
-            value=self.value,
-            output_name=self.output_name,
-            metadata=metadata,
-            data_version=self.data_version,
-            tags=self.tags,
         )
 
 
@@ -250,115 +411,6 @@ class DynamicOutput(Generic[T]):
         )
 
 
-@whitelist_for_serdes
-class AssetMaterializationFailureReason(Enum):
-    """Enumerate the reasons an asset may have failed to materialize. Can be used to provide more granular
-    information about the failure to the user.
-    """
-
-    FAILED_TO_MATERIALIZE = "FAILED_TO_MATERIALIZE"  # The asset failed to materialize
-    UPSTREAM_FAILED_TO_MATERIALIZE = "UPSTREAM_FAILED_TO_MATERIALIZE"
-    RUN_TERMINATED = "RUN_TERMINATED"
-    UNKNOWN = "UNKNOWN"
-
-
-@whitelist_for_serdes
-class AssetMaterializationFailureType(Enum):
-    """An asset can fail to materialize in two ways: an unexpected/unintentional failure that should update
-    the global state of the asset to Failed, and one that indicates that the asset not materializing
-    is expected (like an optional asset or a user canceled the run).
-    """
-
-    FAILED = "FAILED"  # The asset was not materialized, but was expected to materialize
-    SKIPPED = "SKIPPED"  # The asset was not materialized, but this is an acceptable outcome (like an optional asset, user canceled the run)
-
-
-@whitelist_for_serdes(
-    storage_field_names={"metadata": "metadata_entries"},
-    field_serializers={"metadata": MetadataFieldSerializer},
-)
-@record_custom
-class AssetMaterializationFailure(EventWithMetadata, IHaveNew):
-    asset_key: AssetKey
-    description: Optional[str]
-    metadata: Mapping[str, MetadataValue]
-    partition: Optional[str]
-    tags: Mapping[str, str]
-    failure_type: AssetMaterializationFailureType
-    reason: AssetMaterializationFailureReason
-
-    """Event that indicates that an asset failed to materialize.
-
-    Args:
-        asset_key (Union[str, List[str], AssetKey]): A key to identify the asset.
-        partition (Optional[str]): The name of a partition of the asset.
-        tags (Optional[Mapping[str, str]]): A mapping containing tags for the failure event.
-        metadata (Optional[Dict[str, Union[str, float, int, MetadataValue]]]):
-            Arbitrary metadata about the asset.  Keys are displayed string labels, and values are
-            one of the following: string, float, int, JSON-serializable dict, JSON-serializable
-            list, and one of the data classes returned by a MetadataValue static method.
-        failure_type: (AssetMaterializationFailureType): An enum indicating the type of failure.
-        reason: (AssetMaterializationFailureReason): An enum indicating why the asset failed to
-            materialize.
-    """
-
-    def __new__(
-        cls,
-        asset_key: CoercibleToAssetKey,
-        failure_type: AssetMaterializationFailureType,
-        reason: AssetMaterializationFailureReason,
-        description: Optional[str] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-        partition: Optional[str] = None,
-        tags: Optional[Mapping[str, str]] = None,
-    ):
-        if isinstance(asset_key, AssetKey):
-            check.inst_param(asset_key, "asset_key", AssetKey)
-        elif isinstance(asset_key, str):
-            asset_key = AssetKey(parse_asset_key_string(asset_key))
-        else:
-            check.sequence_param(asset_key, "asset_key", of_type=str)
-            asset_key = AssetKey(asset_key)
-
-        validate_asset_event_tags(tags)
-
-        normed_metadata = normalize_metadata(
-            check.opt_mapping_param(metadata, "metadata", key_type=str),
-        )
-
-        return super().__new__(
-            cls,
-            asset_key=asset_key,
-            description=description,
-            metadata=normed_metadata,
-            tags=tags or {},
-            partition=partition,
-            failure_type=failure_type,
-            reason=reason,
-        )
-
-    @property
-    def label(self) -> str:
-        return " ".join(self.asset_key.path)
-
-    @property
-    def data_version(self) -> Optional[str]:
-        return self.tags.get(DATA_VERSION_TAG)
-
-    def with_metadata(
-        self, metadata: Optional[Mapping[str, RawMetadataValue]]
-    ) -> "AssetMaterializationFailure":
-        return AssetMaterializationFailure(
-            asset_key=self.asset_key,
-            description=self.description,
-            metadata=metadata,
-            partition=self.partition,
-            tags=self.tags,
-            reason=self.reason,
-            failure_type=self.failure_type,
-        )
-
-
 @whitelist_for_serdes(
     storage_field_names={"metadata": "metadata_entries"},
     field_serializers={"metadata": MetadataFieldSerializer},
@@ -373,8 +425,7 @@ class AssetObservation(
             ("partition", PublicAttr[Optional[str]]),
             ("tags", PublicAttr[Mapping[str, str]]),
         ],
-    ),
-    EventWithMetadata,
+    )
 ):
     """Event that captures metadata about an asset at a point in time.
 
@@ -382,7 +433,8 @@ class AssetObservation(
         asset_key (Union[str, List[str], AssetKey]): A key to identify the asset.
         partition (Optional[str]): The name of a partition of the asset that the metadata
             corresponds to.
-        tags (Optional[Mapping[str, str]]): A mapping containing tags for the observation.
+        tags (Optional[Mapping[str, str]]): A mapping containing system-populated tags for the
+            observation. Users should not pass values into this argument.
         metadata (Optional[Dict[str, Union[str, float, int, MetadataValue]]]):
             Arbitrary metadata about the asset.  Keys are displayed string labels, and values are
             one of the following: string, float, int, JSON-serializable dict, JSON-serializable
@@ -405,39 +457,29 @@ class AssetObservation(
             check.sequence_param(asset_key, "asset_key", of_type=str)
             asset_key = AssetKey(asset_key)
 
-        validate_asset_event_tags(tags)
+        tags = check.opt_mapping_param(tags, "tags", key_type=str, value_type=str)
+        if any([not tag.startswith(SYSTEM_TAG_PREFIX) for tag in tags or {}]):
+            check.failed(
+                "Users should not pass values into the tags argument for AssetMaterializations. "
+                "The tags argument is reserved for system-populated tags."
+            )
 
         normed_metadata = normalize_metadata(
             check.opt_mapping_param(metadata, "metadata", key_type=str),
         )
 
-        return super().__new__(
+        return super(AssetObservation, cls).__new__(
             cls,
             asset_key=asset_key,
             description=check.opt_str_param(description, "description"),
             metadata=normed_metadata,
-            tags=tags or {},
+            tags=tags,
             partition=check.opt_str_param(partition, "partition"),
         )
 
     @property
     def label(self) -> str:
         return " ".join(self.asset_key.path)
-
-    @property
-    def data_version(self) -> Optional[str]:
-        return self.tags.get(DATA_VERSION_TAG)
-
-    def with_metadata(
-        self, metadata: Optional[Mapping[str, RawMetadataValue]]
-    ) -> "AssetObservation":
-        return AssetObservation(
-            asset_key=self.asset_key,
-            description=self.description,
-            metadata=metadata,
-            partition=self.partition,
-            tags=self.tags,
-        )
 
 
 UNDEFINED_ASSET_KEY_PATH = ["__undefined__"]
@@ -470,8 +512,7 @@ class AssetMaterialization(
             ("partition", PublicAttr[Optional[str]]),
             ("tags", Optional[Mapping[str, str]]),
         ],
-    ),
-    EventWithMetadata,
+    )
 ):
     """Event indicating that an op has materialized an asset.
 
@@ -490,7 +531,8 @@ class AssetMaterialization(
         description (Optional[str]): A longer human-readable description of the materialized value.
         partition (Optional[str]): The name of the partition
             that was materialized.
-        tags (Optional[Mapping[str, str]]): A mapping containing tags for the materialization.
+        tags (Optional[Mapping[str, str]]): A mapping containing system-populated tags for the
+            materialization. Users should not pass values into this argument.
         metadata (Optional[Dict[str, RawMetadataValue]]):
             Arbitrary metadata about the asset.  Keys are displayed string labels, and values are
             one of the following: string, float, int, JSON-serializable dict, JSON-serializable
@@ -505,7 +547,7 @@ class AssetMaterialization(
         partition: Optional[str] = None,
         tags: Optional[Mapping[str, str]] = None,
     ):
-        from dagster._core.definitions.partitions.utils import MultiPartitionKey
+        from dagster._core.definitions.multi_dimensional_partitions import MultiPartitionKey
 
         if isinstance(asset_key, AssetKey):
             check.inst_param(asset_key, "asset_key", AssetKey)
@@ -515,7 +557,13 @@ class AssetMaterialization(
             check.sequence_param(asset_key, "asset_key", of_type=str)
             asset_key = AssetKey(asset_key)
 
-        validate_asset_event_tags(tags)
+        check.opt_mapping_param(tags, "tags", key_type=str, value_type=str)
+        invalid_tags = [tag for tag in tags or {} if not tag.startswith(SYSTEM_TAG_PREFIX)]
+        if len(invalid_tags) > 0:
+            check.failed(
+                f"Invalid tags: {tags} Users should not pass values into the tags argument for"
+                " AssetMaterializations. The tags argument is reserved for system-populated tags."
+            )
 
         normed_metadata = normalize_metadata(
             check.opt_mapping_param(metadata, "metadata", key_type=str),
@@ -534,7 +582,7 @@ class AssetMaterialization(
             if multi_dimensional_partitions:
                 partition = MultiPartitionKey(multi_dimensional_partitions)
 
-        return super().__new__(
+        return super(AssetMaterialization, cls).__new__(
             cls,
             asset_key=asset_key,
             description=check.opt_str_param(description, "description"),
@@ -564,26 +612,15 @@ class AssetMaterialization(
             asset_key = path
 
         return AssetMaterialization(
-            asset_key=cast("Union[str, AssetKey, list[str]]", asset_key),
+            asset_key=cast(Union[str, AssetKey, List[str]], asset_key),
             description=description,
             metadata={"path": MetadataValue.path(path)},
         )
 
-    def with_metadata(
-        self, metadata: Optional[Mapping[str, RawMetadataValue]]
-    ) -> "AssetMaterialization":
-        return AssetMaterialization(
-            asset_key=self.asset_key,
-            description=self.description,
-            metadata=metadata,
-            partition=self.partition,
-            tags=self.tags,
-        )
-
 
 @deprecated(
-    breaking_version="2.0",
-    additional_warn_text="If using assets, use AssetCheckResult and @asset_check instead.",
+    breaking_version="1.7",
+    additional_warn_text="Please use AssetCheckResult and @asset_check instead.",
 )
 @whitelist_for_serdes(
     storage_field_names={"metadata": "metadata_entries"},
@@ -627,7 +664,7 @@ class ExpectationResult(
             check.opt_mapping_param(metadata, "metadata", key_type=str),
         )
 
-        return super().__new__(
+        return super(ExpectationResult, cls).__new__(
             cls,
             success=check.bool_param(success, "success"),
             label=check.opt_str_param(label, "label", "result"),
@@ -640,6 +677,7 @@ class ExpectationResult(
     storage_field_names={"metadata": "metadata_entries"},
     field_serializers={"metadata": MetadataFieldSerializer},
 )
+@whitelist_for_serdes
 class TypeCheck(
     NamedTuple(
         "_TypeCheck",
@@ -678,7 +716,7 @@ class TypeCheck(
             check.opt_mapping_param(metadata, "metadata", key_type=str),
         )
 
-        return super().__new__(
+        return super(TypeCheck, cls).__new__(
             cls,
             success=check.bool_param(success, "success"),
             description=check.opt_str_param(description, "description"),
@@ -710,7 +748,7 @@ class Failure(Exception):
         metadata: Optional[Mapping[str, RawMetadataValue]] = None,
         allow_retries: Optional[bool] = None,
     ):
-        super().__init__(description)
+        super(Failure, self).__init__(description)
         self.description = check.opt_str_param(description, "description")
         self.metadata = normalize_metadata(
             check.opt_mapping_param(metadata, "metadata", key_type=str),
@@ -742,7 +780,7 @@ class RetryRequested(Exception):
     def __init__(
         self, max_retries: Optional[int] = 1, seconds_to_wait: Optional[Union[float, int]] = None
     ):
-        super().__init__()
+        super(RetryRequested, self).__init__()
         self.max_retries = check.int_param(max_retries, "max_retries")
         self.seconds_to_wait = check.opt_numeric_param(seconds_to_wait, "seconds_to_wait")
 
@@ -785,7 +823,7 @@ class ObjectStoreOperation(
         object_store_name (Optional[str]): The name of the object store that performed the
             operation.
         value_name (Optional[str]): The name of the input/output
-        version (Optional[str]): The version of the stored data.
+        version (Optional[str]): (Experimental) The version of the stored data.
         mapping_key (Optional[str]): The mapping key when a dynamic output is used.
     """
 
@@ -801,7 +839,7 @@ class ObjectStoreOperation(
         version: Optional[str] = None,
         mapping_key: Optional[str] = None,
     ):
-        return super().__new__(
+        return super(ObjectStoreOperation, cls).__new__(
             cls,
             op=op,
             key=check.str_param(key, "key"),
@@ -820,7 +858,7 @@ class ObjectStoreOperation(
     def serializable(cls, inst, **kwargs):
         return cls(
             **dict(
-                {  # pyright: ignore[reportArgumentType]
+                {
                     "op": inst.op.value,
                     "key": inst.key,
                     "dest_key": inst.dest_key,
@@ -847,42 +885,11 @@ class HookExecutionResult(
     """
 
     def __new__(cls, hook_name: str, is_skipped: Optional[bool] = None):
-        return super().__new__(
+        return super(HookExecutionResult, cls).__new__(
             cls,
             hook_name=check.str_param(hook_name, "hook_name"),
-            is_skipped=cast("bool", check.opt_bool_param(is_skipped, "is_skipped", default=False)),
+            is_skipped=cast(bool, check.opt_bool_param(is_skipped, "is_skipped", default=False)),
         )
 
 
 UserEvent = Union[AssetMaterialization, AssetObservation, ExpectationResult]
-
-
-def validate_asset_event_tags(tags: Optional[Mapping[str, str]]) -> Optional[Mapping[str, str]]:
-    from dagster._utils.tags import normalize_tags
-
-    if tags is None:
-        return None
-
-    # The format of these particular tags does not fit strict validation. E.g.
-    # - Some of the keys have two slashes
-    # - The value for the data/code version tags can be an arbitrary string
-    tags_to_validate = {k: v for k, v in tags.items() if not is_system_asset_event_tag(k)}
-    normalize_tags(tags_to_validate, strict=True)  # performs validation
-    return tags
-
-
-def is_system_asset_event_tag(key: str) -> bool:
-    from dagster._core.definitions.data_version import (
-        CODE_VERSION_TAG,
-        DATA_VERSION_TAG,
-        INPUT_DATA_VERSION_TAG_PREFIX,
-        INPUT_EVENT_POINTER_TAG_PREFIX,
-    )
-
-    return (
-        key in [CODE_VERSION_TAG, DATA_VERSION_TAG, _OLD_DATA_VERSION_TAG, REPORTING_USER_TAG]
-        or key.startswith(INPUT_DATA_VERSION_TAG_PREFIX)
-        or key.startswith(INPUT_EVENT_POINTER_TAG_PREFIX)
-        or key.startswith(_OLD_INPUT_DATA_VERSION_TAG_PREFIX)
-        or key.startswith(MULTIDIMENSIONAL_PARTITION_PREFIX)
-    )

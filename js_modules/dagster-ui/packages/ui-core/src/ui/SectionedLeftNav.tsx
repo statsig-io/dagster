@@ -12,7 +12,6 @@ import * as React from 'react';
 import {useRouteMatch} from 'react-router-dom';
 import styled from 'styled-components';
 
-import {Inner, Row} from './VirtualizedTable';
 import {AppContext} from '../app/AppContext';
 import {useFeatureFlags} from '../app/Flags';
 import {isHiddenAssetGroupJob} from '../asset-graph/Utils';
@@ -25,14 +24,16 @@ import {
   getTopLevelResourceDetailsItemsForOption,
 } from '../nav/getLeftNavItemsForOption';
 import {explorerPathFromString} from '../pipelines/PipelinePathUtils';
-import {DagsterRepoOption} from '../workspace/WorkspaceContext/util';
-import {DUNDER_REPO_NAME, buildRepoAddress} from '../workspace/buildRepoAddress';
+import {WorkspaceContext} from '../workspace/WorkspaceContext';
+import {buildRepoAddress, DUNDER_REPO_NAME} from '../workspace/buildRepoAddress';
 import {repoAddressAsHumanString, repoAddressAsURLString} from '../workspace/repoAddressAsString';
 import {repoAddressFromPath} from '../workspace/repoAddressFromPath';
 import {RepoAddress} from '../workspace/types';
 
+import {Inner, Row} from './VirtualizedTable';
+
 const validateExpandedKeys = (parsed: unknown) => (Array.isArray(parsed) ? parsed : []);
-export const EXPANDED_REPO_KEYS = 'dagster.expanded-repo-keys';
+const EXPANDED_REPO_KEYS = 'dagster.expanded-repo-keys';
 
 type ItemType = 'asset-group' | 'job' | 'resource';
 
@@ -48,11 +49,8 @@ type RowType =
       isLast: boolean;
     };
 
-interface Props {
-  visibleRepos: DagsterRepoOption[];
-}
-
-export const SectionedLeftNav = ({visibleRepos}: Props) => {
+export const SectionedLeftNav = () => {
+  const {loading, visibleRepos} = React.useContext(WorkspaceContext);
   const {basePath} = React.useContext(AppContext);
   const parentRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -63,8 +61,6 @@ export const SectionedLeftNav = ({visibleRepos}: Props) => {
     basePath + ':' + EXPANDED_REPO_KEYS,
     validateExpandedKeys,
   );
-
-  const expandedKeysSet = React.useMemo(() => new Set(expandedKeys), [expandedKeys]);
 
   const onToggle = React.useCallback(
     (repoAddress: RepoAddress) => {
@@ -147,7 +143,7 @@ export const SectionedLeftNav = ({visibleRepos}: Props) => {
 
       flat.push({type: 'code-location', repoAddress, itemCount});
 
-      if (expandedKeysSet.has(key) || sortedRepos.length === 1) {
+      if (expandedKeys.includes(key) || sortedRepos.length === 1) {
         if (jobItems.length) {
           if (showTypeLabels) {
             flat.push({type: 'item-type', itemType: 'job', isFirst: true});
@@ -203,7 +199,7 @@ export const SectionedLeftNav = ({visibleRepos}: Props) => {
     }
 
     return flat;
-  }, [expandedKeysSet, sortedRepos]);
+  }, [expandedKeys, sortedRepos]);
 
   const rowVirtualizer = useVirtualizer({
     count: flattened.length,
@@ -227,13 +223,17 @@ export const SectionedLeftNav = ({visibleRepos}: Props) => {
         }
       }
     },
-    overscan: 10,
+    overscan: 40,
   });
 
   const totalHeight = rowVirtualizer.getTotalSize();
   const items = rowVirtualizer.getVirtualItems();
 
   const collapsible = sortedRepos.length > 1;
+
+  if (loading) {
+    return <div style={{flex: 1}} />;
+  }
 
   return (
     <Container ref={parentRef}>
@@ -245,7 +245,7 @@ export const SectionedLeftNav = ({visibleRepos}: Props) => {
           if (type === 'code-location') {
             const repoAddress = row.repoAddress;
             const addressAsString = repoAddressAsURLString(repoAddress);
-            const expanded = sortedRepos.length === 1 || expandedKeysSet.has(addressAsString);
+            const expanded = sortedRepos.length === 1 || expandedKeys.includes(addressAsString);
             return (
               <CodeLocationNameRow
                 key={key}
@@ -300,7 +300,7 @@ export const SectionedLeftNav = ({visibleRepos}: Props) => {
 const Container = styled.div`
   height: 100%;
   overflow: auto;
-  background-color: ${Colors.backgroundLight()};
+  background-color: ${Colors.Gray100};
 `;
 
 interface CodeLocationNameRowProps {
@@ -346,8 +346,8 @@ const CodeLocationNameRow = (props: CodeLocationNameRowProps) => {
             {/* Wrapper div to prevent tag from stretching vertically */}
             <div>
               <BaseTag
-                fillColor={Colors.backgroundGray()}
-                textColor={Colors.textDefault()}
+                fillColor={Colors.Gray10}
+                textColor={Colors.Dark}
                 label={itemCount.toLocaleString()}
               />
             </div>
@@ -425,9 +425,9 @@ const ItemRow = (props: ItemRowProps) => {
 };
 
 const CodeLocationTooltipStyles = JSON.stringify({
-  background: Colors.backgroundLightHover(),
+  background: Colors.Gray100,
   filter: `brightness(97%)`,
-  color: Colors.textDefault(),
+  color: Colors.Gray900,
   fontWeight: 500,
   border: 'none',
   borderRadius: 7,
@@ -468,23 +468,23 @@ const usePathMatch = () => {
           itemType: 'job' as const,
         }
       : groupName
-        ? {
-            repoAddress,
-            itemName: groupName,
-            itemType: 'asset-group' as const,
-          }
-        : resourceName
-          ? {
-              repoAddress,
-              itemName: resourceName,
-              itemType: 'resource' as const,
-            }
-          : null;
+      ? {
+          repoAddress,
+          itemName: groupName,
+          itemType: 'asset-group' as const,
+        }
+      : resourceName
+      ? {
+          repoAddress,
+          itemName: resourceName,
+          itemType: 'resource' as const,
+        }
+      : null;
   }, [groupName, repoPath, pipelinePath, resourceName]);
 };
 
 const ItemTypeLabel = styled.div`
-  color: ${Colors.textLighter()};
+  color: ${Colors.Gray600};
   padding: 0 12px 4px;
   font-size: 12px;
 `;
@@ -493,9 +493,9 @@ const SectionHeader = styled.button<{
   $open: boolean;
   $showRepoLocation: boolean;
 }>`
-  background: ${Colors.backgroundLight()};
+  background: ${Colors.Gray100};
   border: 0;
-  border-radius: 0;
+  border-radius: 4px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -505,12 +505,11 @@ const SectionHeader = styled.button<{
   text-align: left;
   user-select: none;
   white-space: nowrap;
-  transition: background 100ms linear;
 
   width: 100%;
   margin: 0;
-
-  box-shadow: inset 0px 1px 0 ${Colors.keylineDefault()}, inset 0px -1px 0 ${Colors.keylineDefault()};
+  
+  box-shadow: inset 0px 1px 0 ${Colors.KeylineGray}, inset 0px -1px 0 ${Colors.KeylineGray};
 
   :disabled {
     cursor: default;
@@ -518,12 +517,12 @@ const SectionHeader = styled.button<{
 
   :hover,
   :active {
-    background-color: ${Colors.backgroundLightHover()};
+    background-color: ${Colors.Gray50};
   }
 
   :disabled:hover,
   :disabled:active {
-    background-color: ${Colors.backgroundDisabled()};
+    background-color: ${Colors.Gray100};
   }
 
   :focus,
@@ -537,7 +536,7 @@ const SectionHeader = styled.button<{
   }
 
   :disabled ${IconWrapper} {
-    background-color: ${Colors.textDisabled()};
+    background-color: ${Colors.Gray300};
   }
 
   ${StyledTag} {
@@ -550,7 +549,7 @@ const SectionHeader = styled.button<{
   }
 
   :disabled ${StyledTag} {
-    color: ${Colors.textDisabled()};
+    color: ${Colors.Gray400};
   }
 }`;
 

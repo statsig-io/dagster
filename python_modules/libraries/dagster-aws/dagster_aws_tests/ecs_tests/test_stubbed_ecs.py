@@ -187,7 +187,7 @@ def test_put_account_setting(ecs):
     assert task_arn_format_setting["value"] == "disabled"
 
 
-@pytest.mark.flaky(max_runs=2)
+@pytest.mark.flaky(reruns=1)
 def test_register_task_definition(ecs):
     # Without memory
     with pytest.raises(ClientError):
@@ -322,8 +322,7 @@ def test_run_task(ecs, ec2, subnet):
     response = ecs.run_task(taskDefinition="bridge", cluster="dagster")
     assert response["tasks"][0]["clusterArn"] == ecs._cluster_arn("dagster")  # noqa: SLF001
     response = ecs.run_task(
-        taskDefinition="bridge",
-        cluster=ecs._cluster_arn("dagster"),  # noqa: SLF001
+        taskDefinition="bridge", cluster=ecs._cluster_arn("dagster")  # noqa: SLF001
     )
     assert response["tasks"][0]["clusterArn"] == ecs._cluster_arn("dagster")  # noqa: SLF001
 

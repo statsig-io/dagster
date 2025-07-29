@@ -2,9 +2,9 @@ import pandas as pd
 from dagster_gcp import BigQueryResource
 from google.cloud import bigquery as bq
 
-from dagster import AssetSpec, Definitions, asset
+from dagster import Definitions, SourceAsset, asset
 
-iris_harvest_data = AssetSpec(key="iris_harvest_data")
+iris_harvest_data = SourceAsset(key="iris_harvest_data")
 
 
 @asset

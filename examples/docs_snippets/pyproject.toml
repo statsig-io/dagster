@@ -1,23 +1,24 @@
+# NOTE: This is special config file just for docs_snippets. It's needed because we use a different
+# line length in docs_snippets to ensure readability of code blocks in the browser. Unless otherwise
+# noted, it should simply copy (except `line-length`) all of the black options from the root
+# pyproject.toml (consult that file for explanations of options). This is necessary because
+# unfortunately there is no inheritance functionality for black config.
+
+[tool.black]
+line-length = 88
+
+# disabled to maintain dummy function bodies on a dedicated line
+preview = false
+required-version = "23.9.1"
+target-versions = ['py38', 'py39', 'py310', 'py311']
+
 [tool.ruff]
 
 # Extend example root configuration.
 extend = "../pyproject.toml"
 
-# Shorter line length for docs snippets for better browser formatting.
+# Match black. Note that this also checks comment line length, but black does not format comments.
 line-length = 88
-
-# Ignore a specific file
-extend-exclude = [
-  "docs_snippets/guides/dg/creating-dg-plugin/2-empty-component.py",
-  "docs_snippets/guides/dg/migrating-project/13-initial-definitions.py",
-  "docs_snippets/guides/components/shell-script-component/generated/2-shell-command-empty.py",
-  "docs_snippets/guides/components/migrating-definitions/2-definitions-before.py",
-  "docs_snippets/guides/dg/migrating-definitions/7-definitions-after-all.py",
-  "docs_snippets/guides/components/integrations/dlt-component/5-loads.py",
-  "docs_snippets/guides/components/integrations/dlt-component/7-customized-loads.py",
-]
-
-[tool.ruff.lint]
 
 # Use extend-ignore so that we ignore all the same codes ignored in root.
 extend-ignore = [
@@ -39,7 +40,7 @@ extend-ignore = [
   "TCH",
 ]
 
-[tool.ruff.lint.isort]
+[tool.ruff.isort]
 
 # Ensures ruff classifies imports from `dagster` as first-party. Keeps snippet imports relatively
 # compressed.

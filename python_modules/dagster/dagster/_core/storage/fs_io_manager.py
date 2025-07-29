@@ -9,7 +9,7 @@ from dagster import (
     DagsterInvariantViolationError,
     Field as DagsterField,
 )
-from dagster._annotations import superseded
+from dagster._annotations import experimental
 from dagster._config import StringSource
 from dagster._config.pythonic_config import ConfigurableIOManagerFactory
 from dagster._core.definitions.events import AssetKey, AssetMaterialization
@@ -66,7 +66,7 @@ class FilesystemIOManager(ConfigurableIOManagerFactory["PickledObjectFilesystemI
         def asset2(asset1):
             return asset1[:5]
 
-        Definitions(
+        defs = Definitions(
             assets=[asset1, asset2],
             resources={
                 "io_manager": FilesystemIOManager(base_dir="/my/base/path")
@@ -137,7 +137,6 @@ class FilesystemIOManager(ConfigurableIOManagerFactory["PickledObjectFilesystemI
     config_schema=FilesystemIOManager.to_config_schema(),
     description="Built-in filesystem IO manager that stores and retrieves values using pickling.",
 )
-@superseded(additional_warn_text="Use FilesystemIOManager directly instead")
 def fs_io_manager(init_context: InitResourceContext) -> "PickledObjectFilesystemIOManager":
     """Built-in filesystem IO manager that stores and retrieves values using pickling.
 
@@ -178,7 +177,7 @@ def fs_io_manager(init_context: InitResourceContext) -> "PickledObjectFilesystem
         def asset2(asset1):
             return asset1[:5]
 
-        Definitions(
+        defs = Definitions(
             assets=[asset1, asset2],
             resources={
                 "io_manager": fs_io_manager.configured({"base_dir": "/my/base/path"})
@@ -246,7 +245,7 @@ class PickledObjectFilesystemIOManager(UPathIOManager):
         **kwargs: additional keyword arguments for `universal_pathlib.UPath`.
     """
 
-    extension: str = ""  # TODO: maybe change this to .pickle? Leaving blank for compatibility.  # pyright: ignore[reportIncompatibleVariableOverride]
+    extension: str = ""  # TODO: maybe change this to .pickle? Leaving blank for compatibility.
 
     def __init__(self, base_dir=None, **kwargs):
         from upath import UPath
@@ -275,9 +274,9 @@ class PickledObjectFilesystemIOManager(UPathIOManager):
                 "io manager to continue using this output. For example, you can use the "
                 "mem_io_manager with the in_process_executor.\n"
                 "For more information on io managers, visit "
-                "https://docs.dagster.io/guides/build/io-managers/ \n"
+                "https://docs.dagster.io/concepts/io-management/io-managers \n"
                 "For more information on executors, vist "
-                "https://docs.dagster.io/guides/operate/run-executors"
+                "https://docs.dagster.io/deployment/executors#overview"
             ) from e
 
     def load_from_path(self, context: InputContext, path: "UPath") -> Any:
@@ -302,15 +301,15 @@ class CustomPathPickledObjectFilesystemIOManager(IOManager):
     def _get_path(self, path: str) -> str:
         return os.path.join(self.base_dir, path)  # type: ignore  # (possible none)
 
-    def handle_output(self, context: OutputContext, obj: object):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def handle_output(self, context: OutputContext, obj: object):
         """Pickle the data and store the object to a custom file path.
 
         This method emits an AssetMaterialization event so the assets will be tracked by the
         Asset Catalog.
         """
         check.inst_param(context, "context", OutputContext)
-        metadata = context.definition_metadata
-        path = check.str_param(metadata.get("path"), "metadata.path")
+        metadata = context.metadata
+        path = check.str_param(metadata.get("path"), "metadata.path")  # type: ignore  # (possible none)
 
         filepath = self._get_path(path)
 
@@ -329,8 +328,8 @@ class CustomPathPickledObjectFilesystemIOManager(IOManager):
     def load_input(self, context: InputContext) -> object:
         """Unpickle the file from a given file path and Load it to a data object."""
         check.inst_param(context, "context", InputContext)
-        metadata = context.upstream_output.definition_metadata  # type: ignore  # (possible none)
-        path = check.str_param(metadata.get("path"), "metadata.path")
+        metadata = context.upstream_output.metadata  # type: ignore  # (possible none)
+        path = check.str_param(metadata.get("path"), "metadata.path")  # type: ignore  # (possible none)
         filepath = self._get_path(path)
         context.log.debug(f"Loading file from: {filepath}")
 
@@ -340,6 +339,7 @@ class CustomPathPickledObjectFilesystemIOManager(IOManager):
 
 @dagster_maintained_io_manager
 @io_manager(config_schema={"base_dir": DagsterField(StringSource, is_required=True)})
+@experimental
 def custom_path_fs_io_manager(
     init_context: InitResourceContext,
 ) -> CustomPathPickledObjectFilesystemIOManager:

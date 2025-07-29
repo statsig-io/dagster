@@ -1,36 +1,47 @@
-import dagster as dg
 import pytest
 from dagster import (
     DagsterInstance,
+    Int,
+    Out,
+    Output,
     _check as check,
+    job,
+    op,
 )
+from dagster._core.definitions.decorators.graph_decorator import graph
 from dagster._core.definitions.job_base import InMemoryJob
-from dagster._core.errors import DagsterUnknownStepStateError
+from dagster._core.definitions.output import GraphOut
+from dagster._core.errors import (
+    DagsterInvalidConfigError,
+    DagsterInvariantViolationError,
+    DagsterUnknownStepStateError,
+)
 from dagster._core.execution.api import create_execution_plan, execute_plan
 from dagster._core.execution.plan.outputs import StepOutputHandle
 from dagster._core.execution.plan.plan import should_skip_step
 from dagster._core.execution.retries import RetryMode
+from dagster._core.storage.dagster_run import DagsterRun
 from dagster._core.utils import make_new_run_id
 
 
 def define_diamond_job():
-    @dg.op
+    @op
     def return_two():
         return 2
 
-    @dg.op
+    @op
     def add_three(num):
         return num + 3
 
-    @dg.op
+    @op
     def mult_three(num):
         return num * 3
 
-    @dg.op
+    @op
     def adder(left, right):
         return left + right
 
-    @dg.job
+    @job
     def diamond_job():
         two = return_two()
         adder(left=add_three(two), right=mult_three(two))
@@ -51,7 +62,7 @@ def test_topological_sort():
 
 
 def test_create_execution_plan_with_bad_inputs():
-    with pytest.raises(dg.DagsterInvalidConfigError):
+    with pytest.raises(DagsterInvalidConfigError):
         create_execution_plan(
             define_diamond_job(),
             run_config={"ops": {"add_three": {"inputs": {"num": 3}}}},
@@ -277,31 +288,31 @@ def test_retries_deferred_active_execution():
 
 
 def test_priorities():
-    @dg.op(tags={"priority": 5})
+    @op(tags={"priority": 5})
     def pri_5(_):
         pass
 
-    @dg.op(tags={"priority": 4})
+    @op(tags={"priority": 4})
     def pri_4(_):
         pass
 
-    @dg.op(tags={"priority": 3})
+    @op(tags={"priority": 3})
     def pri_3(_):
         pass
 
-    @dg.op(tags={"priority": 2})
+    @op(tags={"priority": 2})
     def pri_2(_):
         pass
 
-    @dg.op(tags={"priority": -1})
+    @op(tags={"priority": -1})
     def pri_neg_1(_):
         pass
 
-    @dg.op
+    @op
     def pri_none(_):
         pass
 
-    @dg.job
+    @job
     def priorities():
         pri_neg_1()
         pri_3()
@@ -325,31 +336,31 @@ def test_priorities():
 
 
 def test_tag_concurrency_limits():
-    @dg.op(tags={"database": "tiny", "dagster/priority": 5})
+    @op(tags={"database": "tiny", "dagster/priority": 5})
     def tiny_op_pri_5(_):
         pass
 
-    @dg.op(tags={"database": "large", "dagster/priority": 4})
+    @op(tags={"database": "large", "dagster/priority": 4})
     def large_op_pri_4(_):
         pass
 
-    @dg.op(tags={"dagster/priority": 3, "database": "tiny"})
+    @op(tags={"dagster/priority": 3, "database": "tiny"})
     def tiny_op_pri_3(_):
         pass
 
-    @dg.op(tags={"dagster/priority": 2, "database": "large"})
+    @op(tags={"dagster/priority": 2, "database": "large"})
     def large_op_pri_2(_):
         pass
 
-    @dg.op(tags={"dagster/priority": -1})
+    @op(tags={"dagster/priority": -1})
     def pri_neg_1(_):
         pass
 
-    @dg.op
+    @op
     def pri_none(_):
         pass
 
-    @dg.job
+    @job
     def tag_concurrency_limits_job():
         tiny_op_pri_5()
         large_op_pri_4()
@@ -411,7 +422,7 @@ def test_incomplete_execution_plan():
     plan = create_execution_plan(define_diamond_job())
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match="Execution finished without completing the execution plan.",
     ):
         with plan.start(retry_mode=(RetryMode.DISABLED)) as active_execution:
@@ -446,21 +457,21 @@ def test_lost_steps():
 
 
 def test_fan_out_should_skip_step():
-    @dg.op(
+    @op(
         out={
-            "out_1": dg.Out(dg.Int, is_required=False),
-            "out_2": dg.Out(dg.Int, is_required=False),
-            "out_3": dg.Out(dg.Int, is_required=False),
+            "out_1": Out(Int, is_required=False),
+            "out_2": Out(Int, is_required=False),
+            "out_3": Out(Int, is_required=False),
         }
     )
     def foo(_):
-        yield dg.Output(1, "out_1")
+        yield Output(1, "out_1")
 
-    @dg.op
+    @op
     def bar(_, input_arg):
         return input_arg
 
-    @dg.job
+    @job
     def optional_outputs():
         foo_res = foo()
 
@@ -469,7 +480,7 @@ def test_fan_out_should_skip_step():
         bar.alias("bar_3")(input_arg=foo_res.out_3)
 
     instance = DagsterInstance.ephemeral()
-    run = dg.DagsterRun(job_name="optional_outputs", run_id=make_new_run_id())
+    run = DagsterRun(job_name="optional_outputs", run_id=make_new_run_id())
     execute_plan(
         create_execution_plan(optional_outputs, step_keys_to_execute=["foo"]),
         InMemoryJob(optional_outputs),
@@ -495,34 +506,34 @@ def test_fan_out_should_skip_step():
 
 
 def test_fan_in_should_skip_step():
-    @dg.op
+    @op
     def one():
         return 1
 
-    @dg.op(out=dg.Out(is_required=False))
+    @op(out=Out(is_required=False))
     def skip(_):
         return
         yield
 
-    @dg.op
+    @op
     def fan_in(_context, items):
         return items
 
-    @dg.graph(out=dg.GraphOut())
+    @graph(out=GraphOut())
     def graph_all_upstream_skip():
         return fan_in([skip(), skip()])
 
-    @dg.graph(out=dg.GraphOut())
+    @graph(out=GraphOut())
     def graph_one_upstream_skip():
         return fan_in([one(), skip()])
 
-    @dg.job
+    @job
     def optional_outputs_composite():
         graph_all_upstream_skip()
         graph_one_upstream_skip()
 
     instance = DagsterInstance.ephemeral()
-    run = dg.DagsterRun(job_name="optional_outputs_composite", run_id=make_new_run_id())
+    run = DagsterRun(job_name="optional_outputs_composite", run_id=make_new_run_id())
     execute_plan(
         create_execution_plan(
             optional_outputs_composite,
@@ -571,15 +582,15 @@ def test_fan_in_should_skip_step():
 def test_configured_input_should_skip_step():
     called = {}
 
-    @dg.op(out=dg.Out(is_required=False))
+    @op(out=Out(is_required=False))
     def one(_):
-        yield dg.Output(1)
+        yield Output(1)
 
-    @dg.op
+    @op
     def op_should_not_skip(_, input_one, input_two):
         called["yup"] = True
 
-    @dg.job
+    @job
     def my_job():
         op_should_not_skip(one())
 
@@ -589,7 +600,7 @@ def test_configured_input_should_skip_step():
 
     # ensure should_skip_step behave the same as execute_job
     instance = DagsterInstance.ephemeral()
-    run = dg.DagsterRun(job_name="my_job", run_id=make_new_run_id())
+    run = DagsterRun(job_name="my_job", run_id=make_new_run_id())
     execute_plan(
         create_execution_plan(
             my_job,

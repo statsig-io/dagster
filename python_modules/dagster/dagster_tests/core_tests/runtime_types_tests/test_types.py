@@ -1,20 +1,44 @@
 import re
 import typing
 
-import dagster as dg
 import pytest
-from dagster import DagsterEventType
+from dagster import (
+    DagsterEventType,
+    DagsterInvalidDefinitionError,
+    DagsterInvariantViolationError,
+    DagsterTypeCheckDidNotPass,
+    Failure,
+    In,
+    Int,
+    List,
+    Optional,
+    Out,
+    String,
+    Tuple,
+    TypeCheck,
+    check_dagster_type,
+    fs_io_manager,
+    job,
+    make_python_type_usable_as_dagster_type,
+    op,
+    resource,
+)
 from dagster._core.definitions.metadata import MetadataValue
-from dagster._core.types.dagster_type import ListType, resolve_dagster_type
+from dagster._core.types.dagster_type import (
+    DagsterType,
+    ListType,
+    PythonObjectDagsterType,
+    resolve_dagster_type,
+)
 
 
 class BarObj:
     pass
 
 
-class _Bar(dg.PythonObjectDagsterType):
+class _Bar(PythonObjectDagsterType):
     def __init__(self):
-        super().__init__(BarObj, name="Bar", description="A bar.")
+        super(_Bar, self).__init__(BarObj, name="Bar", description="A bar.")
 
 
 Bar = _Bar()
@@ -33,7 +57,7 @@ def test_python_object_type():
 
 
 def test_python_object_union_type():
-    ntype = dg.PythonObjectDagsterType(python_type=(int, float))
+    ntype = PythonObjectDagsterType(python_type=(int, float))
     assert ntype.unique_name == "Union[int, float]"
     assert_success(ntype, 1)
     assert_success(ntype, 1.5)
@@ -44,35 +68,35 @@ def test_python_object_type_with_custom_type_check():
     def eq_3(_, value):
         return isinstance(value, int) and value == 3
 
-    Int3 = dg.DagsterType(name="Int3", type_check_fn=eq_3)
+    Int3 = DagsterType(name="Int3", type_check_fn=eq_3)
 
     assert Int3.unique_name == "Int3"
-    assert dg.check_dagster_type(Int3, 3).success
-    assert not dg.check_dagster_type(Int3, 5).success
+    assert check_dagster_type(Int3, 3).success
+    assert not check_dagster_type(Int3, 5).success
 
 
 def test_tuple_union_typing_type():
-    UnionType = dg.PythonObjectDagsterType(python_type=(str, int, float))
+    UnionType = PythonObjectDagsterType(python_type=(str, int, float))
 
     assert UnionType.typing_type == typing.Union[str, int, float]
 
 
 def test_nullable_python_object_type():
-    assert dg.check_dagster_type(dg.Optional[Bar], BarObj()).success
-    assert dg.check_dagster_type(dg.Optional[Bar], None).success
-    assert not dg.check_dagster_type(dg.Optional[Bar], "not_a_bar").success
+    assert check_dagster_type(Optional[Bar], BarObj()).success
+    assert check_dagster_type(Optional[Bar], None).success
+    assert not check_dagster_type(Optional[Bar], "not_a_bar").success
 
 
 def test_nullable_int_coercion():
-    assert dg.check_dagster_type(dg.Int, 1).success
-    assert not dg.check_dagster_type(dg.Int, None).success
+    assert check_dagster_type(Int, 1).success
+    assert not check_dagster_type(Int, None).success
 
-    assert dg.check_dagster_type(dg.Optional[dg.Int], 1).success
-    assert dg.check_dagster_type(dg.Optional[dg.Int], None).success
+    assert check_dagster_type(Optional[Int], 1).success
+    assert check_dagster_type(Optional[Int], None).success
 
 
 def assert_type_check(type_check):
-    assert isinstance(type_check, dg.TypeCheck) and type_check.success
+    assert isinstance(type_check, TypeCheck) and type_check.success
 
 
 def assert_success(dagster_type, value):
@@ -86,25 +110,25 @@ def assert_failure(dagster_type, value):
 
 
 def test_nullable_list_combos_coerciion():
-    assert not dg.check_dagster_type(dg.List[dg.Int], None).success
-    assert dg.check_dagster_type(dg.List[dg.Int], []).success
-    assert dg.check_dagster_type(dg.List[dg.Int], [1]).success
-    assert not dg.check_dagster_type(dg.List[dg.Int], [None]).success
+    assert not check_dagster_type(List[Int], None).success
+    assert check_dagster_type(List[Int], []).success
+    assert check_dagster_type(List[Int], [1]).success
+    assert not check_dagster_type(List[Int], [None]).success
 
-    assert dg.check_dagster_type(dg.Optional[dg.List[dg.Int]], None).success
-    assert dg.check_dagster_type(dg.Optional[dg.List[dg.Int]], []).success
-    assert dg.check_dagster_type(dg.Optional[dg.List[dg.Int]], [1]).success
-    assert not dg.check_dagster_type(dg.Optional[dg.List[dg.Int]], [None]).success
+    assert check_dagster_type(Optional[List[Int]], None).success
+    assert check_dagster_type(Optional[List[Int]], []).success
+    assert check_dagster_type(Optional[List[Int]], [1]).success
+    assert not check_dagster_type(Optional[List[Int]], [None]).success
 
-    assert not dg.check_dagster_type(dg.List[dg.Optional[dg.Int]], None).success
-    assert dg.check_dagster_type(dg.List[dg.Optional[dg.Int]], []).success
-    assert dg.check_dagster_type(dg.List[dg.Optional[dg.Int]], [1]).success
-    assert dg.check_dagster_type(dg.List[dg.Optional[dg.Int]], [None]).success
+    assert not check_dagster_type(List[Optional[Int]], None).success
+    assert check_dagster_type(List[Optional[Int]], []).success
+    assert check_dagster_type(List[Optional[Int]], [1]).success
+    assert check_dagster_type(List[Optional[Int]], [None]).success
 
-    assert dg.check_dagster_type(dg.Optional[dg.List[dg.Optional[dg.Int]]], None).success
-    assert dg.check_dagster_type(dg.Optional[dg.List[dg.Optional[dg.Int]]], []).success
-    assert dg.check_dagster_type(dg.Optional[dg.List[dg.Optional[dg.Int]]], [1]).success
-    assert dg.check_dagster_type(dg.Optional[dg.List[dg.Optional[dg.Int]]], [None]).success
+    assert check_dagster_type(Optional[List[Optional[Int]]], None).success
+    assert check_dagster_type(Optional[List[Optional[Int]]], []).success
+    assert check_dagster_type(Optional[List[Optional[Int]]], [1]).success
+    assert check_dagster_type(Optional[List[Optional[Int]]], [None]).success
 
 
 def execute_no_throw(job_def):
@@ -124,15 +148,15 @@ def _type_check_data_for_input(result, op_name, input_name):
 
 
 def test_input_types_succeed_in_job():
-    @dg.op
+    @op
     def return_one():
         return 1
 
-    @dg.op(ins={"num": dg.In(int)})
+    @op(ins={"num": In(int)})
     def take_num(num):
         return num
 
-    @dg.job
+    @job
     def pipe():
         take_num(return_one())
 
@@ -144,11 +168,11 @@ def test_input_types_succeed_in_job():
 
 
 def test_output_types_succeed_in_job():
-    @dg.op(out=dg.Out(int))
+    @op(out=Out(int))
     def return_one():
         return 1
 
-    @dg.job
+    @job
     def pipe():
         return_one()
 
@@ -160,24 +184,24 @@ def test_output_types_succeed_in_job():
         event for event in events_for_node if event.event_type == DagsterEventType.STEP_OUTPUT
     ].pop()
 
-    type_check_data = output_event.event_specific_data.type_check_data  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-    assert type_check_data.success  # pyright: ignore[reportOptionalMemberAccess]
+    type_check_data = output_event.event_specific_data.type_check_data
+    assert type_check_data.success
 
 
 def test_input_types_fail_in_job():
-    @dg.op
+    @op
     def return_one():
         return 1
 
-    @dg.op(ins={"string": dg.In(str)})
+    @op(ins={"string": In(str)})
     def take_string(string):
         return string
 
-    @dg.job
+    @job
     def pipe():
         take_string(return_one())
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         pipe.execute_in_process()
 
     # now check events in no throw case
@@ -195,19 +219,19 @@ def test_input_types_fail_in_job():
         for event in result.events_for_node("take_string")
         if event.event_type == DagsterEventType.STEP_FAILURE
     ].pop()
-    assert failure_event.step_failure_data.error.cls_name == "DagsterTypeCheckDidNotPass"  # pyright: ignore[reportOptionalMemberAccess]
+    assert failure_event.step_failure_data.error.cls_name == "DagsterTypeCheckDidNotPass"
 
 
 def test_output_types_fail_in_job():
-    @dg.op(out=dg.Out(str))
+    @op(out=Out(str))
     def return_int_fails():
         return 1
 
-    @dg.job
+    @job
     def pipe():
         return_int_fails()
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         pipe.execute_in_process()
 
     result = execute_no_throw(pipe)
@@ -219,9 +243,9 @@ def test_output_types_fail_in_job():
         event for event in events_for_node if event.event_type == DagsterEventType.STEP_OUTPUT
     ].pop()
 
-    type_check_data = output_event.event_specific_data.type_check_data  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-    assert not type_check_data.success  # pyright: ignore[reportOptionalMemberAccess]
-    assert type_check_data.description == 'Value "1" of python type "int" must be a string.'  # pyright: ignore[reportOptionalMemberAccess]
+    type_check_data = output_event.event_specific_data.type_check_data
+    assert not type_check_data.success
+    assert type_check_data.description == 'Value "1" of python type "int" must be a string.'
 
     failure_event = [
         event
@@ -229,7 +253,7 @@ def test_output_types_fail_in_job():
         if event.event_type == DagsterEventType.STEP_FAILURE
     ].pop()
 
-    assert failure_event.step_failure_data.error.cls_name == "DagsterTypeCheckDidNotPass"  # pyright: ignore[reportOptionalMemberAccess]
+    assert failure_event.step_failure_data.error.cls_name == "DagsterTypeCheckDidNotPass"
 
 
 # TODO add more step output use cases
@@ -244,7 +268,7 @@ def _always_fails(_, _value):
     raise AlwaysFailsException("kdjfkjd")
 
 
-ThrowsExceptionType = dg.DagsterType(
+ThrowsExceptionType = DagsterType(
     name="ThrowsExceptionType",
     type_check_fn=_always_fails,
 )
@@ -254,24 +278,24 @@ def _return_bad_value(_, _value):
     return "foo"
 
 
-BadType = dg.DagsterType(name="BadType", type_check_fn=_return_bad_value)  # pyright: ignore[reportArgumentType]
+BadType = DagsterType(name="BadType", type_check_fn=_return_bad_value)
 
 
 def test_input_type_returns_wrong_thing():
-    @dg.op
+    @op
     def return_one():
         return 1
 
-    @dg.op(ins={"value": dg.In(BadType)})
+    @op(ins={"value": In(BadType)})
     def take_bad_thing(value):
         return value
 
-    @dg.job
+    @job
     def pipe():
         take_bad_thing(return_one())
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match=re.escape("You have returned 'foo' of type <")
         + "(class|type)"
         + re.escape(
@@ -290,19 +314,19 @@ def test_input_type_returns_wrong_thing():
         if event.event_type == DagsterEventType.STEP_FAILURE
     ].pop()
 
-    assert failure_event.step_failure_data.error.cls_name == "DagsterInvariantViolationError"  # pyright: ignore[reportOptionalMemberAccess]
+    assert failure_event.step_failure_data.error.cls_name == "DagsterInvariantViolationError"
 
 
 def test_output_type_returns_wrong_thing():
-    @dg.op(out=dg.Out(BadType))
+    @op(out=Out(BadType))
     def return_one_bad_thing():
         return 1
 
-    @dg.job
+    @job
     def pipe():
         return_one_bad_thing()
 
-    with pytest.raises(dg.DagsterInvariantViolationError):
+    with pytest.raises(DagsterInvariantViolationError):
         pipe.execute_in_process()
 
     result = execute_no_throw(pipe)
@@ -313,19 +337,19 @@ def test_output_type_returns_wrong_thing():
         for event in result.events_for_node("return_one_bad_thing")
         if event.event_type == DagsterEventType.STEP_FAILURE
     ].pop()
-    assert failure_event.step_failure_data.error.cls_name == "DagsterInvariantViolationError"  # pyright: ignore[reportOptionalMemberAccess]
+    assert failure_event.step_failure_data.error.cls_name == "DagsterInvariantViolationError"
 
 
 def test_input_type_throw_arbitrary_exception():
-    @dg.op
+    @op
     def return_one():
         return 1
 
-    @dg.op(ins={"value": dg.In(ThrowsExceptionType)})
+    @op(ins={"value": In(ThrowsExceptionType)})
     def take_throws(value):
         return value
 
-    @dg.job
+    @job
     def pipe():
         take_throws(return_one())
 
@@ -339,15 +363,15 @@ def test_input_type_throw_arbitrary_exception():
         for event in result.events_for_node("take_throws")
         if event.event_type == DagsterEventType.STEP_FAILURE
     ].pop()
-    assert failure_event.step_failure_data.error.cause.cls_name == "AlwaysFailsException"  # pyright: ignore[reportOptionalMemberAccess]
+    assert failure_event.step_failure_data.error.cause.cls_name == "AlwaysFailsException"
 
 
 def test_output_type_throw_arbitrary_exception():
-    @dg.op(out=dg.Out(ThrowsExceptionType))
+    @op(out=Out(ThrowsExceptionType))
     def return_one_throws():
         return 1
 
-    @dg.job
+    @job
     def pipe():
         return_one_throws()
 
@@ -361,26 +385,26 @@ def test_output_type_throw_arbitrary_exception():
         for event in result.events_for_node("return_one_throws")
         if event.event_type == DagsterEventType.STEP_FAILURE
     ].pop()
-    assert failure_event.step_failure_data.error.cause.cls_name == "AlwaysFailsException"  # pyright: ignore[reportOptionalMemberAccess]
-    assert "kdjfkjd" in failure_event.step_failure_data.error.cause.message  # pyright: ignore[reportOptionalMemberAccess]
+    assert failure_event.step_failure_data.error.cause.cls_name == "AlwaysFailsException"
+    assert "kdjfkjd" in failure_event.step_failure_data.error.cause.message
 
 
 def define_custom_dict(name, permitted_key_names):
     def type_check_method(_, value):
         if not isinstance(value, dict):
-            return dg.TypeCheck(
+            return TypeCheck(
                 False,
                 description=f"Value {value} should be of type {name}.",
             )
         for key in value:
             if key not in permitted_key_names:
-                return dg.TypeCheck(
+                return TypeCheck(
                     False,
                     description=(
-                        f"Key {value.name} is not a permitted value, values can only be of: {permitted_key_names}"  # pyright: ignore[reportAttributeAccessIssue]
-                    ),
+                        "Key {name} is not a permitted value, values can only be of: {name_list}"
+                    ).format(name=value.name, name_list=permitted_key_names),
                 )
-        return dg.TypeCheck(
+        return TypeCheck(
             True,
             metadata={
                 "row_count": MetadataValue.text(str(len(value))),
@@ -388,25 +412,25 @@ def define_custom_dict(name, permitted_key_names):
             },
         )
 
-    return dg.DagsterType(key=name, name=name, type_check_fn=type_check_method)
+    return DagsterType(key=name, name=name, type_check_fn=type_check_method)
 
 
 def test_fan_in_custom_types_with_storage():
     CustomDict = define_custom_dict("CustomDict", ["foo", "bar"])
 
-    @dg.op(out=dg.Out(CustomDict))
+    @op(out=Out(CustomDict))
     def return_dict_1(_context):
         return {"foo": 3}
 
-    @dg.op(out=dg.Out(CustomDict))
+    @op(out=Out(CustomDict))
     def return_dict_2(_context):
         return {"bar": "zip"}
 
-    @dg.op(ins={"dicts": dg.In(dg.List[CustomDict])})
+    @op(ins={"dicts": In(List[CustomDict])})
     def get_foo(_context, dicts):
         return dicts[0]["foo"]
 
-    @dg.job(resource_defs={"io_manager": dg.fs_io_manager})
+    @job(resource_defs={"io_manager": fs_io_manager})
     def dict_job():
         # Fan-in
         get_foo([return_dict_1(), return_dict_2()])
@@ -415,15 +439,15 @@ def test_fan_in_custom_types_with_storage():
     assert result.success
 
 
-ReturnBoolType = dg.DagsterType(name="ReturnBoolType", type_check_fn=lambda _, _val: True)
+ReturnBoolType = DagsterType(name="ReturnBoolType", type_check_fn=lambda _, _val: True)
 
 
 def test_return_bool_type():
-    @dg.op(out=dg.Out(ReturnBoolType))
+    @op(out=Out(ReturnBoolType))
     def return_always_pass_bool_type(_):
         return 1
 
-    @dg.job
+    @job
     def bool_type_job():
         return_always_pass_bool_type()
 
@@ -431,17 +455,17 @@ def test_return_bool_type():
 
 
 def test_raise_on_error_type_check_returns_false():
-    FalsyType = dg.DagsterType(name="FalsyType", type_check_fn=lambda _, _val: False)
+    FalsyType = DagsterType(name="FalsyType", type_check_fn=lambda _, _val: False)
 
-    @dg.op(out=dg.Out(FalsyType))
+    @op(out=Out(FalsyType))
     def foo_op(_):
         return 1
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         foo_job.execute_in_process()
 
     result = foo_job.execute_in_process(raise_on_error=False)
@@ -453,28 +477,28 @@ def test_raise_on_error_type_check_returns_false():
     ]
     for event in result.all_node_events:
         if event.event_type_value == DagsterEventType.STEP_FAILURE.value:
-            assert event.event_specific_data.error.cls_name == "DagsterTypeCheckDidNotPass"  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+            assert event.event_specific_data.error.cls_name == "DagsterTypeCheckDidNotPass"
 
 
 def test_raise_on_error_true_type_check_returns_unsuccessful_type_check():
-    FalsyType = dg.DagsterType(
+    FalsyType = DagsterType(
         name="FalsyType",
-        type_check_fn=lambda _, _val: dg.TypeCheck(success=False, metadata={"bar": "foo"}),
+        type_check_fn=lambda _, _val: TypeCheck(success=False, metadata={"bar": "foo"}),
     )
 
-    @dg.op(out=dg.Out(FalsyType))
+    @op(out=Out(FalsyType))
     def foo_op(_):
         return 1
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass) as e:
+    with pytest.raises(DagsterTypeCheckDidNotPass) as e:
         foo_job.execute_in_process()
     assert "bar" in e.value.metadata
     assert e.value.metadata["bar"].text == "foo"
-    assert isinstance(e.value.dagster_type, dg.DagsterType)
+    assert isinstance(e.value.dagster_type, DagsterType)
 
     result = foo_job.execute_in_process(raise_on_error=False)
     assert not result.success
@@ -485,26 +509,24 @@ def test_raise_on_error_true_type_check_returns_unsuccessful_type_check():
     ]
     for event in result.all_node_events:
         if event.event_type_value == DagsterEventType.STEP_FAILURE.value:
-            assert event.event_specific_data.error.cls_name == "DagsterTypeCheckDidNotPass"  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+            assert event.event_specific_data.error.cls_name == "DagsterTypeCheckDidNotPass"
 
 
 def test_raise_on_error_true_type_check_raises_exception():
     def raise_exception_inner(_context, _):
-        raise dg.Failure("I am dissapoint")
+        raise Failure("I am dissapoint")
 
-    ThrowExceptionType = dg.DagsterType(
-        name="ThrowExceptionType", type_check_fn=raise_exception_inner
-    )
+    ThrowExceptionType = DagsterType(name="ThrowExceptionType", type_check_fn=raise_exception_inner)
 
-    @dg.op(out=dg.Out(ThrowExceptionType))
+    @op(out=Out(ThrowExceptionType))
     def foo_op(_):
         return 1
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
-    with pytest.raises(dg.Failure, match=re.escape("I am dissapoint")):
+    with pytest.raises(Failure, match=re.escape("I am dissapoint")):
         foo_job.execute_in_process()
 
     result = foo_job.execute_in_process(raise_on_error=False)
@@ -515,19 +537,19 @@ def test_raise_on_error_true_type_check_raises_exception():
     ]
     for event in result.all_node_events:
         if event.event_type_value == DagsterEventType.STEP_FAILURE.value:
-            assert event.event_specific_data.error.cause.cls_name == "Failure"  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+            assert event.event_specific_data.error.cause.cls_name == "Failure"
 
 
 def test_raise_on_error_true_type_check_returns_true():
-    TruthyExceptionType = dg.DagsterType(
+    TruthyExceptionType = DagsterType(
         name="TruthyExceptionType", type_check_fn=lambda _, _val: True
     )
 
-    @dg.op(out=dg.Out(TruthyExceptionType))
+    @op(out=Out(TruthyExceptionType))
     def foo_op(_):
         return 1
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
@@ -545,16 +567,16 @@ def test_raise_on_error_true_type_check_returns_true():
 
 
 def test_raise_on_error_true_type_check_returns_successful_type_check():
-    TruthyExceptionType = dg.DagsterType(
+    TruthyExceptionType = DagsterType(
         name="TruthyExceptionType",
-        type_check_fn=lambda _, _val: dg.TypeCheck(success=True, metadata={"bar": "foo"}),
+        type_check_fn=lambda _, _val: TypeCheck(success=True, metadata={"bar": "foo"}),
     )
 
-    @dg.op(out=dg.Out(TruthyExceptionType))
+    @op(out=Out(TruthyExceptionType))
     def foo_op(_):
         return 1
 
-    @dg.job
+    @job
     def foo_job():
         foo_op()
 
@@ -562,8 +584,8 @@ def test_raise_on_error_true_type_check_returns_successful_type_check():
     assert result.success
     for event in result.all_node_events:
         if event.event_type_value == DagsterEventType.STEP_OUTPUT.value:
-            assert event.event_specific_data.type_check_data  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-            assert event.event_specific_data.type_check_data.metadata["bar"].text == "foo"  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+            assert event.event_specific_data.type_check_data
+            assert event.event_specific_data.type_check_data.metadata["bar"].text == "foo"
 
     result = foo_job.execute_in_process(raise_on_error=False)
     assert result.success
@@ -578,16 +600,16 @@ def test_raise_on_error_true_type_check_returns_successful_type_check():
 
 def test_contextual_type_check():
     def fancy_type_check(context, value):
-        return dg.TypeCheck(success=context.resources.foo.check(value))
+        return TypeCheck(success=context.resources.foo.check(value))
 
-    custom = dg.DagsterType(
+    custom = DagsterType(
         key="custom",
         name="custom",
         type_check_fn=fancy_type_check,
         required_resource_keys={"foo"},
     )
 
-    @dg.resource
+    @resource
     def foo(_context):
         class _Foo:
             def check(self, _value):
@@ -595,15 +617,15 @@ def test_contextual_type_check():
 
         return _Foo()
 
-    @dg.op
+    @op
     def return_one():
         return 1
 
-    @dg.op(ins={"inp": dg.In(custom)})
+    @op(ins={"inp": In(custom)})
     def bar(_context, inp):
         return inp
 
-    @dg.job(resource_defs={"foo": foo})
+    @job(resource_defs={"foo": foo})
     def fancy_job():
         bar(return_one())
 
@@ -614,15 +636,12 @@ def test_type_equality():
     assert resolve_dagster_type(int) == resolve_dagster_type(int)
     assert not (resolve_dagster_type(int) != resolve_dagster_type(int))
 
-    assert resolve_dagster_type(dg.List[int]) == resolve_dagster_type(dg.List[int])
-    assert not (resolve_dagster_type(dg.List[int]) != resolve_dagster_type(dg.List[int]))
+    assert resolve_dagster_type(List[int]) == resolve_dagster_type(List[int])
+    assert not (resolve_dagster_type(List[int]) != resolve_dagster_type(List[int]))
 
-    assert resolve_dagster_type(dg.Optional[dg.List[int]]) == resolve_dagster_type(
-        dg.Optional[dg.List[int]]
-    )
+    assert resolve_dagster_type(Optional[List[int]]) == resolve_dagster_type(Optional[List[int]])
     assert not (
-        resolve_dagster_type(dg.Optional[dg.List[int]])
-        != resolve_dagster_type(dg.Optional[dg.List[int]])
+        resolve_dagster_type(Optional[List[int]]) != resolve_dagster_type(Optional[List[int]])
     )
 
 
@@ -630,24 +649,24 @@ def test_make_usable_as_dagster_type_called_twice():
     class AType:
         pass
 
-    ADagsterType = dg.PythonObjectDagsterType(
+    ADagsterType = PythonObjectDagsterType(
         AType,
         name="ADagsterType",
     )
-    BDagsterType = dg.PythonObjectDagsterType(
+    BDagsterType = PythonObjectDagsterType(
         AType,
         name="BDagsterType",
     )
 
-    dg.make_python_type_usable_as_dagster_type(AType, ADagsterType)
-    dg.make_python_type_usable_as_dagster_type(AType, ADagsterType)  # should not raise an error
+    make_python_type_usable_as_dagster_type(AType, ADagsterType)
+    make_python_type_usable_as_dagster_type(AType, ADagsterType)  # should not raise an error
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
-        dg.make_python_type_usable_as_dagster_type(AType, BDagsterType)
+    with pytest.raises(DagsterInvalidDefinitionError):
+        make_python_type_usable_as_dagster_type(AType, BDagsterType)
 
 
 def test_tuple_inner_types_not_mutable():
-    tuple_type = dg.Tuple[dg.List[dg.String]]
+    tuple_type = Tuple[List[String]]
     inner_types_1st_call = list(tuple_type.inner_types)
     inner_types = list(tuple_type.inner_types)
     assert inner_types_1st_call == inner_types, "inner types mutated on subsequent calls"

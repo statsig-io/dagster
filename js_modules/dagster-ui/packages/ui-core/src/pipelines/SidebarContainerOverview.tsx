@@ -1,37 +1,32 @@
-import {Box, MetadataTable, Tag, UnstyledButton} from '@dagster-io/ui-components';
-import {useMemo, useState} from 'react';
+import {gql} from '@apollo/client';
+import {Box, MetadataTable} from '@dagster-io/ui-components';
+import * as React from 'react';
 
-import {Description} from './Description';
-import {SidebarSection, SidebarSubhead, SidebarTitle} from './SidebarComponents';
-import {
-  SIDEBAR_RESOURCES_SECTION_FRAGMENT,
-  SidebarResourcesSection,
-} from './SidebarResourcesSection';
-import {gql} from '../apollo-client';
-import {SidebarRootContainerFragment} from './types/SidebarContainerOverview.types';
 import {breakOnUnderscores} from '../app/Util';
-import {MetadataEntry} from '../metadata/MetadataEntry';
-import {METADATA_ENTRY_FRAGMENT} from '../metadata/MetadataEntryFragment';
-import {findRepositoryAmongOptions, useRepositoryOptions} from '../workspace/WorkspaceContext/util';
+import {MetadataEntry, METADATA_ENTRY_FRAGMENT} from '../metadata/MetadataEntry';
+import {useRepositoryOptions, findRepositoryAmongOptions} from '../workspace/WorkspaceContext';
 import {repoContainsPipeline} from '../workspace/findRepoContainingPipeline';
 import {RepoAddress} from '../workspace/types';
 
-export const SidebarContainerOverview = ({
-  container,
-  repoAddress,
-}: {
+import {Description} from './Description';
+import {SidebarSubhead, SidebarTitle, SidebarSection} from './SidebarComponents';
+import {
+  SidebarResourcesSection,
+  SIDEBAR_RESOURCES_SECTION_FRAGMENT,
+} from './SidebarResourcesSection';
+import {SidebarRootContainerFragment} from './types/SidebarContainerOverview.types';
+
+export const SidebarContainerOverview: React.FC<{
   container: SidebarRootContainerFragment;
   repoAddress?: RepoAddress;
-}) => {
+}> = ({container, repoAddress}) => {
   const {options} = useRepositoryOptions();
-  const [showDagsterTags, setShowDagsterTags] = useState(false);
 
   // Determine if the pipeline or job snapshot is tied to a legacy pipeline. This is annoying
   // because snapshots only have a pipeline name + snapshotId, not a repository, but if a repo
   // is passed in we want to use that one.
   let isLegacy = false;
   let isPastSnapshot = false;
-  let externalJobSource = null;
 
   if (container.__typename === 'PipelineSnapshot') {
     const {pipelineSnapshotId, parentSnapshotId} = container;
@@ -45,30 +40,7 @@ export const SidebarContainerOverview = ({
     isPastSnapshot =
       match?.pipelineSnapshotId !== pipelineSnapshotId &&
       match?.pipelineSnapshotId !== parentSnapshotId;
-    externalJobSource = container.externalJobSource;
   }
-
-  const tags = useMemo(
-    () => (container.__typename === 'PipelineSnapshot' ? container.tags : []),
-    [container],
-  );
-
-  const {nonDagsterTags, dagsterTags} = useMemo(() => {
-    const nonDagsterTags = [];
-    const dagsterTags = [];
-    for (const tag of tags) {
-      if (tag.key.startsWith('dagster/')) {
-        dagsterTags.push(tag);
-      } else {
-        nonDagsterTags.push(tag);
-      }
-    }
-
-    return {
-      nonDagsterTags,
-      dagsterTags,
-    };
-  }, [tags]);
 
   return (
     <div>
@@ -86,7 +58,7 @@ export const SidebarContainerOverview = ({
         </Box>
       </SidebarSection>
 
-      {container.__typename === 'PipelineSnapshot' && !externalJobSource && (
+      {container.__typename === 'PipelineSnapshot' && (
         <SidebarSection title={isLegacy ? 'Modes' : 'Resources'} collapsedByDefault={true}>
           <Box padding={{vertical: 16, horizontal: 24}}>
             {container.modes.map((mode) => (
@@ -102,44 +74,9 @@ export const SidebarContainerOverview = ({
             <MetadataTable
               rows={container.metadataEntries.map((entry) => ({
                 key: entry.label,
-                value: <MetadataEntry entry={entry} repoLocation={repoAddress?.location} />,
+                value: <MetadataEntry entry={entry} />,
               }))}
             />
-          </Box>
-        </SidebarSection>
-      )}
-
-      {container.__typename === 'PipelineSnapshot' && (
-        <SidebarSection title="Tags">
-          <Box
-            padding={{vertical: 16, horizontal: 24}}
-            flex={{direction: 'row', gap: 8, wrap: 'wrap'}}
-          >
-            {nonDagsterTags.map((tag) => (
-              <Tag key={tag.key} tooltipText={`${tag.key}: ${tag.value}`}>
-                {tag.key}: {tag.value}
-              </Tag>
-            ))}
-            {showDagsterTags ? (
-              <>
-                {dagsterTags.map((tag) => (
-                  <Tag key={tag.key} tooltipText={`${tag.key}: ${tag.value}`}>
-                    {tag.key}: {tag.value}
-                  </Tag>
-                ))}
-              </>
-            ) : null}
-            {dagsterTags.length > 0 ? (
-              <UnstyledButton onClick={() => setShowDagsterTags((current) => !current)}>
-                <Tag
-                  intent="primary"
-                  interactive
-                  icon={showDagsterTags ? 'visibility_off' : 'visibility'}
-                >
-                  {showDagsterTags ? 'Hide Dagster tags' : 'Show Dagster tags'}
-                </Tag>
-              </UnstyledButton>
-            ) : null}
           </Box>
         </SidebarSection>
       )}
@@ -161,11 +98,6 @@ export const SIDEBAR_ROOT_CONTAINER_FRAGMENT = gql`
       parentSnapshotId
       metadataEntries {
         ...MetadataEntryFragment
-      }
-      externalJobSource
-      tags {
-        key
-        value
       }
     }
   }

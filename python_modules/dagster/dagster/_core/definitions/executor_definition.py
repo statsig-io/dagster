@@ -1,7 +1,6 @@
-from collections.abc import Mapping, Sequence
 from enum import Enum as PyEnum
 from functools import update_wrapper
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping, Optional, Sequence, Union, overload
 
 from typing_extensions import Self, TypeAlias
 
@@ -13,15 +12,16 @@ from dagster._core.definitions.configurable import (
     ConfiguredDefinitionConfigSchema,
     NamedConfigurableDefinition,
 )
-from dagster._core.definitions.definition_config_schema import (
-    IDefinitionConfigSchema,
-    convert_user_facing_definition_config_schema,
-)
 from dagster._core.definitions.job_base import IJob
 from dagster._core.definitions.reconstruct import ReconstructableJob
 from dagster._core.errors import DagsterUnmetExecutorRequirementsError
 from dagster._core.execution.retries import RetryMode, get_retries_config
 from dagster._core.execution.tags import get_tag_concurrency_limits_config
+
+from .definition_config_schema import (
+    IDefinitionConfigSchema,
+    convert_user_facing_definition_config_schema,
+)
 
 if TYPE_CHECKING:
     from dagster._core.executor.base import Executor
@@ -133,7 +133,7 @@ class ExecutorDefinition(NamedConfigurableDefinition):
         """
         return self._executor_creation_fn
 
-    def copy_for_configured(self, name, description, config_schema) -> Self:
+    def copy_for_configured(self, name, description, config_schema) -> "ExecutorDefinition":
         return ExecutorDefinition(
             name=name,
             config_schema=config_schema,  # type: ignore
@@ -327,7 +327,7 @@ def _core_multiprocess_executor_creation(config: ExecutorConfig) -> "Multiproces
 
     # unpack optional selector
     start_method = None
-    start_cfg: dict[str, object] = {}
+    start_cfg: Dict[str, object] = {}
     start_selector = check.opt_dict_elem(config, "start_method")
     if start_selector:
         start_method, start_cfg = next(iter(start_selector.items()))
@@ -459,7 +459,7 @@ def _check_non_ephemeral_instance(instance: "DagsterInstance") -> None:
             " multiple processes. You can configure your default instance via $DAGSTER_HOME or"
             " ensure a valid one is passed when invoking the python APIs. You can learn more about"
             " setting up a persistent DagsterInstance from the DagsterInstance docs here:"
-            " https://docs.dagster.io/guides/deploy/dagster-instance-configuration#default-local-behavior"
+            " https://docs.dagster.io/deployment/dagster-instance#default-local-behavior"
         )
 
 

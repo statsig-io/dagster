@@ -5,13 +5,13 @@ export const WarningTooltip = styled(Tooltip)`
   display: block;
   outline: none;
 
-  .bp5-popover-target,
-  .bp5-icon {
+  .bp4-popover-target,
+  .bp4-icon {
     display: block;
   }
 
-  .bp5-icon:focus,
-  .bp5-icon:active {
+  .bp4-icon:focus,
+  .bp4-icon:active {
     outline: none;
   }
 `;

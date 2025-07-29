@@ -2,18 +2,19 @@ import logging
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 import sqlalchemy as db
 from sqlalchemy.pool import NullPool
 
 from dagster._core.storage.event_log.base import EventLogCursor
-from dagster._core.storage.event_log.schema import SqlEventLogStorageMetadata
-from dagster._core.storage.event_log.sql_event_log import SqlEventLogStorage
 from dagster._core.storage.sql import create_engine, get_alembic_config, stamp_alembic_rev
 from dagster._core.storage.sqlite import create_in_memory_conn_string
 from dagster._serdes import ConfigurableClass
 from dagster._serdes.config_class import ConfigurableClassData
+
+from .schema import SqlEventLogStorageMetadata
+from .sql_event_log import SqlEventLogStorage
 
 
 class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
@@ -38,13 +39,13 @@ class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
             alembic_config = get_alembic_config(__file__, "sqlite/alembic/alembic.ini")
             stamp_alembic_rev(alembic_config, self._held_conn)
 
+        self.reindex_events()
+        self.reindex_assets()
+
         if preload:
             for payload in preload:
                 for event in payload.event_list:
                     self.store_event(event)
-
-    def has_secondary_index(self, name: str) -> bool:
-        return True
 
     @contextmanager
     def _connect(self):
@@ -80,7 +81,7 @@ class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         pass
 
     def store_event(self, event):
-        super().store_event(event)
+        super(InMemoryEventLogStorage, self).store_event(event)
         self._storage_id += 1
 
         handlers = list(self._handlers[event.run_id])
@@ -90,10 +91,10 @@ class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
             except Exception:
                 logging.exception("Exception in callback for event watch on run %s.", event.run_id)
 
-    def watch(self, run_id: str, cursor: str, callback: Callable[..., Any]):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def watch(self, run_id: str, cursor: str, callback: Callable):
         self._handlers[run_id].add(callback)
 
-    def end_watch(self, run_id: str, handler: Callable[..., Any]):
+    def end_watch(self, run_id: str, handler: Callable):
         if handler in self._handlers[run_id]:
             self._handlers[run_id].remove(handler)
 
@@ -102,7 +103,7 @@ class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         return False
 
     @property
-    def supports_global_concurrency_limits(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+    def supports_global_concurrency_limits(self) -> bool:
         return False
 
     def dispose(self):

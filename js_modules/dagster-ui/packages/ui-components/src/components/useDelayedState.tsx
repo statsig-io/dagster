@@ -1,13 +1,12 @@
-import {useDeferredValue, useEffect, useState} from 'react';
+import * as React from 'react';
 
 export const useDelayedState = (delayMsec: number) => {
-  const [_ready, setReady] = useState(false);
-  const ready = useDeferredValue(_ready);
+  const [value, setValue] = React.useState(false);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setReady(true), delayMsec);
+  React.useEffect(() => {
+    const timer = setTimeout(() => setValue(true), delayMsec);
     return () => clearTimeout(timer);
   }, [delayMsec]);
 
-  return ready;
+  return value;
 };

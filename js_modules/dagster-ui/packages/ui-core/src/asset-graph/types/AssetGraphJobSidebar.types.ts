@@ -15,7 +15,6 @@ export type AssetGraphSidebarQuery = {
         id: string;
         pipelineSnapshotId: string;
         parentSnapshotId: string | null;
-        externalJobSource: string | null;
         name: string;
         description: string | null;
         metadataEntries: Array<
@@ -32,20 +31,6 @@ export type AssetGraphSidebarQuery = {
               description: string | null;
             }
           | {
-              __typename: 'CodeReferencesMetadataEntry';
-              label: string;
-              description: string | null;
-              codeReferences: Array<
-                | {
-                    __typename: 'LocalFileCodeReference';
-                    filePath: string;
-                    lineNumber: number | null;
-                    label: string | null;
-                  }
-                | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-              >;
-            }
-          | {
               __typename: 'FloatMetadataEntry';
               floatValue: number | null;
               label: string;
@@ -55,14 +40,6 @@ export type AssetGraphSidebarQuery = {
               __typename: 'IntMetadataEntry';
               intValue: number | null;
               intRepr: string;
-              label: string;
-              description: string | null;
-            }
-          | {
-              __typename: 'JobMetadataEntry';
-              jobName: string;
-              repositoryName: string | null;
-              locationName: string;
               label: string;
               description: string | null;
             }
@@ -98,31 +75,11 @@ export type AssetGraphSidebarQuery = {
               description: string | null;
             }
           | {
-              __typename: 'PoolMetadataEntry';
-              pool: string;
-              label: string;
-              description: string | null;
-            }
-          | {
               __typename: 'PythonArtifactMetadataEntry';
               module: string;
               name: string;
               label: string;
               description: string | null;
-            }
-          | {
-              __typename: 'TableColumnLineageMetadataEntry';
-              label: string;
-              description: string | null;
-              lineage: Array<{
-                __typename: 'TableColumnLineageEntry';
-                columnName: string;
-                columnDeps: Array<{
-                  __typename: 'TableColumnDep';
-                  columnName: string;
-                  assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                }>;
-              }>;
             }
           | {
               __typename: 'TableMetadataEntry';
@@ -138,7 +95,6 @@ export type AssetGraphSidebarQuery = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -161,7 +117,6 @@ export type AssetGraphSidebarQuery = {
                   name: string;
                   description: string | null;
                   type: string;
-                  tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                   constraints: {
                     __typename: 'TableColumnConstraints';
                     nullable: boolean;
@@ -178,15 +133,8 @@ export type AssetGraphSidebarQuery = {
               label: string;
               description: string | null;
             }
-          | {
-              __typename: 'TimestampMetadataEntry';
-              timestamp: number;
-              label: string;
-              description: string | null;
-            }
           | {__typename: 'UrlMetadataEntry'; url: string; label: string; description: string | null}
         >;
-        tags: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
         modes: Array<{
           __typename: 'Mode';
           id: string;
@@ -1324,5 +1272,3 @@ export type AssetGraphSidebarQuery = {
         }>;
       };
 };
-
-export const AssetGraphSidebarQueryVersion = '4f2dbdd2f880492b69e02fb600314bfe6e0c76d95e5d0c63184b2736db7c1aa3';

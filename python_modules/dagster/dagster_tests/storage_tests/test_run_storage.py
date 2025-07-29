@@ -1,10 +1,7 @@
-import os
 import tempfile
 from contextlib import contextmanager
 
-import dagster as dg
 import pytest
-from dagster import DagsterInstance
 from dagster._core.storage.legacy_storage import LegacyRunStorage
 from dagster._core.storage.runs import InMemoryRunStorage, SqliteRunStorage
 from dagster._core.storage.sqlite_storage import DagsterSqliteStorage
@@ -40,102 +37,34 @@ def create_legacy_run_storage():
             storage.dispose()
 
 
-class TestSqliteRunStorage(TestRunStorage):
+class TestSqliteImplementation(TestRunStorage):
     __test__ = True
 
-    def supports_backfill_tags_filtering_queries(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_backfill_job_name_filtering_queries(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_backfill_id_filtering_queries(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_backfills_count(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_add_historical_run(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    @pytest.fixture(name="instance", scope="function")
-    def instance(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir_path:
-            with dg.instance_for_test(temp_dir=tmpdir_path) as instance:
-                yield instance
-
-    @pytest.fixture(name="storage", scope="function")
-    def run_storage(self, instance):  # pyright: ignore[reportIncompatibleMethodOverride]
-        run_storage = instance.run_storage
-        assert isinstance(run_storage, SqliteRunStorage)
-        yield run_storage
+    @pytest.fixture(name="storage", params=[create_sqlite_run_storage])
+    def run_storage(self, request):
+        with request.param() as s:
+            yield s
 
 
-class TestInMemoryRunStorage(TestRunStorage):
+class TestInMemoryImplementation(TestRunStorage):
     __test__ = True
 
-    def supports_backfill_tags_filtering_queries(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_backfill_job_name_filtering_queries(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_backfill_id_filtering_queries(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_backfills_count(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_add_historical_run(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    @pytest.fixture(name="instance", scope="function")
-    def instance(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        with DagsterInstance.ephemeral() as the_instance:
-            yield the_instance
-
-    @pytest.fixture(name="storage")
-    def run_storage(self, instance):  # pyright: ignore[reportIncompatibleMethodOverride]
-        yield instance.run_storage
+    @pytest.fixture(name="storage", params=[create_in_memory_storage])
+    def run_storage(self, request):
+        with request.param() as s:
+            yield s
 
     def test_storage_telemetry(self, storage):
         pass
 
 
-class TestLegacyRunStorage(TestRunStorage):
+class TestLegacyStorage(TestRunStorage):
     __test__ = True
 
-    def supports_backfill_tags_filtering_queries(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_backfill_job_name_filtering_queries(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_backfill_id_filtering_queries(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_backfills_count(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    def supports_add_historical_run(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        return True
-
-    @pytest.fixture(name="instance", scope="function")
-    def instance(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir_path:
-            with dg.instance_for_test(temp_dir=tmpdir_path) as instance:
-                yield instance
-
-    @pytest.fixture(name="storage", scope="function")
-    def run_storage(self, instance):  # pyright: ignore[reportIncompatibleMethodOverride]
-        storage = instance.get_ref().storage
-        assert isinstance(storage, DagsterSqliteStorage)
-        legacy_storage = LegacyRunStorage(storage)
-        legacy_storage.register_instance(instance)
-        try:
-            yield legacy_storage
-        finally:
-            legacy_storage.dispose()
+    @pytest.fixture(name="storage", params=[create_legacy_run_storage])
+    def run_storage(self, request):
+        with request.param() as s:
+            yield s
 
     def test_storage_telemetry(self, storage):
         pass

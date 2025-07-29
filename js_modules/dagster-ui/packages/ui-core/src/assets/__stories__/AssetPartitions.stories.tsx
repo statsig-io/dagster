@@ -1,5 +1,5 @@
 import {MockedProvider} from '@apollo/client/testing';
-import {useState} from 'react';
+import React from 'react';
 
 import {StorybookProvider} from '../../testing/StorybookProvider';
 import {AssetPartitions} from '../AssetPartitions';
@@ -19,7 +19,7 @@ export default {
 };
 
 export const SingleDimensionStaticAsset = () => {
-  const [params, setParams] = useState<AssetViewParams>({});
+  const [params, setParams] = React.useState<AssetViewParams>({});
 
   return (
     <StorybookProvider>
@@ -31,7 +31,6 @@ export const SingleDimensionStaticAsset = () => {
           paramsTimeWindowOnly={false}
           assetPartitionDimensions={['default']}
           dataRefreshHint={undefined}
-          isLoadingDefinition={false}
         />
       </MockedProvider>
     </StorybookProvider>
@@ -39,7 +38,7 @@ export const SingleDimensionStaticAsset = () => {
 };
 
 export const SingleDimensionTimeAsset = () => {
-  const [params, setParams] = useState<AssetViewParams>({});
+  const [params, setParams] = React.useState<AssetViewParams>({});
 
   return (
     <StorybookProvider>
@@ -51,7 +50,6 @@ export const SingleDimensionTimeAsset = () => {
           paramsTimeWindowOnly={false}
           assetPartitionDimensions={['default']}
           dataRefreshHint={undefined}
-          isLoadingDefinition={false}
         />
       </MockedProvider>
     </StorybookProvider>
@@ -59,7 +57,7 @@ export const SingleDimensionTimeAsset = () => {
 };
 
 export const MultiDimensionStaticAsset = () => {
-  const [params, setParams] = useState<AssetViewParams>({});
+  const [params, setParams] = React.useState<AssetViewParams>({});
 
   return (
     <StorybookProvider>
@@ -71,7 +69,6 @@ export const MultiDimensionStaticAsset = () => {
           paramsTimeWindowOnly={false}
           assetPartitionDimensions={['month', 'state']}
           dataRefreshHint={undefined}
-          isLoadingDefinition={false}
         />
       </MockedProvider>
     </StorybookProvider>
@@ -79,7 +76,7 @@ export const MultiDimensionStaticAsset = () => {
 };
 
 export const MultiDimensionTimeFirstAsset = () => {
-  const [params, setParams] = useState<AssetViewParams>({});
+  const [params, setParams] = React.useState<AssetViewParams>({});
 
   return (
     <StorybookProvider>
@@ -91,7 +88,6 @@ export const MultiDimensionTimeFirstAsset = () => {
           paramsTimeWindowOnly={false}
           assetPartitionDimensions={['date', 'zstate']}
           dataRefreshHint={undefined}
-          isLoadingDefinition={false}
         />
       </MockedProvider>
     </StorybookProvider>
@@ -99,7 +95,7 @@ export const MultiDimensionTimeFirstAsset = () => {
 };
 
 export const MultiDimensionTimeSecondAsset = () => {
-  const [params, setParams] = useState<AssetViewParams>({});
+  const [params, setParams] = React.useState<AssetViewParams>({});
 
   return (
     <StorybookProvider>
@@ -111,7 +107,6 @@ export const MultiDimensionTimeSecondAsset = () => {
           paramsTimeWindowOnly={false}
           assetPartitionDimensions={['astate', 'date']}
           dataRefreshHint={undefined}
-          isLoadingDefinition={false}
         />
       </MockedProvider>
     </StorybookProvider>

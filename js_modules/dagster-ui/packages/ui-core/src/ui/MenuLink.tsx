@@ -1,10 +1,11 @@
+// eslint-disable-next-line no-restricted-imports
 import {
   Box,
   Colors,
   CommonMenuItemProps,
   IconWrapper,
-  MenuItem,
   iconWithColor,
+  MenuItem,
 } from '@dagster-io/ui-components';
 import * as React from 'react';
 import {Link, LinkProps} from 'react-router-dom';
@@ -12,13 +13,13 @@ import styled from 'styled-components';
 
 interface MenuLinkProps
   extends CommonMenuItemProps,
-    Omit<React.ComponentProps<typeof MenuItem>, 'icon' | 'onClick' | 'onFocus' | 'target' | 'ref'>,
+    Omit<React.ComponentProps<typeof MenuItem>, 'icon' | 'onClick' | 'onFocus' | 'target'>,
     LinkProps {}
 
 /**
  * If you want to use a menu item as a link, use `MenuLink` and provide a `to` prop.
  */
-export const MenuLink = (props: MenuLinkProps) => {
+export const MenuLink: React.FC<MenuLinkProps> = (props) => {
   const {icon, intent, text, disabled, ...rest} = props;
 
   if (disabled) {
@@ -63,11 +64,11 @@ const StyledMenuLink = styled(Link)`
   &&&:visited,
   &&&:hover,
   &&&:active {
-    color: ${Colors.textDefault()};
+    color: ${Colors.Gray900};
     text-decoration: none;
   }
 
   &&&:hover {
-    background: ${Colors.backgroundLighter()};
+    background: ${Colors.Gray100};
   }
 `;

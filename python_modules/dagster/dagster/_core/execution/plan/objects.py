@@ -1,6 +1,5 @@
-from collections.abc import Mapping
 from enum import Enum
-from typing import TYPE_CHECKING, NamedTuple, Optional
+from typing import TYPE_CHECKING, Mapping, NamedTuple, Optional
 
 import dagster._check as check
 from dagster._core.definitions.metadata import (
@@ -9,11 +8,7 @@ from dagster._core.definitions.metadata import (
     normalize_metadata,
 )
 from dagster._serdes import whitelist_for_serdes
-from dagster._utils.error import (
-    SerializableErrorInfo,
-    serializable_error_info_from_exc_info,
-    truncate_event_error_info,
-)
+from dagster._utils.error import SerializableErrorInfo, serializable_error_info_from_exc_info
 from dagster._utils.types import ExcInfo
 
 if TYPE_CHECKING:
@@ -36,7 +31,7 @@ class TypeCheckData(
     )
 ):
     def __new__(cls, success, label, description=None, metadata=None):
-        return super().__new__(
+        return super(TypeCheckData, cls).__new__(
             cls,
             success=check.bool_param(success, "success"),
             label=check.str_param(label, "label"),
@@ -62,7 +57,7 @@ class UserFailureData(
     )
 ):
     def __new__(cls, label, description=None, metadata=None):
-        return super().__new__(
+        return super(UserFailureData, cls).__new__(
             cls,
             label=check.str_param(label, "label"),
             description=check.opt_str_param(description, "description"),
@@ -96,11 +91,9 @@ class StepFailureData(
     )
 ):
     def __new__(cls, error, user_failure_data, error_source=None):
-        return super().__new__(
+        return super(StepFailureData, cls).__new__(
             cls,
-            error=truncate_event_error_info(
-                check.opt_inst_param(error, "error", SerializableErrorInfo)
-            ),
+            error=check.opt_inst_param(error, "error", SerializableErrorInfo),
             user_failure_data=check.opt_inst_param(
                 user_failure_data, "user_failure_data", UserFailureData
             ),
@@ -112,16 +105,9 @@ class StepFailureData(
     @property
     def error_display_string(self) -> str:
         """Creates a display string that hides framework frames if the error arose in user code."""
-        from dagster._core.errors import DagsterRedactedUserCodeError
-
         if not self.error:
             return ""
         if self.error_source == ErrorSource.USER_CODE_ERROR:
-            # For a redacted error, just return the redacted message without any
-            # internal user code error.
-            if self.error.cls_name == DagsterRedactedUserCodeError.__name__:
-                return self.error.to_string()
-
             user_code_error = self.error.cause
             check.invariant(
                 user_code_error,
@@ -159,13 +145,9 @@ class StepRetryData(
     )
 ):
     def __new__(cls, error, seconds_to_wait=None):
-        return super().__new__(
+        return super(StepRetryData, cls).__new__(
             cls,
-            error=check.not_none(
-                truncate_event_error_info(
-                    check.opt_inst_param(error, "error", SerializableErrorInfo)
-                )
-            ),
+            error=check.opt_inst_param(error, "error", SerializableErrorInfo),
             seconds_to_wait=check.opt_numeric_param(seconds_to_wait, "seconds_to_wait"),
         )
 
@@ -173,4 +155,6 @@ class StepRetryData(
 @whitelist_for_serdes
 class StepSuccessData(NamedTuple("_StepSuccessData", [("duration_ms", float)])):
     def __new__(cls, duration_ms):
-        return super().__new__(cls, duration_ms=check.float_param(duration_ms, "duration_ms"))
+        return super(StepSuccessData, cls).__new__(
+            cls, duration_ms=check.float_param(duration_ms, "duration_ms")
+        )

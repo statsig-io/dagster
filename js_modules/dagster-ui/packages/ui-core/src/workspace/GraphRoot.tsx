@@ -1,30 +1,31 @@
-import {Box, NonIdealState, PageHeader, Subtitle1, Tag} from '@dagster-io/ui-components';
-import {useState} from 'react';
+import {gql, useQuery} from '@apollo/client';
+import {Box, NonIdealState, PageHeader, Tag, Heading} from '@dagster-io/ui-components';
+import React from 'react';
 import {useHistory, useParams} from 'react-router-dom';
 
-import {RepoAddress} from './types';
-import {gql, useQuery} from '../apollo-client';
-import {GraphExplorerRootQuery, GraphExplorerRootQueryVariables} from './types/GraphRoot.types';
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
 import {useTrackPageView} from '../app/analytics';
 import {useDocumentTitle} from '../hooks/useDocumentTitle';
 import {RepositoryLink} from '../nav/RepositoryLink';
 import {explodeCompositesInHandleGraph} from '../pipelines/CompositeSupport';
 import {
-  GRAPH_EXPLORER_FRAGMENT,
-  GRAPH_EXPLORER_SOLID_HANDLE_FRAGMENT,
   GraphExplorer,
   GraphExplorerOptions,
+  GRAPH_EXPLORER_FRAGMENT,
+  GRAPH_EXPLORER_SOLID_HANDLE_FRAGMENT,
 } from '../pipelines/GraphExplorer';
 import {explorerPathFromString, explorerPathToString} from '../pipelines/PipelinePathUtils';
 import {Loading} from '../ui/Loading';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
+import {RepoAddress} from './types';
+import {GraphExplorerRootQuery, GraphExplorerRootQueryVariables} from './types/GraphRoot.types';
+
 interface Props {
   repoAddress: RepoAddress;
 }
 
-export const GraphRoot = (props: Props) => {
+export const GraphRoot: React.FC<Props> = (props) => {
   useTrackPageView();
 
   const {repoAddress} = props;
@@ -40,7 +41,7 @@ export const GraphRoot = (props: Props) => {
   return (
     <div style={{height: '100%', display: 'flex', flexDirection: 'column'}}>
       <PageHeader
-        title={<Subtitle1>{title}</Subtitle1>}
+        title={<Heading>{title}</Heading>}
         tags={
           <Tag icon="schema">
             Graph in <RepositoryLink repoAddress={repoAddress} />
@@ -54,13 +55,13 @@ export const GraphRoot = (props: Props) => {
   );
 };
 
-const GraphExplorerRoot = (props: Props) => {
+const GraphExplorerRoot: React.FC<Props> = (props) => {
   const {repoAddress} = props;
   const params = useParams();
 
   const explorerPath = explorerPathFromString((params as any)['0']);
   const history = useHistory();
-  const [options, setOptions] = useState<GraphExplorerOptions>({
+  const [options, setOptions] = React.useState<GraphExplorerOptions>({
     explodeComposites: false,
     preferAssetRendering: true,
   });

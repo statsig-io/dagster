@@ -1,6 +1,6 @@
-import dagster as dg
+from dagster import graph
 
 
-@dg.graph
+@graph
 def graph_one():
     pass

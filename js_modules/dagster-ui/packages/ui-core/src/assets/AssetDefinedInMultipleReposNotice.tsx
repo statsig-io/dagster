@@ -1,37 +1,32 @@
+import {gql, useQuery} from '@apollo/client';
 import {Alert, Box, ButtonLink, Colors} from '@dagster-io/ui-components';
+import React from 'react';
 
-import {AssetKey} from './types';
-import {gql, useQuery} from '../apollo-client';
-import {
-  AssetDefinitionCollisionQuery,
-  AssetDefinitionCollisionQueryVariables,
-} from './types/AssetDefinedInMultipleReposNotice.types';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {displayNameForAssetKey} from '../asset-graph/Utils';
 import {buildRepoPathForHuman} from '../workspace/buildRepoAddress';
 import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
 import {RepoAddress} from '../workspace/types';
 
-export const MULTIPLE_DEFINITIONS_WARNING = 'Multiple asset definitions found';
-export const ADDITIONAL_REQUIRED_KEYS_WARNING = 'Additional assets will be materialized';
+import {AssetKey} from './types';
+import {
+  AssetDefinitionCollisionQuery,
+  AssetDefinitionCollisionQueryVariables,
+} from './types/AssetDefinedInMultipleReposNotice.types';
 
-export const AssetDefinedInMultipleReposNotice = ({
-  assetKey,
-  loadedFromRepo,
-  padded,
-}: {
+export const MULTIPLE_DEFINITIONS_WARNING = 'Multiple asset definitions found';
+
+export const AssetDefinedInMultipleReposNotice: React.FC<{
   assetKey: AssetKey;
   loadedFromRepo: RepoAddress;
   padded?: boolean;
-}) => {
-  const queryResult = useQuery<
-    AssetDefinitionCollisionQuery,
-    AssetDefinitionCollisionQueryVariables
-  >(ASSET_DEFINITION_COLLISION_QUERY, {
-    variables: {assetKeys: [{path: assetKey.path}]},
-    blocking: false,
-  });
-  const {data} = queryResult;
+}> = ({assetKey, loadedFromRepo, padded}) => {
+  const {data} = useQuery<AssetDefinitionCollisionQuery, AssetDefinitionCollisionQueryVariables>(
+    ASSET_DEFINITION_COLLISION_QUERY,
+    {
+      variables: {assetKeys: [{path: assetKey.path}]},
+    },
+  );
 
   const collision = data?.assetNodeDefinitionCollisions[0];
   if (!collision) {
@@ -54,7 +49,7 @@ export const AssetDefinedInMultipleReposNotice = ({
             definitions were found in{' '}
             <ButtonLink
               underline="always"
-              color={Colors.textYellow()}
+              color={Colors.Yellow700}
               onClick={() =>
                 showCustomAlert({
                   title: MULTIPLE_DEFINITIONS_WARNING,

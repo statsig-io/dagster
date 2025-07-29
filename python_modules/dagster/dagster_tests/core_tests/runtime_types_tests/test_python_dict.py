@@ -1,13 +1,21 @@
-# ruff: noqa: UP006
 import typing
 
-import dagster as dg
 import pytest
+from dagster import (
+    DagsterInvalidConfigError,
+    DagsterInvalidDefinitionError,
+    DagsterTypeCheckDidNotPass,
+    Dict,
+    In,
+    Out,
+    op,
+    usable_as_dagster_type,
+)
 from dagster._utils.test import wrap_op_in_graph_and_execute
 
 
 def test_basic_python_dictionary_output():
-    @dg.op(out=dg.Out(dict))
+    @op(out=Out(dict))
     def emit_dict():
         return {"key": "value"}
 
@@ -15,7 +23,7 @@ def test_basic_python_dictionary_output():
 
 
 def test_basic_python_dictionary_input():
-    @dg.op(ins={"data": dg.In(dict)}, out=dg.Out(str))
+    @op(ins={"data": In(dict)}, out=Out(str))
     def input_dict(data):
         return data["key"]
 
@@ -28,25 +36,25 @@ def test_basic_python_dictionary_input():
 
 
 def test_basic_python_dictionary_wrong():
-    @dg.op(out=dg.Out(dict))
+    @op(out=Out(dict))
     def emit_dict():
         return 1
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         wrap_op_in_graph_and_execute(emit_dict)
 
 
 def test_basic_python_dictionary_input_wrong():
-    @dg.op(ins={"data": dg.In(dict)}, out=dg.Out(str))
+    @op(ins={"data": In(dict)}, out=Out(str))
     def input_dict(data):
         return data["key"]
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         wrap_op_in_graph_and_execute(input_dict, input_values={"data": 123})
 
 
 def test_execute_dict_from_config():
-    @dg.op(ins={"data": dg.In(dict)}, out=dg.Out(str))
+    @op(ins={"data": In(dict)}, out=Out(str))
     def input_dict(data):
         return data["key"]
 
@@ -61,7 +69,7 @@ def test_execute_dict_from_config():
 
 
 def test_dagster_dictionary_output():
-    @dg.op(out=dg.Out(dict))
+    @op(out=Out(dict))
     def emit_dict():
         return {"key": "value"}
 
@@ -69,7 +77,7 @@ def test_dagster_dictionary_output():
 
 
 def test_basic_dagster_dictionary_input():
-    @dg.op(ins={"data": dg.In(dg.Dict)}, out=dg.Out(str))  # pyright: ignore[reportArgumentType]
+    @op(ins={"data": In(Dict)}, out=Out(str))
     def input_dict(data):
         return data["key"]
 
@@ -82,7 +90,7 @@ def test_basic_dagster_dictionary_input():
 
 
 def test_basic_typing_dictionary_output():
-    @dg.op(out=dg.Out(typing.Dict))
+    @op(out=Out(typing.Dict))
     def emit_dict():
         return {"key": "value"}
 
@@ -90,9 +98,9 @@ def test_basic_typing_dictionary_output():
 
 
 def test_basic_typing_dictionary_input():
-    @dg.op(
-        ins={"data": dg.In(typing.Dict)},
-        out=dg.Out(str),
+    @op(
+        ins={"data": In(typing.Dict)},
+        out=Out(str),
     )
     def input_dict(data):
         return data["key"]
@@ -106,29 +114,29 @@ def test_basic_typing_dictionary_input():
 
 
 def test_basic_closed_typing_dictionary_wrong():
-    @dg.op(out=dg.Out(typing.Dict[int, int]))
+    @op(out=Out(typing.Dict[int, int]))
     def emit_dict():
         return 1
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         wrap_op_in_graph_and_execute(emit_dict)
 
 
 def test_basic_closed_typing_dictionary_output():
-    @dg.op(out=dg.Out(typing.Dict[str, str]))
+    @op(out=Out(typing.Dict[str, str]))
     def emit_dict():
         return {"key": "value"}
 
     assert wrap_op_in_graph_and_execute(emit_dict).output_value() == {"key": "value"}
     assert emit_dict.output_defs[0].dagster_type.key == "TypedPythonDict.String.String"
-    assert emit_dict.output_defs[0].dagster_type.key_type.unique_name == "String"  # pyright: ignore[reportAttributeAccessIssue]
-    assert emit_dict.output_defs[0].dagster_type.value_type.unique_name == "String"  # pyright: ignore[reportAttributeAccessIssue]
+    assert emit_dict.output_defs[0].dagster_type.key_type.unique_name == "String"
+    assert emit_dict.output_defs[0].dagster_type.value_type.unique_name == "String"
 
 
 def test_basic_closed_typing_dictionary_input():
-    @dg.op(
-        ins={"data": dg.In(typing.Dict[str, str])},
-        out=dg.Out(str),
+    @op(
+        ins={"data": In(typing.Dict[str, str])},
+        out=Out(str),
     )
     def input_dict(data):
         return data["key"]
@@ -142,25 +150,25 @@ def test_basic_closed_typing_dictionary_input():
 
 
 def test_basic_closed_typing_dictionary_key_wrong():
-    @dg.op(out=dg.Out(typing.Dict[str, str]))
+    @op(out=Out(typing.Dict[str, str]))
     def emit_dict():
         return {1: "foo"}
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         wrap_op_in_graph_and_execute(emit_dict)
 
 
 def test_basic_closed_typing_dictionary_value_wrong():
-    @dg.op(out=dg.Out(typing.Dict[str, str]))
+    @op(out=Out(typing.Dict[str, str]))
     def emit_dict():
         return {"foo": 1}
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         wrap_op_in_graph_and_execute(emit_dict)
 
 
 def test_complicated_dictionary_typing_pass():
-    @dg.op(out=dg.Out(typing.Dict[str, typing.List[typing.Dict[int, int]]]))
+    @op(out=Out(typing.Dict[str, typing.List[typing.Dict[int, int]]]))
     def emit_dict():
         return {"foo": [{1: 1, 2: 2}]}
 
@@ -168,18 +176,18 @@ def test_complicated_dictionary_typing_pass():
 
 
 def test_complicated_dictionary_typing_fail():
-    @dg.op(out=dg.Out(typing.Dict[str, typing.List[typing.Dict[int, int]]]))
+    @op(out=Out(typing.Dict[str, typing.List[typing.Dict[int, int]]]))
     def emit_dict():
         return {"foo": [{1: 1, "2": 2}]}
 
-    with pytest.raises(dg.DagsterTypeCheckDidNotPass):
+    with pytest.raises(DagsterTypeCheckDidNotPass):
         wrap_op_in_graph_and_execute(emit_dict)
 
 
 def test_dict_type_loader():
     test_input = {"hello": 5, "goodbye": 42}
 
-    @dg.op(ins={"dict_input": dg.In(dagster_type=typing.Dict[str, int])})
+    @op(ins={"dict_input": In(dagster_type=typing.Dict[str, int])})
     def emit_dict(dict_input):
         return dict_input
 
@@ -193,18 +201,18 @@ def test_dict_type_loader():
 
 
 def test_dict_type_loader_typing_fail():
-    @dg.usable_as_dagster_type
+    @usable_as_dagster_type
     class CustomType(str):
         pass
 
     test_input = {"hello": "foo", "goodbye": "bar"}
 
-    @dg.op(ins={"dict_input": dg.In(dagster_type=typing.Dict[str, CustomType])})
+    @op(ins={"dict_input": In(dagster_type=typing.Dict[str, CustomType])})
     def emit_dict(dict_input):
         return dict_input
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="Input 'dict_input' of op 'emit_dict' has no way of being resolved.",
     ):
         wrap_op_in_graph_and_execute(
@@ -217,11 +225,11 @@ def test_dict_type_loader_typing_fail():
 def test_dict_type_loader_inner_type_mismatch():
     test_input = {"hello": "foo", "goodbye": "bar"}
 
-    @dg.op(ins={"dict_input": dg.In(dagster_type=typing.Dict[str, int])})
+    @op(ins={"dict_input": In(dagster_type=typing.Dict[str, int])})
     def emit_dict(dict_input):
         return dict_input
 
-    with pytest.raises(dg.DagsterInvalidConfigError):
+    with pytest.raises(DagsterInvalidConfigError):
         wrap_op_in_graph_and_execute(
             emit_dict,
             run_config={"ops": {"emit_dict": {"inputs": {"dict_input": test_input}}}},

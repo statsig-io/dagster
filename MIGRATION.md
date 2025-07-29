@@ -1,284 +1,8 @@
-# Upgrading Dagster
+# Version migration
 
-When new releases include breaking changes or deprecations, this document explains how to upgrade your projects.
+When new releases include breaking changes or deprecations, this document describes how to migrate.
 
-## Upgrading to 1.11.0
-
-### Breaking changes
-
-The `FreshnessPolicy` class (which has been marked as deprecated as of Dagster version 1.6), has been renamed to `LegacyFreshnessPolicy`. The deprecated freshness policies will henceforth be referred to in docs and code as "legacy freshness policies". There are no immediate changes in functionality.
-
-Existing imports of `FreshnessPolicy` will fail with an `ImportError`:
-
-```python
-from dagster import FreshnessPolicy
-```
-
-You can still import and use the legacy freshness policies from the `deprecated` module:
-
-```python
-from dagster.deprecated import FreshnessPolicy  # imports LegacyFreshnessPolicy
-```
-
-Accordingly, the `freshness_policy` parameter has been renamed to `legacy_freshness_policy` in these public APIs:
-
-- `AssetsDefinition.from_graph()`
-- `AssetsDefinition.from_op()`
-- `@asset`
-- `@asset_check`
-- `AssetSpec.replace_attributes()`
-- `AssetSpec.merge_attributes()`
-
-Other relevant parameter renames:
-
-- In `AssetsDefinition.from_op()`, parameter `freshness_policies_by_output_name` is renamed to `legacy_freshness_policies_by_output_name`
-- In `AssetsDefinition.from_graph()`, parameter `freshness_policies_by_output_name` is renamed to `legacy_freshness_policies_by_output_name`
-
-## Upgrading to 1.10.0
-
-### Deprecations
-
-- We've refreshed our integrations with popular ELT tools like [Fivetran](https://docs.dagster.io/integrations/libraries/fivetran) and [Airbyte](https://docs.dagster.io/integrations/libraries/airbyte/airbyte-oss) to leverage Dagster's asset-based patterns better and provide enhanced visibility into your data pipelines. The old integration patterns are still available, so there are no breaking changes, but we encourage users to take advantage of the new capabilities!
-
-### Breaking changes
-
-- Pool names now only accept letters, numbers, dashes, and underscores.
-
-## Upgrading to 1.9.0
-
-### Database migration
-
-- This release includes database schema and data migrations to improve the performance of the Runs page. We highly recommend running these migrations to avoid slow page loads of the new Runs page. The migration will add a new column to the `runs` table, a new column to the `bulk_actions` table and a new `backfill_tags` table. A data migration will populate the new columns and table. Run `dagster instance migrate` to run the schema and data migration.
-
-### Notable behavior changes
-
-- Backfills have been moved from their own tab underneath the Overview page to entries within the table on the Runs page. This reflects the fact that backfills and runs are similar entities that share most properties. You can continue to use the legacy Runs page with the “Revert to legacy Runs page” user setting. ([GitHub Discussion](https://github.com/dagster-io/dagster/discussions/24898))
-- By default, `AutomationConditionSensorDefinitions` will now emit backfills to handle cases where more than one partition of an asset is requested on a given tick. This allows that asset's `BackfillPolicy` to be respected. This feature can be disabled by setting `allow_backfills` to `False` on the sensor definition.
-
-### Deprecations
-
-- The `DataBricksPysparkStepLauncher`, `EmrPySparkStepLauncher`, and any custom subclass of `StepLauncher` have been marked as deprecated, but will not be removed from the codebase until Dagster 2.0 is released, meaning they will continue to function as they currently do for the foreseeable future. Their functionality has been superseded by the interfaces provided by `dagster-pipes`, and so future development work will be focused there.
-- The experimental `@multi_asset_sensor` has been marked as deprecated, but will not be removed from the codebase until Dagster 2.0 is released, meaning it will continue to function as it currently does for the foreseeable future. Its functionality has been largely superseded by the `AutomationCondition` system.
-
-### Breaking changes
-
-- `dagster` no longer supports Python 3.8, which hit EOL on 2024-10-07.
-- `dagster` now requires `pydantic>=2` .
-- Passing a custom `PartitionsDefinition` subclass into a `Definitions` object now issues an error instead of a deprecation warning.
-- `AssetExecutionContext` is no longer a subclass of `OpExecutionContext`. At this release, `AssetExecutionContext` and `OpExecutionContext` implement the same methods, but in the future, the methods implemented by each class may diverge. If you have written helper functions with `OpExecutionContext` type annotations, they may need to be updated to include `AssetExecutionContext` depending on your usage. Explicit calls to `isinstance(context, OpExecutionContext)` will now fail if `context` is an `AssetExecutionContext`.
-- The `dagster/relation_identifier` metadata key has been renamed to `dagster/table_name`.
-- The `asset_selection` parameter on `AutomationConditionSensorDefinition` has been renamed to `target`, to align with existing sensor APIs.
-- The experimental `freshness_policy_sensor` has been removed, as it relies on the long-deprecated `FreshnessPolicy` API.
-- The deprecated `external_assets_from_specs` and `external_asset_from_spec` methods have been removed. Users should use `AssetsDefinition(specs=[...])`, or pass specs directly into the `Definitions` object instead.
-- `AssetKey` objects can no longer be iterated over or indexed in to. This behavior was never an intended access pattern and in all observed cases was a mistake.
-- [dagster-ge] `dagster-ge` now only supports `great_expectations>=0.17.15`. The `ge_validation_op_factory` API has been replaced with the API previously called `ge_validation_op_factory_v3`.
-- [dagster-aws] Removed deprecated parameters from `dagster_aws.pipes.PipesGlueClient.run`.
-- [dagster-embedded-elt] Removed deprecated parameter `dlt_dagster_translator` from `@dlt_assets`. The `dagster_dlt_translator` parameter should be used instead.
-
-## Upgrading to 1.8.0
-
-### Notable behavior changes
-
-- The `Definitions` constructor will no longer raise errors when the provided definitions aren’t mutually resolve-able – e.g. when there are conflicting definitions with the same name, unsatisfied resource dependencies, etc. These errors will still be raised at code location load time. The new `Definitions.validate_loadable` static method also allows performing the validation steps that used to occur in constructor.
-- The “Unsynced” label on an asset is no longer transitive, i.e. it no longer displays purely on account of a parent asset being labeled “Unsynced”. This helps avoid “Unsynced label fatigue”, where huge portions of the graph often have the label because of a distant ancestor. And it also helps the asset graph UI load faster.
-- The Run Status column on the Backfills page has been removed. This column was only filled out for backfills of jobs. Users should instead click on the backfill to see the status of each run.
-- The default behavior for evaluating `AutoMaterializePolicy` and `AutomationCondition` objects has changed. Previously, all assets were evaluated in a single process on the `AssetDaemon` , and evaluation history would show up in the UI in a special-purpose tab. Now, a default `AutomationConditionSensorDefinition` with the name `"default_automation_condition_sensor"` will be constructed for each code location, and a history of evaluations can be accessed by navigating to the page of that sensor. These changes are intended to provide a consistent UI/UX for interacting with automation concepts, and the sensor-based APIs allow for greater isolation between separate sets of assets.
-  - The core work of these sensors is still handled by the `AssetDaemon`, so this will need to continue running for your deployment.
-  - If desired, you can retain the current behavior by setting the following in your `dagster.yaml` file:
-  ```yaml
-  auto_materialize:
-    use_sensors: true
-  ```
-- The `datetime` objects that are exposed in Dagster public APIs are now standard Python `datetime.datetime` objects with timezones, instead of [Pendulum](https://pendulum.eustace.io/docs/) `datetime` objects. Technically, this is not a breaking change since Dagster’s public API uses `datetime.datetime` in our APIs, but Pendulum datetimes expose some methods (like `add` and `subtract`) that are not available on standard `datetime.datetime` objects. If your code was using methods that are only available on `Pendulum` datetimes, you can transform your `datetimes` back to Pendulum datetimes before using them.
-  - For example, an asset like this:
-
-  ```python
-  from dagster import asset, AssetExecutionContext
-
-  @asset
-  def my_asset(context: AssetExecutionContext):
-    window_start, window_end = context.partition_time_window
-    in_an_hour = window_start.add(hours=1) # will break since add() is only defined in pendulum
-  ```
-
-  - could be changed to this in order to continue using pendulum datetimes:
-
-  ```python
-
-  from dagster import asset, AssetExecutionContext
-  import pendulum
-
-  @asset
-  def my_asset(context: AssetExecutionContext):
-    window_start, window_end = context.partition_time_window
-      window_start = pendulum.instance(window_start) # transform to a pendulum time
-
-    in_an_hour = window_start.add(hours=1) # will continue working
-  ```
-
-### Breaking changes
-
-- `AutoMaterializeSensorDefinition` has been renamed to `AutomationConditionSensorDefinition`. All other functionality is identical.
-- “Op job versioning and memoization”, an experimental and deprecated pre-1.0 feature, has been removed. This feature has been superseded for a long time by `code_version` , data versions, and automation conditions. `MemoizableIOManager`, `VersionStrategy`, `SourceHashVersionStrategy`, `OpVersionContext`, `ResourceVersionContext`, and `MEMOIZED_RUN_TAG` have been removed.
-- The experimental and deprecated `build_asset_with_blocking_check` has been removed. Use the `blocking` argument on `@asset_check` instead.
-- [dagster-dbt] Support for setting freshness policies through dbt metadata on field `+meta.dagster_freshness_policy` has been removed. Use `+meta.dagster.freshness_policy` instead.
-- [dagster-dbt] `KeyPrefixDagsterDbtTranslator` has been removed. To modify the asset keys for a set of dbt assets, implement`DagsterDbtTranslator.get_asset_key()` instead.
-- [dagster-dbt] Support for setting auto-materialize policies through dbt metadata on field `+meta.dagster_auto_materialize_policy` has been removed. Use `+meta.dagster.auto_materialize_policy` instead.
-- [dagster-dbt] Support for `dbt-core==1.6.*` has been removed because the version is now end-of-life.
-- [dagster-dbt] Support for `load_assets_from_dbt_project`, `load_assets_from_dbt_manifest`, and `dbt_cli_resource` has been removed. Use `@dbt_assets`, `DbtCliResource`, and `DbtProject` instead to define how to load dbt assets from a dbt project and to execute them.
-- [dagster-dbt] Support for rebuilt ops like `dbt_run_op`, `dbt_compile_op`, etc has been removed. Use `@op` and `DbtCliResource` directly to execute dbt commands in an op.
-
-### Deprecations
-
-- The experimental `external_assets_from_specs` API has been deprecated. Instead, you can directly pass `AssetSpec` objects to the `assets` argument of the `Definitions` constructor.
-- `AutoMaterializePolicy`, `AutoMaterializeRule`, and the `auto_materialize_policy` arguments to `@asset` and `AssetSpec` have been marked as deprecated, and the new `AutomationCondition` API and `automation_condition` argument should be used instead. These changes are intended to provide a more consistent, composable, and flexible experience for users interested in asset-focused automation. A full migration guide can be found [here](https://github.com/dagster-io/dagster/discussions/23495), and a more detailed explanation of the thought process behind these changes can be found in the [original RFC](https://github.com/dagster-io/dagster/discussions/22811).
-  - `AutoMaterializePolicys` and `AutomationConditions` can interoperate without issue, meaning you do not need to migrate all assets at the same time.
-- The `partitions_def` parameter on `define_asset_job` is now deprecated. The `partitions_def` for an asset job is determined from the `partitions_def` attributes on the assets it targets, so this parameter is redundant.
-- The `asset_partition_key_for_output`, `asset_partition_keys_for_output`, and `asset_partition_key_range_for_output`, and `asset_partitions_time_window_for_output` methods on `OpExecutionContext` have been deprecated. Instead, use the corresponding property: `partition_key`, `partition_keys`, `partition_key_range`, or `partition_time_window`.
-- `SourceAsset` is deprecated, in favor of `AssetSpec`. You can now use `AssetSpec`s in any of the places you could previously use `SourceAsset`s, including passing them to the `assets` argument of `Definitions`, passing them to the `assets` argument of `materialize`, and supplying them as inputs in op graphs. `AssetSpec` has all the properties that `SourceAsset` does, except for `io_manager_key`. To set an IO manager key on an `AssetSpec`, you can supply a metadata entry with the `"dagster/io_manager_key"` key:
-
-  ```python
-  # before
-  from dagster import SourceAsset
-  my_asset = SourceAsset("my_asset", io_manager_key="abc")
-
-  # after
-  from dagster import AssetSpec
-  my_asset = AssetSpec("my_asset", metadata={"dagster/io_manager_key": "abc"})
-  ```
-
-- [dagster-shell] The `dagster-shell` package, which exposes `create_shell_command_op` and `create_shell_script_op`, has been deprecated. Instead, use `PipesSubprocessClient`, from the `dagster` package.
-- [dagster-airbyte] `load_assets_from_airbyte_project` is now deprecated, because the Octavia CLI that it relies on is an experimental feature that is no longer supported. Use `build_airbyte_assets` or `load_assets_from_airbyte_project` instead.
-
-## Upgrading to 1.7.0
-
-### Breaking Changes
-
-- Creating a run with a custom non-UUID `run_id` was previously private and only used for testing. It will now raise an exception.
-- [community-contribution] Previously, calling `get_partition_keys_in_range` on a `MultiPartitionsDefinition` would erroneously return partition keys that were within the one-dimensional range of alphabetically-sorted partition keys for the definition. Now, this method returns the cartesian product of partition keys within each dimension’s range. Thanks, [@mst](https://github.com/mst)!
-- Added `AssetCheckExecutionContext` to replace `AssetExecutionContext` as the type of the `context` param passed in to `@asset_check` functions. `@asset_check` was an experimental decorator.
-- [experimental] `@classmethod` decorators have been removed from `[dagster-embedded-slt.sling](http://dagster-embedded-slt.sling)` `DagsterSlingTranslator`
-- [dagster-dbt] `@classmethod` decorators have been removed from `DagsterDbtTranslator`.
-- [dagster-k8s] The default merge behavior when raw kubernetes config is supplied at multiple scopes (for example, at the instance level and for a particluar job) has been changed to be more consistent. Previously, configuration was merged shallowly by default, with fields replacing other fields instead of appending or merging. Now, it is merged deeply by default, with lists appended to each other and dictionaries merged, in order to be more consistent with how kubernetes configuration is combined in all other places. See [the docs](https://docs.dagster.io/deployment/guides/kubernetes/customizing-your-deployment#precedence-rules) for more information, including how to restore the previous default merge behavior.
-
-### Deprecations
-
-- `AssetSelection.keys()` has been deprecated. Instead, you can now supply asset key arguments to `AssetSelection.assets()` .
-- Run tag keys with long lengths and certain characters are now deprecated. For consistency with asset tags, run tags keys are expected to only contain alpha-numeric characters, dashes, underscores, and periods. Run tag keys can also contain a prefix section, separated with a slash. The main section and prefix section of a run tag are limited to 63 characters.
-- `AssetExecutionContext` has been simplified. Op-related methods and methods with existing access paths have been marked deprecated. For a full list of deprecated methods see this [GitHub Discussion](https://github.com/dagster-io/dagster/discussions/20974).
-- The `metadata` property on `InputContext` and `OutputContext` has been deprecated and renamed to `definition_metadata` .
-- `FreshnessPolicy` is now deprecated. For monitoring freshness, use freshness checks instead. If you are using `AutoMaterializePolicy.lazy()`, `FreshnessPolicy` is still recommended, and will continue to be supported until an alternative is provided.
-
-## Upgrading to 1.6.0
-
-### Breaking changes
-
-#### Dagster Ingestion-as-Code is being deprecated
-
-With Dagster 1.1.8, we launched experimental “[ingestion-as-code](https://docs.dagster.io/guides/dagster/airbyte-ingestion-as-code)” functionality for our Airbyte integration, in response to user feedback that users would like to manage their Airbyte connections in code. In the months since, Airbyte has released an official [Terraform provider](https://registry.terraform.io/providers/airbytehq/airbyte/latest/docs) which accomplishes many of the same goals, making ingestion-as-code largely redundant.
-
-In light of this, we will no longer be publishing new versions of the `dagster-managed-elements` package. `dagster_airbyte.AirbyteManagedElementReconciler` and objects in `dagster_airbyte.managed.*` will be removed.
-
-We suggest that users consider the official Terraform provider if they would like to continue managing their connections in code.
-
-#### I/O manager `handle_output` will no longer be called when the output typing type is Nothing
-
-Most Dagster-maintained I/O managers include special logic that does not store outputs typed as `None` or `Nothing` (either via return type annotation or explicitly setting the type in `Out`).
-
-In 1.6, the Dagster framework will no longer invoke the `IOManager.handle_output` at all for outputs with these types. This ensures that I/O managers behave consistently and protects against storing unnecessary `None` s in storage.
-
-For some I/O managers, e.g. the `InMemoryIOManager` and some user-developed I/O managers, this change may result in input-loading errors when assets downstream try to use the default IO manager to load the upstream output:
-
-```python
-@asset
-def upstream() -> None:
-    # when this asset is materialized, no `None` value will be stored
-
-@asset
-def downstream(upstream):
-    # if the default IO manager is the InMemoryIOManager, then, when this asset
-    # is executed, it will hit a load_input error because it can't find the
-    # stored value corresponding to "upstream"
-```
-
-The best way to avoid these errors is to write the downstream asset in a way that `IOManager.load_input` won’t be invoked:
-
-```python
-@asset(deps=[upstream])
-def downstream():
-    # because `deps` is used instead of a function argument,
-    # IOManager.load_input won't be invoked
-```
-
-### Deprecations
-
-#### dbt
-
-- Prebuilt ops for executing common dbt Core operations (e.g. `dbt_build_op`, `dbt_compile_op`, …) have been marked as deprecated. Instead, we recommend creating your op using the `@op` decorator and `DbtCliResource` directly.
-- `load_assets_from_dbt_manifest` and `load_assets_from_dbt_project` have been marked as deprecated. Instead, we recommend using `@dbt_assets`, `DbtCliResource`, and `DagsterDbtTranslator`.
-  - For examples on how to use `@dbt_assets` and `DbtCliResource` to execute commands like `dbt run` or `dbt build` on your dbt project, see our [API docs](https://docs.dagster.io/_apidocs/libraries/dagster-dbt#dagster_dbt.dbt_assets).
-  - For examples on how to customize your dbt software-defined assets using `DagsterDbtTranslator`, see the [reference](https://docs.dagster.io/integrations/dbt/reference#understanding-asset-definition-attributes).
-  - To replicate the behavior of `load_assets_from_dbt_project`, which generates a dbt manifest at run time using `dbt parse`, see the [reference](https://docs.dagster.io/integrations/dbt/reference#loading-dbt-models-from-a-dbt-project).
-  - To replicate the behavior of `load_assets_from_dbt_manifest`:
-
-```python
-# Before, using `load_assets_from_dbt_manifest`
-from dagster_dbt import load_assets_from_dbt_manifest
-
-my_dbt_assets = load_assets_from_dbt_manifest(
-    manifest=manifest,
-    use_build_command=True,
-)
-
-# After, using `@dbt_assets`, `DbtCliResource`, and `DagsterDbtTranslator
-from dagster import AssetExecutionContext
-from dagster_dbt import dbt_assets, DbtCliResource
-
-@dbt_assets(manifest=manifest)
-def my_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
-    yield from dbt.cli(["build"], context=context).stream()
-```
-
-- When using `@dbt_assets`, if a time window partition definition is used without an explicit backfill policy, the backfill policy now defaults to a `BackfillPolicy.single_run()` instead of `BackfillPolicy.multi_run()`.
-
-## Upgrading to 1.5.0
-
-### Breaking changes
-
-- The UI dialog for launching a backfill no longer includes a toggle to determine whether the backfill is launched as a single run or multiple runs. This toggle was misleading, because it implied that all backfills could be launched as single-run backfills, when it actually required special handling in the implementations of the assets targeted by the backfill to achieve this behavior. Instead, whether to execute a backfill as a single run is now determined by a setting on the asset definition. To enable single-run backfills, set `backfill_policy=BackfillPolicy.single_run()` on the asset definitions. Refer to the [docs on single-run backfills](https://docs.dagster.io/concepts/partitions-schedules-sensors/backfills#single-run-backfills) for more information.
-
-- `AssetExecutionContext` is now a subclass of `OpExecutionContext`, not a type alias. The code
-
-```python
-def my_helper_function(context: AssetExecutionContext):
-    ...
-
-@op
-def my_op(context: OpExecutionContext):
-    my_helper_function(context)
-```
-
-will cause type checking errors. To migrate, update type hints to respect the new subclassing.
-
-- `AssetExecutionContext` cannot be used as the type annotation for `@op`s. To migrate, update the type hint in `@op` to `OpExecutionContext`. `@op`s that are used in `@graph_assets` may still use the `AssetExecutionContext` type hint.
-
-```python
-# old
-@op
-def my_op(context: AssetExecutionContext):
-    ...
-
-# correct
-@op
-def my_op(context: OpExecutionContext):
-    ...
-```
-
-- `AssetCheckResult(success=True)` is renamed to `AssetCheckResult(passed=True)`
-
-- Asset checks defined with Dagster version 1.4 will no longer work with Dagster Cloud, or with Dagster UI 1.5. Upgrade your `dagster` library to continue using checks.
-
-## Upgrading to 1.4.0
+## Migrating to 1.4.0
 
 ### Deprecations
 
@@ -355,7 +79,7 @@ def a_downstream_asset():
    ...
 ```
 
-- [Dagster Cloud ECS Agent] We've introduced performance improvements that rely on the [AWS Resource Groups Tagging API](https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/overview.html). To enable, grant your agent's IAM policy permission to `tag:GetResources`. Without this policy, the ECS Agent will log a deprecation warning and fall back to its old behavior (listing all ECS services in the cluster and then listing each service's tags).
+- [Dagster Cloud ECS Agent] We've introduced performance improvements that rely on the [AWS Resource Groups Tagging API](https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/overview.html). To enable, grant your agent's IAM policy permission to `tag:DescribeResources`. Without this policy, the ECS Agent will log a deprecation warning and fall back to its old behavior (listing all ECS services in the cluster and then listing each service's tags).
 - [dagster-dbt] `DbtCliClientResource`, `dbt_cli_resource` and `DbtCliOutput` are now being deprecated in favor of `DbtCliResource`. `dagster-dbt` Asset APIs like `load_assets_from_dbt_manifest` and `load_assets_from_dbt_project` will continue to work if given either a `DbtCliClientResource` or `DbtCliResource`.
 
 ```python
@@ -474,7 +198,7 @@ load_assets_from_dbt_manifest(
 - [dagster-dbt] The arguments for `load_assets_from_dbt_project` and `load_assets_from_dbt_manifest` now must be specified using keyword arguments.
 - [dagster-dbt] When using the new `DbtCliResource` with `load_assets_from_dbt_project` and `load_assets_from_dbt_manifest`, stdout logs from the dbt process will now appear in the compute logs instead of the event logs. To view these compute logs, you should ensure that your Dagster instance has [compute log storage configured](https://docs.dagster.io/deployment/dagster-instance#compute-log-storage).
 
-## Upgrading to 1.3.0
+## Migrating to 1.3.0
 
 ### Deprecations
 
@@ -511,7 +235,7 @@ RENAME COLUMN time_copy TO time
 
 ```
 
-## Upgrading to 1.2.0
+## Migrating to 1.2.0
 
 ### Database migration
 
@@ -548,6 +272,7 @@ RENAME COLUMN time_copy TO time
 - [dagster-snowflake] The `execute_queries` command now returns a list of DataFrames when `use_pandas_result` is True, rather than appending the results of each query to a single DataFrame.
 - [dagster-shell] The default behavior of the `execute` and `execute_shell_command` functions is now to include any environment variables in the calling op. To restore the previous behavior, you can pass in `env={}` to these functions.
 - [dagster-k8s] Several Dagster features that were previously disabled by default in the Dagster Helm chart are now enabled by default. These features are:
+
   - The [run queue](https://docs.dagster.io/deployment/run-coordinator#limiting-run-concurrency) (by default, without a limit). Runs will now always be launched from the Daemon.
   - Run queue parallelism - by default, up to 4 runs can now be pulled off of the queue at a time (as long as the global run limit or tag-based concurrency limits are not exceeded).
   - [Run retries](https://docs.dagster.io/deployment/run-retries#run-retries) - runs will now retry if they have the `dagster/max_retries` tag set. You can configure a global number of retries in the Helm chart by setting `run_retries.max_retries` to a value greater than the default of 0.
@@ -561,7 +286,7 @@ RENAME COLUMN time_copy TO time
   - `create_databricks_job_op` is now deprecated. To submit one-off runs of Databricks tasks, you must now use the `create_databricks_submit_run_op`.
   - The Databricks token that is passed to the `databricks_client` resource must now begin with `https://`.
 
-## Upgrading to 1.1.1
+## Migrating to 1.1.1
 
 ### Database migration
 
@@ -575,7 +300,7 @@ Two optional database schema migrations, which can be run via `dagster instance 
 - `define_dagstermill_solid`, a legacy API, has been removed from `dagstermill`. Use `define_dagstermill_op` or `define_dagstermill_asset` instead to create an `op` or `asset` from a Jupyter notebook, respectively.
 - The internal `ComputeLogManager` API is marked as deprecated in favor of an updated interface: `CapturedLogManager`. It will be removed in `1.2.0`. This should only affect dagster instances that have implemented a custom compute log manager.
 
-## Upgrading to 1.0
+## Migrating to 1.0
 
 - Most of the classes and decorators in Dagster have moved to using a bare asterisk argument, enforcing that arguments are provided as keywords. **If using long lists of non-keyword arguments with dagster decorators or classes, you will likely run into errors in 1.0.** This can be fixed by switching to using keyword arguments.
 - In an upcoming 1.x release, we plan to make a change that renders values supplied to `configured` in Dagit. Up through this point, values provided to `configured` have not been sent anywhere outside the process where they were used. This change will mean that, like other places you can supply configuration, `configured` is not a good place to put secrets: **You should not include any values in configuration that you don't want to be stored in the Dagster database and displayed inside Dagit.**
@@ -598,7 +323,7 @@ to make sure the correct library version is installed.
 
 ### Legacy API Removals
 
-- Dagster's legacy APIs, which were marked "legacy" in 0.13.0, have been removed. This includes `@solid`, `SolidDefinition`, `@pipeline`, `PipelineDefinition`, `@composite_solid`, `CompositeSolidDefinition`, `ModeDefinition`, `PresetDefinition`, `PartitionSetDefinition`, `InputDefinition`, `OutputDefinition`, `DynamicOutputDefinition`, `pipeline_failure_sensor`, `@hourly_schedule`, `@daily_schedule`, `@weekly_schedule`, and `@monthly_schedule`. [Here is a guide](https://legacy-versioned-docs.dagster.dagster-docs.io/0.15.6/guides/dagster/graph_job_op) to migrating from the legacy APIs to the stable APIs.
+- Dagster's legacy APIs, which were marked "legacy" in 0.13.0, have been removed. This includes `@solid`, `SolidDefinition`, `@pipeline`, `PipelineDefinition`, `@composite_solid`, `CompositeSolidDefinition`, `ModeDefinition`, `PresetDefinition`, `PartitionSetDefinition`, `InputDefinition`, `OutputDefinition`, `DynamicOutputDefinition`, `pipeline_failure_sensor`, `@hourly_schedule`, `@daily_schedule`, `@weekly_schedule`, and `@monthly_schedule`. [Here is a guide](https://docs.dagster.io/0.15.6/guides/dagster/graph_job_op) to migrating from the legacy APIs to the stable APIs.
 - Deprecated arguments to library ops have been switched to reflect stable APIs. This includes `input_defs`/`output_defs` arguments on `define_dagstermill_op`, which have been changed to `ins`/`outs` respectively, and `input_defs` argument on `create_shell_script_op`, which has been changed to `ins`.
 - The `pipeline_selection` argument has been removed from `run_failure_sensor` and related decorators / functions, and `job_selection` has been deprecated. Instead, use `monitored_jobs`.
 - `ScheduleExecutionContext` and `SensorExecutionContext` APIs have been removed. In 0.13.0, these were renamed to `ScheduleEvaluationContext` and `SensorEvaluationContext` respectively, and marked deprecated.
@@ -699,7 +424,7 @@ From libraries (APIs removed in 0.16.0 onwards):
 - `dagster_snowflake.snowflake_solid_for_query`
 - `dagster_spark.create_spark_solid`
 
-## Upgrading to 0.15.0
+## Migrating to 0.15.0
 
 All items below are breaking changes unless marked with _(deprecation)_.
 
@@ -731,7 +456,7 @@ This release marks the official transition of software-defined assets from exper
 - The FileCache class has been removed.
 - Previously, when schedules/sensors targeted jobs with the same name as other jobs in the repo, the jobs on the sensor/schedule would silently overwrite the other jobs. Now, this will cause an error.
 
-## Upgrading to 0.14.0
+## Migrating to 0.14.0
 
 If migrating from below 0.13.17, you can run
 
@@ -781,12 +506,12 @@ Dagster’s metadata API has undergone a signficant overhaul. Changes include:
 - The description attribute of `EventMetadataEntry` is deprecated.
 - The static API of `EventMetadataEntry` (e.g. `EventMetadataEntry.text`) is deprecated. In 0.15.0, users should avoid constructing `EventMetadataEntry` objects directly, instead utilizing the metadata dictionary keyword argument, which maps string labels to `MetadataValues`.
 
-## Upgrading to 0.13.0
+## Migrating to 0.13.0
 
 Jobs, ops, and graphs have replaced pipelines, solids, modes, and presets as the stable core of the
-system. [Here](https://legacy-versioned-docs.dagster.dagster-docs.io/0.15.7/guides/dagster/graph_job_op) is a guide you can use to update your code using the legacy APIs into using the new Dagster core APIs. 0.13.0 is still compatible with the pipeline, solid, mode, and preset APIs, which means that you don't need to migrate your code to upgrade to 0.13.0.
+system. [Here](https://docs.dagster.io/0.15.7/guides/dagster/graph_job_op) is a guide you can use to update your code using the legacy APIs into using the new Dagster core APIs. 0.13.0 is still compatible with the pipeline, solid, mode, and preset APIs, which means that you don't need to migrate your code to upgrade to 0.13.0.
 
-## Upgrading to 0.12.0
+## Migrating to 0.12.0
 
 The new experimental core API experience in Dagit uses some features that require a data migration. Before enabling the experimental core API flag in Dagit, you will first need to run this command:
 
@@ -796,7 +521,7 @@ dagster instance migrate
 
 If you are not going to enable the experimental core API experience, this data migration is optional. However, you may still want to run the migration anyway, which will enable better performance in viewing the Asset catalog in Dagit.
 
-## Upgrading to 0.11.0
+## Migrating to 0.11.0
 
 ### Action Required: Run and event storage schema changes
 
@@ -849,7 +574,7 @@ The corresponding value flag `dagsterDaemon.backfill.enabled` has also been remo
     interval_seconds: 10
   ```
 
-## Upgrading to 0.10.0
+## Migrating to 0.10.0
 
 ### Action Required: Run and event storage schema changes
 
@@ -900,7 +625,7 @@ set up and run the daemon process for local development, Docker, or Kubernetes d
 3. Start the `dagster-daemon` process. Guides can be found in our
    [deployment documentations](https://docs.dagster.io/deployment).
 
-See our [schedules troubleshooting guide](https://docs.dagster.io/concepts/partitions-schedules-sensors/schedules) for
+See our [schedules troubleshooting guide](https://docs.dagster.io/troubleshooting/schedules) for
 help if you experience any problems with the new scheduler.
 
 **If you are not using a legacy scheduler:**
@@ -1043,7 +768,7 @@ should now be expressed as:
     location_name: dagster_examples
 ```
 
-See our [Workspaces Overview](https://docs.dagster.io/concepts/code-locations/workspace-files)
+See our [Workspaces Overview](https://docs.dagster.io/overview/repositories-workspaces/workspaces#loading-from-an-external-environment)
 for more information and examples.
 
 ### Removal: config_field property on definition classes
@@ -1227,15 +952,16 @@ by default.
 If you were using the `CeleryK8sRunLauncher`, one of `rabbitmq` or `redis` must now be explicitly
 enabled in your Helm values.
 
-## Upgrading to 0.9.0
+## Migrating to 0.9.0
 
 ### Removal: config argument
 
 We have removed the `config` argument to the `ConfigMapping`, `@composite_solid`, `@solid`,
 `SolidDefinition`, `@executor`, `ExecutorDefinition`, `@logger`, `LoggerDefinition`, `@resource`,
-and `ResourceDefinition` APIs, which we deprecated in 0.8.0, in favor of `config_schema`.
+and `ResourceDefinition` APIs, which we deprecated in 0.8.0, in favor of `config_schema`, as
+described [here](#renaming-config).
 
-## Upgrading to 0.8.8
+## Migrating to 0.8.8
 
 ### Deprecation: Materialization
 
@@ -1278,7 +1004,7 @@ from dagster_aws.s3 import s3_plus_default_intermediate_storage_defs
 ModeDefinition(intermediate_storage_defs=s3_plus_default_intermediate_storage_defs)
 ```
 
-## Upgrading to 0.8.7
+## Migrating to 0.8.7
 
 ### Loading python modules from the working directory
 
@@ -1288,7 +1014,7 @@ PYTHONPATH when resolving modules, which may break some imports. Explicitly inst
 packages can be specified in workspaces using the `python_package` workspace yaml config option.
 The `python_module` config option is deprecated and will be removed in a future release.
 
-## Upgrading to 0.8.6
+## Migrating to 0.8.6
 
 ### dagster-celery
 
@@ -1354,7 +1080,7 @@ MyType = DagsterType(
 )
 ```
 
-## Upgrading to 0.8.5
+## Migrating to 0.8.5
 
 ### Python 3.5
 
@@ -1364,7 +1090,7 @@ Python 3.5 is no longer under test.
 
 `Engine` and `ExecutorConfig` have been deleted in favor of `Executor`. Instead of the `@executor` decorator decorating a function that returns an `ExecutorConfig` it should now decorate a function that returns an `Executor`.
 
-## Upgrading to 0.8.3
+## Migrating to 0.8.3
 
 ### Change: gcs_resource
 
@@ -1382,7 +1108,7 @@ To:
 context.resources.gcs
 ```
 
-## Upgrading to 0.8.0
+## Migrating to 0.8.0
 
 ### Repository loading
 
@@ -1640,7 +1366,7 @@ now be nested under the key `local`.
 
 `dagster_spark.SparkSolidDefinition` has been removed - use `create_spark_solid` instead.
 
-## Upgrading to 0.7.0
+## Migrating to 0.7.0
 
 The 0.7.0 release contains a number of breaking API changes. While listed
 in the changelog, this document goes into more detail about how to

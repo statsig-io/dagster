@@ -1,4 +1,5 @@
 import {Meta} from '@storybook/react';
+import * as React from 'react';
 
 import {IPluginSidebarProps} from '../index';
 import {SidebarComponent as SQLDialogComponent} from '../sql';

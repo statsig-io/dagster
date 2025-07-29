@@ -1,42 +1,39 @@
 import math
 import time
-from typing import Any, Optional, cast
+from typing import Optional
 
-import dagster as dg
-from dagster._core.definitions.events import AssetMaterialization
+from dagster import Definitions, asset
+from dagster._core.definitions.assets import AssetsDefinition
+from dagster._core.definitions.events import AssetKey, AssetMaterialization
+from dagster._core.definitions.metadata import TextMetadataValue
 from dagster._core.events.log import EventLogEntry
 from dagster._core.instance import DagsterInstance
 from dagster._core.storage.branching.branching_io_manager import BranchingIOManager
 
-from dagster_tests.storage_tests.branching_io_manager_tests.utils import (
-    LOG,
-    AssetBasedInMemoryIOManager,
-    ConfigurableAssetBasedInMemoryIOManager,
-    DefinitionsRunner,
-)
+from .utils import AssetBasedInMemoryIOManager, DefinitionsRunner
 
 
-@dg.asset
+@asset
 def now_time() -> int:
-    return math.floor(time.time() * 100)
+    return int(math.floor(time.time() * 100))
 
 
-def get_now_time_plus_N(N: int) -> dg.AssetsDefinition:
-    @dg.asset
+def get_now_time_plus_N(N: int) -> AssetsDefinition:
+    @asset
     def now_time_plus_N(now_time: int) -> int:
         return now_time + N
 
     return now_time_plus_N
 
 
-@dg.asset
+@asset
 def now_time_plus_20_after_plus_N(now_time_plus_N: int) -> int:
     return now_time_plus_N + 20
 
 
 def test_basic_bound_runner_usage():
     with DefinitionsRunner.ephemeral(
-        dg.Definitions(
+        Definitions(
             assets=[now_time],
             resources={"io_manager": AssetBasedInMemoryIOManager()},
         ),
@@ -60,7 +57,7 @@ def get_branch_name_from_materialization(
     asset_materialization: AssetMaterialization, metadata_key="io_manager_branch"
 ) -> Optional[str]:
     entry = asset_materialization.metadata.get(metadata_key)
-    if isinstance(entry, dg.TextMetadataValue):
+    if isinstance(entry, TextMetadataValue):
         return entry.value
     else:
         return None
@@ -68,7 +65,7 @@ def get_branch_name_from_materialization(
 
 def test_write_staging_label():
     with DefinitionsRunner.ephemeral(
-        dg.Definitions(
+        Definitions(
             assets=[now_time],
             resources={
                 "io_manager": BranchingIOManager(
@@ -80,43 +77,7 @@ def test_write_staging_label():
     ) as staging_runner:
         assert staging_runner.materialize_all_assets().success
 
-        all_mat_log_records = staging_runner.get_last_5000_asset_materialization_event_records(
-            "now_time"
-        )
-        assert all_mat_log_records
-
-        assert len(all_mat_log_records) == 1
-        asset_mat = all_mat_log_records[0].event_log_entry.asset_materialization
-
-        assert asset_mat
-        assert get_branch_name_from_materialization(asset_mat) == "dev"
-
-
-def test_setup_teardown() -> None:
-    with DefinitionsRunner.ephemeral(
-        dg.Definitions(
-            assets=[now_time],
-            resources={
-                "io_manager": BranchingIOManager(
-                    parent_io_manager=ConfigurableAssetBasedInMemoryIOManager(name="parent"),
-                    branch_io_manager=ConfigurableAssetBasedInMemoryIOManager(name="branch"),
-                )
-            },
-        ),
-    ) as staging_runner:
-        LOG.clear()
-        assert staging_runner.materialize_all_assets().success
-        assert len(LOG) == 4
-        assert LOG == [
-            "setup_for_execution parent",
-            "setup_for_execution branch",
-            "teardown_after_execution branch",
-            "teardown_after_execution parent",
-        ]
-
-        all_mat_log_records = staging_runner.get_last_5000_asset_materialization_event_records(
-            "now_time"
-        )
+        all_mat_log_records = staging_runner.get_all_asset_materialization_event_records("now_time")
         assert all_mat_log_records
 
         assert len(all_mat_log_records) == 1
@@ -128,7 +89,7 @@ def test_setup_teardown() -> None:
 
 def test_write_alternative_branch_metadata_key():
     with DefinitionsRunner.ephemeral(
-        dg.Definitions(
+        Definitions(
             assets=[now_time],
             resources={
                 "io_manager": BranchingIOManager(
@@ -141,9 +102,7 @@ def test_write_alternative_branch_metadata_key():
     ) as staging_runner:
         assert staging_runner.materialize_all_assets()
 
-        all_mat_log_records = staging_runner.get_last_5000_asset_materialization_event_records(
-            "now_time"
-        )
+        all_mat_log_records = staging_runner.get_all_asset_materialization_event_records("now_time")
         assert all_mat_log_records
 
         assert len(all_mat_log_records) == 1
@@ -168,7 +127,7 @@ def test_basic_workflow():
         dev_io_manager = AssetBasedInMemoryIOManager()
 
         prod_runner = DefinitionsRunner(
-            dg.Definitions(
+            Definitions(
                 assets=[now_time, now_time_plus_N_actually_10, now_time_plus_20_after_plus_N],
                 resources={"io_manager": prod_io_manager},
             ),
@@ -176,7 +135,7 @@ def test_basic_workflow():
         )
 
         dev_t0_runner = DefinitionsRunner(
-            dg.Definitions(
+            Definitions(
                 assets=[now_time, now_time_plus_N_actually_10, now_time_plus_20_after_plus_N],
                 resources={
                     "io_manager": BranchingIOManager(
@@ -190,9 +149,7 @@ def test_basic_workflow():
 
         assert prod_runner.materialize_all_assets()
 
-        now_time_prod_mat_1 = prod_instance.get_latest_materialization_event(
-            dg.AssetKey("now_time")
-        )
+        now_time_prod_mat_1 = prod_instance.get_latest_materialization_event(AssetKey("now_time"))
         assert now_time_prod_mat_1
         assert not get_env_entry(now_time_prod_mat_1)  # should be no env entry
         now_time_prod_value_1 = prod_runner.load_asset_value("now_time")
@@ -203,7 +160,7 @@ def test_basic_workflow():
 
         assert dev_t0_runner.materialize_asset("now_time_plus_N").success
 
-        all_mat_event_log_records = dev_t0_runner.get_last_5000_asset_materialization_event_records(
+        all_mat_event_log_records = dev_t0_runner.get_all_asset_materialization_event_records(
             "now_time_plus_N"
         )
 
@@ -216,10 +173,10 @@ def test_basic_workflow():
         assert dev_t0_runner.load_asset_value("now_time_plus_N") == now_time_prod_value_1 + 10
 
         # we have done this with *no* materializations of the root asset in staging
-        assert not dev_t0_runner.get_last_5000_asset_materialization_event_records("now_time")
+        assert not dev_t0_runner.get_all_asset_materialization_event_records("now_time")
 
         dev_t1_runner = DefinitionsRunner(
-            dg.Definitions(
+            Definitions(
                 # redefining now_time_plus_N to add 17 rather than 10
                 assets=[now_time, get_now_time_plus_N(17), now_time_plus_20_after_plus_N],
                 resources={
@@ -240,50 +197,16 @@ def test_basic_workflow():
 
         assert (
             # staging_after_iteration_runner.load_asset_value("now_time_plus_N")
-            result == now_time_prod_value_1 + 17
+            result
+            == now_time_prod_value_1 + 17
         )
 
         # we were able to do this without having an materializations in staging of the root asset
-        assert not dev_t1_runner.get_last_5000_asset_materialization_event_records("now_time")
+        assert not dev_t1_runner.get_all_asset_materialization_event_records("now_time")
 
         dev_t1_runner.materialize_asset("now_time_plus_20_after_plus_N")
 
         # downstream gets it from staging
         assert dev_t1_runner.load_asset_value("now_time_plus_20_after_plus_N") == (
             now_time_prod_value_1 + 17 + 20
-        )
-
-
-@dg.op
-def now_time_op() -> int:
-    return math.floor(time.time() * 100)
-
-
-@dg.op(ins={"now_time": dg.In(int)})
-def now_time_divide_by_2(now_time: int) -> int:
-    return now_time // 2
-
-
-@dg.job
-def now_time_job():
-    now_time_divide_by_2(now_time_op())
-
-
-def test_job_op_usecase() -> Any:
-    with DefinitionsRunner.ephemeral(
-        dg.Definitions(
-            jobs=[now_time_job],
-            resources={
-                "io_manager": BranchingIOManager(
-                    parent_io_manager=AssetBasedInMemoryIOManager(),
-                    branch_io_manager=AssetBasedInMemoryIOManager(),
-                )
-            },
-        ),
-    ) as runner:
-        assert (
-            cast("DefinitionsRunner", runner)
-            .defs.resolve_job_def("now_time_job")
-            .execute_in_process(instance=runner.instance)
-            .success
         )

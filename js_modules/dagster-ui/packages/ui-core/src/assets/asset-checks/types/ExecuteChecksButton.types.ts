@@ -6,7 +6,6 @@ export type ExecuteChecksButtonCheckFragment = {
   __typename: 'AssetCheck';
   name: string;
   canExecuteIndividually: Types.AssetCheckCanExecuteIndividually;
-  jobNames: Array<string>;
 };
 
 export type ExecuteChecksButtonAssetNodeFragment = {

@@ -2,32 +2,56 @@ from contextlib import contextmanager
 from enum import Enum as PythonEnum
 from unittest import mock
 
-import dagster as dg
 import pytest
-from dagster import DagsterEventType, ResourceDefinition, String
+from dagster import (
+    DagsterEventType,
+    DagsterInvariantViolationError,
+    DagsterResourceFunctionError,
+    Enum,
+    EnumValue,
+    Field,
+    GraphDefinition,
+    Int,
+    ResourceDefinition,
+    String,
+    build_op_context,
+    configured,
+    execute_job,
+    fs_io_manager,
+    graph,
+    job,
+    op,
+    reconstructable,
+    resource,
+)
 from dagster._core.definitions.job_base import InMemoryJob
-from dagster._core.definitions.resource_definition import dagster_maintained_resource
-from dagster._core.events.log import construct_event_logger
+from dagster._core.definitions.resource_definition import (
+    dagster_maintained_resource,
+    make_values_resource,
+)
+from dagster._core.errors import DagsterConfigMappingFunctionError, DagsterInvalidDefinitionError
+from dagster._core.events.log import EventLogEntry, construct_event_logger
 from dagster._core.execution.api import create_execution_plan, execute_plan
 from dagster._core.instance import DagsterInstance
+from dagster._core.test_utils import instance_for_test
 from dagster._core.utils import coerce_valid_log_level
 
 
 def define_string_resource():
-    return dg.ResourceDefinition(
+    return ResourceDefinition(
         config_schema=String,
         resource_fn=lambda init_context: init_context.resource_config,
     )
 
 
 def test_resource_decorator_no_context():
-    @dg.resource
+    @resource
     def _basic():
         pass
 
     # Document that it is possible to provide required resource keys and
     # config schema, and still not provide a context.
-    @dg.resource(required_resource_keys={"foo", "bar"}, config_schema={"foo": str})
+    @resource(required_resource_keys={"foo", "bar"}, config_schema={"foo": str})
     def _reqs_resources():
         pass
 
@@ -35,12 +59,12 @@ def test_resource_decorator_no_context():
 def assert_job_runs_with_resource(resource_def, resource_config, expected_resource):
     called = {}
 
-    @dg.op(required_resource_keys={"some_name"})
+    @op(required_resource_keys={"some_name"})
     def a_op(context):
         called["yup"] = True
         assert context.resources.some_name == expected_resource
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="with_a_resource",
         node_defs=[a_op],
     ).to_job(resource_defs={"some_name": resource_def})
@@ -58,12 +82,12 @@ def assert_job_runs_with_resource(resource_def, resource_config, expected_resour
 def test_basic_resource():
     called = {}
 
-    @dg.op(required_resource_keys={"a_string"})
+    @op(required_resource_keys={"a_string"})
     def a_op(context):
         called["yup"] = True
         assert context.resources.a_string == "foo"
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="with_a_resource",
         node_defs=[a_op],
     ).to_job(resource_defs={"a_string": define_string_resource()})
@@ -77,22 +101,22 @@ def test_basic_resource():
 def test_resource_with_dependencies():
     called = {}
 
-    @dg.resource
+    @resource
     def foo_resource(_):
         called["foo_resource"] = True
         return "foo"
 
-    @dg.resource(required_resource_keys={"foo_resource"})
+    @resource(required_resource_keys={"foo_resource"})
     def bar_resource(init_context):
         called["bar_resource"] = True
         return init_context.resources.foo_resource + "bar"
 
-    @dg.op(required_resource_keys={"bar_resource"})
+    @op(required_resource_keys={"bar_resource"})
     def dep_op(context):
         called["dep_op"] = True
         assert context.resources.bar_resource == "foobar"
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="with_dep_resource",
         node_defs=[dep_op],
     ).to_job(
@@ -113,26 +137,26 @@ def test_resource_with_dependencies():
 def test_resource_cyclic_dependencies():
     called = {}
 
-    @dg.resource(required_resource_keys={"bar_resource"})
+    @resource(required_resource_keys={"bar_resource"})
     def foo_resource(init_context):
         called["foo_resource"] = True
         return init_context.resources.bar_resource + "foo"
 
-    @dg.resource(required_resource_keys={"foo_resource"})
+    @resource(required_resource_keys={"foo_resource"})
     def bar_resource(init_context):
         called["bar_resource"] = True
         return init_context.resources.foo_resource + "bar"
 
-    @dg.op(required_resource_keys={"bar_resource"})
+    @op(required_resource_keys={"bar_resource"})
     def dep_op(context):
         called["dep_op"] = True
         assert context.resources.bar_resource == "foobar"
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match='Resource key "(foo_resource|bar_resource)" transitively depends on itself.',
     ):
-        dg.GraphDefinition(
+        GraphDefinition(
             name="with_dep_resource",
             node_defs=[dep_op],
         ).to_job(
@@ -146,7 +170,7 @@ def test_resource_cyclic_dependencies():
 def test_yield_resource():
     called = {}
 
-    @dg.op(required_resource_keys={"a_string"})
+    @op(required_resource_keys={"a_string"})
     def a_op(context):
         called["yup"] = True
         assert context.resources.a_string == "foo"
@@ -154,9 +178,9 @@ def test_yield_resource():
     def _do_resource(init_context):
         yield init_context.resource_config
 
-    yield_string_resource = dg.ResourceDefinition(config_schema=String, resource_fn=_do_resource)
+    yield_string_resource = ResourceDefinition(config_schema=String, resource_fn=_do_resource)
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="with_a_yield_resource",
         node_defs=[a_op],
     ).to_job(resource_defs={"a_string": yield_string_resource})
@@ -172,7 +196,7 @@ def test_yield_multiple_resources():
 
     saw = []
 
-    @dg.op(required_resource_keys={"string_one", "string_two"})
+    @op(required_resource_keys={"string_one", "string_two"})
     def a_op(context):
         called["yup"] = True
         assert context.resources.string_one == "foo"
@@ -183,9 +207,9 @@ def test_yield_multiple_resources():
         yield init_context.resource_config
         saw.append("after yield " + init_context.resource_config)
 
-    yield_string_resource = dg.ResourceDefinition(config_schema=String, resource_fn=_do_resource)
+    yield_string_resource = ResourceDefinition(config_schema=String, resource_fn=_do_resource)
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="with_yield_resources",
         node_defs=[a_op],
     ).to_job(
@@ -219,20 +243,20 @@ def test_resource_decorator():
 
     saw = []
 
-    @dg.op(required_resource_keys={"string_one", "string_two"})
+    @op(required_resource_keys={"string_one", "string_two"})
     def a_op(context):
         called["yup"] = True
         assert context.resources.string_one == "foo"
         assert context.resources.string_two == "bar"
 
     # API red alert. One has to wrap a type in Field because it is callable
-    @dg.resource(config_schema=dg.Field(dg.String))
+    @resource(config_schema=Field(String))
     def yielding_string_resource(init_context):
         saw.append("before yield " + init_context.resource_config)
         yield init_context.resource_config
         saw.append("after yield " + init_context.resource_config)
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="with_yield_resources",
         node_defs=[a_op],
     ).to_job(
@@ -266,7 +290,7 @@ def test_mixed_multiple_resources():
 
     saw = []
 
-    @dg.op(required_resource_keys={"returned_string", "yielded_string"})
+    @op(required_resource_keys={"returned_string", "yielded_string"})
     def a_op(context):
         called["yup"] = True
         assert context.resources.returned_string == "foo"
@@ -277,19 +301,17 @@ def test_mixed_multiple_resources():
         yield init_context.resource_config
         saw.append("after yield " + init_context.resource_config)
 
-    yield_string_resource = dg.ResourceDefinition(
-        config_schema=String, resource_fn=_do_yield_resource
-    )
+    yield_string_resource = ResourceDefinition(config_schema=String, resource_fn=_do_yield_resource)
 
     def _do_return_resource(init_context):
         saw.append("before return " + init_context.resource_config)
         return init_context.resource_config
 
-    return_string_resource = dg.ResourceDefinition(
+    return_string_resource = ResourceDefinition(
         config_schema=String, resource_fn=_do_return_resource
     )
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="with_a_yield_resource",
         node_defs=[a_op],
     ).to_job(
@@ -319,12 +341,12 @@ def test_mixed_multiple_resources():
 def test_none_resource():
     called = {}
 
-    @dg.op(required_resource_keys={"test_null"})
+    @op(required_resource_keys={"test_null"})
     def op_test_null(context):
         assert context.resources.test_null is None
         called["yup"] = True
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_none_resource",
         node_defs=[op_test_null],
     ).to_job(resource_defs={"test_null": ResourceDefinition.none_resource()})
@@ -338,12 +360,12 @@ def test_none_resource():
 def test_string_resource():
     called = {}
 
-    @dg.op(required_resource_keys={"test_string"})
+    @op(required_resource_keys={"test_string"})
     def op_test_string(context):
         assert context.resources.test_string == "foo"
         called["yup"] = True
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_string_resource",
         node_defs=[op_test_string],
     ).to_job(resource_defs={"test_string": ResourceDefinition.string_resource()})
@@ -359,17 +381,17 @@ def test_variables_resource():
     single_variable = {"foo": "my_string"}
     multi_variables = {"foo": "my_string", "bar": 1}
 
-    @dg.op(required_resource_keys={"any_variable", "single_variable", "multi_variables"})
+    @op(required_resource_keys={"any_variable", "single_variable", "multi_variables"})
     def my_op(context):
         assert context.resources.any_variable == any_variable
         assert context.resources.single_variable == single_variable
         assert context.resources.multi_variables == multi_variables
 
-    @dg.job(
+    @job(
         resource_defs={
-            "any_variable": dg.make_values_resource(),
-            "single_variable": dg.make_values_resource(foo=str),
-            "multi_variables": dg.make_values_resource(foo=str, bar=int),
+            "any_variable": make_values_resource(),
+            "single_variable": make_values_resource(foo=str),
+            "multi_variables": make_values_resource(foo=str, bar=int),
         }
     )
     def my_job():
@@ -393,12 +415,12 @@ def test_hardcoded_resource():
 
     mock_obj = mock.MagicMock()
 
-    @dg.op(required_resource_keys={"hardcoded"})
+    @op(required_resource_keys={"hardcoded"})
     def op_hardcoded(context):
         assert context.resources.hardcoded("called")
         called["yup"] = True
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="hardcoded_resource",
         node_defs=[op_hardcoded],
     ).to_job(resource_defs={"hardcoded": ResourceDefinition.hardcoded_resource(mock_obj)})
@@ -413,12 +435,12 @@ def test_hardcoded_resource():
 def test_mock_resource():
     called = {}
 
-    @dg.op(required_resource_keys={"test_mock"})
+    @op(required_resource_keys={"test_mock"})
     def op_test_mock(context):
         assert context.resources.test_mock is not None
         called["yup"] = True
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_mock_resource",
         node_defs=[op_test_mock],
     ).to_job(resource_defs={"test_mock": ResourceDefinition.mock_resource()})
@@ -432,17 +454,17 @@ def test_mock_resource():
 def test_no_config_resource_pass_none():
     called = {}
 
-    @dg.resource(None)
+    @resource(None)
     def return_thing(_init_context):
         called["resource"] = True
         return "thing"
 
-    @dg.op(required_resource_keys={"return_thing"})
+    @op(required_resource_keys={"return_thing"})
     def check_thing(context):
         called["solid"] = True
         assert context.resources.return_thing == "thing"
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_no_config_resource",
         node_defs=[check_thing],
     ).to_job(resource_defs={"return_thing": return_thing})
@@ -456,17 +478,17 @@ def test_no_config_resource_pass_none():
 def test_no_config_resource_no_arg():
     called = {}
 
-    @dg.resource()
+    @resource()
     def return_thing(_init_context):
         called["resource"] = True
         return "thing"
 
-    @dg.op(required_resource_keys={"return_thing"})
+    @op(required_resource_keys={"return_thing"})
     def check_thing(context):
         called["solid"] = True
         assert context.resources.return_thing == "thing"
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_no_config_resource",
         node_defs=[check_thing],
     ).to_job(resource_defs={"return_thing": return_thing})
@@ -480,17 +502,17 @@ def test_no_config_resource_no_arg():
 def test_no_config_resource_bare_no_arg():
     called = {}
 
-    @dg.resource
+    @resource
     def return_thing(_init_context):
         called["resource"] = True
         return "thing"
 
-    @dg.op(required_resource_keys={"return_thing"})
+    @op(required_resource_keys={"return_thing"})
     def check_thing(context):
         called["solid"] = True
         assert context.resources.return_thing == "thing"
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_no_config_resource",
         node_defs=[check_thing],
     ).to_job(resource_defs={"return_thing": return_thing})
@@ -508,15 +530,15 @@ def test_no_config_resource_definition():
         called["resource"] = True
         return "thing"
 
-    @dg.op(required_resource_keys={"return_thing"})
+    @op(required_resource_keys={"return_thing"})
     def check_thing(context):
         called["solid"] = True
         assert context.resources.return_thing == "thing"
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_no_config_resource",
         node_defs=[check_thing],
-    ).to_job(resource_defs={"return_thing": dg.ResourceDefinition(_return_thing_resource_fn)})
+    ).to_job(resource_defs={"return_thing": ResourceDefinition(_return_thing_resource_fn)})
 
     job_def.execute_in_process()
 
@@ -532,15 +554,15 @@ def test_resource_cleanup():
         yield True
         called["cleanup"] = True
 
-    @dg.op(required_resource_keys={"resource_with_cleanup"})
+    @op(required_resource_keys={"resource_with_cleanup"})
     def check_resource_created(context):
         called["solid"] = True
         assert context.resources.resource_with_cleanup is True
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_resource_cleanup",
         node_defs=[check_resource_created],
-    ).to_job(resource_defs={"resource_with_cleanup": dg.ResourceDefinition(_cleanup_resource_fn)})
+    ).to_job(resource_defs={"resource_with_cleanup": ResourceDefinition(_cleanup_resource_fn)})
 
     job_def.execute_in_process()
 
@@ -562,19 +584,19 @@ def test_stacked_resource_cleanup():
         yield True
         called.append("cleanup_2")
 
-    @dg.op(required_resource_keys={"resource_with_cleanup_1", "resource_with_cleanup_2"})
+    @op(required_resource_keys={"resource_with_cleanup_1", "resource_with_cleanup_2"})
     def check_resource_created(context):
         called.append("solid")
         assert context.resources.resource_with_cleanup_1 is True
         assert context.resources.resource_with_cleanup_2 is True
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_resource_cleanup",
         node_defs=[check_resource_created],
     ).to_job(
         resource_defs={
-            "resource_with_cleanup_1": dg.ResourceDefinition(_cleanup_resource_fn_1),
-            "resource_with_cleanup_2": dg.ResourceDefinition(_cleanup_resource_fn_2),
+            "resource_with_cleanup_1": ResourceDefinition(_cleanup_resource_fn_1),
+            "resource_with_cleanup_2": ResourceDefinition(_cleanup_resource_fn_2),
         }
     )
 
@@ -584,40 +606,40 @@ def test_stacked_resource_cleanup():
 
 
 def test_incorrect_resource_init_error():
-    @dg.resource
+    @resource
     def _correct_resource(_):
         pass
 
-    @dg.resource
+    @resource
     def _correct_resource_no_context():
         pass
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match=(
             "expects only a single positional required argument. Got required extra params _b, _c"
         ),
     ):
 
-        @dg.resource  # pyright: ignore[reportCallIssue,reportArgumentType]
+        @resource
         def _incorrect_resource_2(_a, _b, _c, _d=4):
             pass
 
-    @dg.resource
+    @resource
     def _correct_resource_2(_a, _b=1, _c=2):
         pass
 
 
 def test_resource_init_failure():
-    @dg.resource
+    @resource
     def failing_resource(_init_context):
         raise Exception("Uh oh")
 
-    @dg.op(required_resource_keys={"failing_resource"})
+    @op(required_resource_keys={"failing_resource"})
     def failing_resource_op(_context):
         pass
 
-    the_job = dg.GraphDefinition(
+    the_job = GraphDefinition(
         name="test_resource_init_failure",
         node_defs=[failing_resource_op],
     ).to_job(resource_defs={"failing_resource": failing_resource})
@@ -632,7 +654,7 @@ def test_resource_init_failure():
     dagster_run = instance.create_run_for_job(the_job, execution_plan=execution_plan)
 
     with pytest.raises(
-        dg.DagsterResourceFunctionError,
+        DagsterResourceFunctionError,
         match="Error executing resource_fn on ResourceDefinition failing_resource",
     ):
         execute_plan(
@@ -649,13 +671,13 @@ def test_resource_init_failure():
 
 
 def test_dagster_type_resource_decorator_config():
-    @dg.resource(dg.Int)
+    @resource(Int)
     def dagster_type_resource_config(_):
         raise Exception("not called")
 
     assert dagster_type_resource_config.config_schema.config_type.given_name == "Int"
 
-    @dg.resource(int)
+    @resource(int)
     def python_type_resource_config(_):
         raise Exception("not called")
 
@@ -666,7 +688,7 @@ def test_resource_init_failure_with_teardown():
     called = []
     cleaned = []
 
-    @dg.resource
+    @resource
     def resource_a(_):
         try:
             called.append("A")
@@ -674,7 +696,7 @@ def test_resource_init_failure_with_teardown():
         finally:
             cleaned.append("A")
 
-    @dg.resource
+    @resource
     def resource_b(_):
         try:
             called.append("B")
@@ -683,11 +705,11 @@ def test_resource_init_failure_with_teardown():
         finally:
             cleaned.append("B")
 
-    @dg.op(required_resource_keys={"a", "b"})
+    @op(required_resource_keys={"a", "b"})
     def resource_op(_):
         pass
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_resource_init_failure_with_cleanup",
         node_defs=[resource_op],
     ).to_job(resource_defs={"a": resource_a, "b": resource_b})
@@ -714,7 +736,7 @@ def test_op_failure_resource_teardown():
     called = []
     cleaned = []
 
-    @dg.resource
+    @resource
     def resource_a(_):
         try:
             called.append("A")
@@ -722,7 +744,7 @@ def test_op_failure_resource_teardown():
         finally:
             cleaned.append("A")
 
-    @dg.resource
+    @resource
     def resource_b(_):
         try:
             called.append("B")
@@ -730,11 +752,11 @@ def test_op_failure_resource_teardown():
         finally:
             cleaned.append("B")
 
-    @dg.op(required_resource_keys={"a", "b"})
+    @op(required_resource_keys={"a", "b"})
     def resource_op(_):
         raise Exception("uh oh")
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_solid_failure_resource_teardown",
         node_defs=[resource_op],
     ).to_job(resource_defs={"a": resource_a, "b": resource_b})
@@ -760,7 +782,7 @@ def test_op_failure_resource_teardown_raise():
     called = []
     cleaned = []
 
-    @dg.resource
+    @resource
     def resource_a(_):
         try:
             called.append("A")
@@ -768,7 +790,7 @@ def test_op_failure_resource_teardown_raise():
         finally:
             cleaned.append("A")
 
-    @dg.resource
+    @resource
     def resource_b(_):
         try:
             called.append("B")
@@ -776,11 +798,11 @@ def test_op_failure_resource_teardown_raise():
         finally:
             cleaned.append("B")
 
-    @dg.op(required_resource_keys={"a", "b"})
+    @op(required_resource_keys={"a", "b"})
     def resource_op(_):
         raise Exception("uh oh")
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_solid_failure_resource_teardown",
         node_defs=[resource_op],
     ).to_job(resource_defs={"a": resource_a, "b": resource_b})
@@ -799,7 +821,7 @@ def test_resource_teardown_failure():
     called = []
     cleaned = []
 
-    @dg.resource
+    @resource
     def resource_a(_):
         try:
             called.append("A")
@@ -807,7 +829,7 @@ def test_resource_teardown_failure():
         finally:
             cleaned.append("A")
 
-    @dg.resource
+    @resource
     def resource_b(_):
         try:
             called.append("B")
@@ -816,11 +838,11 @@ def test_resource_teardown_failure():
             raise Exception("uh oh")
             cleaned.append("B")
 
-    @dg.op(required_resource_keys={"a", "b"})
+    @op(required_resource_keys={"a", "b"})
     def resource_op(_):
         pass
 
-    job_def = dg.GraphDefinition(
+    job_def = GraphDefinition(
         name="test_resource_teardown_failure",
         node_defs=[resource_op],
     ).to_job(resource_defs={"a": resource_a, "b": resource_b})
@@ -833,7 +855,7 @@ def test_resource_teardown_failure():
     error_events = [
         event
         for event in result.all_events
-        if event.event_type == DagsterEventType.ENGINE_EVENT and event.event_specific_data.error  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+        if event.event_type == DagsterEventType.ENGINE_EVENT and event.event_specific_data.error
     ]
     assert len(error_events) == 1
     assert called == ["A", "B"]
@@ -841,40 +863,40 @@ def test_resource_teardown_failure():
 
 
 def define_resource_teardown_failure_job():
-    @dg.resource
+    @resource
     def resource_a(_):
         try:
             yield "A"
         finally:
             pass
 
-    @dg.resource
+    @resource
     def resource_b(_):
         try:
             yield "B"
         finally:
             raise Exception("uh oh")
 
-    @dg.op(required_resource_keys={"a", "b"})
+    @op(required_resource_keys={"a", "b"})
     def resource_op(_):
         pass
 
-    return dg.GraphDefinition(
+    return GraphDefinition(
         name="resource_teardown_failure",
         node_defs=[resource_op],
     ).to_job(
         resource_defs={
             "a": resource_a,
             "b": resource_b,
-            "io_manager": dg.fs_io_manager,
+            "io_manager": fs_io_manager,
         }
     )
 
 
 def test_multiprocessing_resource_teardown_failure():
-    with dg.instance_for_test() as instance:
-        recon_job = dg.reconstructable(define_resource_teardown_failure_job)
-        result = dg.execute_job(
+    with instance_for_test() as instance:
+        recon_job = reconstructable(define_resource_teardown_failure_job)
+        result = execute_job(
             recon_job,
             instance=instance,
             raise_on_error=False,
@@ -883,7 +905,7 @@ def test_multiprocessing_resource_teardown_failure():
         error_events = [
             event
             for event in result.all_events
-            if event.event_type == DagsterEventType.ENGINE_EVENT and event.event_specific_data.error  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+            if event.event_type == DagsterEventType.ENGINE_EVENT and event.event_specific_data.error
         ]
         assert len(error_events) == 1
 
@@ -897,19 +919,19 @@ def test_single_step_resource_event_logs():
     events = []
 
     def event_callback(record):
-        assert isinstance(record, dg.EventLogEntry)
+        assert isinstance(record, EventLogEntry)
         events.append(record)
 
-    @dg.op(required_resource_keys={"a"})
+    @op(required_resource_keys={"a"})
     def resource_op(context):
         context.log.info(USER_SOLID_MESSAGE)
 
-    @dg.resource
+    @resource
     def resource_a(context):
         context.log.info(USER_RESOURCE_MESSAGE)
         return "A"
 
-    the_job = dg.GraphDefinition(
+    the_job = GraphDefinition(
         name="resource_logging_job",
         node_defs=[resource_op],
     ).to_job(
@@ -925,7 +947,7 @@ def test_single_step_resource_event_logs():
     log_messages = [
         event
         for event in events
-        if isinstance(event, dg.EventLogEntry) and event.level == coerce_valid_log_level("INFO")
+        if isinstance(event, EventLogEntry) and event.level == coerce_valid_log_level("INFO")
     ]
     assert len(log_messages) == 2
 
@@ -943,14 +965,14 @@ def test_configured_with_config():
 
 def test_configured_with_fn():
     str_resource = define_string_resource()
-    configured_resource = str_resource.configured(lambda num: str(num + 1), dg.Int)
+    configured_resource = str_resource.configured(lambda num: str(num + 1), Int)
     assert_job_runs_with_resource(configured_resource, 2, "3")
 
 
 def test_configured_decorator_with_fn():
     str_resource = define_string_resource()
 
-    @dg.configured(str_resource, dg.Int)
+    @configured(str_resource, Int)
     def configured_resource(num):
         return str(num + 1)
 
@@ -960,12 +982,12 @@ def test_configured_decorator_with_fn():
 def test_configured_decorator_with_fn_and_user_code_error():
     str_resource = define_string_resource()
 
-    @dg.configured(str_resource, dg.Int)
+    @configured(str_resource, Int)
     def configured_resource(num):
         raise Exception("beep boop broke")
 
     with pytest.raises(
-        dg.DagsterConfigMappingFunctionError,
+        DagsterConfigMappingFunctionError,
         match=(
             "The config mapping function on a `configured` ResourceDefinition has thrown an "
             "unexpected error during its execution."
@@ -981,17 +1003,17 @@ class TestPythonEnum(PythonEnum):
     OTHER = 1
 
 
-DagsterEnumType = dg.Enum(
+DagsterEnumType = Enum(
     "ResourceTestEnum",
     [
-        dg.EnumValue("VALUE_ONE", TestPythonEnum.VALUE_ONE),
-        dg.EnumValue("OTHER", TestPythonEnum.OTHER),
+        EnumValue("VALUE_ONE", TestPythonEnum.VALUE_ONE),
+        EnumValue("OTHER", TestPythonEnum.OTHER),
     ],
 )
 
 
 def test_resource_with_enum_in_schema():
-    @dg.resource(config_schema={"enum": DagsterEnumType})
+    @resource(config_schema={"enum": DagsterEnumType})
     def enum_resource(context):
         return context.resource_config["enum"]
 
@@ -999,11 +1021,11 @@ def test_resource_with_enum_in_schema():
 
 
 def test_resource_with_enum_in_schema_configured():
-    @dg.resource(config_schema={"enum": DagsterEnumType})
+    @resource(config_schema={"enum": DagsterEnumType})
     def enum_resource(context):
         return context.resource_config["enum"]
 
-    @dg.configured(enum_resource, {"enum": DagsterEnumType})
+    @configured(enum_resource, {"enum": DagsterEnumType})
     def passthrough_to_enum_resource(config):
         return {"enum": "VALUE_ONE" if config["enum"] == TestPythonEnum.VALUE_ONE else "OTHER"}
 
@@ -1013,7 +1035,7 @@ def test_resource_with_enum_in_schema_configured():
 
 
 def test_resource_run_info_exists_during_execution():
-    @dg.resource
+    @resource
     def resource_checks_run_info(init_context):
         assert init_context.dagster_run.run_id == init_context.run_id
         return 1
@@ -1022,23 +1044,23 @@ def test_resource_run_info_exists_during_execution():
 
 
 def test_resource_needs_resource():
-    @dg.resource(required_resource_keys={"bar_resource"})
+    @resource(required_resource_keys={"bar_resource"})
     def foo_resource(init_context):
         return init_context.resources.bar_resource + "foo"
 
-    @dg.op(required_resource_keys={"foo_resource"})
+    @op(required_resource_keys={"foo_resource"})
     def op_requires_foo():
         pass
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match=(
             "Resource with key 'bar_resource' required by resource with key 'foo_resource', but not"
             " provided."
         ),
     ):
 
-        @dg.job(
+        @job(
             resource_defs={"foo_resource": foo_resource},
         )
         def _fail():
@@ -1046,31 +1068,31 @@ def test_resource_needs_resource():
 
 
 def test_resource_op_subset():
-    @dg.resource(required_resource_keys={"bar"})
+    @resource(required_resource_keys={"bar"})
     def foo_resource(_):
         return "FOO"
 
-    @dg.resource()
+    @resource()
     def bar_resource(_):
         return "BAR"
 
-    @dg.resource()
+    @resource()
     def baz_resource(_):
         return "BAZ"
 
-    @dg.op(required_resource_keys={"baz"})
+    @op(required_resource_keys={"baz"})
     def baz_op(_):
         pass
 
-    @dg.op(required_resource_keys={"foo"})
+    @op(required_resource_keys={"foo"})
     def foo_op(_):
         pass
 
-    @dg.op(required_resource_keys={"bar"})
+    @op(required_resource_keys={"bar"})
     def bar_op(_):
         pass
 
-    @dg.job(
+    @job(
         resource_defs={
             "foo": foo_resource,
             "baz": baz_resource,
@@ -1107,15 +1129,15 @@ def test_resource_op_subset():
 
 
 def test_config_with_no_schema():
-    @dg.resource
+    @resource
     def my_resource(init_context):
         return init_context.resource_config
 
-    @dg.op(required_resource_keys={"resource"})
+    @op(required_resource_keys={"resource"})
     def my_op(context):
         assert context.resources.resource == 5
 
-    @dg.job(resource_defs={"resource": my_resource})
+    @job(resource_defs={"resource": my_resource})
     def my_job():
         my_op()
 
@@ -1127,19 +1149,19 @@ def test_configured_resource_unused():
     # schema.
     entered = []
 
-    @dg.resource
+    @resource
     def basic_resource(_):
         pass
 
-    @dg.configured(basic_resource)
+    @configured(basic_resource)
     def configured_resource(_):
         entered.append("True")
 
-    @dg.op(required_resource_keys={"bar"})
+    @op(required_resource_keys={"bar"})
     def basic_op(_):
         pass
 
-    @dg.job(resource_defs={"foo": configured_resource, "bar": basic_resource})
+    @job(resource_defs={"foo": configured_resource, "bar": basic_resource})
     def basic_job():
         basic_op()
 
@@ -1151,7 +1173,7 @@ def test_configured_resource_unused():
 def test_context_manager_resource():
     event_list = []
 
-    @dg.resource
+    @resource
     @contextmanager
     def cm_resource():
         try:
@@ -1160,12 +1182,12 @@ def test_context_manager_resource():
         finally:
             event_list.append("finally")
 
-    @dg.op(required_resource_keys={"cm"})
+    @op(required_resource_keys={"cm"})
     def basic(context):
         event_list.append("compute")
         assert context.resources.cm == "foo"
 
-    with dg.build_op_context(resources={"cm": cm_resource}) as context:
+    with build_op_context(resources={"cm": cm_resource}) as context:
         basic(context)
 
     assert event_list == [
@@ -1175,15 +1197,15 @@ def test_context_manager_resource():
     ]  # Ensures that we teardown after compute
 
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match=(
             "At least one provided resource is a generator, but attempting to access resources "
             "outside of context manager scope."
         ),
     ):
-        basic(dg.build_op_context(resources={"cm": cm_resource}))
+        basic(build_op_context(resources={"cm": cm_resource}))
 
-    @dg.graph
+    @graph
     def call_basic():
         basic()
 
@@ -1198,7 +1220,7 @@ def test_telemetry_custom_resource():
         def foo(self) -> str:
             return "bar"
 
-    @dg.resource
+    @resource
     def my_resource():
         return MyResource()
 
@@ -1211,7 +1233,7 @@ def test_telemetry_dagster_io_manager():
             return "bar"
 
     @dagster_maintained_resource
-    @dg.resource
+    @resource
     def my_resource():
         return MyResource()
 

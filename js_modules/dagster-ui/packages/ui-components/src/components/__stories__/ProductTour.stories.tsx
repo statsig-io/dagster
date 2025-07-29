@@ -1,8 +1,8 @@
 import {Meta} from '@storybook/react';
-import {useMemo, useState} from 'react';
+import * as React from 'react';
 
 import {ButtonGroup} from '../ButtonGroup';
-import {ProductTourPosition as Position, ProductTour} from '../ProductTour';
+import {ProductTour, ProductTourPosition as Position} from '../ProductTour';
 
 // eslint-disable-next-line import/no-default-export
 export default {
@@ -11,8 +11,8 @@ export default {
 } as Meta;
 
 export const Positions = () => {
-  const [activeItem, setActiveItem] = useState(Position.TOP_LEFT);
-  const active = useMemo(() => new Set([activeItem]), [activeItem]);
+  const [activeItem, setActiveItem] = React.useState(Position.TOP_LEFT);
+  const active = React.useMemo(() => new Set([activeItem]), [activeItem]);
   return (
     <>
       <ButtonGroup

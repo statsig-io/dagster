@@ -1,18 +1,18 @@
 import {MockedProvider, MockedResponse} from '@apollo/client/testing';
 import {Box, Button, CustomTooltipProvider} from '@dagster-io/ui-components';
 import {Meta} from '@storybook/react';
-import {useState} from 'react';
+import React, {useState} from 'react';
 
+import {GraphQueryItem} from '../../app/GraphQueryImpl';
 import {RunStatus, buildRun, buildRunGroup, buildRunStatsSnapshot} from '../../graphql/types';
 import {extractMetadataFromLogs} from '../../runs/RunMetadataProvider';
 import {RunMetadataProviderMessageFragment} from '../../runs/types/RunMetadataProvider.types';
-import {WorkspaceProvider} from '../../workspace/WorkspaceContext/WorkspaceContext';
+import {WorkspaceProvider} from '../../workspace/WorkspaceContext';
 import {GanttChart, GanttChartLoadingState} from '../GanttChart';
 import {RUN_GROUP_PANEL_QUERY} from '../RunGroupPanel';
 import * as Dynamic from '../__fixtures__/dynamic';
 import * as Retry from '../__fixtures__/retry';
 import * as Simple from '../__fixtures__/simple';
-import {RunGraphQueryItem} from '../toGraphQueryItems';
 import {RunGroupPanelQuery, RunGroupPanelQueryVariables} from '../types/RunGroupPanel.types';
 
 const R1_START = 1619468000;
@@ -67,15 +67,11 @@ const runGroupMock: MockedResponse<RunGroupPanelQuery, RunGroupPanelQueryVariabl
   },
 };
 
-const GanttTestCase = ({
-  graph,
-  logs,
-  focusedTime,
-}: {
-  graph: RunGraphQueryItem[];
+const GanttTestCase: React.FC<{
+  graph: GraphQueryItem[];
   logs: RunMetadataProviderMessageFragment[];
   focusedTime: number;
-}) => {
+}> = ({graph, logs, focusedTime}) => {
   const [selectionQuery, setSelectionQuery] = useState<string>('');
   const [selectionKeys, setSelectionKeys] = useState<string[]>([]);
   const [progress, setProgress] = useState<number>(5);

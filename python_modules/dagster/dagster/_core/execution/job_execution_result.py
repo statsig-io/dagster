@@ -1,5 +1,4 @@
-from collections.abc import Sequence
-from typing import Any, ContextManager, cast  # noqa: UP035
+from typing import Any, Sequence
 
 import dagster._check as check
 from dagster._annotations import public
@@ -7,12 +6,10 @@ from dagster._core.definitions import JobDefinition, NodeHandle
 from dagster._core.definitions.utils import DEFAULT_OUTPUT
 from dagster._core.errors import DagsterInvariantViolationError
 from dagster._core.events import DagsterEvent
-from dagster._core.execution.context.system import PlanExecutionContext, StepExecutionContext
-from dagster._core.execution.execution_result import ExecutionResult
-from dagster._core.execution.plan.outputs import StepOutputData
 from dagster._core.execution.plan.utils import build_resources_for_manager
 from dagster._core.storage.dagster_run import DagsterRun
-from dagster._core.types.dagster_type import DagsterType
+
+from .execution_result import ExecutionResult
 
 
 class JobExecutionResult(ExecutionResult):
@@ -27,13 +24,7 @@ class JobExecutionResult(ExecutionResult):
     execution.
     """
 
-    def __init__(
-        self,
-        job_def: JobDefinition,
-        reconstruct_context: ContextManager[PlanExecutionContext],
-        event_list: Sequence[DagsterEvent],
-        dagster_run: DagsterRun,
-    ):
+    def __init__(self, job_def, reconstruct_context, event_list, dagster_run):
         self._job_def = job_def
         self._reconstruct_context = reconstruct_context
         self._context = None
@@ -87,7 +78,7 @@ class JobExecutionResult(ExecutionResult):
         Returns:
             Any: The value of the retrieved output.
         """
-        return super().output_value(output_name=output_name)
+        return super(JobExecutionResult, self).output_value(output_name=output_name)
 
     @public
     def output_for_node(self, node_str: str, output_name: str = DEFAULT_OUTPUT) -> Any:
@@ -104,7 +95,7 @@ class JobExecutionResult(ExecutionResult):
         Returns:
             Any: The value of the retrieved output.
         """
-        return super().output_for_node(node_str, output_name=output_name)
+        return super(JobExecutionResult, self).output_for_node(node_str, output_name=output_name)
 
     def _get_output_for_handle(self, handle: NodeHandle, output_name: str) -> Any:
         if not self._context:
@@ -121,9 +112,7 @@ class JobExecutionResult(ExecutionResult):
             ):
                 found = True
                 output = compute_step_event.step_output_data
-                step = self._context.execution_plan.get_executable_step_by_key(
-                    check.not_none(compute_step_event.step_key)
-                )
+                step = self._context.execution_plan.get_step_by_key(compute_step_event.step_key)
                 dagster_type = (
                     self.job_def.get_node(handle).output_def_named(output_name).dagster_type
                 )
@@ -137,7 +126,9 @@ class JobExecutionResult(ExecutionResult):
                     if result is None:
                         result = {mapping_key: value}
                     else:
-                        cast("dict", result)[mapping_key] = value
+                        result[mapping_key] = (
+                            value  # pylint:disable=unsupported-assignment-operation
+                        )
                 else:
                     result = value
 
@@ -149,20 +140,15 @@ class JobExecutionResult(ExecutionResult):
             f"Did not find result {output_name} in {node.describe_node()}"
         )
 
-    def _get_value(
-        self,
-        context: StepExecutionContext,
-        step_output_data: StepOutputData,
-        dagster_type: DagsterType,
-    ) -> object:
+    def _get_value(self, context, step_output_data, dagster_type):
         step_output_handle = step_output_data.step_output_handle
         manager = context.get_io_manager(step_output_handle)
         manager_key = context.execution_plan.get_manager_key(step_output_handle, self.job_def)
         res = manager.load_input(
             context.for_input_manager(
-                name="dummy_input_name",
+                name=None,
                 config=None,
-                definition_metadata=None,
+                metadata=None,
                 dagster_type=dagster_type,
                 source_handle=step_output_handle,
                 resource_config=context.resolved_run_config.resources[manager_key].config,

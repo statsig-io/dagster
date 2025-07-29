@@ -1,13 +1,14 @@
-import {Box, ButtonLink} from '@dagster-io/ui-components';
-import {useMemo, useState} from 'react';
+import {ButtonLink, Box} from '@dagster-io/ui-components';
+import * as React from 'react';
 
-import {AssetKeysDialog, AssetKeysDialogEmptyState, AssetKeysDialogHeader} from './AssetKeysDialog';
-import {AssetDetailType, detailTypeToLabel} from './assetDetailUtils';
-import {useFilterAssetKeys} from './assetFilters';
 import {sortAssetKeys} from '../../asset-graph/Utils';
 import {VirtualizedItemListForDialog} from '../../ui/VirtualizedItemListForDialog';
 import {AssetLink} from '../AssetLink';
 import {AssetKey} from '../types';
+
+import {AssetKeysDialog, AssetKeysDialogEmptyState, AssetKeysDialogHeader} from './AssetKeysDialog';
+import {AssetDetailType, detailTypeToLabel} from './assetDetailUtils';
+import {useFilterAssetKeys} from './assetFilters';
 
 type AssetKeyDetail = {assetKey: AssetKey; detailType: AssetDetailType};
 
@@ -17,21 +18,21 @@ interface Props {
 }
 
 export const ParentUpdatedLink = ({updatedAssetKeys, willUpdateAssetKeys}: Props) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [queryString, setQueryString] = useState('');
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [queryString, setQueryString] = React.useState('');
   const count = updatedAssetKeys.length + willUpdateAssetKeys.length;
 
   const filteredUpdatedAssetKeys = useFilterAssetKeys(updatedAssetKeys, queryString);
   const filteredWillUpdateAssetKeys = useFilterAssetKeys(willUpdateAssetKeys, queryString);
   const filteredCount = filteredUpdatedAssetKeys.length + filteredWillUpdateAssetKeys.length;
 
-  const filteredAssetKeys: AssetKeyDetail[] = useMemo(() => {
+  const filteredAssetKeys: AssetKeyDetail[] = React.useMemo(() => {
     return [
-      ...[...filteredUpdatedAssetKeys].sort(sortAssetKeys).map((assetKey) => ({
+      ...filteredUpdatedAssetKeys.sort(sortAssetKeys).map((assetKey) => ({
         assetKey,
         detailType: AssetDetailType.Updated,
       })),
-      ...[...filteredWillUpdateAssetKeys].sort(sortAssetKeys).map((assetKey) => ({
+      ...filteredWillUpdateAssetKeys.sort(sortAssetKeys).map((assetKey) => ({
         assetKey,
         detailType: AssetDetailType.WillUpdate,
       })),

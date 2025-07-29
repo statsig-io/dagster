@@ -1,37 +1,31 @@
 import * as React from 'react';
 
-import {Colors} from './Color';
+import {Colors} from './Colors';
 import {StyledButton, StyledButtonText} from './StyledButton';
 
-export interface CommonButtonProps {
+interface CommonButtonProps {
   icon?: React.ReactNode;
   label?: React.ReactNode;
   loading?: boolean;
   rightIcon?: React.ReactNode;
-  iconColor?: string;
   fillColor?: string;
-  fillColorHover?: string;
   strokeColor?: string;
-  strokeColorHover?: string;
   textColor?: string;
 }
 
-export interface BaseButtonProps extends CommonButtonProps, React.ComponentPropsWithRef<'button'> {}
+interface BaseButtonProps extends CommonButtonProps, React.ComponentPropsWithRef<'button'> {}
 
 export const BaseButton = React.forwardRef(
   (props: BaseButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
     const {
-      fillColor = Colors.backgroundDefault(),
-      fillColorHover = Colors.backgroundDefaultHover(),
+      fillColor = Colors.White,
       disabled,
       icon,
       label,
       loading,
       rightIcon,
-      iconColor = Colors.accentReversed(),
-      textColor = Colors.textDefault(),
-      strokeColor = Colors.accentGray(),
-      strokeColorHover = Colors.accentGray(),
+      textColor = Colors.Dark,
+      strokeColor = Colors.Gray300,
       ...rest
     } = props;
 
@@ -40,11 +34,8 @@ export const BaseButton = React.forwardRef(
         {...rest}
         as="button"
         disabled={!!(disabled || loading)}
-        $iconColor={iconColor}
         $fillColor={fillColor}
-        $fillColorHover={fillColorHover}
         $strokeColor={strokeColor}
-        $strokeColorHover={strokeColorHover}
         $textColor={textColor}
         ref={ref}
       >

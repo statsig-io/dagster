@@ -1,6 +1,6 @@
-import {createContext} from 'react';
+import * as React from 'react';
 
 import {RunFragment} from './types/RunFragments.types';
 
 const initialContext = undefined;
-export const RunContext = createContext<RunFragment | undefined>(initialContext);
+export const RunContext = React.createContext<RunFragment | undefined>(initialContext);

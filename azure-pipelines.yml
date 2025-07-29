@@ -8,14 +8,14 @@ parameters:
   - name: py3_versions
     type: object
     default:
-      - "3.10"
-  - name: dagster_core_py3_env_suffixes
+      - "3.9"
+  - name: py3_env_suffixes
     type: object
     default:
       - api_tests
       - cli_tests
+      - core_tests
       - general_tests
-      - launcher_tests
       - daemon_tests
       - daemon_sensor_tests
       - scheduler_tests
@@ -26,39 +26,26 @@ jobs:
     strategy:
       matrix:
         ${{ each py_version in parameters.py3_versions }}:
-          ${{ each env_suffix in parameters.dagster_core_py3_env_suffixes }}:
+          ${{ each env_suffix in parameters.py3_env_suffixes }}:
             ${{ replace(py_version, '.', '') }}-windows-${{ env_suffix }}:
-              PACKAGE_ROOT: "python_modules\\dagster"
-              PATH_BACK_TO_REPO_ROOT: "..\\.."
-              DAGSTER_GIT_REPO_DIR: "..\\.."
-              TOX_ENV: "py${{ replace(py_version, '.', '') }}-windows-${{ env_suffix }}"
-              PYTHON_VERSION: "${{ py_version }}"
-
-        ${{ each py_version in parameters.py3_versions }}:
-          dagster-dg-cli-${{ replace(py_version, '.', '') }}:
-            PACKAGE_ROOT: "python_modules\\libraries\\dagster-dg-cli"
-            PATH_BACK_TO_REPO_ROOT: "..\\..\\.."
-            DAGSTER_GIT_REPO_DIR: "..\\..\\.."
-            TOX_ENV: windows
-            PYTHON_VERSION: "${{ py_version }}"
+              TOXENV: "py${{ replace(py_version, '.', '') }}-windows-${{ env_suffix }}"
+              python.version: "${{ py_version }}"
     variables:
-      PYTHONUTF8: "1"
-    # Use PowerShell (`powershell`) instead of cmd shell (`script`) for better UTF-8 support.
+      PYTHONLEGACYWINDOWSSTDIO: "1"
     steps:
       - task: UsePythonVersion@0
         inputs:
-          versionSpec: "$(PYTHON_VERSION)"
+          versionSpec: "$(python.version)"
           architecture: "x64"
-      - powershell: |
-          pip install "tox<4.0.0" uv
-        displayName: "Install tox & uv"
-      - powershell: |
-          cd $env:PACKAGE_ROOT
-          tox -e $env:TOX_ENV
-          cd $env:PATH_BACK_TO_REPO_ROOT
+      - script: choco install vcpython27 --yes
+        condition: eq(variables['python.version'], '2.7')
+        displayName: "Install vcpython27"
+      - script: pip install "tox<4.0.0"
+        displayName: "Install tox"
+      - script: cd python_modules\dagster && tox -e %TOXENV% && cd ..\..
         displayName: "Run tests"
       - task: PublishTestResults@2
         inputs:
           testResultsFiles: "**/test_results.xml"
-          testRunTitle: "$(PACKAGE_ROOT) $(TOX_ENV)"
+          testRunTitle: "dagster $(TOXENV)"
         condition: succeededOrFailed()

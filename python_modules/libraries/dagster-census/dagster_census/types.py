@@ -1,5 +1,4 @@
-from collections.abc import Mapping
-from typing import Any, NamedTuple
+from typing import Any, Mapping, NamedTuple
 
 
 class CensusOutput(
@@ -14,7 +13,7 @@ class CensusOutput(
 ):
     """Contains recorded information about the state of a Census sync after a sync completes.
 
-    Args:
+    Attributes:
         sync_run (Dict[str, Any]):
             The details of the specific sync run.
         source (Dict[str, Any]):

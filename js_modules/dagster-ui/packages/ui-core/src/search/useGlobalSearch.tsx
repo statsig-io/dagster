@@ -1,27 +1,24 @@
-import {useCallback, useContext, useEffect, useRef} from 'react';
-import {useAugmentSearchResults} from 'shared/search/useAugmentSearchResults.oss';
+import {gql, useLazyQuery} from '@apollo/client';
+import * as React from 'react';
 
-import {buildAssetCountBySection} from './BuildAssetSearchResults';
-import {QueryResponse, WorkerSearchResult, createSearchWorker} from './createSearchWorker';
-import {
-  linkToAssetTableWithAssetOwnerFilter,
-  linkToAssetTableWithGroupFilter,
-  linkToAssetTableWithKindFilter,
-  linkToAssetTableWithTagFilter,
-  linkToCodeLocation,
-} from './links';
-import {AssetFilterSearchResultType, SearchResult, SearchResultType} from './types';
+import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorFragment';
 import {displayNameForAssetKey, isHiddenAssetGroupJob} from '../asset-graph/Utils';
 import {assetDetailsPathForKey} from '../assets/assetDetailsPathForKey';
-import {AssetTableFragment} from '../assets/types/AssetTableFragment.types';
-import {useAllAssets} from '../assets/useAllAssets';
-import {buildTagString} from '../ui/tagAsString';
-import {WorkspaceContext, WorkspaceState} from '../workspace/WorkspaceContext/WorkspaceContext';
-import {assetOwnerAsString} from '../workspace/assetOwnerAsString';
 import {buildRepoPathForHuman} from '../workspace/buildRepoAddress';
 import {workspacePath} from '../workspace/workspacePath';
 
-const primaryDataToSearchResults = (locationEntries: WorkspaceState['locationEntries']) => {
+import {WorkerSearchResult, createSearchWorker} from './createSearchWorker';
+import {SearchResult, SearchResultType} from './types';
+import {SearchPrimaryQuery, SearchSecondaryQuery} from './types/useGlobalSearch.types';
+
+const primaryDataToSearchResults = (input: {data?: SearchPrimaryQuery}) => {
+  const {data} = input;
+
+  if (!data?.workspaceOrError || data?.workspaceOrError?.__typename !== 'Workspace') {
+    return [];
+  }
+
+  const {locationEntries} = data.workspaceOrError;
   const firstEntry = locationEntries[0];
   const manyLocations =
     locationEntries.length > 1 ||
@@ -37,7 +34,8 @@ const primaryDataToSearchResults = (locationEntries: WorkspaceState['locationEnt
 
     const repoLocation = locationEntry.locationOrLoadError;
     const repos = repoLocation.repositories;
-    accum.push(
+    return [
+      ...accum,
       ...repos.reduce((inner, repo) => {
         const {
           name: repoName,
@@ -58,7 +56,6 @@ const primaryDataToSearchResults = (locationEntries: WorkspaceState['locationEnt
             {
               label: groupName,
               description: manyLocations ? `Asset group in ${repoPath}` : 'Asset group',
-              node: assetGroup,
               href: workspacePath(repoName, locationName, `/asset-groups/${groupName}`),
               type: SearchResultType.AssetGroup,
             },
@@ -73,12 +70,11 @@ const primaryDataToSearchResults = (locationEntries: WorkspaceState['locationEnt
               ...flat,
               {
                 label: name,
-                node: pipelineOrJob,
                 description: manyLocations
                   ? `${isJob ? 'Job' : 'Pipeline'} in ${repoPath}`
                   : isJob
-                    ? 'Job'
-                    : 'Pipeline',
+                  ? 'Job'
+                  : 'Pipeline',
                 href: workspacePath(
                   repoName,
                   locationName,
@@ -91,7 +87,6 @@ const primaryDataToSearchResults = (locationEntries: WorkspaceState['locationEnt
 
         const allSchedules: SearchResult[] = schedules.map((schedule) => ({
           label: schedule.name,
-          node: schedule,
           description: manyLocations ? `Schedule in ${repoPath}` : 'Schedule',
           href: workspacePath(repoName, locationName, `/schedules/${schedule.name}`),
           type: SearchResultType.Schedule,
@@ -99,7 +94,6 @@ const primaryDataToSearchResults = (locationEntries: WorkspaceState['locationEnt
 
         const allSensors: SearchResult[] = sensors.map((sensor) => ({
           label: sensor.name,
-          node: sensor,
           description: manyLocations ? `Sensor in ${repoPath}` : 'Sensor',
           href: workspacePath(repoName, locationName, `/sensors/${sensor.name}`),
           type: SearchResultType.Sensor,
@@ -107,7 +101,6 @@ const primaryDataToSearchResults = (locationEntries: WorkspaceState['locationEnt
 
         const allResources: SearchResult[] = allTopLevelResourceDetails.map((resource) => ({
           label: resource.name,
-          node: resource,
           description: manyLocations ? `Resource in ${repoPath}` : 'Resource',
           href: workspacePath(repoName, locationName, `/resources/${resource.name}`),
           type: SearchResultType.Resource,
@@ -117,7 +110,6 @@ const primaryDataToSearchResults = (locationEntries: WorkspaceState['locationEnt
           .filter((item) => !isHiddenAssetGroupJob(item.pipelineName))
           .map((partitionSet) => ({
             label: partitionSet.name,
-            node: partitionSet,
             description: manyLocations ? `Partition set in ${repoPath}` : 'Partition set',
             href: workspacePath(
               repoName,
@@ -127,137 +119,47 @@ const primaryDataToSearchResults = (locationEntries: WorkspaceState['locationEnt
             type: SearchResultType.PartitionSet,
           }));
 
-        inner.push(...allAssetGroups);
-        inner.push(...allPipelinesAndJobs);
-        inner.push(...allSchedules);
-        inner.push(...allSensors);
-        inner.push(...allPartitionSets);
-        inner.push(...allResources);
-
-        return inner;
+        return [
+          ...inner,
+          ...allAssetGroups,
+          ...allPipelinesAndJobs,
+          ...allSchedules,
+          ...allSensors,
+          ...allPartitionSets,
+          ...allResources,
+        ];
       }, [] as SearchResult[]),
-    );
-    return accum;
+    ];
   }, [] as SearchResult[]);
 
   return allEntries;
 };
 
-const secondaryDataToSearchResults = (
-  assets: AssetTableFragment[],
-  searchContext: 'global' | 'catalog',
-) => {
-  if (!assets || assets.length === 0) {
+const secondaryDataToSearchResults = (input: {data?: SearchSecondaryQuery}) => {
+  const {data} = input;
+  if (!data?.assetsOrError || data.assetsOrError.__typename === 'PythonError') {
     return [];
   }
 
-  const nodes = assets.filter(({definition}) => {
-    if (definition === null) {
-      return false;
-    }
-    return true;
+  const {nodes} = data.assetsOrError;
+  return nodes.map(({key}) => {
+    return {
+      label: displayNameForAssetKey(key),
+      href: assetDetailsPathForKey(key),
+      segments: key.path,
+      description: 'Asset',
+      type: SearchResultType.Asset,
+    };
   });
-
-  const assetResults: SearchResult[] = nodes.map((node) => ({
-    key: node.key,
-    label: displayNameForAssetKey(node.key),
-    description: `Asset in ${buildRepoPathForHuman(
-      node.definition!.repository.name,
-      node.definition!.repository.location.name,
-    )}`,
-    node,
-    href: assetDetailsPathForKey(node.key),
-    type: SearchResultType.Asset,
-    tags: node.definition!.tags,
-    kinds: node.definition!.kinds,
-  }));
-
-  if (searchContext === 'global') {
-    return [...assetResults];
-  } else {
-    const countsBySection = buildAssetCountBySection(nodes);
-
-    const kindResults: SearchResult[] = countsBySection.countsByKind.map(({kind, assetCount}) => ({
-      label: kind,
-      description: '',
-      type: AssetFilterSearchResultType.Kind,
-      href: linkToAssetTableWithKindFilter(kind),
-      numResults: assetCount,
-    }));
-
-    const tagResults: SearchResult[] = countsBySection.countPerTag.map(({tag, assetCount}) => ({
-      label: buildTagString(tag),
-      description: '',
-      type: AssetFilterSearchResultType.Tag,
-      href: linkToAssetTableWithTagFilter(tag),
-      numResults: assetCount,
-    }));
-
-    const codeLocationResults: SearchResult[] = countsBySection.countPerCodeLocation.map(
-      (codeLocationAssetCount) => ({
-        label: buildRepoPathForHuman(
-          codeLocationAssetCount.repoAddress.name,
-          codeLocationAssetCount.repoAddress.location,
-        ),
-        description: '',
-        type: AssetFilterSearchResultType.CodeLocation,
-        href: linkToCodeLocation(codeLocationAssetCount.repoAddress),
-        numResults: codeLocationAssetCount.assetCount,
-      }),
-    );
-
-    const groupResults: SearchResult[] = countsBySection.countPerAssetGroup.map(
-      (groupAssetCount) => ({
-        label: groupAssetCount.groupMetadata.groupName,
-        description: '',
-        type: AssetFilterSearchResultType.AssetGroup,
-        href: linkToAssetTableWithGroupFilter(groupAssetCount.groupMetadata),
-        numResults: groupAssetCount.assetCount,
-        repoPath: buildRepoPathForHuman(
-          groupAssetCount.groupMetadata.repositoryName,
-          groupAssetCount.groupMetadata.repositoryLocationName,
-        ),
-      }),
-    );
-
-    const ownerResults: SearchResult[] = countsBySection.countsByOwner.map(
-      ({owner, assetCount}) => ({
-        label: assetOwnerAsString(owner),
-        description: '',
-        type: AssetFilterSearchResultType.Owner,
-        href: linkToAssetTableWithAssetOwnerFilter(owner),
-        numResults: assetCount,
-      }),
-    );
-    return [
-      ...assetResults,
-      ...kindResults,
-      ...tagResults,
-      ...codeLocationResults,
-      ...ownerResults,
-      ...groupResults,
-    ];
-  }
 };
 
 const fuseOptions = {
   keys: ['label', 'segments', 'tags', 'type'],
   threshold: 0.3,
   useExtendedSearch: true,
-  includeMatches: true,
-  includeScore: true,
-
-  // Allow searching to continue to the end of the string.
-  ignoreLocation: true,
 };
 
 const EMPTY_RESPONSE = {queryString: '', results: []};
-
-type IndexBuffer = {
-  query: string;
-  resolve: (value: QueryResponse) => void;
-  cancel: () => void;
-};
 
 /**
  * Perform global search populated by two lazy queries, to be initialized upon some
@@ -273,122 +175,124 @@ type IndexBuffer = {
  *
  * A `terminate` function is provided, but it's probably not necessary to use it.
  */
-export const useGlobalSearch = ({searchContext}: {searchContext: 'global' | 'catalog'}) => {
-  const primarySearch = useRef<WorkerSearchResult | null>(null);
-  const secondarySearch = useRef<WorkerSearchResult | null>(null);
+export const useGlobalSearch = () => {
+  const primarySearch = React.useRef<WorkerSearchResult>();
+  const secondarySearch = React.useRef<WorkerSearchResult>();
 
-  const augmentSearchResults = useAugmentSearchResults();
-
-  const {locationEntries, loadingNonAssets} = useContext(WorkspaceContext);
-
-  const {assets, loading: assetsLoading} = useAllAssets();
-
-  const consumeBufferEffect = useCallback(
-    async (buffer: React.MutableRefObject<IndexBuffer | null>, search: WorkerSearchResult) => {
-      const bufferValue = buffer.current;
-      if (bufferValue) {
-        buffer.current = null;
-        const result = await search.search(bufferValue.query);
-        bufferValue.resolve(result);
+  const primary = useLazyQuery<SearchPrimaryQuery>(SEARCH_PRIMARY_QUERY, {
+    onCompleted: (data: SearchPrimaryQuery) => {
+      const results = primaryDataToSearchResults({data});
+      if (!primarySearch.current) {
+        primarySearch.current = createSearchWorker('primary', fuseOptions);
       }
+      primarySearch.current.update(results);
     },
-    [],
-  );
+  });
 
-  useEffect(() => {
-    if (loadingNonAssets) {
-      return;
-    }
-    const results = primaryDataToSearchResults(locationEntries);
-    const augmentedResults = augmentSearchResults(results);
-    if (!primarySearch.current) {
-      primarySearch.current = createSearchWorker('primary', fuseOptions);
-    }
-    primarySearch.current.update(augmentedResults);
-    consumeBufferEffect(primarySearchBuffer, primarySearch.current);
-  }, [consumeBufferEffect, locationEntries, augmentSearchResults, loadingNonAssets]);
-
-  useEffect(() => {
-    if (assetsLoading) {
-      return;
-    }
-
-    const results = secondaryDataToSearchResults(assets, searchContext);
-    const augmentedResults = augmentSearchResults(results);
-    if (!secondarySearch.current) {
-      secondarySearch.current = createSearchWorker('secondary', fuseOptions);
-    }
-    secondarySearch.current.update(augmentedResults);
-    consumeBufferEffect(secondarySearchBuffer, secondarySearch.current);
-  }, [consumeBufferEffect, assets, searchContext, augmentSearchResults, assetsLoading]);
-
-  const primarySearchBuffer = useRef<IndexBuffer | null>(null);
-  const secondarySearchBuffer = useRef<IndexBuffer | null>(null);
-
-  const searchIndex = useCallback(
-    (
-      index: React.MutableRefObject<WorkerSearchResult | null>,
-      indexBuffer: React.MutableRefObject<IndexBuffer | null>,
-      query: string,
-    ): Promise<QueryResponse> => {
-      return new Promise(async (res) => {
-        if (index.current) {
-          const result = await index.current.search(query);
-          res(result);
-        } else {
-          // The user made a query before data is available
-          // let's store the query in a buffer and once the data is available
-          // we will consume the buffer
-          if (indexBuffer.current) {
-            // If the user changes the query before the data is available
-            // lets "cancel" the last buffer (resolve its awaitable with
-            // an empty response so it doesn't wait for all eternity) and
-            // only store the most recent query
-            indexBuffer.current.cancel();
-          }
-          indexBuffer.current = {
-            query,
-            resolve(response: QueryResponse) {
-              res(response);
-            },
-            cancel() {
-              res(EMPTY_RESPONSE);
-            },
-          };
-        }
-      });
+  const secondary = useLazyQuery<SearchSecondaryQuery>(SEARCH_SECONDARY_QUERY, {
+    onCompleted: (data: SearchSecondaryQuery) => {
+      const results = secondaryDataToSearchResults({data});
+      if (!secondarySearch.current) {
+        secondarySearch.current = createSearchWorker('secondary', fuseOptions);
+      }
+      secondarySearch.current.update(results);
     },
-    [],
-  );
+  });
 
-  const searchPrimary = useCallback(
-    async (queryString: string) => {
-      return searchIndex(primarySearch, primarySearchBuffer, queryString);
-    },
-    [searchIndex],
-  );
+  const [performPrimaryLazyQuery, primaryResult] = primary;
+  const [performSecondaryLazyQuery, secondaryResult] = secondary;
 
-  const searchSecondary = useCallback(
-    async (queryString: string) => {
-      return searchIndex(secondarySearch, secondarySearchBuffer, queryString);
-    },
-    [searchIndex],
-  );
+  const initialize = React.useCallback(async () => {
+    performPrimaryLazyQuery();
+    performSecondaryLazyQuery();
+  }, [performPrimaryLazyQuery, performSecondaryLazyQuery]);
 
-  // Terminate the workers. Be careful with this: for users with very large workspaces, we should
-  // avoid constantly re-querying and restarting the threads. It should only be used when we know
-  // that there is fresh data to repopulate search.
-  const terminate = useCallback(() => {
+  const searchPrimary = React.useCallback(async (queryString: string) => {
+    return primarySearch.current ? primarySearch.current.search(queryString) : EMPTY_RESPONSE;
+  }, []);
+
+  const searchSecondary = React.useCallback(async (queryString: string) => {
+    return secondarySearch.current ? secondarySearch.current.search(queryString) : EMPTY_RESPONSE;
+  }, []);
+
+  const terminate = React.useCallback(() => {
     primarySearch.current?.terminate();
-    primarySearch.current = null;
     secondarySearch.current?.terminate();
-    secondarySearch.current = null;
   }, []);
 
   return {
-    loading: assetsLoading || loadingNonAssets,
+    initialize,
+    loading: primaryResult.loading || secondaryResult.loading,
     searchPrimary,
     searchSecondary,
     terminate,
   };
 };
+
+export const SEARCH_PRIMARY_QUERY = gql`
+  query SearchPrimaryQuery {
+    workspaceOrError {
+      ... on Workspace {
+        id
+        locationEntries {
+          id
+          locationOrLoadError {
+            ... on RepositoryLocation {
+              id
+              name
+              repositories {
+                id
+                ... on Repository {
+                  id
+                  name
+                  assetGroups {
+                    groupName
+                  }
+                  pipelines {
+                    id
+                    isJob
+                    name
+                  }
+                  schedules {
+                    id
+                    name
+                  }
+                  sensors {
+                    id
+                    name
+                  }
+                  partitionSets {
+                    id
+                    name
+                    pipelineName
+                  }
+                  allTopLevelResourceDetails {
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      ...PythonErrorFragment
+    }
+  }
+
+  ${PYTHON_ERROR_FRAGMENT}
+`;
+
+export const SEARCH_SECONDARY_QUERY = gql`
+  query SearchSecondaryQuery {
+    assetsOrError {
+      ... on AssetConnection {
+        nodes {
+          id
+          key {
+            path
+          }
+        }
+      }
+    }
+  }
+`;

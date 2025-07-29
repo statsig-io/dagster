@@ -3,13 +3,13 @@ import {IconName} from '@dagster-io/ui-components';
 import {
   WorkspaceRepositorySchedule,
   WorkspaceRepositorySensor,
-} from '../workspace/WorkspaceContext/WorkspaceContext';
+} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
 
 export type LeftNavItemType = {
   name: string;
   isJob: boolean;
-  leftIcon: IconName | 'airflow';
+  leftIcon: IconName;
   label: React.ReactNode;
   path: string;
   repoAddress: RepoAddress;

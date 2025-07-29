@@ -1,7 +1,11 @@
-import dagster as dg
+from __future__ import unicode_literals
+
 import pytest
+from dagster import job
+from dagster._core.errors import DagsterInvariantViolationError
 from dagster._core.execution.plan.plan import ExecutionPlan
 from dagster._core.snap.execution_plan_snapshot import ExecutionPlanSnapshot
+from dagster._serdes.serdes import deserialize_value
 
 OLD_EXECUTION_PLAN_SNAPSHOT = """{
   "__class__": "ExecutionPlanSnapshot",
@@ -123,15 +127,15 @@ OLD_EXECUTION_PLAN_SNAPSHOT = """{
 }"""
 
 
-@dg.job
+@job
 def noop_job():
     pass
 
 
 def test_cant_load_old_snapshot():
-    snapshot = dg.deserialize_value(OLD_EXECUTION_PLAN_SNAPSHOT, ExecutionPlanSnapshot)
+    snapshot = deserialize_value(OLD_EXECUTION_PLAN_SNAPSHOT, ExecutionPlanSnapshot)
     with pytest.raises(
-        dg.DagsterInvariantViolationError,
+        DagsterInvariantViolationError,
         match=(
             "Tried to reconstruct an old ExecutionPlanSnapshot that was created before snapshots"
             " had enough information to fully reconstruct the ExecutionPlan"
@@ -194,12 +198,5 @@ PRE_CACHE_EXECUTION_PLAN_SNAPSHOT = """{
 
 
 def test_rebuild_pre_cached_key_execution_plan_snapshot():
-    snapshot = dg.deserialize_value(PRE_CACHE_EXECUTION_PLAN_SNAPSHOT, ExecutionPlanSnapshot)
-    plan = ExecutionPlan.rebuild_from_snapshot("noop_job", snapshot)
-
-    assert (
-        next(iter(plan.steps[0].step_output_dict.values())).properties.should_materialize_DEPRECATED
-        is False
-    )
-
-    assert snapshot == dg.deserialize_value(dg.serialize_value(snapshot))
+    snapshot = deserialize_value(PRE_CACHE_EXECUTION_PLAN_SNAPSHOT, ExecutionPlanSnapshot)
+    ExecutionPlan.rebuild_from_snapshot("noop_job", snapshot)

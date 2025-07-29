@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Dict
 
 from setuptools import find_packages, setup
 
 
 def get_version() -> str:
-    version: dict[str, str] = {}
+    version: Dict[str, str] = {}
     with open(Path(__file__).parent / "dagster_duckdb/version.py", encoding="utf8") as fp:
         exec(fp.read(), version)
 
@@ -23,6 +24,7 @@ setup(
     description="Package for DuckDB-specific Dagster framework op and resource components.",
     url="https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-duckb",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: Apache Software License",
@@ -30,16 +32,17 @@ setup(
     ],
     packages=find_packages(exclude=["dagster_duckdb_tests*"]),
     include_package_data=True,
-    python_requires=">=3.9,<3.14",
     install_requires=[
         "duckdb",
-        f"dagster{pin}",
+        "dagster==1.4.16",
     ],
     extras_require={
         "pandas": [
-            "pandas",
+            # Pinned pending duckdb removal of broken pandas import. Pin can be
+            # removed as soon as it produces a working build.
+            "pandas<2.1",
         ],
-        "pyspark": ["pyspark>=3,<4"],
+        "pyspark": ["pyspark>=3"],
     },
     zip_safe=False,
 )

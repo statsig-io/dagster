@@ -1,11 +1,8 @@
 import abc
-from collections.abc import Mapping, Sequence
-from typing import Optional
+from typing import Mapping, Optional, Sequence, Set
 
-from dagster._core.definitions.asset_key import EntityKey, T_EntityKey
-from dagster._core.definitions.declarative_automation.serialized_objects import (
-    AutomationConditionEvaluationWithRunIds,
-)
+from dagster import AssetKey
+from dagster._core.definitions.auto_materialize_rule import AutoMaterializeAssetEvaluation
 from dagster._core.definitions.run_request import InstigatorType
 from dagster._core.instance import MayHaveInstanceWeakref, T_DagsterInstance
 from dagster._core.scheduler.instigation import (
@@ -33,7 +30,7 @@ class ScheduleStorage(abc.ABC, MayHaveInstanceWeakref[T_DagsterInstance]):
         repository_origin_id: Optional[str] = None,
         repository_selector_id: Optional[str] = None,
         instigator_type: Optional[InstigatorType] = None,
-        instigator_statuses: Optional[set[InstigatorStatus]] = None,
+        instigator_statuses: Optional[Set[InstigatorStatus]] = None,
     ) -> Sequence[InstigatorState]:
         """Return all InstigationStates present in storage.
 
@@ -89,17 +86,6 @@ class ScheduleStorage(abc.ABC, MayHaveInstanceWeakref[T_DagsterInstance]):
         statuses: Optional[Sequence[TickStatus]] = None,
     ) -> Mapping[str, Sequence[InstigatorTick]]:
         raise NotImplementedError()
-
-    @abc.abstractmethod
-    def get_tick(self, tick_id: int) -> InstigatorTick:
-        """Get the tick for a given evaluation tick id.
-
-        Args:
-            tick_id (str): The id of the tick to query.
-
-        Returns:
-            InstigatorTick: The tick for the given id.
-        """
 
     @abc.abstractmethod
     def get_ticks(
@@ -159,30 +145,20 @@ class ScheduleStorage(abc.ABC, MayHaveInstanceWeakref[T_DagsterInstance]):
     def add_auto_materialize_asset_evaluations(
         self,
         evaluation_id: int,
-        asset_evaluations: Sequence[AutomationConditionEvaluationWithRunIds[EntityKey]],
+        asset_evaluations: Sequence[AutoMaterializeAssetEvaluation],
     ) -> None:
         """Add asset policy evaluations to storage."""
 
     @abc.abstractmethod
     def get_auto_materialize_asset_evaluations(
-        self, key: T_EntityKey, limit: int, cursor: Optional[int] = None
-    ) -> Sequence[AutoMaterializeAssetEvaluationRecord[T_EntityKey]]:
+        self, asset_key: AssetKey, limit: int, cursor: Optional[int] = None
+    ) -> Sequence[AutoMaterializeAssetEvaluationRecord]:
         """Get the policy evaluations for a given asset.
 
         Args:
             asset_key (AssetKey): The asset key to query
             limit (Optional[int]): The maximum number of evaluations to return
             cursor (Optional[int]): The cursor to paginate from
-        """
-
-    @abc.abstractmethod
-    def get_auto_materialize_evaluations_for_evaluation_id(
-        self, evaluation_id: int
-    ) -> Sequence[AutoMaterializeAssetEvaluationRecord]:
-        """Get all policy evaluations for a given evaluation ID.
-
-        Args:
-            evaluation_id (int): The evaluation ID to query.
         """
 
     @abc.abstractmethod
@@ -203,9 +179,7 @@ class ScheduleStorage(abc.ABC, MayHaveInstanceWeakref[T_DagsterInstance]):
     def optimize(self, print_fn: Optional[PrintFn] = None, force_rebuild_all: bool = False) -> None:
         """Call this method to run any optional data migrations for optimized reads."""
 
-    def optimize_for_webserver(
-        self, statement_timeout: int, pool_recycle: int, max_overflow: int
-    ) -> None:
+    def optimize_for_webserver(self, statement_timeout: int, pool_recycle: int) -> None:
         """Allows for optimizing database connection / use in the context of a long lived webserver process."""
 
     def alembic_version(self) -> Optional[AlembicVersion]:

@@ -1,5 +1,6 @@
 import {Colors} from '@dagster-io/ui-components';
 import {LinkVertical as Link} from '@vx/shape';
+import * as React from 'react';
 import styled from 'styled-components';
 
 import {Edge} from './OpEdges';
@@ -20,7 +21,7 @@ interface ExternalConnectionNodeProps {
   onDoubleClickLabel: () => void;
 }
 
-export const ExternalConnectionNode = ({
+export const ExternalConnectionNode: React.FC<ExternalConnectionNodeProps> = ({
   layout,
   target,
   edges,
@@ -30,11 +31,11 @@ export const ExternalConnectionNode = ({
   highlightedEdges,
   onHighlightEdges,
   onDoubleClickLabel,
-}: ExternalConnectionNodeProps) => {
+}) => {
   const textProps = {width: 0, size: minified ? 24 : 12, text: label};
   const textSize = SVGMonospaceText.intrinsicSizeForProps(textProps);
   const highlighted = edges.some((e) => isHighlighted(highlightedEdges, e));
-  const color = highlighted ? Colors.lineageEdgeHighlighted() : Colors.lineageEdge();
+  const color = highlighted ? '#555' : '#C7CBCD';
 
   // https://github.com/dagster-io/dagster/issues/1504
   if (!layout) {
@@ -58,7 +59,7 @@ export const ExternalConnectionNode = ({
         }}
       />
       <ellipse cx={layout.x} cy={layout.y} rx={7} ry={7} fill={color} />
-      <SVGMonospaceText {...textProps} {...textSize} {...textOrigin} fill={Colors.textDefault()} />
+      <SVGMonospaceText {...textProps} {...textSize} {...textOrigin} />
       <Link style={{stroke: color, strokeWidth: 6, fill: 'none'}} data={{source: layout, target}} />
     </g>
   );
@@ -66,10 +67,10 @@ export const ExternalConnectionNode = ({
 
 const BackingRect = styled('rect')`
   stroke-width: 10px;
-  fill: ${Colors.backgroundDefault()};
-  stroke: ${Colors.backgroundDefault()};
+  fill: ${Colors.Gray100};
+  stroke: ${Colors.Gray100};
   &:hover {
-    fill: ${Colors.backgroundLightHover()};
-    stroke: ${Colors.backgroundLightHover()};
+    fill: ${Colors.Gray200};
+    stroke: ${Colors.Gray200};
   }
 `;

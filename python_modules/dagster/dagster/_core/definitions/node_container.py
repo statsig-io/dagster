@@ -1,9 +1,23 @@
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Optional, TypeVar, Union
+from typing import (
+    TYPE_CHECKING,
+    DefaultDict,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 import dagster._check as check
-from dagster._core.definitions.dependency import (
+from dagster._core.definitions.op_definition import OpDefinition
+from dagster._core.errors import DagsterInvalidDefinitionError
+
+from .dependency import (
     DependencyMapping,
     DependencyStructure,
     GraphNode,
@@ -12,18 +26,16 @@ from dagster._core.definitions.dependency import (
     NodeInvocation,
     OpNode,
 )
-from dagster._core.definitions.op_definition import OpDefinition
-from dagster._core.errors import DagsterInvalidDefinitionError
 
 if TYPE_CHECKING:
-    from dagster._core.definitions.graph_definition import GraphDefinition
-    from dagster._core.definitions.node_definition import NodeDefinition
+    from .graph_definition import GraphDefinition
+    from .node_definition import NodeDefinition
 
 T_DependencyKey = TypeVar("T_DependencyKey", str, "NodeInvocation")
 
 
 def normalize_dependency_dict(
-    dependencies: Optional[Union[DependencyMapping[str], DependencyMapping[NodeInvocation]]],
+    dependencies: Optional[Union[DependencyMapping[str], DependencyMapping[NodeInvocation]]]
 ) -> DependencyMapping[NodeInvocation]:
     prelude = (
         'The expected type for "dependencies" is Union[Mapping[str, Mapping[str, '
@@ -38,7 +50,7 @@ def normalize_dependency_dict(
             prelude + "Received value {dependencies} of type {type(dependencies)} at the top level."
         )
 
-    normalized_dependencies: dict[NodeInvocation, Mapping[str, IDependencyDefinition]] = {}
+    normalized_dependencies: Dict[NodeInvocation, Mapping[str, IDependencyDefinition]] = {}
     for key, dep_dict in dependencies.items():
         if not isinstance(dep_dict, dict):
             if isinstance(dep_dict, IDependencyDefinition):
@@ -58,7 +70,8 @@ def normalize_dependency_dict(
         for input_key, dep in dep_dict.items():
             if not isinstance(input_key, str):
                 raise DagsterInvalidDefinitionError(
-                    prelude + f"Received non-string key in the inner dict for key {key}. "
+                    prelude
+                    + f"Received non-string key in the inner dict for key {key}. "
                     f"Unexpected inner dict key type: {type(input_key)}"
                 )
             if not isinstance(dep, IDependencyDefinition):
@@ -74,7 +87,8 @@ def normalize_dependency_dict(
             normalized_dependencies[key] = dep_dict
         else:
             raise DagsterInvalidDefinitionError(
-                prelude + "Expected str or NodeInvocation key in the top level dict. "
+                prelude
+                + "Expected str or NodeInvocation key in the top level dict. "
                 "Received value {key} of type {type(key)}"
             )
 
@@ -85,7 +99,7 @@ def create_execution_structure(
     node_defs: Sequence["NodeDefinition"],
     dependencies_dict: DependencyMapping[NodeInvocation],
     graph_definition: "GraphDefinition",
-) -> tuple[DependencyStructure, Mapping[str, Node]]:
+) -> Tuple[DependencyStructure, Mapping[str, Node]]:
     """This builder takes the dependencies dictionary specified during creation of the
     JobDefinition object and builds (1) the execution structure and (2) a node dependency
     dictionary.
@@ -127,8 +141,8 @@ def create_execution_structure(
 
     as well as a dagster._core.definitions.dependency.DependencyStructure object.
     """
-    from dagster._core.definitions.graph_definition import GraphDefinition
-    from dagster._core.definitions.node_definition import NodeDefinition
+    from .graph_definition import GraphDefinition
+    from .node_definition import NodeDefinition
 
     check.sequence_param(node_defs, "node_defs", of_type=NodeDefinition)
     check.mapping_param(
@@ -140,12 +154,12 @@ def create_execution_structure(
     check.inst_param(graph_definition, "graph_definition", GraphDefinition)
 
     # Same as dep_dict but with NodeInvocation replaced by alias string
-    aliased_dependencies_dict: dict[str, Mapping[str, IDependencyDefinition]] = {}
+    aliased_dependencies_dict: Dict[str, Mapping[str, IDependencyDefinition]] = {}
 
     # Keep track of node name -> all aliases used and alias -> name
-    name_to_aliases: defaultdict[str, set[str]] = defaultdict(set)
-    alias_to_node_invocation: dict[str, NodeInvocation] = {}
-    alias_to_name: dict[str, str] = {}
+    name_to_aliases: DefaultDict[str, Set[str]] = defaultdict(set)
+    alias_to_node_invocation: Dict[str, NodeInvocation] = {}
+    alias_to_name: Dict[str, str] = {}
 
     for node_invocation, input_dep_dict in dependencies_dict.items():
         # We allow deps of the form dependencies={'foo': DependencyDefinition('bar')}
@@ -173,13 +187,13 @@ def create_execution_structure(
 
 def _build_graph_node_dict(
     node_defs: Sequence["NodeDefinition"],
-    name_to_aliases: Mapping[str, set[str]],
+    name_to_aliases: Mapping[str, Set[str]],
     alias_to_node_invocation: Mapping[str, NodeInvocation],
     graph_definition,
 ) -> Mapping[str, Node]:
-    from dagster._core.definitions.graph_definition import GraphDefinition
+    from .graph_definition import GraphDefinition
 
-    nodes: list[Node] = []
+    nodes: List[Node] = []
     for node_def in node_defs:
         uses_of_node = name_to_aliases.get(node_def.name, {node_def.name})
 
@@ -242,7 +256,7 @@ def _validate_dependencies(
                             f'"{from_node}" in dependency dictionary) not found in node list'
                         )
                 if not node_dict[from_node].definition.has_input(from_input):
-                    from dagster._core.definitions.graph_definition import GraphDefinition
+                    from .graph_definition import GraphDefinition
 
                     input_list = node_dict[from_node].definition.input_dict.keys()
                     node_type = (

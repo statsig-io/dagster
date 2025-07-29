@@ -6,7 +6,7 @@ from setuptools import find_packages, setup
 
 def long_description():
     here = os.path.abspath(os.path.dirname(__file__))
-    with open(os.path.join(here, "README.rst"), encoding="utf8") as fh:
+    with open(os.path.join(here, "README.rst"), "r", encoding="utf8") as fh:
         return fh.read()
 
 
@@ -22,7 +22,7 @@ ver = get_version()
 # dont pin dev installs to avoid pip dep resolver issues
 pin = "" if ver == "1!0+dev" else f"=={ver}"
 setup(
-    name="dagster-webserver",
+    name="dagster_webserver",
     version=ver,
     author="Dagster Labs",
     author_email="hello@dagsterlabs.com",
@@ -32,23 +32,21 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/dagster-io/dagster",
     classifiers=[
+        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: 3.13",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
     ],
     packages=find_packages(exclude=["dagster_webserver_tests*"]),
     include_package_data=True,
-    python_requires=">=3.9,<3.14",
     install_requires=[
         # cli
         "click>=7.0,<9.0",
-        f"dagster{pin}",
-        f"dagster-graphql{pin}",
-        "starlette!=0.36.0",  # avoid bad version https://github.com/encode/starlette/discussions/2436
+        "dagster==1.4.16",
+        "dagster-graphql==1.4.16",
+        "starlette",
         "uvicorn[standard]",
     ],
     extras_require={

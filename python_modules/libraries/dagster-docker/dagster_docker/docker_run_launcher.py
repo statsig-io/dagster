@@ -1,6 +1,4 @@
-import json
-from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 import dagster._check as check
 import docker
@@ -19,8 +17,9 @@ from dagster._serdes import ConfigurableClass
 from dagster._serdes.config_class import ConfigurableClassData
 from typing_extensions import Self
 
-from dagster_docker.container_context import DockerContainerContext
 from dagster_docker.utils import DOCKER_CONFIG_SCHEMA, validate_docker_config, validate_docker_image
+
+from .container_context import DockerContainerContext
 
 DOCKER_CONTAINER_ID_TAG = "docker/container_id"
 
@@ -70,7 +69,7 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
     def from_config_value(
         cls, inst_data: ConfigurableClassData, config_value: Mapping[str, Any]
     ) -> Self:
-        return cls(inst_data=inst_data, **config_value)
+        return DockerRunLauncher(inst_data=inst_data, **config_value)
 
     def get_container_context(self, dagster_run: DagsterRun) -> DockerContainerContext:
         return DockerContainerContext.create_for_run(dagster_run, self)
@@ -104,17 +103,6 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
 
         client = self._get_client(container_context)
 
-        container_kwargs = {**container_context.container_kwargs}
-        labels = container_kwargs.pop("labels", {})
-
-        container_kwargs.pop("stop_timeout", None)
-
-        if isinstance(labels, list):
-            labels = {key: "" for key in labels}
-
-        labels["dagster/run_id"] = run.run_id
-        labels["dagster/job_name"] = run.job_name
-
         try:
             container = client.containers.create(
                 image=docker_image,
@@ -122,11 +110,10 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
                 detach=True,
                 environment=docker_env,
                 network=container_context.networks[0] if len(container_context.networks) else None,
-                labels=labels,
-                **container_kwargs,
+                **container_context.container_kwargs,
             )
 
-        except docker.errors.ImageNotFound:  # pyright: ignore[reportAttributeAccessIssue]
+        except docker.errors.ImageNotFound:
             client.images.pull(docker_image)
             container = client.containers.create(
                 image=docker_image,
@@ -134,8 +121,7 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
                 detach=True,
                 environment=docker_env,
                 network=container_context.networks[0] if len(container_context.networks) else None,
-                labels=labels,
-                **container_kwargs,
+                **container_context.container_kwargs,
             )
 
         if len(container_context.networks) > 1:
@@ -151,7 +137,7 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
 
         self._instance.add_run_tags(
             run.run_id,
-            {DOCKER_CONTAINER_ID_TAG: container.id, DOCKER_IMAGE_TAG: docker_image},  # pyright: ignore[reportArgumentType]
+            {DOCKER_CONTAINER_ID_TAG: container.id, DOCKER_IMAGE_TAG: docker_image},
         )
 
         container.start()
@@ -187,7 +173,7 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
         self._launch_container_with_command(run, docker_image, command)
 
     def _get_container(self, run):
-        if not run:
+        if not run or run.is_finished:
             return None
 
         container_id = run.tags.get(DOCKER_CONTAINER_ID_TAG)
@@ -199,21 +185,18 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
 
         try:
             return self._get_client(container_context).containers.get(container_id)
-        except docker.errors.NotFound:  # pyright: ignore[reportAttributeAccessIssue]
+        except Exception:
             return None
 
     def terminate(self, run_id):
         run = self._instance.get_run_by_id(run_id)
 
-        if not run or run.is_finished:
+        if not run:
             return False
 
         self._instance.report_run_canceling(run)
 
         container = self._get_container(run)
-
-        container_context = self.get_container_context(run)
-        stop_timeout = container_context.container_kwargs.get("stop_timeout")
 
         if not container:
             self._instance.report_engine_event(
@@ -223,7 +206,7 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
             )
             return False
 
-        container.stop(timeout=stop_timeout)
+        container.stop()
 
         return True
 
@@ -232,22 +215,11 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
         return True
 
     def check_run_worker_health(self, run: DagsterRun):
-        container_id = run.tags.get(DOCKER_CONTAINER_ID_TAG)
-
-        if not container_id:
-            return CheckRunHealthResult(WorkerStatus.NOT_FOUND, msg="No container ID tag for run.")
-
         container = self._get_container(run)
         if container is None:
-            return CheckRunHealthResult(
-                WorkerStatus.NOT_FOUND, msg=f"Could not find container with ID {container_id}."
-            )
+            return CheckRunHealthResult(WorkerStatus.NOT_FOUND)
         if container.status == "running":
             return CheckRunHealthResult(WorkerStatus.RUNNING)
-
-        container_state = container.attrs.get("State")
-        failure_string = f"Container status is {container.status}." + (
-            f" Container state: {json.dumps(container_state)}" if container_state else ""
+        return CheckRunHealthResult(
+            WorkerStatus.FAILED, msg=f"Container status is {container.status}"
         )
-
-        return CheckRunHealthResult(WorkerStatus.FAILED, msg=failure_string)

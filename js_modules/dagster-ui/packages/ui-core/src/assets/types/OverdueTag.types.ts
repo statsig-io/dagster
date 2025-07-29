@@ -4,7 +4,7 @@ import * as Types from '../../graphql/types';
 
 export type OverduePopoverQueryVariables = Types.Exact<{
   assetKey: Types.AssetKeyInput;
-  timestamp: Types.Scalars['String']['input'];
+  timestamp: Types.Scalars['String'];
 }>;
 
 export type OverduePopoverQuery = {
@@ -25,14 +25,6 @@ export type OverduePopoverQuery = {
           lastEvaluationTimestamp: string | null;
           maximumLagMinutes: number;
         } | null;
-        internalFreshnessPolicy:
-          | {__typename: 'CronFreshnessPolicy'}
-          | {
-              __typename: 'TimeWindowFreshnessPolicy';
-              failWindowSeconds: number;
-              warnWindowSeconds: number | null;
-            }
-          | null;
         assetMaterializationUsedData: Array<{
           __typename: 'MaterializationUpstreamDataVersion';
           timestamp: string;
@@ -42,5 +34,3 @@ export type OverduePopoverQuery = {
       }
     | {__typename: 'AssetNotFoundError'};
 };
-
-export const OverduePopoverQueryVersion = 'ed122f625cc6273c4c997f4d7225e14056aab98d07a08401af2136577a20fbb7';

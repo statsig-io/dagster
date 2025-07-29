@@ -1,38 +1,39 @@
-from typing import Any, Optional
-
 import click
-import dagster as dg
 import pytest
 from click.testing import CliRunner
 from dagster._cli.job import execute_launch_command, job_launch_command
 from dagster._core.errors import DagsterRunAlreadyExists
-from dagster._core.instance import DagsterInstance
 from dagster._core.storage.dagster_run import DagsterRunStatus
 from dagster._core.test_utils import new_cwd
-from dagster._core.utils import make_new_run_id
+from dagster._utils import file_relative_path
 
-from dagster_tests.cli_tests.command_tests.test_cli_commands import (
+from .test_cli_commands import (
     default_cli_test_instance,
     launch_command_contexts,
+    memoizable_job,
     non_existant_python_file_workspace_args,
     python_bar_cli_args,
-    valid_remote_job_target_cli_args,
+    valid_external_job_target_cli_args,
 )
 
 
-def run_launch(
-    parsed_args: dict[str, Any], instance: DagsterInstance, expected_count: Optional[int] = None
-):
-    run = execute_launch_command(instance=instance, **parsed_args)
+def run_launch(kwargs, instance, expected_count=None):
+    run = execute_launch_command(instance, kwargs)
     assert run
     if expected_count:
         assert instance.get_runs_count() == expected_count
     instance.run_launcher.join()
 
 
-def run_job_launch_cli(
-    execution_args: list[str], instance: DagsterInstance, expected_count: Optional[int] = None
-):
+def run_launch_cli(execution_args, instance, expected_count=None):
+    runner = CliRunner()
+    result = runner.invoke(job_launch_command, execution_args)
+    assert result.exit_code == 0, result.stdout
+    if expected_count:
+        assert instance.get_runs_count() == expected_count
+
+
+def run_job_launch_cli(execution_args, instance, expected_count=None):
     runner = CliRunner()
     result = runner.invoke(job_launch_command, execution_args)
     assert result.exit_code == 0, result.stdout
@@ -54,7 +55,7 @@ def test_launch_non_existant_file():
             run_launch(kwargs, instance)
 
 
-@pytest.mark.parametrize("job_cli_args", valid_remote_job_target_cli_args())
+@pytest.mark.parametrize("job_cli_args", valid_external_job_target_cli_args())
 def test_launch_job_cli(job_cli_args):
     with default_cli_test_instance() as instance:
         run_job_launch_cli(job_cli_args, instance, expected_count=1)
@@ -66,7 +67,7 @@ def test_launch_job_cli(job_cli_args):
 )
 def test_launch_with_run_id(gen_job_args):
     runner = CliRunner()
-    run_id = make_new_run_id()
+    run_id = "my_super_cool_run_id"
     with default_cli_test_instance() as instance:
         with gen_job_args as args:
             result = runner.invoke(
@@ -101,7 +102,7 @@ def test_launch_with_run_id(gen_job_args):
 )
 def test_job_launch_with_run_id(gen_job_args):
     runner = CliRunner()
-    run_id = make_new_run_id()
+    run_id = "my_super_cool_run_id"
     with default_cli_test_instance() as instance:
         with gen_job_args as args:
             result = runner.invoke(
@@ -136,7 +137,7 @@ def test_job_launch_with_run_id(gen_job_args):
 )
 def test_launch_queued(gen_job_args):
     runner = CliRunner()
-    run_id = make_new_run_id()
+    run_id = "my_super_cool_run_id"
     with default_cli_test_instance(
         overrides={
             "run_coordinator": {
@@ -168,7 +169,7 @@ def test_launch_queued(gen_job_args):
 )
 def test_job_launch_queued(gen_job_args):
     runner = CliRunner()
-    run_id = make_new_run_id()
+    run_id = "my_super_cool_run_id"
     with default_cli_test_instance(
         overrides={
             "run_coordinator": {
@@ -204,7 +205,7 @@ def test_default_working_directory():
                 job_launch_command,
                 [
                     "-f",
-                    dg.file_relative_path(__file__, "file_with_local_import.py"),
+                    file_relative_path(__file__, "file_with_local_import.py"),
                     "-a",
                     "qux_job",
                 ],
@@ -212,6 +213,27 @@ def test_default_working_directory():
             assert result.exit_code == 0
             runs = instance.get_runs()
             assert len(runs) == 1
+
+
+def test_launch_using_memoization():
+    runner = CliRunner()
+    with default_cli_test_instance() as instance:
+        with python_bar_cli_args("memoizable") as args:
+            result = runner.invoke(job_launch_command, args + ["--run-id", "first"])
+            assert result.exit_code == 0
+            run = instance.get_run_by_id("first")
+
+            # A None value of step_keys_to_execute indicates executing every step in the plan.
+            assert len(run.step_keys_to_execute) == 1
+
+            # Execute the job to pretend that the launch went through and memoized some result.
+            result = memoizable_job.execute_in_process(instance=instance)
+            assert result.success
+
+            result = runner.invoke(job_launch_command, args + ["--run-id", "second"])
+            assert result.exit_code == 0
+            run = instance.get_run_by_id("second")
+            assert len(run.step_keys_to_execute) == 0
 
 
 def test_launch_command_help():

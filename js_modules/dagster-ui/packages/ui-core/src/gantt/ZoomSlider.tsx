@@ -7,16 +7,19 @@ import styled from 'styled-components';
  * It uses Blueprint CSS but not the Slider component, because that renders twice and
  * forces a DOM layout to determine it's size (I think for tick marks, which we aren't using)
  */
-export const ZoomSlider = React.memo((props: {value: number; onChange: (v: number) => void}) => {
+export const ZoomSlider: React.FC<{
+  value: number;
+  onChange: (v: number) => void;
+}> = React.memo((props) => {
   return (
     <ZoomSliderContainer
-      $fillColor={Colors.accentGray()}
-      className="bp5-slider bp5-slider-unlabeled"
+      $fillColor={Colors.Gray600}
+      className="bp4-slider bp4-slider-unlabeled"
       onMouseDown={(e: React.MouseEvent) => {
-        const rect = e.currentTarget.closest('.bp5-slider')!.getBoundingClientRect();
+        const rect = e.currentTarget.closest('.bp4-slider')!.getBoundingClientRect();
 
         let initialX: number;
-        if (e.target instanceof HTMLElement && e.target.classList.contains('bp5-slider-handle')) {
+        if (e.target instanceof HTMLElement && e.target.classList.contains('bp4-slider-handle')) {
           initialX = e.pageX;
         } else {
           initialX = rect.left + (props.value / 100) * rect.width;
@@ -35,16 +38,16 @@ export const ZoomSlider = React.memo((props: {value: number; onChange: (v: numbe
         document.addEventListener('mouseup', onRelease);
       }}
     >
-      <div className="bp5-slider-track">
-        <div className="bp5-slider-progress" style={{left: 0, right: 0, top: 0}} />
+      <div className="bp4-slider-track">
+        <div className="bp4-slider-progress" style={{left: 0, right: 0, top: 0}} />
         <div
-          className="bp5-slider-progress bp5-intent-primary"
+          className="bp4-slider-progress bp4-intent-primary"
           style={{left: 0, right: `${100 - props.value}%`, top: 0}}
         />
       </div>
-      <div className="bp5-slider-axis" />
+      <div className="bp4-slider-axis" />
       <span
-        className="bp5-slider-handle"
+        className="bp4-slider-handle"
         style={{left: `calc(${props.value}% - 8px)`}}
         tabIndex={0}
       />

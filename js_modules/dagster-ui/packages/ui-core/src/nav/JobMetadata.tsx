@@ -1,19 +1,28 @@
+import {gql, useQuery} from '@apollo/client';
 import {
   Box,
   Button,
   ButtonLink,
   Colors,
-  Dialog,
   DialogFooter,
+  Dialog,
   Tag,
 } from '@dagster-io/ui-components';
 import uniq from 'lodash/uniq';
-import {useMemo, useState} from 'react';
+import * as React from 'react';
 import {Link} from 'react-router-dom';
+
+import {tokenForAssetKey} from '../asset-graph/Utils';
+import {AutomaterializeDaemonStatusTag} from '../assets/AutomaterializeDaemonStatusTag';
+import {DagsterTag} from '../runs/RunTag';
+import {RUN_TIME_FRAGMENT} from '../runs/RunUtils';
+import {SCHEDULE_SWITCH_FRAGMENT} from '../schedules/ScheduleSwitch';
+import {SENSOR_SWITCH_FRAGMENT} from '../sensors/SensorSwitch';
+import {repoAddressAsTag} from '../workspace/repoAddressAsString';
+import {RepoAddress} from '../workspace/types';
 
 import {LatestRunTag} from './LatestRunTag';
 import {ScheduleOrSensorTag} from './ScheduleOrSensorTag';
-import {gql, useQuery} from '../apollo-client';
 import {
   JobMetadataAssetNodeFragment,
   JobMetadataFragment,
@@ -21,14 +30,6 @@ import {
   JobMetadataQueryVariables,
   RunMetadataFragment,
 } from './types/JobMetadata.types';
-import {tokenForAssetKey} from '../asset-graph/Utils';
-import {AutomaterializeDaemonStatusTag} from '../assets/AutomaterializeDaemonStatusTag';
-import {DagsterTag} from '../runs/RunTag';
-import {RUN_TIME_FRAGMENT} from '../runs/RunUtils';
-import {SCHEDULE_SWITCH_FRAGMENT} from '../schedules/ScheduleSwitchFragment';
-import {SENSOR_SWITCH_FRAGMENT} from '../sensors/SensorSwitchFragment';
-import {repoAddressAsTag} from '../workspace/repoAddressAsString';
-import {RepoAddress} from '../workspace/types';
 
 type JobMetadata = {
   assetNodes: JobMetadataAssetNodeFragment[] | null;
@@ -37,7 +38,7 @@ type JobMetadata = {
 };
 
 function useJobNavMetadata(repoAddress: RepoAddress, pipelineName: string) {
-  const queryResult = useQuery<JobMetadataQuery, JobMetadataQueryVariables>(JOB_METADATA_QUERY, {
+  const {data} = useQuery<JobMetadataQuery, JobMetadataQueryVariables>(JOB_METADATA_QUERY, {
     variables: {
       runsFilter: {
         pipelineName,
@@ -55,9 +56,8 @@ function useJobNavMetadata(repoAddress: RepoAddress, pipelineName: string) {
       },
     },
   });
-  const data = queryResult.data;
 
-  return useMemo<JobMetadata>(() => {
+  return React.useMemo<JobMetadata>(() => {
     return {
       assetNodes: data?.assetNodes || null,
       job:
@@ -77,7 +77,7 @@ interface Props {
   repoAddress: RepoAddress;
 }
 
-export const JobMetadata = (props: Props) => {
+export const JobMetadata: React.FC<Props> = (props) => {
   const {pipelineName, repoAddress} = props;
   const metadata = useJobNavMetadata(repoAddress, pipelineName);
 
@@ -87,7 +87,7 @@ export const JobMetadata = (props: Props) => {
         <JobScheduleOrSensorTag job={metadata.job} repoAddress={repoAddress} />
       ) : null}
       <LatestRunTag pipelineName={pipelineName} repoAddress={repoAddress} />
-      {metadata.assetNodes && metadata.assetNodes.some((a) => !!a.automationCondition) && (
+      {metadata.assetNodes && metadata.assetNodes.some((a) => !!a.autoMaterializePolicy) && (
         <AutomaterializeDaemonStatusTag />
       )}
       {metadata.runsForAssetScan ? (
@@ -97,21 +97,18 @@ export const JobMetadata = (props: Props) => {
   );
 };
 
-const JobScheduleOrSensorTag = ({
-  job,
-  repoAddress,
-}: {
+const JobScheduleOrSensorTag: React.FC<{
   job: JobMetadataFragment;
   repoAddress: RepoAddress;
-}) => {
-  const matchingSchedules = useMemo(() => {
+}> = ({job, repoAddress}) => {
+  const matchingSchedules = React.useMemo(() => {
     if (job?.__typename === 'Pipeline' && job.schedules.length) {
       return job.schedules;
     }
     return [];
   }, [job]);
 
-  const matchingSensors = useMemo(() => {
+  const matchingSensors = React.useMemo(() => {
     if (job?.__typename === 'Pipeline' && job.sensors.length) {
       return job.sensors;
     }
@@ -137,8 +134,8 @@ function getRelatedAssets(metadata: JobMetadata) {
   );
 }
 
-const RelatedAssetsTag = ({relatedAssets}: {relatedAssets: string[]}) => {
-  const [open, setOpen] = useState(false);
+const RelatedAssetsTag: React.FC<{relatedAssets: string[]}> = ({relatedAssets}) => {
+  const [open, setOpen] = React.useState(false);
 
   if (relatedAssets.length === 0) {
     return null;
@@ -157,7 +154,7 @@ const RelatedAssetsTag = ({relatedAssets}: {relatedAssets: string[]}) => {
     <>
       <Tag icon="asset">
         <ButtonLink
-          color={Colors.linkDefault()}
+          color={Colors.Link}
           onClick={() => setOpen(true)}
         >{`View ${relatedAssets.length} assets`}</ButtonLink>
       </Tag>
@@ -190,7 +187,7 @@ const RelatedAssetsTag = ({relatedAssets}: {relatedAssets: string[]}) => {
   );
 };
 
-export const JOB_METADATA_QUERY = gql`
+const JOB_METADATA_QUERY = gql`
   query JobMetadataQuery($params: PipelineSelector!, $runsFilter: RunsFilter!) {
     pipelineOrError(params: $params) {
       ... on Pipeline {
@@ -214,8 +211,8 @@ export const JOB_METADATA_QUERY = gql`
 
   fragment JobMetadataAssetNode on AssetNode {
     id
-    automationCondition {
-      __typename
+    autoMaterializePolicy {
+      policyType
     }
     assetKey {
       path

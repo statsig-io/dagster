@@ -1,4 +1,5 @@
 import threading
+from typing import Tuple, cast
 
 import dagster._check as check
 from dagster._core.instance import DagsterInstance, InstanceRef
@@ -13,10 +14,13 @@ def _kill_on_cancel(instance_ref: InstanceRef, run_id, shutdown_event):
     with DagsterInstance.from_ref(instance_ref) as instance:
         while not shutdown_event.is_set():
             shutdown_event.wait(instance.cancellation_thread_poll_interval_seconds)
-            run = check.inst(
-                instance.get_run_by_id(run_id),
+            run = cast(
                 DagsterRun,
-                "Run not found for cancellation thread",
+                check.inst(
+                    instance.get_run_by_id(run_id),
+                    DagsterRun,
+                    "Run not found for cancellation thread",
+                ),
             )
             if run.status in [
                 DagsterRunStatus.CANCELING,
@@ -31,7 +35,7 @@ def _kill_on_cancel(instance_ref: InstanceRef, run_id, shutdown_event):
 
 def start_run_cancellation_thread(
     instance: DagsterInstance, run_id
-) -> tuple[threading.Thread, threading.Event]:
+) -> Tuple[threading.Thread, threading.Event]:
     print("Starting run cancellation thread")  # noqa: T201
     shutdown_event = threading.Event()
     thread = threading.Thread(

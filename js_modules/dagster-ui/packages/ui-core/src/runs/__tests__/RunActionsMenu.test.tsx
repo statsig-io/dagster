@@ -1,33 +1,56 @@
-import {MockedProvider} from '@apollo/client/testing';
 import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {MemoryRouter} from 'react-router-dom';
+import * as React from 'react';
 
-import {WorkspaceProvider} from '../../workspace/WorkspaceContext/WorkspaceContext';
+import {RunStatus} from '../../graphql/types';
+import {TestProvider} from '../../testing/TestProvider';
 import {RunActionsMenu} from '../RunActionsMenu';
-import {
-  buildMockRootWorkspaceQuery,
-  buildPipelineEnvironmentQuery,
-  buildRunActionsMenuFragment,
-} from '../__fixtures__/RunActionsMenu.fixtures';
+import {RunTableRunFragment} from '../types/RunTable.types';
 
 describe('RunActionsMenu', () => {
+  const Test: React.FC<{permissionOverrides?: any; run: RunTableRunFragment}> = ({
+    permissionOverrides,
+    run,
+  }) => {
+    return (
+      <TestProvider permissionOverrides={permissionOverrides}>
+        <RunActionsMenu run={run} />
+      </TestProvider>
+    );
+  };
+
+  const runFragment: RunTableRunFragment = {
+    __typename: 'Run',
+    id: 'run-foo-bar',
+    status: RunStatus.SUCCESS,
+    stepKeysToExecute: null,
+    canTerminate: true,
+    hasDeletePermission: true,
+    hasReExecutePermission: true,
+    hasTerminatePermission: true,
+    mode: 'default',
+    rootRunId: 'abcdef12',
+    parentRunId: null,
+    pipelineSnapshotId: 'snapshotID',
+    pipelineName: 'job-bar',
+    repositoryOrigin: {
+      __typename: 'RepositoryOrigin',
+      id: 'repo',
+      repositoryName: 'my-repo',
+      repositoryLocationName: 'my-origin',
+    },
+    solidSelection: null,
+    assetSelection: null,
+    assetCheckSelection: null,
+    tags: [],
+    startTime: 123,
+    endTime: 456,
+    updateTime: 789,
+  };
+
   describe('Permissions', () => {
     it('renders menu when open', async () => {
-      render(
-        <MockedProvider
-          mocks={[
-            ...buildMockRootWorkspaceQuery(),
-            buildPipelineEnvironmentQuery({hasReExecutePermission: true}),
-          ]}
-        >
-          <MemoryRouter>
-            <WorkspaceProvider>
-              <RunActionsMenu run={buildRunActionsMenuFragment({hasReExecutePermission: true})} />
-            </WorkspaceProvider>
-          </MemoryRouter>
-        </MockedProvider>,
-      );
+      render(<Test run={runFragment} />);
 
       const button = await screen.findByRole('button');
       expect(button).toBeVisible();
@@ -43,18 +66,12 @@ describe('RunActionsMenu', () => {
 
     it('disables re-execution if no permission', async () => {
       render(
-        <MockedProvider
-          mocks={[
-            ...buildMockRootWorkspaceQuery(),
-            buildPipelineEnvironmentQuery({hasReExecutePermission: false}),
-          ]}
-        >
-          <MemoryRouter>
-            <WorkspaceProvider>
-              <RunActionsMenu run={buildRunActionsMenuFragment({hasReExecutePermission: false})} />
-            </WorkspaceProvider>
-          </MemoryRouter>
-        </MockedProvider>,
+        <Test
+          run={runFragment}
+          permissionOverrides={{
+            launch_pipeline_reexecution: {enabled: false, disabledReason: 'lol nope'},
+          }}
+        />,
       );
 
       const button = await screen.findByRole('button');
@@ -67,7 +84,7 @@ describe('RunActionsMenu', () => {
       });
 
       // Blueprint doesn't actually set `disabled` on the button element.
-      expect(reExecutionButton.classList.contains('bp5-disabled')).toBe(true);
+      expect(reExecutionButton.classList.contains('bp4-disabled')).toBe(true);
     });
   });
 });

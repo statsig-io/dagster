@@ -1,35 +1,31 @@
-import {Box, Caption, Colors, Icon, MiddleTruncate} from '@dagster-io/ui-components';
+import {gql, useQuery} from '@apollo/client';
+import {Box, Colors, Icon, MiddleTruncate} from '@dagster-io/ui-components';
 import dayjs from 'dayjs';
-import * as React from 'react';
+import relativeTime from 'dayjs/plugin/relativeTime';
+import React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components';
 
-import {assetDetailsPathForKey} from './assetDetailsPathForKey';
-import {gql, useQuery} from '../apollo-client';
-import {
-  AssetMaterializationUpstreamQuery,
-  AssetMaterializationUpstreamQueryVariables,
-  AssetMaterializationUpstreamTableFragment,
-  MaterializationUpstreamDataVersionFragment,
-} from './types/AssetMaterializationUpstreamData.types';
 import {Timestamp} from '../app/time/Timestamp';
 import {displayNameForAssetKey} from '../asset-graph/Utils';
 import {AssetKeyInput} from '../graphql/types';
-import {TimeFromNow} from '../ui/TimeFromNow';
 
-import '../util/dayjsExtensions';
+import {assetDetailsPathForKey} from './assetDetailsPathForKey';
+import {
+  AssetMaterializationUpstreamTableFragment,
+  AssetMaterializationUpstreamQuery,
+  AssetMaterializationUpstreamQueryVariables,
+  MaterializationUpstreamDataVersionFragment,
+} from './types/AssetMaterializationUpstreamData.types';
 
-export const AssetMaterializationUpstreamTable = ({
-  data,
-  assetKey,
-  maximumLagMinutes,
-  relativeTo,
-}: {
+dayjs.extend(relativeTime);
+
+export const AssetMaterializationUpstreamTable: React.FC<{
   data: AssetMaterializationUpstreamTableFragment | undefined;
   assetKey: AssetKeyInput;
   relativeTo: number | 'now';
   maximumLagMinutes?: number; // pass to get red "late" highlighting
-}) => {
+}> = ({data, assetKey, maximumLagMinutes, relativeTo}) => {
   const displayName = displayNameForAssetKey(assetKey);
 
   if (!data) {
@@ -139,25 +135,17 @@ export const ASSET_MATERIALIZATION_UPSTREAM_TABLE_FRAGMENT = gql`
   }
 `;
 
-export const AssetMaterializationUpstreamData = ({
-  assetKey,
-  timestamp = '',
-}: {
+export const AssetMaterializationUpstreamData: React.FC<{
   assetKey: AssetKeyInput;
   timestamp?: string;
-}) => {
-  const skip = !timestamp;
+}> = ({assetKey, timestamp = ''}) => {
   const result = useQuery<
     AssetMaterializationUpstreamQuery,
     AssetMaterializationUpstreamQueryVariables
   >(ASSET_MATERIALIZATION_UPSTREAM_QUERY, {
     variables: {assetKey: {path: assetKey.path}, timestamp},
-    skip,
+    skip: !timestamp,
   });
-
-  if (!timestamp) {
-    return <Caption color={Colors.textLight()}>None</Caption>;
-  }
 
   const data =
     result.data?.assetNodeOrError.__typename === 'AssetNode'
@@ -173,24 +161,20 @@ export const AssetMaterializationUpstreamData = ({
   );
 };
 
-export const TimeSinceWithOverdueColor = ({
-  timestamp,
-  maximumLagMinutes,
-  relativeTo = Date.now(),
-}: {
+export const TimeSinceWithOverdueColor: React.FC<{
   timestamp: number;
   maximumLagMinutes?: number;
   relativeTo?: number | 'now';
-}) => {
+}> = ({timestamp, maximumLagMinutes, relativeTo = Date.now()}) => {
   const lagMinutes = ((relativeTo === 'now' ? Date.now() : relativeTo) - timestamp) / (60 * 1000);
   const isOverdue = maximumLagMinutes && lagMinutes > maximumLagMinutes;
 
   return relativeTo === 'now' ? (
-    <span style={{color: isOverdue ? Colors.textRed() : Colors.textLight()}}>
-      <TimeFromNow unixTimestamp={timestamp / 1000} />
+    <span style={{color: isOverdue ? Colors.Red700 : Colors.Gray700}}>
+      ({dayjs(timestamp).fromNow()})
     </span>
   ) : (
-    <span style={{color: isOverdue ? Colors.textRed() : Colors.textLight()}}>
+    <span style={{color: isOverdue ? Colors.Red700 : Colors.Gray700}}>
       ({dayjs(Number(timestamp)).from(relativeTo, true)} earlier)
     </span>
   );
@@ -214,7 +198,7 @@ const TableContainer = styled.table`
   border-collapse: collapse;
 
   tr td {
-    border: 1px solid ${Colors.keylineDefault()};
+    border: 1px solid ${Colors.KeylineGray};
     padding: 8px 12px;
     font-size: 14px;
     vertical-align: top;

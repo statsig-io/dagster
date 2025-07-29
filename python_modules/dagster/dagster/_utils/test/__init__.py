@@ -1,11 +1,9 @@
 import os
 import shutil
 import tempfile
-from asyncio import new_event_loop
 from collections import defaultdict
-from collections.abc import Mapping
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Set, Type, Union, cast  # noqa: F401, UP035
+from typing import Any, Dict, Mapping, Optional, cast
 
 # top-level include is dangerous in terms of incurring circular deps
 from dagster import (
@@ -28,7 +26,6 @@ from dagster._core.definitions.executor_definition import in_process_executor
 from dagster._core.definitions.job_base import InMemoryJob
 from dagster._core.definitions.logger_definition import LoggerDefinition
 from dagster._core.definitions.resource_definition import ScopedResourcesBuilder
-from dagster._core.events import DagsterEventType
 from dagster._core.execution.api import create_execution_plan
 from dagster._core.execution.context.system import PlanExecutionContext
 from dagster._core.execution.context_creation_job import (
@@ -42,7 +39,6 @@ from dagster._core.execution.execute_in_process_result import ExecuteInProcessRe
 from dagster._core.instance import DagsterInstance
 from dagster._core.scheduler import Scheduler
 from dagster._core.storage.dagster_run import DagsterRun
-from dagster._core.storage.event_log.base import EventLogConnection
 from dagster._core.storage.event_log.sqlite.sqlite_event_log import SqliteEventLogStorage
 from dagster._core.storage.sqlite_storage import SqliteStorageConfig
 from dagster._core.utility_ops import create_stub_op
@@ -51,7 +47,7 @@ from dagster._serdes.config_class import ConfigurableClassData
 from dagster._utils.concurrency import ConcurrencyClaimStatus
 
 # re-export
-from dagster._utils.temp_file import (
+from ..temp_file import (
     get_temp_dir as get_temp_dir,
     get_temp_file_handle as get_temp_file_handle,
     get_temp_file_handle_with_data as get_temp_file_handle_with_data,
@@ -62,7 +58,7 @@ from dagster._utils.temp_file import (
 
 
 def create_test_pipeline_execution_context(
-    logger_defs: Optional[Mapping[str, LoggerDefinition]] = None,
+    logger_defs: Optional[Mapping[str, LoggerDefinition]] = None
 ) -> PlanExecutionContext:
     loggers = check.opt_mapping_param(
         logger_defs, "logger_defs", key_type=str, value_type=LoggerDefinition
@@ -71,7 +67,7 @@ def create_test_pipeline_execution_context(
         name="test_legacy_context",
         node_defs=[],
     ).to_job(executor_def=in_process_executor, logger_defs=logger_defs)
-    run_config: dict[str, dict[str, dict]] = {"loggers": {key: {} for key in loggers}}
+    run_config: Dict[str, Dict[str, Dict]] = {"loggers": {key: {} for key in loggers}}
     dagster_run = DagsterRun(job_name="test_legacy_context", run_config=run_config)
     instance = DagsterInstance.ephemeral()
     execution_plan = create_execution_plan(job=job_def, run_config=run_config)
@@ -94,7 +90,6 @@ def create_test_pipeline_execution_context(
         ),
         log_manager=log_manager,
         output_capture=None,
-        event_loop=new_event_loop(),
     )
 
 
@@ -108,7 +103,7 @@ def build_job_with_input_stubs(
     check.inst_param(job_def, "pipeline_def", JobDefinition)
     check.mapping_param(inputs, "inputs", key_type=str, value_type=dict)
 
-    deps: dict[NodeInvocation, dict[str, object]] = defaultdict(dict)
+    deps: Dict[NodeInvocation, Dict[str, object]] = defaultdict(dict)
     for node_name, dep_dict in job_def.dependencies.items():
         for input_name, dep in dep_dict.items():
             deps[node_name][input_name] = dep
@@ -260,7 +255,7 @@ class FilesystemTestScheduler(Scheduler, ConfigurableClass):
         self._inst_data = inst_data
 
     @property
-    def inst_data(self) -> object:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def inst_data(self) -> object:
         return self._inst_data
 
     @classmethod
@@ -271,13 +266,13 @@ class FilesystemTestScheduler(Scheduler, ConfigurableClass):
     def from_config_value(
         cls, inst_data: object, config_value: Mapping[str, object]
     ) -> "FilesystemTestScheduler":
-        artifacts_dir = cast("str", config_value["base_dir"])
+        artifacts_dir = cast(str, config_value["base_dir"])
         return FilesystemTestScheduler(artifacts_dir=artifacts_dir, inst_data=inst_data)
 
     def debug_info(self) -> str:
         return ""
 
-    def get_logs_path(self, _instance: DagsterInstance, schedule_origin_id: str) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_logs_path(self, _instance: DagsterInstance, schedule_origin_id: str) -> str:
         check.str_param(schedule_origin_id, "schedule_origin_id")
         return os.path.join(self._artifacts_dir, "logs", schedule_origin_id, "scheduler.log")
 
@@ -306,7 +301,6 @@ class ConcurrencyEnabledSqliteTestEventLogStorage(SqliteEventLogStorage, Configu
     ):
         self._sleep_interval = sleep_interval
         self._check_calls = defaultdict(int)
-        self._records_for_run_calls = defaultdict(int)
         super().__init__(base_dir, inst_data)
 
     @classmethod
@@ -314,31 +308,17 @@ class ConcurrencyEnabledSqliteTestEventLogStorage(SqliteEventLogStorage, Configu
         return {"base_dir": StringSource, "sleep_interval": Field(float, is_required=False)}
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_config_value(
         cls, inst_data: Optional[ConfigurableClassData], config_value: TestStorageConfig
     ) -> "ConcurrencyEnabledSqliteTestEventLogStorage":
         return ConcurrencyEnabledSqliteTestEventLogStorage(inst_data=inst_data, **config_value)
 
     @property
-    def supports_global_concurrency_limits(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+    def supports_global_concurrency_limits(self) -> bool:
         return True
-
-    def get_records_for_run(
-        self,
-        run_id: str,
-        cursor: Optional[str] = None,
-        of_type: Optional[Union[DagsterEventType, set[DagsterEventType]]] = None,
-        limit: Optional[int] = None,
-        ascending: bool = True,
-    ) -> EventLogConnection:
-        self._records_for_run_calls[run_id] = self._records_for_run_calls[run_id] + 1
-        return super().get_records_for_run(run_id, cursor, of_type, limit, ascending)
 
     def get_check_calls(self, step_key: str) -> int:
         return self._check_calls[step_key]
-
-    def get_records_for_run_calls(self, run_id: str) -> int:
-        return self._records_for_run_calls[run_id]
 
     def check_concurrency_claim(
         self, concurrency_key: str, run_id: str, step_key: str
@@ -348,16 +328,3 @@ class ConcurrencyEnabledSqliteTestEventLogStorage(SqliteEventLogStorage, Configu
         if not self._sleep_interval:
             return claim_status
         return claim_status.with_sleep_interval(float(self._sleep_interval))
-
-
-def get_all_direct_subclasses_of_marker(marker_interface_cls: type) -> list[type]:
-    import dagster as dagster
-
-    return [
-        symbol
-        for symbol in dagster.__dict__.values()
-        if isinstance(symbol, type)
-        and issubclass(symbol, marker_interface_cls)
-        and marker_interface_cls
-        in symbol.__bases__  # ensure that the class is a direct subclass of marker_interface_cls (not a subclass of a subclass)
-    ]

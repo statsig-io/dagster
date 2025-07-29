@@ -1,8 +1,4 @@
-from dagster import asset
-from dagster._core.definitions.partitions.definition import (
-    DailyPartitionsDefinition,
-    HourlyPartitionsDefinition,
-)
+from dagster import DailyPartitionsDefinition, HourlyPartitionsDefinition, asset
 
 hourly_partitions_def = HourlyPartitionsDefinition(start_date="2023-02-01-00:00")
 daily_partitions_def = DailyPartitionsDefinition(start_date="2023-02-01")

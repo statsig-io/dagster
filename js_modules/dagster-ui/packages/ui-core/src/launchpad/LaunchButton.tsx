@@ -20,7 +20,7 @@ export interface LaunchButtonConfiguration {
   disabled: boolean;
   warning?: React.ReactNode;
   scope?: string;
-  onClick: (e: React.MouseEvent | KeyboardEvent) => Promise<any>;
+  onClick: () => Promise<any>;
   icon?: IconName | JSX.Element | 'dagster-spinner';
   tooltip?: string | JSX.Element;
 }
@@ -34,12 +34,9 @@ enum LaunchButtonStatus {
 function useLaunchButtonCommonState({runCount, disabled}: {runCount: number; disabled: boolean}) {
   const [starting, setStarting] = React.useState(false);
 
-  const onConfigSelected = async (
-    e: React.MouseEvent | KeyboardEvent,
-    option: LaunchButtonConfiguration,
-  ) => {
+  const onConfigSelected = async (option: LaunchButtonConfiguration) => {
     setStarting(true);
-    await option.onClick(e);
+    await option.onClick();
     setStarting(false);
   };
 
@@ -72,10 +69,8 @@ export const LaunchButton = ({config, runCount}: LaunchButtonProps) => {
     runCount,
     disabled: config.disabled,
   });
-  const onClick = (e: React.MouseEvent | KeyboardEvent) => {
-    if (status === LaunchButtonStatus.Ready) {
-      onConfigSelected(e, config);
-    }
+  const onClick = () => {
+    status === LaunchButtonStatus.Ready && onConfigSelected(config);
   };
   return (
     <ShortcutHandler
@@ -123,7 +118,7 @@ export const LaunchButtonDropdown = ({
 
   return (
     <ShortcutHandler
-      onShortcut={(e) => onConfigSelected(e, primary)}
+      onShortcut={() => onConfigSelected(primary)}
       shortcutLabel="⌥L"
       shortcutFilter={(e) => e.code === 'KeyL' && e.altKey}
     >
@@ -133,7 +128,7 @@ export const LaunchButtonDropdown = ({
         joined="right"
         icon={icon}
         tooltip={tooltip}
-        onClick={(e) => onConfigSelected(e, primary)}
+        onClick={() => onConfigSelected(primary)}
         disabled={!!disabled}
         {...forced}
       />
@@ -156,7 +151,7 @@ export const LaunchButtonDropdown = ({
                 <LaunchMenuItem
                   text={option.title}
                   disabled={option.disabled}
-                  onClick={(e) => onConfigSelected(e, option)}
+                  onClick={() => onConfigSelected(option)}
                   icon={option.icon !== 'dagster-spinner' ? option.icon : undefined}
                 />
               </Tooltip>
@@ -186,13 +181,13 @@ interface ButtonWithConfigurationProps {
   icon?: IconName | JSX.Element | 'dagster-spinner';
   joined?: 'left' | 'right';
   tooltip?: string | JSX.Element;
-  onClick?: (e: React.MouseEvent) => void;
+  onClick?: () => void;
   disabled?: boolean;
 }
 
 // Basic helper components
 
-const ButtonWithConfiguration = ({
+const ButtonWithConfiguration: React.FC<ButtonWithConfigurationProps> = ({
   tooltip,
   icon,
   title,
@@ -202,10 +197,10 @@ const ButtonWithConfiguration = ({
   onClick,
   joined,
   disabled,
-}: ButtonWithConfigurationProps) => {
+}) => {
   const confirm = useConfirmation();
 
-  const onClickWithWarning = async (e: React.MouseEvent) => {
+  const onClickWithWarning = async () => {
     if (!onClick || disabled) {
       return;
     }
@@ -216,7 +211,7 @@ const ButtonWithConfiguration = ({
         return;
       }
     }
-    onClick(e);
+    onClick();
   };
 
   return (
@@ -237,7 +232,7 @@ const ButtonWithConfiguration = ({
         disabled={disabled}
         icon={
           icon === 'dagster-spinner' ? (
-            <Spinner purpose="body-text" fillColor={Colors.accentReversed()} />
+            <Spinner purpose="body-text" fillColor={Colors.White} />
           ) : typeof icon === 'string' ? (
             <Icon name={icon} size={16} style={{textAlign: 'center', marginRight: 5}} />
           ) : (
@@ -258,7 +253,7 @@ const ButtonContainer = styled(Button)<{
   border-top-${({joined}) => joined}-radius: 0;
   border-bottom-${({joined}) => joined}-radius: 0;
   border-left: ${({joined}) =>
-    joined === 'left' ? `1px solid ${Colors.keylineDefault()}` : 'transparent'};
+    joined === 'left' ? `1px solid rgba(255,255,255,0.2)` : 'transparent'};
   cursor: ${({status}) => (status !== 'ready' ? 'normal' : 'pointer')};
   margin-left: ${({joined}) => (joined ? '0' : '6px')};
   ${({joined}) => (joined === 'right' ? 'padding-right: 8px;' : null)}

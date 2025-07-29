@@ -25,11 +25,12 @@ def get_data_without_resource():
 # end_test_before_marker
 
 # start_test_after_marker
-from dagster import graph, op, ConfigurableResource, OpExecutionContext
+from dagster import graph, op, ConfigurableResource
 
 
 class MyApi(ConfigurableResource):
-    def call(self): ...
+    def call(self):
+        ...
 
 
 @op
@@ -38,7 +39,7 @@ def get_data(api: MyApi):
 
 
 @op
-def do_something(context: OpExecutionContext, data):
+def do_something(context, data):
     output = process(data)
     return output
 

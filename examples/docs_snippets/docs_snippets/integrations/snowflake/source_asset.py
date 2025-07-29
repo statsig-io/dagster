@@ -1,3 +1,3 @@
-from dagster import AssetSpec
+from dagster import SourceAsset
 
-iris_harvest_data = AssetSpec(key="iris_harvest_data")
+iris_harvest_data = SourceAsset(key="iris_harvest_data")

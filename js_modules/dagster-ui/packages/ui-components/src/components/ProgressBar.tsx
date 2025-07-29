@@ -1,14 +1,14 @@
 // eslint-disable-next-line no-restricted-imports
 import {ProgressBar as BlueprintProgressBar, ProgressBarProps} from '@blueprintjs/core';
+import * as React from 'react';
 import styled from 'styled-components';
 
-import {Colors} from './Color';
+import {Colors} from './Colors';
 
-interface Props extends ProgressBarProps {
-  fillColor?: string;
-}
-
-export const ProgressBar = ({fillColor = Colors.accentGray(), ...rest}: Props) => {
+export const ProgressBar: React.FC<ProgressBarProps & {fillColor?: string}> = ({
+  fillColor = Colors.Gray600,
+  ...rest
+}) => {
   return (
     <StyledProgressBar
       {...rest}
@@ -20,7 +20,7 @@ export const ProgressBar = ({fillColor = Colors.accentGray(), ...rest}: Props) =
 };
 
 const StyledProgressBar = styled(BlueprintProgressBar)<{$fillColor: string}>`
-  &.bp5-progress-bar {
+  &.bp4-progress-bar {
     background: transparent;
 
     ::before {
@@ -31,7 +31,7 @@ const StyledProgressBar = styled(BlueprintProgressBar)<{$fillColor: string}>`
       opacity: 0.25;
     }
 
-    .bp5-progress-meter {
+    .bp4-progress-meter {
       background-color: ${(p) => p.$fillColor};
     }
   }

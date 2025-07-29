@@ -1,5 +1,4 @@
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Callable, Optional, Union
+from typing import TYPE_CHECKING, Callable, Optional, Sequence, Union
 
 from dagster import DefaultSensorStatus
 from dagster._annotations import deprecated_param
@@ -11,10 +10,8 @@ from dagster._core.definitions.run_status_sensor_definition import (
 from dagster._core.definitions.unresolved_asset_job_definition import UnresolvedAssetJobDefinition
 from dagster._utils.warnings import normalize_renamed_param
 
-from dagster_msteams.adaptive_card import AdaptiveCard
 from dagster_msteams.card import Card
 from dagster_msteams.client import TeamsClient
-from dagster_msteams.utils import MSTeamsHyperlink, build_message_with_link
 
 if TYPE_CHECKING:
     from dagster._core.definitions.selector import JobSelector, RepositorySelector
@@ -34,11 +31,6 @@ def _default_failure_message(context: RunFailureSensorContext) -> str:
     param="dagit_base_url",
     breaking_version="2.0",
     additional_warn_text="Use `webserver_base_url` instead.",
-)
-@deprecated_param(
-    param="monitor_all_repositories",
-    breaking_version="2.0",
-    additional_warn_text="Use `monitor_all_code_locations` instead.",
 )
 def make_teams_on_run_failure_sensor(
     hook_url: str,
@@ -61,9 +53,8 @@ def make_teams_on_run_failure_sensor(
             ]
         ]
     ] = None,
-    monitor_all_code_locations: bool = False,
-    webserver_base_url: Optional[str] = None,
     monitor_all_repositories: bool = False,
+    webserver_base_url: Optional[str] = None,
 ):
     """Create a sensor on run failures that will message the given MS Teams webhook URL.
 
@@ -85,14 +76,11 @@ def make_teams_on_run_failure_sensor(
             Jobs in the current repository that will be monitored by this sensor. Defaults to None,
             which means the alert will be sent when any job in the repository matches the requested
             run_status. To monitor jobs in external repositories, use RepositorySelector and JobSelector.
-        monitor_all_code_locations (bool): If set to True, the sensor will monitor all runs in the
-            Dagster deployment. If set to True, an error will be raised if you also specify
-            monitored_jobs or job_selection. Defaults to False.
-        webserver_base_url: (Optional[str]): The base url of your webserver instance. Specify this to allow
-            messages to include deeplinks to the failed run.
         monitor_all_repositories (bool): If set to True, the sensor will monitor all runs in the
             Dagster instance. If set to True, an error will be raised if you also specify
             monitored_jobs or job_selection. Defaults to False.
+        webserver_base_url: (Optional[str]): The base url of your webserver instance. Specify this to allow
+            messages to include deeplinks to the failed run.
 
     Examples:
         .. code-block:: python
@@ -124,7 +112,6 @@ def make_teams_on_run_failure_sensor(
     webserver_base_url = normalize_renamed_param(
         webserver_base_url, "webserver_base_url", dagit_base_url, "dagit_base_url"
     )
-    monitor_all = monitor_all_code_locations or monitor_all_repositories
 
     teams_client = TeamsClient(
         hook_url=hook_url,
@@ -138,23 +125,17 @@ def make_teams_on_run_failure_sensor(
         name=name,
         default_status=default_status,
         monitored_jobs=monitored_jobs,
-        monitor_all_code_locations=monitor_all,
+        monitor_all_repositories=monitor_all_repositories,
     )
     def teams_on_run_failure(context: RunFailureSensorContext):
         text = message_fn(context)
-        card = Card() if teams_client.is_legacy_webhook() else AdaptiveCard()
-        card.add_attachment(
-            build_message_with_link(
-                teams_client.is_legacy_webhook(),
-                text=text,
-                link=MSTeamsHyperlink(
-                    text="View in Dagit",
-                    url=f"{webserver_base_url}/runs/{context.dagster_run.run_id}",
-                )
-                if webserver_base_url
-                else None,
-            ),
-        )
-        teams_client.post_message(card.payload)
+        if webserver_base_url:
+            text += "<a href='{base_url}/runs/{run_id}'>View in Dagit</a>".format(
+                base_url=webserver_base_url,
+                run_id=context.dagster_run.run_id,
+            )
+        card = Card()
+        card.add_attachment(text_message=text)
+        teams_client.post_message(payload=card.payload)
 
     return teams_on_run_failure

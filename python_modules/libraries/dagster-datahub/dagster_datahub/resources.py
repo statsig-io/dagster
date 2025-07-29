@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 from dagster import InitResourceContext, resource
 from dagster._config.pythonic_config import Config, ConfigurableResource
@@ -20,12 +20,12 @@ class DatahubRESTEmitterResource(ConfigurableResource):
     token: Optional[str] = Field(default=None, description="Personal Access Token")
     connect_timeout_sec: Optional[float] = None
     read_timeout_sec: Optional[float] = None
-    retry_status_codes: Optional[list[int]] = None
-    retry_methods: Optional[list[str]] = None
+    retry_status_codes: Optional[List[int]] = None
+    retry_methods: Optional[List[str]] = None
     retry_max_times: Optional[int] = None
-    extra_headers: Optional[dict[str, str]] = None
+    extra_headers: Optional[Dict[str, str]] = None
     ca_certificate_path: Optional[str] = None
-    server_telemetry_id: Optional[str] = None  # No-op - no longer accepted in DatahubRestEmitter
+    server_telemetry_id: Optional[str] = None
     disable_ssl_verification: bool = False
 
     @classmethod
@@ -43,6 +43,7 @@ class DatahubRESTEmitterResource(ConfigurableResource):
             retry_max_times=self.retry_max_times,
             extra_headers=self.extra_headers,
             ca_certificate_path=self.ca_certificate_path,
+            server_telemetry_id=self.server_telemetry_id,
             disable_ssl_verification=self.disable_ssl_verification,
         )
 
@@ -60,6 +61,7 @@ def datahub_rest_emitter(init_context: InitResourceContext) -> DatahubRestEmitte
         retry_max_times=init_context.resource_config.get("retry_max_times"),
         extra_headers=init_context.resource_config.get("extra_headers"),
         ca_certificate_path=init_context.resource_config.get("ca_certificate_path"),
+        server_telemetry_id=init_context.resource_config.get("server_telemetry_id"),
         disable_ssl_verification=init_context.resource_config.get("disable_ssl_verification"),
     )
     # Attempt to hit the server to ensure the resource is properly configured
@@ -70,14 +72,15 @@ def datahub_rest_emitter(init_context: InitResourceContext) -> DatahubRestEmitte
 class DatahubConnection(Config):
     bootstrap: str = Field(description="Kafka Boostrap Servers. Comma delimited")
     schema_registry_url: str = Field(description="Schema Registry Location.")
-    schema_registry_config: dict[str, Any] = Field(
+    schema_registry_config: Dict[str, Any] = Field(
         default={}, description="Extra Schema Registry Config."
     )
 
 
 class DatahubKafkaEmitterResource(ConfigurableResource):
     connection: DatahubConnection
-    topic_routes: dict[str, str] = Field(
+    topic: Optional[str] = None
+    topic_routes: Dict[str, str] = Field(
         default={
             MCE_KEY: DEFAULT_MCE_KAFKA_TOPIC,
             MCP_KEY: DEFAULT_MCP_KAFKA_TOPIC,
@@ -90,9 +93,7 @@ class DatahubKafkaEmitterResource(ConfigurableResource):
 
     def get_emitter(self) -> DatahubKafkaEmitter:
         return DatahubKafkaEmitter(
-            KafkaEmitterConfig.parse_obj(
-                {k: v for k, v in self._convert_to_config_dictionary().items() if v is not None}
-            )
+            KafkaEmitterConfig.parse_obj(self._convert_to_config_dictionary())
         )
 
 

@@ -1,4 +1,3 @@
-# serializer version: 1
 # name: test_query_inputs_outputs[0]
   dict({
     'repositoryOrError': dict({

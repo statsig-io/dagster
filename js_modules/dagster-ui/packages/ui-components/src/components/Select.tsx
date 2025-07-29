@@ -1,12 +1,12 @@
 /* eslint-disable no-restricted-imports */
-import {PopoverProps} from '@blueprintjs/core';
+import {IPopoverProps} from '@blueprintjs/core';
 import {Select as BlueprintSelect, SelectProps} from '@blueprintjs/select';
 /* eslint-enable no-restricted-imports */
 import deepmerge from 'deepmerge';
 import * as React from 'react';
 
 export const Select = <T,>(props: React.PropsWithChildren<SelectProps<T>>) => {
-  const popoverProps: Partial<PopoverProps> = {
+  const popoverProps: Partial<IPopoverProps> = {
     ...props.popoverProps,
     minimal: true,
     modifiers: deepmerge(

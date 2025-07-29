@@ -1,4 +1,4 @@
-import {Menu, MenuDivider, MenuItem, Select} from '@dagster-io/ui-components';
+import {MenuDivider, MenuItem, Menu, Select} from '@dagster-io/ui-components';
 import * as React from 'react';
 
 import {TimeContext} from './TimeContext';
@@ -56,7 +56,7 @@ interface Props {
  * - Locale timezones: other timezones for the user's locale, if possible.
  * - Everything else
  */
-export const TimezoneSelect = ({trigger}: Props) => {
+export const TimezoneSelect: React.FC<Props> = ({trigger}) => {
   const {
     timezone: [timezone, setTimezone],
   } = React.useContext(TimeContext);
@@ -76,7 +76,7 @@ export const TimezoneSelect = ({trigger}: Props) => {
       // Some browsers include UTC. (Firefox) Some don't. (Chrome, Safari)
       // Determine whether we need to explicitly add it to the list.
       explicitlyAddUTC = !allTimezoneItems.some((tz) => tz.key === 'UTC');
-    } catch {
+    } catch (e) {
       // `Intl.supportedValuesOf` is unavailable in this browser. Only
       // support the Automatic timezone and UTC.
     }
@@ -141,7 +141,8 @@ export const TimezoneSelect = ({trigger}: Props) => {
   return (
     <Select<(typeof allTimezoneItems)[0]>
       popoverProps={{
-        position: 'bottom-right',
+        position: 'bottom-left',
+        modifiers: {offset: {enabled: true, offset: '-12px, 8px'}},
       }}
       activeItem={allTimezoneItems.find((tz) => tz.key === timezone)}
       inputProps={{style: {width: '300px'}}}

@@ -5,20 +5,16 @@ export type InputMaybe<T> = Maybe<T>;
 export type Exact<T extends {[key: string]: unknown}> = {[K in keyof T]: T[K]};
 export type MakeOptional<T, K extends keyof T> = Omit<T, K> & {[SubKey in K]?: Maybe<T[SubKey]>};
 export type MakeMaybe<T, K extends keyof T> = Omit<T, K> & {[SubKey in K]: Maybe<T[SubKey]>};
-export type MakeEmpty<T extends {[key: string]: unknown}, K extends keyof T> = {[_ in K]?: never};
-export type Incremental<T> =
-  | T
-  | {[P in keyof T]?: P extends ' $fragmentName' | '__typename' ? T[P] : never};
 /** All built-in and custom scalars, mapped to their actual values */
 export type Scalars = {
-  ID: {input: string; output: string};
-  String: {input: string; output: string};
-  Boolean: {input: boolean; output: boolean};
-  Int: {input: number; output: number};
-  Float: {input: number; output: number};
-  GenericScalar: {input: any; output: any};
-  JSONString: {input: any; output: any};
-  RunConfigData: {input: any; output: any};
+  ID: string;
+  String: string;
+  Boolean: boolean;
+  Int: number;
+  Float: number;
+  Cursor: any;
+  GenericScalar: any;
+  RunConfigData: any;
 };
 
 export type AddDynamicPartitionResult =
@@ -29,8 +25,8 @@ export type AddDynamicPartitionResult =
 
 export type AddDynamicPartitionSuccess = {
   __typename: 'AddDynamicPartitionSuccess';
-  partitionKey: Scalars['String']['output'];
-  partitionsDefName: Scalars['String']['output'];
+  partitionKey: Scalars['String'];
+  partitionsDefName: Scalars['String'];
 };
 
 export type AlertFailureEvent = MessageEvent &
@@ -38,12 +34,12 @@ export type AlertFailureEvent = MessageEvent &
     __typename: 'AlertFailureEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type AlertStartEvent = MessageEvent &
@@ -51,12 +47,12 @@ export type AlertStartEvent = MessageEvent &
     __typename: 'AlertStartEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type AlertSuccessEvent = MessageEvent &
@@ -64,144 +60,89 @@ export type AlertSuccessEvent = MessageEvent &
     __typename: 'AlertSuccessEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ArrayConfigType = ConfigType &
   WrappingConfigType & {
     __typename: 'ArrayConfigType';
-    description: Maybe<Scalars['String']['output']>;
-    isSelector: Scalars['Boolean']['output'];
-    key: Scalars['String']['output'];
-    ofType:
-      | ArrayConfigType
-      | CompositeConfigType
-      | EnumConfigType
-      | MapConfigType
-      | NullableConfigType
-      | RegularConfigType
-      | ScalarUnionConfigType;
-    recursiveConfigTypes: Array<
-      | ArrayConfigType
-      | CompositeConfigType
-      | EnumConfigType
-      | MapConfigType
-      | NullableConfigType
-      | RegularConfigType
-      | ScalarUnionConfigType
-    >;
-    typeParamKeys: Array<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
+    isSelector: Scalars['Boolean'];
+    key: Scalars['String'];
+    ofType: ConfigType;
+    recursiveConfigTypes: Array<ConfigType>;
+    typeParamKeys: Array<Scalars['String']>;
   };
 
 export type Asset = {
   __typename: 'Asset';
-  assetEventHistory: AssetResultEventHistoryConnection;
-  assetHealth: Maybe<AssetHealth>;
   assetMaterializations: Array<MaterializationEvent>;
   assetObservations: Array<ObservationEvent>;
   definition: Maybe<AssetNode>;
-  id: Scalars['String']['output'];
+  id: Scalars['String'];
   key: AssetKey;
-  latestEventSortKey: Maybe<Scalars['ID']['output']>;
-};
-
-export type AssetAssetEventHistoryArgs = {
-  afterTimestampMillis?: InputMaybe<Scalars['String']['input']>;
-  beforeTimestampMillis?: InputMaybe<Scalars['String']['input']>;
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  eventTypeSelectors: Array<AssetEventHistoryEventTypeSelector>;
-  limit: Scalars['Int']['input'];
-  partitions?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
 export type AssetAssetMaterializationsArgs = {
-  afterTimestampMillis?: InputMaybe<Scalars['String']['input']>;
-  beforeTimestampMillis?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  partitions?: InputMaybe<Array<Scalars['String']['input']>>;
+  afterTimestampMillis?: InputMaybe<Scalars['String']>;
+  beforeTimestampMillis?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
+  partitionInLast?: InputMaybe<Scalars['Int']>;
+  partitions?: InputMaybe<Array<Scalars['String']>>;
+  tags?: InputMaybe<Array<InputTag>>;
 };
 
 export type AssetAssetObservationsArgs = {
-  afterTimestampMillis?: InputMaybe<Scalars['String']['input']>;
-  beforeTimestampMillis?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  partitions?: InputMaybe<Array<Scalars['String']['input']>>;
+  afterTimestampMillis?: InputMaybe<Scalars['String']>;
+  beforeTimestampMillis?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
+  partitionInLast?: InputMaybe<Scalars['Int']>;
+  partitions?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type AssetBackfillData = {
   __typename: 'AssetBackfillData';
   assetBackfillStatuses: Array<AssetBackfillStatus>;
-  rootTargetedPartitions: Maybe<AssetBackfillTargetPartitions>;
-};
-
-export type AssetBackfillPreviewParams = {
-  assetSelection: Array<AssetKeyInput>;
-  partitionNames: Array<Scalars['String']['input']>;
+  rootAssetTargetedPartitions: Maybe<Array<Scalars['String']>>;
+  rootAssetTargetedRanges: Maybe<Array<PartitionKeyRange>>;
 };
 
 export type AssetBackfillStatus = AssetPartitionsStatusCounts | UnpartitionedAssetStatus;
 
-export type AssetBackfillTargetPartitions = {
-  __typename: 'AssetBackfillTargetPartitions';
-  partitionKeys: Maybe<Array<Scalars['String']['output']>>;
-  ranges: Maybe<Array<PartitionKeyRange>>;
-};
-
 export type AssetCheck = {
   __typename: 'AssetCheck';
-  additionalAssetKeys: Array<AssetKey>;
   assetKey: AssetKey;
-  automationCondition: Maybe<AutomationCondition>;
-  blocking: Scalars['Boolean']['output'];
   canExecuteIndividually: AssetCheckCanExecuteIndividually;
-  description: Maybe<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']>;
   executionForLatestMaterialization: Maybe<AssetCheckExecution>;
-  jobNames: Array<Scalars['String']['output']>;
-  name: Scalars['String']['output'];
+  executions: Array<AssetCheckExecution>;
+  name: Scalars['String'];
+};
+
+export type AssetCheckExecutionsArgs = {
+  cursor?: InputMaybe<Scalars['String']>;
+  limit: Scalars['Int'];
 };
 
 export enum AssetCheckCanExecuteIndividually {
   CAN_EXECUTE = 'CAN_EXECUTE',
   NEEDS_USER_CODE_UPGRADE = 'NEEDS_USER_CODE_UPGRADE',
-  REQUIRES_MATERIALIZATION = 'REQUIRES_MATERIALIZATION',
 }
 
 export type AssetCheckEvaluation = {
   __typename: 'AssetCheckEvaluation';
   assetKey: AssetKey;
-  checkName: Scalars['String']['output'];
-  description: Maybe<Scalars['String']['output']>;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
+  checkName: Scalars['String'];
+  metadataEntries: Array<MetadataEntry>;
   severity: AssetCheckSeverity;
-  success: Scalars['Boolean']['output'];
+  success: Scalars['Boolean'];
   targetMaterialization: Maybe<AssetCheckEvaluationTargetMaterializationData>;
-  timestamp: Scalars['Float']['output'];
+  timestamp: Scalars['Float'];
 };
 
 export type AssetCheckEvaluationEvent = MessageEvent &
@@ -210,42 +151,41 @@ export type AssetCheckEvaluationEvent = MessageEvent &
     evaluation: AssetCheckEvaluation;
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type AssetCheckEvaluationPlannedEvent = MessageEvent &
   StepEvent & {
     __typename: 'AssetCheckEvaluationPlannedEvent';
     assetKey: AssetKey;
-    checkName: Scalars['String']['output'];
+    checkName: Scalars['String'];
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type AssetCheckEvaluationTargetMaterializationData = {
   __typename: 'AssetCheckEvaluationTargetMaterializationData';
-  runId: Scalars['String']['output'];
-  storageId: Scalars['ID']['output'];
-  timestamp: Scalars['Float']['output'];
+  runId: Scalars['String'];
+  storageId: Scalars['Int'];
+  timestamp: Scalars['Float'];
 };
 
 export type AssetCheckExecution = {
   __typename: 'AssetCheckExecution';
   evaluation: Maybe<AssetCheckEvaluation>;
-  id: Scalars['String']['output'];
-  runId: Scalars['String']['output'];
+  id: Scalars['String'];
+  runId: Scalars['String'];
   status: AssetCheckExecutionResolvedStatus;
-  stepKey: Maybe<Scalars['String']['output']>;
-  timestamp: Scalars['Float']['output'];
+  timestamp: Scalars['Float'];
 };
 
 export enum AssetCheckExecutionResolvedStatus {
@@ -258,22 +198,12 @@ export enum AssetCheckExecutionResolvedStatus {
 
 export type AssetCheckHandleInput = {
   assetKey: AssetKeyInput;
-  name: Scalars['String']['input'];
-};
-
-export type AssetCheckNeedsAgentUpgradeError = Error & {
-  __typename: 'AssetCheckNeedsAgentUpgradeError';
-  message: Scalars['String']['output'];
+  name: Scalars['String'];
 };
 
 export type AssetCheckNeedsMigrationError = Error & {
   __typename: 'AssetCheckNeedsMigrationError';
-  message: Scalars['String']['output'];
-};
-
-export type AssetCheckNeedsUserCodeUpgrade = Error & {
-  __typename: 'AssetCheckNeedsUserCodeUpgrade';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export enum AssetCheckSeverity {
@@ -284,7 +214,7 @@ export enum AssetCheckSeverity {
 export type AssetCheckhandle = {
   __typename: 'AssetCheckhandle';
   assetKey: AssetKey;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
 };
 
 export type AssetChecks = {
@@ -292,205 +222,61 @@ export type AssetChecks = {
   checks: Array<AssetCheck>;
 };
 
-export type AssetChecksOrError =
-  | AssetCheckNeedsAgentUpgradeError
-  | AssetCheckNeedsMigrationError
-  | AssetCheckNeedsUserCodeUpgrade
-  | AssetChecks;
-
-export type AssetConditionEvaluation = {
-  __typename: 'AssetConditionEvaluation';
-  evaluationNodes: Array<AssetConditionEvaluationNode>;
-  rootUniqueId: Scalars['String']['output'];
-};
-
-export type AssetConditionEvaluationNode =
-  | PartitionedAssetConditionEvaluationNode
-  | SpecificPartitionAssetConditionEvaluationNode
-  | UnpartitionedAssetConditionEvaluationNode;
-
-export type AssetConditionEvaluationRecord = {
-  __typename: 'AssetConditionEvaluationRecord';
-  assetKey: Maybe<AssetKey>;
-  endTimestamp: Maybe<Scalars['Float']['output']>;
-  entityKey: EntityKey;
-  evaluation: AssetConditionEvaluation;
-  evaluationId: Scalars['ID']['output'];
-  evaluationNodes: Array<AutomationConditionEvaluationNode>;
-  id: Scalars['ID']['output'];
-  isLegacy: Scalars['Boolean']['output'];
-  numRequested: Scalars['Int']['output'];
-  rootUniqueId: Scalars['String']['output'];
-  runIds: Array<Scalars['String']['output']>;
-  startTimestamp: Maybe<Scalars['Float']['output']>;
-  timestamp: Scalars['Float']['output'];
-};
-
-export type AssetConditionEvaluationRecords = {
-  __typename: 'AssetConditionEvaluationRecords';
-  records: Array<AssetConditionEvaluationRecord>;
-};
-
-export type AssetConditionEvaluationRecordsOrError =
-  | AssetConditionEvaluationRecords
-  | AutoMaterializeAssetEvaluationNeedsMigrationError;
-
-export enum AssetConditionEvaluationStatus {
-  FALSE = 'FALSE',
-  SKIPPED = 'SKIPPED',
-  TRUE = 'TRUE',
-}
+export type AssetChecksOrError = AssetCheckNeedsMigrationError | AssetChecks;
 
 export type AssetConnection = {
   __typename: 'AssetConnection';
-  cursor: Maybe<Scalars['String']['output']>;
   nodes: Array<Asset>;
 };
 
 export type AssetDependency = {
   __typename: 'AssetDependency';
   asset: AssetNode;
-  partitionMapping: Maybe<PartitionMapping>;
+  inputName: Scalars['String'];
 };
-
-export enum AssetEventHistoryEventTypeSelector {
-  FAILED_TO_MATERIALIZE = 'FAILED_TO_MATERIALIZE',
-  MATERIALIZATION = 'MATERIALIZATION',
-  OBSERVATION = 'OBSERVATION',
-}
-
-export enum AssetEventType {
-  ASSET_MATERIALIZATION = 'ASSET_MATERIALIZATION',
-  ASSET_OBSERVATION = 'ASSET_OBSERVATION',
-}
 
 export type AssetFreshnessInfo = {
   __typename: 'AssetFreshnessInfo';
-  currentLagMinutes: Maybe<Scalars['Float']['output']>;
-  currentMinutesLate: Maybe<Scalars['Float']['output']>;
-  latestMaterializationMinutesLate: Maybe<Scalars['Float']['output']>;
+  currentLagMinutes: Maybe<Scalars['Float']>;
+  currentMinutesLate: Maybe<Scalars['Float']>;
+  latestMaterializationMinutesLate: Maybe<Scalars['Float']>;
 };
 
 export type AssetGroup = {
   __typename: 'AssetGroup';
   assetKeys: Array<AssetKey>;
-  groupName: Scalars['String']['output'];
-  id: Scalars['String']['output'];
+  groupName: Scalars['String'];
 };
 
 export type AssetGroupSelector = {
-  groupName: Scalars['String']['input'];
-  repositoryLocationName: Scalars['String']['input'];
-  repositoryName: Scalars['String']['input'];
+  groupName: Scalars['String'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
 };
-
-export type AssetHealth = {
-  __typename: 'AssetHealth';
-  assetChecksStatus: AssetHealthStatus;
-  assetChecksStatusMetadata: Maybe<AssetHealthCheckMeta>;
-  assetHealth: AssetHealthStatus;
-  freshnessStatus: AssetHealthStatus;
-  freshnessStatusMetadata: Maybe<AssetHealthFreshnessMeta>;
-  materializationStatus: AssetHealthStatus;
-  materializationStatusMetadata: Maybe<AssetHealthMaterializationMeta>;
-};
-
-export type AssetHealthCheckDegradedMeta = {
-  __typename: 'AssetHealthCheckDegradedMeta';
-  numFailedChecks: Scalars['Int']['output'];
-  numWarningChecks: Scalars['Int']['output'];
-  totalNumChecks: Scalars['Int']['output'];
-};
-
-export type AssetHealthCheckMeta =
-  | AssetHealthCheckDegradedMeta
-  | AssetHealthCheckUnknownMeta
-  | AssetHealthCheckWarningMeta;
-
-export type AssetHealthCheckUnknownMeta = {
-  __typename: 'AssetHealthCheckUnknownMeta';
-  numNotExecutedChecks: Scalars['Int']['output'];
-  totalNumChecks: Scalars['Int']['output'];
-};
-
-export type AssetHealthCheckWarningMeta = {
-  __typename: 'AssetHealthCheckWarningMeta';
-  numWarningChecks: Scalars['Int']['output'];
-  totalNumChecks: Scalars['Int']['output'];
-};
-
-export type AssetHealthFreshnessMeta = {
-  __typename: 'AssetHealthFreshnessMeta';
-  lastMaterializedTimestamp: Maybe<Scalars['Float']['output']>;
-};
-
-export type AssetHealthMaterializationDegradedNotPartitionedMeta = {
-  __typename: 'AssetHealthMaterializationDegradedNotPartitionedMeta';
-  failedRunId: Scalars['String']['output'];
-};
-
-export type AssetHealthMaterializationDegradedPartitionedMeta = {
-  __typename: 'AssetHealthMaterializationDegradedPartitionedMeta';
-  numFailedPartitions: Scalars['Int']['output'];
-  numMissingPartitions: Scalars['Int']['output'];
-  totalNumPartitions: Scalars['Int']['output'];
-};
-
-export type AssetHealthMaterializationHealthyPartitionedMeta = {
-  __typename: 'AssetHealthMaterializationHealthyPartitionedMeta';
-  numMissingPartitions: Scalars['Int']['output'];
-  totalNumPartitions: Scalars['Int']['output'];
-};
-
-export type AssetHealthMaterializationMeta =
-  | AssetHealthMaterializationDegradedNotPartitionedMeta
-  | AssetHealthMaterializationDegradedPartitionedMeta
-  | AssetHealthMaterializationHealthyPartitionedMeta;
-
-export enum AssetHealthStatus {
-  DEGRADED = 'DEGRADED',
-  HEALTHY = 'HEALTHY',
-  NOT_APPLICABLE = 'NOT_APPLICABLE',
-  UNKNOWN = 'UNKNOWN',
-  WARNING = 'WARNING',
-}
 
 export type AssetKey = {
   __typename: 'AssetKey';
-  path: Array<Scalars['String']['output']>;
+  path: Array<Scalars['String']>;
 };
 
 export type AssetKeyInput = {
-  path: Array<Scalars['String']['input']>;
+  path: Array<Scalars['String']>;
 };
 
 export type AssetLatestInfo = {
   __typename: 'AssetLatestInfo';
   assetKey: AssetKey;
-  id: Scalars['ID']['output'];
-  inProgressRunIds: Array<Scalars['String']['output']>;
+  inProgressRunIds: Array<Scalars['String']>;
   latestMaterialization: Maybe<MaterializationEvent>;
   latestRun: Maybe<Run>;
-  unstartedRunIds: Array<Scalars['String']['output']>;
+  unstartedRunIds: Array<Scalars['String']>;
 };
 
 export type AssetLineageInfo = {
   __typename: 'AssetLineageInfo';
   assetKey: AssetKey;
-  partitions: Array<Scalars['String']['output']>;
+  partitions: Array<Scalars['String']>;
 };
-
-export enum AssetMaterializationFailureReason {
-  FAILED_TO_MATERIALIZE = 'FAILED_TO_MATERIALIZE',
-  RUN_TERMINATED = 'RUN_TERMINATED',
-  UNKNOWN = 'UNKNOWN',
-  UPSTREAM_FAILED_TO_MATERIALIZE = 'UPSTREAM_FAILED_TO_MATERIALIZE',
-}
-
-export enum AssetMaterializationFailureType {
-  FAILED = 'FAILED',
-  SKIPPED = 'SKIPPED',
-}
 
 export type AssetMaterializationPlannedEvent = MessageEvent &
   RunEvent & {
@@ -498,175 +284,124 @@ export type AssetMaterializationPlannedEvent = MessageEvent &
     assetKey: Maybe<AssetKey>;
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
     runOrError: RunOrError;
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type AssetMetadataEntry = MetadataEntry & {
   __typename: 'AssetMetadataEntry';
   assetKey: AssetKey;
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
 };
 
 export type AssetNode = {
   __typename: 'AssetNode';
-  assetChecksOrError: AssetChecksOrError;
+  assetChecks: Array<AssetCheck>;
   assetKey: AssetKey;
   assetMaterializationUsedData: Array<MaterializationUpstreamDataVersion>;
   assetMaterializations: Array<MaterializationEvent>;
   assetObservations: Array<ObservationEvent>;
   assetPartitionStatuses: AssetPartitionStatuses;
   autoMaterializePolicy: Maybe<AutoMaterializePolicy>;
-  automationCondition: Maybe<AutomationCondition>;
-  backfillPolicy: Maybe<BackfillPolicy>;
-  changedReasons: Array<ChangeReason>;
-  computeKind: Maybe<Scalars['String']['output']>;
+  computeKind: Maybe<Scalars['String']>;
   configField: Maybe<ConfigTypeField>;
-  currentAutoMaterializeEvaluationId: Maybe<Scalars['ID']['output']>;
-  dataVersion: Maybe<Scalars['String']['output']>;
-  dataVersionByPartition: Array<Maybe<Scalars['String']['output']>>;
+  dataVersion: Maybe<Scalars['String']>;
+  dataVersionByPartition: Array<Maybe<Scalars['String']>>;
   dependedBy: Array<AssetDependency>;
   dependedByKeys: Array<AssetKey>;
   dependencies: Array<AssetDependency>;
   dependencyKeys: Array<AssetKey>;
-  description: Maybe<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']>;
   freshnessInfo: Maybe<AssetFreshnessInfo>;
   freshnessPolicy: Maybe<FreshnessPolicy>;
-  freshnessStatusInfo: Maybe<FreshnessStatusInfo>;
-  graphName: Maybe<Scalars['String']['output']>;
-  groupName: Scalars['String']['output'];
-  hasAssetChecks: Scalars['Boolean']['output'];
-  hasMaterializePermission: Scalars['Boolean']['output'];
-  hasReportRunlessAssetEventPermission: Scalars['Boolean']['output'];
-  id: Scalars['ID']['output'];
-  internalFreshnessPolicy: Maybe<InternalFreshnessPolicy>;
-  isAutoCreatedStub: Scalars['Boolean']['output'];
-  isExecutable: Scalars['Boolean']['output'];
-  isMaterializable: Scalars['Boolean']['output'];
-  isObservable: Scalars['Boolean']['output'];
-  isPartitioned: Scalars['Boolean']['output'];
-  jobNames: Array<Scalars['String']['output']>;
+  graphName: Maybe<Scalars['String']>;
+  groupName: Maybe<Scalars['String']>;
+  hasAssetChecks: Scalars['Boolean'];
+  hasMaterializePermission: Scalars['Boolean'];
+  id: Scalars['ID'];
+  isExecutable: Scalars['Boolean'];
+  isObservable: Scalars['Boolean'];
+  isPartitioned: Scalars['Boolean'];
+  isSource: Scalars['Boolean'];
+  jobNames: Array<Scalars['String']>;
   jobs: Array<Pipeline>;
-  kinds: Array<Scalars['String']['output']>;
-  lastAutoMaterializationEvaluationRecord: Maybe<AutoMaterializeAssetEvaluationRecord>;
   latestMaterializationByPartition: Array<Maybe<MaterializationEvent>>;
   latestRunForPartition: Maybe<Run>;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
+  metadataEntries: Array<MetadataEntry>;
   op: Maybe<SolidDefinition>;
-  opName: Maybe<Scalars['String']['output']>;
-  opNames: Array<Scalars['String']['output']>;
-  opVersion: Maybe<Scalars['String']['output']>;
-  owners: Array<AssetOwner>;
+  opName: Maybe<Scalars['String']>;
+  opNames: Array<Scalars['String']>;
+  opVersion: Maybe<Scalars['String']>;
   partitionDefinition: Maybe<PartitionDefinition>;
-  partitionKeyConnection: Maybe<PartitionKeyConnection>;
-  partitionKeys: Array<Scalars['String']['output']>;
+  partitionKeys: Array<Scalars['String']>;
   partitionKeysByDimension: Array<DimensionPartitionKeys>;
   partitionStats: Maybe<PartitionStats>;
-  pools: Array<Scalars['String']['output']>;
   repository: Repository;
   requiredResources: Array<ResourceRequirement>;
   staleCauses: Array<StaleCause>;
   staleCausesByPartition: Maybe<Array<Array<StaleCause>>>;
   staleStatus: Maybe<StaleStatus>;
   staleStatusByPartition: Array<StaleStatus>;
-  tags: Array<DefinitionTag>;
-  targetingInstigators: Array<Instigator>;
-  type: Maybe<ListDagsterType | NullableDagsterType | RegularDagsterType>;
-};
-
-export type AssetNodeAssetChecksOrErrorArgs = {
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  pipeline?: InputMaybe<PipelineSelector>;
+  type: Maybe<DagsterType>;
 };
 
 export type AssetNodeAssetMaterializationUsedDataArgs = {
-  timestampMillis: Scalars['String']['input'];
+  timestampMillis: Scalars['String'];
 };
 
 export type AssetNodeAssetMaterializationsArgs = {
-  beforeTimestampMillis?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  partitions?: InputMaybe<Array<Scalars['String']['input']>>;
+  beforeTimestampMillis?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
+  partitions?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type AssetNodeAssetObservationsArgs = {
-  beforeTimestampMillis?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  partitions?: InputMaybe<Array<Scalars['String']['input']>>;
+  beforeTimestampMillis?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
+  partitions?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type AssetNodeDataVersionArgs = {
-  partition?: InputMaybe<Scalars['String']['input']>;
+  partition?: InputMaybe<Scalars['String']>;
 };
 
 export type AssetNodeDataVersionByPartitionArgs = {
-  partitions?: InputMaybe<Array<Scalars['String']['input']>>;
-};
-
-export type AssetNodeLastAutoMaterializationEvaluationRecordArgs = {
-  asOfEvaluationId?: InputMaybe<Scalars['ID']['input']>;
+  partitions?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type AssetNodeLatestMaterializationByPartitionArgs = {
-  partitions?: InputMaybe<Array<Scalars['String']['input']>>;
+  partitions?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type AssetNodeLatestRunForPartitionArgs = {
-  partition: Scalars['String']['input'];
-};
-
-export type AssetNodePartitionKeyConnectionArgs = {
-  ascending: Scalars['Boolean']['input'];
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit: Scalars['Int']['input'];
+  partition: Scalars['String'];
 };
 
 export type AssetNodePartitionKeysByDimensionArgs = {
-  endIdx?: InputMaybe<Scalars['Int']['input']>;
-  startIdx?: InputMaybe<Scalars['Int']['input']>;
+  endIdx?: InputMaybe<Scalars['Int']>;
+  startIdx?: InputMaybe<Scalars['Int']>;
 };
 
 export type AssetNodeStaleCausesArgs = {
-  partition?: InputMaybe<Scalars['String']['input']>;
+  partition?: InputMaybe<Scalars['String']>;
 };
 
 export type AssetNodeStaleCausesByPartitionArgs = {
-  partitions?: InputMaybe<Array<Scalars['String']['input']>>;
+  partitions?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type AssetNodeStaleStatusArgs = {
-  partition?: InputMaybe<Scalars['String']['input']>;
+  partition?: InputMaybe<Scalars['String']>;
 };
 
 export type AssetNodeStaleStatusByPartitionArgs = {
-  partitions?: InputMaybe<Array<Scalars['String']['input']>>;
+  partitions?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type AssetNodeDefinitionCollision = {
@@ -679,108 +414,59 @@ export type AssetNodeOrError = AssetNode | AssetNotFoundError;
 
 export type AssetNotFoundError = Error & {
   __typename: 'AssetNotFoundError';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type AssetOrError = Asset | AssetNotFoundError;
-
-export type AssetOwner = TeamAssetOwner | UserAssetOwner;
-
-export type AssetPartitionRange = {
-  __typename: 'AssetPartitionRange';
-  assetKey: AssetKey;
-  partitionRange: Maybe<PartitionRange>;
-};
 
 export type AssetPartitionStatuses =
   | DefaultPartitionStatuses
   | MultiPartitionStatuses
   | TimePartitionStatuses;
 
-export type AssetPartitions = {
-  __typename: 'AssetPartitions';
-  assetKey: AssetKey;
-  partitions: Maybe<AssetBackfillTargetPartitions>;
-};
-
 export type AssetPartitionsStatusCounts = {
   __typename: 'AssetPartitionsStatusCounts';
   assetKey: AssetKey;
-  numPartitionsFailed: Scalars['Int']['output'];
-  numPartitionsInProgress: Scalars['Int']['output'];
-  numPartitionsMaterialized: Scalars['Int']['output'];
-  numPartitionsTargeted: Scalars['Int']['output'];
-};
-
-export type AssetRecord = {
-  __typename: 'AssetRecord';
-  id: Scalars['String']['output'];
-  key: AssetKey;
-};
-
-export type AssetRecordConnection = {
-  __typename: 'AssetRecordConnection';
-  assets: Array<AssetRecord>;
-  cursor: Maybe<Scalars['String']['output']>;
-};
-
-export type AssetRecordsOrError = AssetRecordConnection | PythonError;
-
-export type AssetResultEventHistoryConnection = {
-  __typename: 'AssetResultEventHistoryConnection';
-  cursor: Scalars['String']['output'];
-  results: Array<AssetResultEventType>;
-};
-
-export type AssetResultEventType =
-  | FailedToMaterializeEvent
-  | MaterializationEvent
-  | ObservationEvent;
-
-export type AssetSelection = {
-  __typename: 'AssetSelection';
-  assetChecks: Array<AssetCheckhandle>;
-  assetKeys: Array<AssetKey>;
-  assetSelectionString: Maybe<Scalars['String']['output']>;
-  assets: Array<Asset>;
-  assetsOrError: AssetsOrError;
+  numPartitionsFailed: Scalars['Int'];
+  numPartitionsInProgress: Scalars['Int'];
+  numPartitionsMaterialized: Scalars['Int'];
+  numPartitionsTargeted: Scalars['Int'];
 };
 
 export type AssetWipeMutationResult =
   | AssetNotFoundError
   | AssetWipeSuccess
   | PythonError
-  | UnauthorizedError
-  | UnsupportedOperationError;
+  | UnauthorizedError;
 
 export type AssetWipeSuccess = {
   __typename: 'AssetWipeSuccess';
-  assetPartitionRanges: Array<AssetPartitionRange>;
+  assetKeys: Array<AssetKey>;
 };
 
 export type AssetsOrError = AssetConnection | PythonError;
 
 export type AutoMaterializeAssetEvaluationNeedsMigrationError = Error & {
   __typename: 'AutoMaterializeAssetEvaluationNeedsMigrationError';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type AutoMaterializeAssetEvaluationRecord = {
   __typename: 'AutoMaterializeAssetEvaluationRecord';
-  assetKey: AssetKey;
-  evaluationId: Scalars['ID']['output'];
-  id: Scalars['ID']['output'];
-  numDiscarded: Scalars['Int']['output'];
-  numRequested: Scalars['Int']['output'];
-  numSkipped: Scalars['Int']['output'];
+  evaluationId: Scalars['Int'];
+  id: Scalars['ID'];
+  numDiscarded: Scalars['Int'];
+  numRequested: Scalars['Int'];
+  numSkipped: Scalars['Int'];
   rules: Maybe<Array<AutoMaterializeRule>>;
   rulesWithRuleEvaluations: Array<AutoMaterializeRuleWithRuleEvaluations>;
-  runIds: Array<Scalars['String']['output']>;
-  timestamp: Scalars['Float']['output'];
+  runIds: Array<Scalars['String']>;
+  timestamp: Scalars['Float'];
 };
 
 export type AutoMaterializeAssetEvaluationRecords = {
   __typename: 'AutoMaterializeAssetEvaluationRecords';
+  currentEvaluationId: Maybe<Scalars['Int']>;
   records: Array<AutoMaterializeAssetEvaluationRecord>;
 };
 
@@ -796,7 +482,7 @@ export enum AutoMaterializeDecisionType {
 
 export type AutoMaterializePolicy = {
   __typename: 'AutoMaterializePolicy';
-  maxMaterializationsPerMinute: Maybe<Scalars['Int']['output']>;
+  maxMaterializationsPerMinute: Maybe<Scalars['Int']>;
   policyType: AutoMaterializePolicyType;
   rules: Array<AutoMaterializeRule>;
 };
@@ -808,9 +494,9 @@ export enum AutoMaterializePolicyType {
 
 export type AutoMaterializeRule = {
   __typename: 'AutoMaterializeRule';
-  className: Scalars['String']['output'];
+  className: Scalars['String'];
   decisionType: AutoMaterializeDecisionType;
-  description: Scalars['String']['output'];
+  description: Scalars['String'];
 };
 
 export type AutoMaterializeRuleEvaluation = {
@@ -830,212 +516,142 @@ export type AutoMaterializeRuleWithRuleEvaluations = {
   ruleEvaluations: Array<AutoMaterializeRuleEvaluation>;
 };
 
-export type AutomationCondition = {
-  __typename: 'AutomationCondition';
-  expandedLabel: Array<Scalars['String']['output']>;
-  label: Maybe<Scalars['String']['output']>;
-};
-
-export type AutomationConditionEvaluationNode = {
-  __typename: 'AutomationConditionEvaluationNode';
-  childUniqueIds: Array<Scalars['String']['output']>;
-  endTimestamp: Maybe<Scalars['Float']['output']>;
-  entityKey: EntityKey;
-  expandedLabel: Array<Scalars['String']['output']>;
-  isPartitioned: Scalars['Boolean']['output'];
-  numCandidates: Maybe<Scalars['Int']['output']>;
-  numTrue: Scalars['Int']['output'];
-  operatorType: Scalars['String']['output'];
-  startTimestamp: Maybe<Scalars['Float']['output']>;
-  uniqueId: Scalars['String']['output'];
-  userLabel: Maybe<Scalars['String']['output']>;
-};
-
 export type BackfillNotFoundError = Error & {
   __typename: 'BackfillNotFoundError';
-  backfillId: Scalars['String']['output'];
-  message: Scalars['String']['output'];
+  backfillId: Scalars['String'];
+  message: Scalars['String'];
 };
-
-export type BackfillPolicy = {
-  __typename: 'BackfillPolicy';
-  description: Scalars['String']['output'];
-  maxPartitionsPerRun: Maybe<Scalars['Int']['output']>;
-  policyType: BackfillPolicyType;
-};
-
-export enum BackfillPolicyType {
-  MULTI_RUN = 'MULTI_RUN',
-  SINGLE_RUN = 'SINGLE_RUN',
-}
 
 export type BoolMetadataEntry = MetadataEntry & {
   __typename: 'BoolMetadataEntry';
-  boolValue: Maybe<Scalars['Boolean']['output']>;
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
+  boolValue: Maybe<Scalars['Boolean']>;
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
 };
 
 export enum BulkActionStatus {
   CANCELED = 'CANCELED',
   CANCELING = 'CANCELING',
   COMPLETED = 'COMPLETED',
-  COMPLETED_FAILED = 'COMPLETED_FAILED',
-  COMPLETED_SUCCESS = 'COMPLETED_SUCCESS',
   FAILED = 'FAILED',
   REQUESTED = 'REQUESTED',
 }
-
-export type BulkActionsFilter = {
-  createdAfter?: InputMaybe<Scalars['Float']['input']>;
-  createdBefore?: InputMaybe<Scalars['Float']['input']>;
-  statuses?: InputMaybe<Array<BulkActionStatus>>;
-};
 
 export type CancelBackfillResult = CancelBackfillSuccess | PythonError | UnauthorizedError;
 
 export type CancelBackfillSuccess = {
   __typename: 'CancelBackfillSuccess';
-  backfillId: Scalars['String']['output'];
+  backfillId: Scalars['String'];
 };
 
 export type CapturedLogs = {
   __typename: 'CapturedLogs';
-  cursor: Maybe<Scalars['String']['output']>;
-  logKey: Array<Scalars['String']['output']>;
-  stderr: Maybe<Scalars['String']['output']>;
-  stdout: Maybe<Scalars['String']['output']>;
+  cursor: Maybe<Scalars['String']>;
+  logKey: Array<Scalars['String']>;
+  stderr: Maybe<Scalars['String']>;
+  stdout: Maybe<Scalars['String']>;
 };
 
 export type CapturedLogsMetadata = {
   __typename: 'CapturedLogsMetadata';
-  stderrDownloadUrl: Maybe<Scalars['String']['output']>;
-  stderrLocation: Maybe<Scalars['String']['output']>;
-  stdoutDownloadUrl: Maybe<Scalars['String']['output']>;
-  stdoutLocation: Maybe<Scalars['String']['output']>;
-};
-
-export enum ChangeReason {
-  CODE_VERSION = 'CODE_VERSION',
-  DEPENDENCIES = 'DEPENDENCIES',
-  METADATA = 'METADATA',
-  NEW = 'NEW',
-  PARTITIONS_DEFINITION = 'PARTITIONS_DEFINITION',
-  REMOVED = 'REMOVED',
-  TAGS = 'TAGS',
-}
-
-export type ClaimedConcurrencySlot = {
-  __typename: 'ClaimedConcurrencySlot';
-  runId: Scalars['String']['output'];
-  stepKey: Scalars['String']['output'];
-};
-
-export type CodeReferencesMetadataEntry = MetadataEntry & {
-  __typename: 'CodeReferencesMetadataEntry';
-  codeReferences: Array<SourceLocation>;
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
+  stderrDownloadUrl: Maybe<Scalars['String']>;
+  stderrLocation: Maybe<Scalars['String']>;
+  stdoutDownloadUrl: Maybe<Scalars['String']>;
+  stdoutLocation: Maybe<Scalars['String']>;
 };
 
 export type CompositeConfigType = ConfigType & {
   __typename: 'CompositeConfigType';
-  description: Maybe<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']>;
   fields: Array<ConfigTypeField>;
-  isSelector: Scalars['Boolean']['output'];
-  key: Scalars['String']['output'];
-  recursiveConfigTypes: Array<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
-  typeParamKeys: Array<Scalars['String']['output']>;
+  isSelector: Scalars['Boolean'];
+  key: Scalars['String'];
+  recursiveConfigTypes: Array<ConfigType>;
+  typeParamKeys: Array<Scalars['String']>;
 };
 
 export type CompositeSolidDefinition = ISolidDefinition &
   SolidContainer & {
     __typename: 'CompositeSolidDefinition';
     assetNodes: Array<AssetNode>;
-    description: Maybe<Scalars['String']['output']>;
-    id: Scalars['ID']['output'];
+    description: Maybe<Scalars['String']>;
+    id: Scalars['ID'];
     inputDefinitions: Array<InputDefinition>;
     inputMappings: Array<InputMapping>;
     metadata: Array<MetadataItemDefinition>;
     modes: Array<Mode>;
-    name: Scalars['String']['output'];
+    name: Scalars['String'];
     outputDefinitions: Array<OutputDefinition>;
     outputMappings: Array<OutputMapping>;
-    pools: Array<Scalars['String']['output']>;
     solidHandle: Maybe<SolidHandle>;
     solidHandles: Array<SolidHandle>;
     solids: Array<Solid>;
   };
 
 export type CompositeSolidDefinitionSolidHandleArgs = {
-  handleID: Scalars['String']['input'];
+  handleID: Scalars['String'];
 };
 
 export type CompositeSolidDefinitionSolidHandlesArgs = {
-  parentHandleID?: InputMaybe<Scalars['String']['input']>;
+  parentHandleID?: InputMaybe<Scalars['String']>;
+};
+
+export enum ComputeIoType {
+  STDERR = 'STDERR',
+  STDOUT = 'STDOUT',
+}
+
+export type ComputeLogFile = {
+  __typename: 'ComputeLogFile';
+  cursor: Scalars['Int'];
+  data: Maybe<Scalars['String']>;
+  downloadUrl: Maybe<Scalars['String']>;
+  path: Scalars['String'];
+  size: Scalars['Int'];
+};
+
+export type ComputeLogs = {
+  __typename: 'ComputeLogs';
+  runId: Scalars['String'];
+  stderr: Maybe<ComputeLogFile>;
+  stdout: Maybe<ComputeLogFile>;
+  stepKey: Scalars['String'];
 };
 
 export type ConcurrencyKeyInfo = {
   __typename: 'ConcurrencyKeyInfo';
-  activeRunIds: Array<Scalars['String']['output']>;
-  activeSlotCount: Scalars['Int']['output'];
-  assignedStepCount: Scalars['Int']['output'];
-  assignedStepRunIds: Array<Scalars['String']['output']>;
-  claimedSlots: Array<ClaimedConcurrencySlot>;
-  concurrencyKey: Scalars['String']['output'];
-  limit: Maybe<Scalars['Int']['output']>;
-  pendingStepCount: Scalars['Int']['output'];
-  pendingStepRunIds: Array<Scalars['String']['output']>;
-  pendingSteps: Array<PendingConcurrencyStep>;
-  slotCount: Scalars['Int']['output'];
-  usingDefaultLimit: Maybe<Scalars['Boolean']['output']>;
+  activeRunIds: Array<Scalars['String']>;
+  activeSlotCount: Scalars['Int'];
+  assignedStepCount: Scalars['Int'];
+  assignedStepRunIds: Array<Scalars['String']>;
+  concurrencyKey: Scalars['String'];
+  pendingStepCount: Scalars['Int'];
+  pendingStepRunIds: Array<Scalars['String']>;
+  slotCount: Scalars['Int'];
 };
 
 export type ConfigType = {
-  description: Maybe<Scalars['String']['output']>;
-  isSelector: Scalars['Boolean']['output'];
-  key: Scalars['String']['output'];
-  recursiveConfigTypes: Array<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
-  typeParamKeys: Array<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']>;
+  isSelector: Scalars['Boolean'];
+  key: Scalars['String'];
+  recursiveConfigTypes: Array<ConfigType>;
+  typeParamKeys: Array<Scalars['String']>;
 };
 
 export type ConfigTypeField = {
   __typename: 'ConfigTypeField';
-  configType:
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType;
-  configTypeKey: Scalars['String']['output'];
-  defaultValueAsJson: Maybe<Scalars['String']['output']>;
-  description: Maybe<Scalars['String']['output']>;
-  isRequired: Scalars['Boolean']['output'];
-  name: Scalars['String']['output'];
+  configType: ConfigType;
+  configTypeKey: Scalars['String'];
+  defaultValueAsJson: Maybe<Scalars['String']>;
+  description: Maybe<Scalars['String']>;
+  isRequired: Scalars['Boolean'];
+  name: Scalars['String'];
 };
 
 export type ConfigTypeNotFoundError = Error & {
   __typename: 'ConfigTypeNotFoundError';
-  configTypeName: Scalars['String']['output'];
-  message: Scalars['String']['output'];
+  configTypeName: Scalars['String'];
+  message: Scalars['String'];
   pipeline: Pipeline;
 };
 
@@ -1049,9 +665,9 @@ export type ConfigTypeOrError =
 
 export type ConfiguredValue = {
   __typename: 'ConfiguredValue';
-  key: Scalars['String']['output'];
+  key: Scalars['String'];
   type: ConfiguredValueType;
-  value: Scalars['String']['output'];
+  value: Scalars['String'];
 };
 
 export enum ConfiguredValueType {
@@ -1061,35 +677,28 @@ export enum ConfiguredValueType {
 
 export type ConflictingExecutionParamsError = Error & {
   __typename: 'ConflictingExecutionParamsError';
-  message: Scalars['String']['output'];
-};
-
-export type CronFreshnessPolicy = {
-  __typename: 'CronFreshnessPolicy';
-  deadlineCron: Scalars['String']['output'];
-  lowerBoundDeltaSeconds: Scalars['Int']['output'];
-  timezone: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type DaemonHealth = {
   __typename: 'DaemonHealth';
   allDaemonStatuses: Array<DaemonStatus>;
   daemonStatus: DaemonStatus;
-  id: Scalars['String']['output'];
+  id: Scalars['String'];
 };
 
 export type DaemonHealthDaemonStatusArgs = {
-  daemonType?: InputMaybe<Scalars['String']['input']>;
+  daemonType?: InputMaybe<Scalars['String']>;
 };
 
 export type DaemonStatus = {
   __typename: 'DaemonStatus';
-  daemonType: Scalars['String']['output'];
-  healthy: Maybe<Scalars['Boolean']['output']>;
-  id: Scalars['ID']['output'];
+  daemonType: Scalars['String'];
+  healthy: Maybe<Scalars['Boolean']>;
+  id: Scalars['ID'];
   lastHeartbeatErrors: Array<PythonError>;
-  lastHeartbeatTime: Maybe<Scalars['Float']['output']>;
-  required: Scalars['Boolean']['output'];
+  lastHeartbeatTime: Maybe<Scalars['Float']>;
+  required: Scalars['Boolean'];
 };
 
 export enum DagsterEventType {
@@ -1098,16 +707,11 @@ export enum DagsterEventType {
   ALERT_SUCCESS = 'ALERT_SUCCESS',
   ASSET_CHECK_EVALUATION = 'ASSET_CHECK_EVALUATION',
   ASSET_CHECK_EVALUATION_PLANNED = 'ASSET_CHECK_EVALUATION_PLANNED',
-  ASSET_FAILED_TO_MATERIALIZE = 'ASSET_FAILED_TO_MATERIALIZE',
-  ASSET_HEALTH_CHANGED = 'ASSET_HEALTH_CHANGED',
   ASSET_MATERIALIZATION = 'ASSET_MATERIALIZATION',
   ASSET_MATERIALIZATION_PLANNED = 'ASSET_MATERIALIZATION_PLANNED',
   ASSET_OBSERVATION = 'ASSET_OBSERVATION',
   ASSET_STORE_OPERATION = 'ASSET_STORE_OPERATION',
-  ASSET_WIPED = 'ASSET_WIPED',
   ENGINE_EVENT = 'ENGINE_EVENT',
-  FRESHNESS_STATE_CHANGE = 'FRESHNESS_STATE_CHANGE',
-  FRESHNESS_STATE_EVALUATION = 'FRESHNESS_STATE_EVALUATION',
   HANDLED_OUTPUT = 'HANDLED_OUTPUT',
   HOOK_COMPLETED = 'HOOK_COMPLETED',
   HOOK_ERRORED = 'HOOK_ERRORED',
@@ -1149,8 +753,8 @@ export enum DagsterEventType {
 
 export type DagsterLibraryVersion = {
   __typename: 'DagsterLibraryVersion';
-  name: Scalars['String']['output'];
-  version: Scalars['String']['output'];
+  name: Scalars['String'];
+  version: Scalars['String'];
 };
 
 export type DagsterRunEvent =
@@ -1169,9 +773,7 @@ export type DagsterRunEvent =
   | ExecutionStepStartEvent
   | ExecutionStepSuccessEvent
   | ExecutionStepUpForRetryEvent
-  | FailedToMaterializeEvent
   | HandledOutputEvent
-  | HealthChangedEvent
   | HookCompletedEvent
   | HookErroredEvent
   | HookSkippedEvent
@@ -1197,61 +799,24 @@ export type DagsterRunEvent =
   | StepWorkerStartingEvent;
 
 export type DagsterType = {
-  description: Maybe<Scalars['String']['output']>;
-  displayName: Scalars['String']['output'];
-  innerTypes: Array<ListDagsterType | NullableDagsterType | RegularDagsterType>;
-  inputSchemaType: Maybe<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
-  isBuiltin: Scalars['Boolean']['output'];
-  isList: Scalars['Boolean']['output'];
-  isNothing: Scalars['Boolean']['output'];
-  isNullable: Scalars['Boolean']['output'];
-  key: Scalars['String']['output'];
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  name: Maybe<Scalars['String']['output']>;
-  outputSchemaType: Maybe<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
+  description: Maybe<Scalars['String']>;
+  displayName: Scalars['String'];
+  innerTypes: Array<DagsterType>;
+  inputSchemaType: Maybe<ConfigType>;
+  isBuiltin: Scalars['Boolean'];
+  isList: Scalars['Boolean'];
+  isNothing: Scalars['Boolean'];
+  isNullable: Scalars['Boolean'];
+  key: Scalars['String'];
+  metadataEntries: Array<MetadataEntry>;
+  name: Maybe<Scalars['String']>;
+  outputSchemaType: Maybe<ConfigType>;
 };
 
 export type DagsterTypeNotFoundError = Error & {
   __typename: 'DagsterTypeNotFoundError';
-  dagsterTypeName: Scalars['String']['output'];
-  message: Scalars['String']['output'];
+  dagsterTypeName: Scalars['String'];
+  message: Scalars['String'];
 };
 
 export type DagsterTypeOrError =
@@ -1262,26 +827,10 @@ export type DagsterTypeOrError =
 
 export type DefaultPartitionStatuses = {
   __typename: 'DefaultPartitionStatuses';
-  failedPartitions: Array<Scalars['String']['output']>;
-  materializedPartitions: Array<Scalars['String']['output']>;
-  materializingPartitions: Array<Scalars['String']['output']>;
-  unmaterializedPartitions: Array<Scalars['String']['output']>;
-};
-
-export type DefinitionTag = {
-  __typename: 'DefinitionTag';
-  key: Scalars['String']['output'];
-  value: Scalars['String']['output'];
-};
-
-export type DeleteDynamicPartitionsResult =
-  | DeleteDynamicPartitionsSuccess
-  | PythonError
-  | UnauthorizedError;
-
-export type DeleteDynamicPartitionsSuccess = {
-  __typename: 'DeleteDynamicPartitionsSuccess';
-  partitionsDefName: Scalars['String']['output'];
+  failedPartitions: Array<Scalars['String']>;
+  materializedPartitions: Array<Scalars['String']>;
+  materializingPartitions: Array<Scalars['String']>;
+  unmaterializedPartitions: Array<Scalars['String']>;
 };
 
 export type DeletePipelineRunResult =
@@ -1292,7 +841,7 @@ export type DeletePipelineRunResult =
 
 export type DeletePipelineRunSuccess = {
   __typename: 'DeletePipelineRunSuccess';
-  runId: Scalars['String']['output'];
+  runId: Scalars['String'];
 };
 
 export type DeleteRunMutation = {
@@ -1302,78 +851,57 @@ export type DeleteRunMutation = {
 
 export type DimensionDefinitionType = {
   __typename: 'DimensionDefinitionType';
-  description: Scalars['String']['output'];
-  dynamicPartitionsDefinitionName: Maybe<Scalars['String']['output']>;
-  isPrimaryDimension: Scalars['Boolean']['output'];
-  name: Scalars['String']['output'];
+  description: Scalars['String'];
+  dynamicPartitionsDefinitionName: Maybe<Scalars['String']>;
+  isPrimaryDimension: Scalars['Boolean'];
+  name: Scalars['String'];
   type: PartitionDefinitionType;
 };
 
 export type DimensionPartitionKeys = {
   __typename: 'DimensionPartitionKeys';
-  name: Scalars['String']['output'];
-  partitionKeys: Array<Scalars['String']['output']>;
+  name: Scalars['String'];
+  partitionKeys: Array<Scalars['String']>;
   type: PartitionDefinitionType;
 };
 
 export type DisplayableEvent = {
-  description: Maybe<Scalars['String']['output']>;
-  label: Maybe<Scalars['String']['output']>;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
+  description: Maybe<Scalars['String']>;
+  label: Maybe<Scalars['String']>;
+  metadataEntries: Array<MetadataEntry>;
 };
 
 export type DryRunInstigationTick = {
   __typename: 'DryRunInstigationTick';
   evaluationResult: Maybe<TickEvaluation>;
-  timestamp: Maybe<Scalars['Float']['output']>;
+  timestamp: Maybe<Scalars['Float']>;
 };
 
 export type DryRunInstigationTicks = {
   __typename: 'DryRunInstigationTicks';
-  cursor: Scalars['Float']['output'];
+  cursor: Scalars['Float'];
   results: Array<DryRunInstigationTick>;
 };
 
 export type DuplicateDynamicPartitionError = Error & {
   __typename: 'DuplicateDynamicPartitionError';
-  message: Scalars['String']['output'];
-  partitionName: Scalars['String']['output'];
-  partitionsDefName: Scalars['String']['output'];
+  message: Scalars['String'];
+  partitionName: Scalars['String'];
+  partitionsDefName: Scalars['String'];
 };
 
 export type DynamicPartitionRequest = {
   __typename: 'DynamicPartitionRequest';
-  partitionKeys: Maybe<Array<Scalars['String']['output']>>;
-  partitionsDefName: Scalars['String']['output'];
+  partitionKeys: Maybe<Array<Scalars['String']>>;
+  partitionsDefName: Scalars['String'];
   type: DynamicPartitionsRequestType;
 };
 
 export type DynamicPartitionsRequestResult = {
   __typename: 'DynamicPartitionsRequestResult';
-  partitionKeys: Maybe<Array<Scalars['String']['output']>>;
-  partitionsDefName: Scalars['String']['output'];
-  skippedPartitionKeys: Array<Scalars['String']['output']>;
+  partitionKeys: Maybe<Array<Scalars['String']>>;
+  partitionsDefName: Scalars['String'];
+  skippedPartitionKeys: Array<Scalars['String']>;
   type: DynamicPartitionsRequestType;
 };
 
@@ -1388,72 +916,41 @@ export type EngineEvent = DisplayableEvent &
   MessageEvent &
   StepEvent & {
     __typename: 'EngineEvent';
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     error: Maybe<PythonError>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    markerEnd: Maybe<Scalars['String']['output']>;
-    markerStart: Maybe<Scalars['String']['output']>;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    markerEnd: Maybe<Scalars['String']>;
+    markerStart: Maybe<Scalars['String']>;
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
-
-export type EntityKey = AssetCheckhandle | AssetKey;
 
 export type EnumConfigType = ConfigType & {
   __typename: 'EnumConfigType';
-  description: Maybe<Scalars['String']['output']>;
-  givenName: Scalars['String']['output'];
-  isSelector: Scalars['Boolean']['output'];
-  key: Scalars['String']['output'];
-  recursiveConfigTypes: Array<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
-  typeParamKeys: Array<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']>;
+  givenName: Scalars['String'];
+  isSelector: Scalars['Boolean'];
+  key: Scalars['String'];
+  recursiveConfigTypes: Array<ConfigType>;
+  typeParamKeys: Array<Scalars['String']>;
   values: Array<EnumConfigValue>;
 };
 
 export type EnumConfigValue = {
   __typename: 'EnumConfigValue';
-  description: Maybe<Scalars['String']['output']>;
-  value: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  value: Scalars['String'];
 };
 
 export type EnvVarConsumer = {
   __typename: 'EnvVarConsumer';
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   type: EnvVarConsumerType;
 };
 
@@ -1464,7 +961,7 @@ export enum EnvVarConsumerType {
 export type EnvVarWithConsumers = {
   __typename: 'EnvVarWithConsumers';
   envVarConsumers: Array<EnvVarConsumer>;
-  envVarName: Scalars['String']['output'];
+  envVarName: Scalars['String'];
 };
 
 export type EnvVarWithConsumersList = {
@@ -1475,14 +972,14 @@ export type EnvVarWithConsumersList = {
 export type EnvVarWithConsumersOrError = EnvVarWithConsumersList | PythonError;
 
 export type Error = {
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type ErrorChainLink = Error & {
   __typename: 'ErrorChainLink';
   error: PythonError;
-  isExplicitLink: Scalars['Boolean']['output'];
-  message: Scalars['String']['output'];
+  isExplicitLink: Scalars['Boolean'];
+  message: Scalars['String'];
 };
 
 export type ErrorEvent = {
@@ -1518,58 +1015,58 @@ export type EvaluationStackEntry =
 
 export type EvaluationStackListItemEntry = {
   __typename: 'EvaluationStackListItemEntry';
-  listIndex: Scalars['Int']['output'];
+  listIndex: Scalars['Int'];
 };
 
 export type EvaluationStackMapKeyEntry = {
   __typename: 'EvaluationStackMapKeyEntry';
-  mapKey: Scalars['GenericScalar']['output'];
+  mapKey: Scalars['GenericScalar'];
 };
 
 export type EvaluationStackMapValueEntry = {
   __typename: 'EvaluationStackMapValueEntry';
-  mapKey: Scalars['GenericScalar']['output'];
+  mapKey: Scalars['GenericScalar'];
 };
 
 export type EvaluationStackPathEntry = {
   __typename: 'EvaluationStackPathEntry';
-  fieldName: Scalars['String']['output'];
+  fieldName: Scalars['String'];
 };
 
 export type EventConnection = {
   __typename: 'EventConnection';
-  cursor: Scalars['String']['output'];
+  cursor: Scalars['String'];
   events: Array<DagsterRunEvent>;
-  hasMore: Scalars['Boolean']['output'];
+  hasMore: Scalars['Boolean'];
 };
 
 export type EventConnectionOrError = EventConnection | PythonError | RunNotFoundError;
 
 export type EventTag = {
   __typename: 'EventTag';
-  key: Scalars['String']['output'];
-  value: Scalars['String']['output'];
+  key: Scalars['String'];
+  value: Scalars['String'];
 };
 
 export type ExecutionMetadata = {
-  parentRunId?: InputMaybe<Scalars['String']['input']>;
-  rootRunId?: InputMaybe<Scalars['String']['input']>;
+  parentRunId?: InputMaybe<Scalars['String']>;
+  rootRunId?: InputMaybe<Scalars['String']>;
+  runId?: InputMaybe<Scalars['String']>;
   tags?: InputMaybe<Array<ExecutionTag>>;
 };
 
 export type ExecutionParams = {
   executionMetadata?: InputMaybe<ExecutionMetadata>;
-  mode?: InputMaybe<Scalars['String']['input']>;
-  preset?: InputMaybe<Scalars['String']['input']>;
-  runConfigData?: InputMaybe<Scalars['RunConfigData']['input']>;
+  mode?: InputMaybe<Scalars['String']>;
+  preset?: InputMaybe<Scalars['String']>;
+  runConfigData?: InputMaybe<Scalars['RunConfigData']>;
   selector: JobOrPipelineSelector;
-  stepKeys?: InputMaybe<Array<Scalars['String']['input']>>;
+  stepKeys?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type ExecutionPlan = {
   __typename: 'ExecutionPlan';
-  artifactsPersisted: Scalars['Boolean']['output'];
-  assetSelection: Array<Scalars['String']['output']>;
+  artifactsPersisted: Scalars['Boolean'];
   steps: Array<ExecutionStep>;
 };
 
@@ -1583,11 +1080,11 @@ export type ExecutionPlanOrError =
 export type ExecutionStep = {
   __typename: 'ExecutionStep';
   inputs: Array<ExecutionStepInput>;
-  key: Scalars['String']['output'];
+  key: Scalars['String'];
   kind: StepKind;
   metadata: Array<MetadataItemDefinition>;
   outputs: Array<ExecutionStepOutput>;
-  solidHandleID: Scalars['String']['output'];
+  solidHandleID: Scalars['String'];
 };
 
 export type ExecutionStepFailureEvent = ErrorEvent &
@@ -1599,74 +1096,53 @@ export type ExecutionStepFailureEvent = ErrorEvent &
     eventType: Maybe<DagsterEventType>;
     failureMetadata: Maybe<FailureMetadata>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ExecutionStepInput = {
   __typename: 'ExecutionStepInput';
   dependsOn: Array<ExecutionStep>;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
 };
 
 export type ExecutionStepInputEvent = MessageEvent &
   StepEvent & {
     __typename: 'ExecutionStepInputEvent';
     eventType: Maybe<DagsterEventType>;
-    inputName: Scalars['String']['output'];
+    inputName: Scalars['String'];
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
     typeCheck: TypeCheck;
   };
 
 export type ExecutionStepOutput = {
   __typename: 'ExecutionStepOutput';
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
 };
 
 export type ExecutionStepOutputEvent = DisplayableEvent &
   MessageEvent &
   StepEvent & {
     __typename: 'ExecutionStepOutputEvent';
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    outputName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    outputName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
     typeCheck: TypeCheck;
   };
 
@@ -1675,11 +1151,11 @@ export type ExecutionStepRestartEvent = MessageEvent &
     __typename: 'ExecutionStepRestartEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ExecutionStepSkippedEvent = MessageEvent &
@@ -1687,11 +1163,11 @@ export type ExecutionStepSkippedEvent = MessageEvent &
     __typename: 'ExecutionStepSkippedEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ExecutionStepStartEvent = MessageEvent &
@@ -1699,11 +1175,11 @@ export type ExecutionStepStartEvent = MessageEvent &
     __typename: 'ExecutionStepStartEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ExecutionStepSuccessEvent = MessageEvent &
@@ -1711,11 +1187,11 @@ export type ExecutionStepSuccessEvent = MessageEvent &
     __typename: 'ExecutionStepSuccessEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ExecutionStepUpForRetryEvent = ErrorEvent &
@@ -1725,279 +1201,118 @@ export type ExecutionStepUpForRetryEvent = ErrorEvent &
     error: Maybe<PythonError>;
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    secondsToWait: Maybe<Scalars['Int']['output']>;
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    secondsToWait: Maybe<Scalars['Int']>;
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ExecutionTag = {
-  key: Scalars['String']['input'];
-  value: Scalars['String']['input'];
+  key: Scalars['String'];
+  value: Scalars['String'];
 };
 
 export type ExpectationResult = DisplayableEvent & {
   __typename: 'ExpectationResult';
-  description: Maybe<Scalars['String']['output']>;
-  label: Maybe<Scalars['String']['output']>;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  success: Scalars['Boolean']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Maybe<Scalars['String']>;
+  metadataEntries: Array<MetadataEntry>;
+  success: Scalars['Boolean'];
 };
-
-export type FailedToMaterializeEvent = DisplayableEvent &
-  MessageEvent &
-  StepEvent & {
-    __typename: 'FailedToMaterializeEvent';
-    assetKey: Maybe<AssetKey>;
-    description: Maybe<Scalars['String']['output']>;
-    eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
-    level: LogLevel;
-    materializationFailureReason: AssetMaterializationFailureReason;
-    materializationFailureType: AssetMaterializationFailureType;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    partition: Maybe<Scalars['String']['output']>;
-    runId: Scalars['String']['output'];
-    runOrError: RunOrError;
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    stepStats: RunStepStats;
-    tags: Array<EventTag>;
-    timestamp: Scalars['String']['output'];
-  };
 
 export type FailureMetadata = DisplayableEvent & {
   __typename: 'FailureMetadata';
-  description: Maybe<Scalars['String']['output']>;
-  label: Maybe<Scalars['String']['output']>;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-};
-
-export type FeatureFlag = {
-  __typename: 'FeatureFlag';
-  enabled: Scalars['Boolean']['output'];
-  name: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Maybe<Scalars['String']>;
+  metadataEntries: Array<MetadataEntry>;
 };
 
 export type FieldNotDefinedConfigError = PipelineConfigValidationError & {
   __typename: 'FieldNotDefinedConfigError';
-  fieldName: Scalars['String']['output'];
-  message: Scalars['String']['output'];
-  path: Array<Scalars['String']['output']>;
+  fieldName: Scalars['String'];
+  message: Scalars['String'];
+  path: Array<Scalars['String']>;
   reason: EvaluationErrorReason;
   stack: EvaluationStack;
 };
 
 export type FieldsNotDefinedConfigError = PipelineConfigValidationError & {
   __typename: 'FieldsNotDefinedConfigError';
-  fieldNames: Array<Scalars['String']['output']>;
-  message: Scalars['String']['output'];
-  path: Array<Scalars['String']['output']>;
+  fieldNames: Array<Scalars['String']>;
+  message: Scalars['String'];
+  path: Array<Scalars['String']>;
   reason: EvaluationErrorReason;
   stack: EvaluationStack;
 };
 
 export type FloatMetadataEntry = MetadataEntry & {
   __typename: 'FloatMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  floatValue: Maybe<Scalars['Float']['output']>;
-  label: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  floatValue: Maybe<Scalars['Float']>;
+  label: Scalars['String'];
 };
 
 export type FreshnessPolicy = {
   __typename: 'FreshnessPolicy';
-  cronSchedule: Maybe<Scalars['String']['output']>;
-  cronScheduleTimezone: Maybe<Scalars['String']['output']>;
-  lastEvaluationTimestamp: Maybe<Scalars['String']['output']>;
-  maximumLagMinutes: Scalars['Float']['output'];
-};
-
-export type FreshnessStatusInfo = {
-  __typename: 'FreshnessStatusInfo';
-  freshnessStatus: AssetHealthStatus;
-  freshnessStatusMetadata: Maybe<AssetHealthFreshnessMeta>;
+  cronSchedule: Maybe<Scalars['String']>;
+  cronScheduleTimezone: Maybe<Scalars['String']>;
+  lastEvaluationTimestamp: Maybe<Scalars['String']>;
+  maximumLagMinutes: Scalars['Float'];
 };
 
 export type Graph = SolidContainer & {
   __typename: 'Graph';
-  description: Maybe<Scalars['String']['output']>;
-  id: Scalars['ID']['output'];
+  description: Maybe<Scalars['String']>;
+  id: Scalars['ID'];
   modes: Array<Mode>;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   solidHandle: Maybe<SolidHandle>;
   solidHandles: Array<SolidHandle>;
   solids: Array<Solid>;
 };
 
 export type GraphSolidHandleArgs = {
-  handleID: Scalars['String']['input'];
+  handleID: Scalars['String'];
 };
 
 export type GraphSolidHandlesArgs = {
-  parentHandleID?: InputMaybe<Scalars['String']['input']>;
+  parentHandleID?: InputMaybe<Scalars['String']>;
 };
 
 export type GraphNotFoundError = Error & {
   __typename: 'GraphNotFoundError';
-  graphName: Scalars['String']['output'];
-  message: Scalars['String']['output'];
-  repositoryLocationName: Scalars['String']['output'];
-  repositoryName: Scalars['String']['output'];
+  graphName: Scalars['String'];
+  message: Scalars['String'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
 };
 
 export type GraphOrError = Graph | GraphNotFoundError | PythonError;
 
 export type GraphSelector = {
-  graphName: Scalars['String']['input'];
-  repositoryLocationName: Scalars['String']['input'];
-  repositoryName: Scalars['String']['input'];
+  graphName: Scalars['String'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
 };
 
 export type HandledOutputEvent = DisplayableEvent &
   MessageEvent &
   StepEvent & {
     __typename: 'HandledOutputEvent';
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    managerKey: Scalars['String']['output'];
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    outputName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
-  };
-
-export type HealthChangedEvent = DisplayableEvent &
-  MessageEvent &
-  StepEvent & {
-    __typename: 'HealthChangedEvent';
-    assetKey: Maybe<AssetKey>;
-    description: Maybe<Scalars['String']['output']>;
-    eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
-    level: LogLevel;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    partition: Maybe<Scalars['String']['output']>;
-    runId: Scalars['String']['output'];
-    runOrError: RunOrError;
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    stepStats: RunStepStats;
-    tags: Array<EventTag>;
-    timestamp: Scalars['String']['output'];
+    managerKey: Scalars['String'];
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    outputName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type HookCompletedEvent = MessageEvent &
@@ -2005,11 +1320,11 @@ export type HookCompletedEvent = MessageEvent &
     __typename: 'HookCompletedEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type HookErroredEvent = ErrorEvent &
@@ -2019,11 +1334,11 @@ export type HookErroredEvent = ErrorEvent &
     error: Maybe<PythonError>;
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type HookSkippedEvent = MessageEvent &
@@ -2031,44 +1346,23 @@ export type HookSkippedEvent = MessageEvent &
     __typename: 'HookSkippedEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type IPipelineSnapshot = {
   dagsterTypeOrError: DagsterTypeOrError;
-  dagsterTypes: Array<ListDagsterType | NullableDagsterType | RegularDagsterType>;
-  description: Maybe<Scalars['String']['output']>;
-  graphName: Scalars['String']['output'];
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
+  dagsterTypes: Array<DagsterType>;
+  description: Maybe<Scalars['String']>;
+  graphName: Scalars['String'];
+  metadataEntries: Array<MetadataEntry>;
   modes: Array<Mode>;
-  name: Scalars['String']['output'];
-  parentSnapshotId: Maybe<Scalars['String']['output']>;
-  pipelineSnapshotId: Scalars['String']['output'];
+  name: Scalars['String'];
+  parentSnapshotId: Maybe<Scalars['String']>;
+  pipelineSnapshotId: Scalars['String'];
   runs: Array<Run>;
   schedules: Array<Schedule>;
   sensors: Array<Sensor>;
@@ -2079,67 +1373,46 @@ export type IPipelineSnapshot = {
 };
 
 export type IPipelineSnapshotDagsterTypeOrErrorArgs = {
-  dagsterTypeName: Scalars['String']['input'];
+  dagsterTypeName: Scalars['String'];
 };
 
 export type IPipelineSnapshotRunsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type IPipelineSnapshotSolidHandleArgs = {
-  handleID: Scalars['String']['input'];
+  handleID: Scalars['String'];
 };
 
 export type IPipelineSnapshotSolidHandlesArgs = {
-  parentHandleID?: InputMaybe<Scalars['String']['input']>;
+  parentHandleID?: InputMaybe<Scalars['String']>;
 };
 
 export type ISolidDefinition = {
   assetNodes: Array<AssetNode>;
-  description: Maybe<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']>;
   inputDefinitions: Array<InputDefinition>;
   metadata: Array<MetadataItemDefinition>;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   outputDefinitions: Array<OutputDefinition>;
-  pools: Array<Scalars['String']['output']>;
 };
 
 export type Input = {
   __typename: 'Input';
   definition: InputDefinition;
   dependsOn: Array<Output>;
-  isDynamicCollect: Scalars['Boolean']['output'];
+  isDynamicCollect: Scalars['Boolean'];
   solid: Solid;
 };
 
 export type InputDefinition = {
   __typename: 'InputDefinition';
-  description: Maybe<Scalars['String']['output']>;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  name: Scalars['String']['output'];
-  type: ListDagsterType | NullableDagsterType | RegularDagsterType;
+  description: Maybe<Scalars['String']>;
+  metadataEntries: Array<MetadataEntry>;
+  name: Scalars['String'];
+  solidDefinition: SolidDefinition;
+  type: DagsterType;
 };
 
 export type InputMapping = {
@@ -2148,94 +1421,87 @@ export type InputMapping = {
   mappedInput: Input;
 };
 
-export type Instance = {
-  __typename: 'Instance';
-  autoMaterializePaused: Scalars['Boolean']['output'];
-  concurrencyLimit: ConcurrencyKeyInfo;
-  concurrencyLimits: Array<ConcurrencyKeyInfo>;
-  daemonHealth: DaemonHealth;
-  executablePath: Scalars['String']['output'];
-  freshnessEvaluationEnabled: Scalars['Boolean']['output'];
-  hasInfo: Scalars['Boolean']['output'];
-  id: Scalars['String']['output'];
-  info: Maybe<Scalars['String']['output']>;
-  maxConcurrencyLimitValue: Scalars['Int']['output'];
-  minConcurrencyLimitValue: Scalars['Int']['output'];
-  poolConfig: Maybe<PoolConfig>;
-  runLauncher: Maybe<RunLauncher>;
-  runQueueConfig: Maybe<RunQueueConfig>;
-  runQueuingSupported: Scalars['Boolean']['output'];
-  supportsConcurrencyLimits: Scalars['Boolean']['output'];
-  useAutoMaterializeSensors: Scalars['Boolean']['output'];
+export type InputTag = {
+  name: Scalars['String'];
+  value: Scalars['String'];
 };
 
-export type InstanceConcurrencyLimitArgs = {
-  concurrencyKey?: InputMaybe<Scalars['String']['input']>;
+export type Instance = {
+  __typename: 'Instance';
+  autoMaterializePaused: Scalars['Boolean'];
+  concurrencyLimits: Array<ConcurrencyKeyInfo>;
+  daemonHealth: DaemonHealth;
+  executablePath: Scalars['String'];
+  hasCapturedLogManager: Scalars['Boolean'];
+  hasInfo: Scalars['Boolean'];
+  id: Scalars['String'];
+  info: Maybe<Scalars['String']>;
+  runLauncher: Maybe<RunLauncher>;
+  runQueuingSupported: Scalars['Boolean'];
+  supportsConcurrencyLimits: Scalars['Boolean'];
 };
 
 export type InstigationEvent = {
   __typename: 'InstigationEvent';
   level: LogLevel;
-  message: Scalars['String']['output'];
-  timestamp: Scalars['String']['output'];
+  message: Scalars['String'];
+  timestamp: Scalars['String'];
 };
 
 export type InstigationEventConnection = {
   __typename: 'InstigationEventConnection';
-  cursor: Scalars['String']['output'];
+  cursor: Scalars['String'];
   events: Array<InstigationEvent>;
-  hasMore: Scalars['Boolean']['output'];
+  hasMore: Scalars['Boolean'];
 };
 
 export type InstigationSelector = {
-  name: Scalars['String']['input'];
-  repositoryLocationName: Scalars['String']['input'];
-  repositoryName: Scalars['String']['input'];
+  name: Scalars['String'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
 };
 
 export type InstigationState = {
   __typename: 'InstigationState';
-  hasStartPermission: Scalars['Boolean']['output'];
-  hasStopPermission: Scalars['Boolean']['output'];
-  id: Scalars['ID']['output'];
+  hasStartPermission: Scalars['Boolean'];
+  hasStopPermission: Scalars['Boolean'];
+  id: Scalars['ID'];
   instigationType: InstigationType;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   nextTick: Maybe<DryRunInstigationTick>;
-  repositoryLocationName: Scalars['String']['output'];
-  repositoryName: Scalars['String']['output'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
   repositoryOrigin: RepositoryOrigin;
-  runningCount: Scalars['Int']['output'];
+  runningCount: Scalars['Int'];
   runs: Array<Run>;
-  runsCount: Scalars['Int']['output'];
-  selectorId: Scalars['String']['output'];
+  runsCount: Scalars['Int'];
+  selectorId: Scalars['String'];
   status: InstigationStatus;
-  tick: InstigationTick;
+  tick: Maybe<InstigationTick>;
   ticks: Array<InstigationTick>;
   typeSpecificData: Maybe<InstigationTypeSpecificData>;
 };
 
 export type InstigationStateRunsArgs = {
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type InstigationStateTickArgs = {
-  tickId: Scalars['ID']['input'];
+  timestamp?: InputMaybe<Scalars['Float']>;
 };
 
 export type InstigationStateTicksArgs = {
-  afterTimestamp?: InputMaybe<Scalars['Float']['input']>;
-  beforeTimestamp?: InputMaybe<Scalars['Float']['input']>;
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  dayOffset?: InputMaybe<Scalars['Int']['input']>;
-  dayRange?: InputMaybe<Scalars['Int']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  dayOffset?: InputMaybe<Scalars['Int']>;
+  dayRange?: InputMaybe<Scalars['Int']>;
+  limit?: InputMaybe<Scalars['Int']>;
   statuses?: InputMaybe<Array<InstigationTickStatus>>;
 };
 
 export type InstigationStateNotFoundError = Error & {
   __typename: 'InstigationStateNotFoundError';
-  message: Scalars['String']['output'];
-  name: Scalars['String']['output'];
+  message: Scalars['String'];
+  name: Scalars['String'];
 };
 
 export type InstigationStateOrError =
@@ -2257,26 +1523,19 @@ export enum InstigationStatus {
 
 export type InstigationTick = {
   __typename: 'InstigationTick';
-  autoMaterializeAssetEvaluationId: Maybe<Scalars['ID']['output']>;
-  cursor: Maybe<Scalars['String']['output']>;
+  cursor: Maybe<Scalars['String']>;
   dynamicPartitionsRequestResults: Array<DynamicPartitionsRequestResult>;
-  endTimestamp: Maybe<Scalars['Float']['output']>;
   error: Maybe<PythonError>;
-  id: Scalars['ID']['output'];
-  instigationType: InstigationType;
+  id: Scalars['ID'];
   logEvents: InstigationEventConnection;
-  logKey: Maybe<Array<Scalars['String']['output']>>;
-  originRunIds: Array<Scalars['String']['output']>;
-  requestedAssetKeys: Array<AssetKey>;
-  requestedAssetMaterializationCount: Scalars['Int']['output'];
-  requestedMaterializationsForAssets: Array<RequestedMaterializationsForAsset>;
-  runIds: Array<Scalars['String']['output']>;
-  runKeys: Array<Scalars['String']['output']>;
+  logKey: Maybe<Array<Scalars['String']>>;
+  originRunIds: Array<Scalars['String']>;
+  runIds: Array<Scalars['String']>;
+  runKeys: Array<Scalars['String']>;
   runs: Array<Run>;
-  skipReason: Maybe<Scalars['String']['output']>;
+  skipReason: Maybe<Scalars['String']>;
   status: InstigationTickStatus;
-  tickId: Scalars['ID']['output'];
-  timestamp: Scalars['Float']['output'];
+  timestamp: Scalars['Float'];
 };
 
 export enum InstigationTickStatus {
@@ -2287,44 +1546,39 @@ export enum InstigationTickStatus {
 }
 
 export enum InstigationType {
-  AUTO_MATERIALIZE = 'AUTO_MATERIALIZE',
   SCHEDULE = 'SCHEDULE',
   SENSOR = 'SENSOR',
 }
 
 export type InstigationTypeSpecificData = ScheduleData | SensorData;
 
-export type Instigator = Schedule | Sensor;
-
 export type IntMetadataEntry = MetadataEntry & {
   __typename: 'IntMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  intRepr: Scalars['String']['output'];
-  intValue: Maybe<Scalars['Int']['output']>;
-  label: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  intRepr: Scalars['String'];
+  intValue: Maybe<Scalars['Int']>;
+  label: Scalars['String'];
 };
-
-export type InternalFreshnessPolicy = CronFreshnessPolicy | TimeWindowFreshnessPolicy;
 
 export type InvalidOutputError = {
   __typename: 'InvalidOutputError';
-  invalidOutputName: Scalars['String']['output'];
-  stepKey: Scalars['String']['output'];
+  invalidOutputName: Scalars['String'];
+  stepKey: Scalars['String'];
 };
 
 export type InvalidPipelineRunsFilterError = Error & {
   __typename: 'InvalidPipelineRunsFilterError';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type InvalidStepError = {
   __typename: 'InvalidStepError';
-  invalidStepKey: Scalars['String']['output'];
+  invalidStepKey: Scalars['String'];
 };
 
 export type InvalidSubsetError = Error & {
   __typename: 'InvalidSubsetError';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
   pipeline: Pipeline;
 };
 
@@ -2332,44 +1586,19 @@ export type Job = IPipelineSnapshot &
   SolidContainer & {
     __typename: 'Job';
     dagsterTypeOrError: DagsterTypeOrError;
-    dagsterTypes: Array<ListDagsterType | NullableDagsterType | RegularDagsterType>;
-    description: Maybe<Scalars['String']['output']>;
-    externalJobSource: Maybe<Scalars['String']['output']>;
-    graphName: Scalars['String']['output'];
-    id: Scalars['ID']['output'];
-    isAssetJob: Scalars['Boolean']['output'];
-    isJob: Scalars['Boolean']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
+    dagsterTypes: Array<DagsterType>;
+    description: Maybe<Scalars['String']>;
+    graphName: Scalars['String'];
+    id: Scalars['ID'];
+    isAssetJob: Scalars['Boolean'];
+    isJob: Scalars['Boolean'];
+    metadataEntries: Array<MetadataEntry>;
     modes: Array<Mode>;
-    name: Scalars['String']['output'];
-    parentSnapshotId: Maybe<Scalars['String']['output']>;
-    partition: Maybe<PartitionTagsAndConfig>;
-    partitionKeysOrError: PartitionKeys;
-    pipelineSnapshotId: Scalars['String']['output'];
+    name: Scalars['String'];
+    parentSnapshotId: Maybe<Scalars['String']>;
+    pipelineSnapshotId: Scalars['String'];
     presets: Array<PipelinePreset>;
     repository: Repository;
-    runTags: Array<PipelineTag>;
     runs: Array<Run>;
     schedules: Array<Schedule>;
     sensors: Array<Sensor>;
@@ -2380,64 +1609,43 @@ export type Job = IPipelineSnapshot &
   };
 
 export type JobDagsterTypeOrErrorArgs = {
-  dagsterTypeName: Scalars['String']['input'];
-};
-
-export type JobPartitionArgs = {
-  partitionName: Scalars['String']['input'];
-  selectedAssetKeys?: InputMaybe<Array<AssetKeyInput>>;
-};
-
-export type JobPartitionKeysOrErrorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  reverse?: InputMaybe<Scalars['Boolean']['input']>;
-  selectedAssetKeys?: InputMaybe<Array<AssetKeyInput>>;
+  dagsterTypeName: Scalars['String'];
 };
 
 export type JobRunsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type JobSolidHandleArgs = {
-  handleID: Scalars['String']['input'];
+  handleID: Scalars['String'];
 };
 
 export type JobSolidHandlesArgs = {
-  parentHandleID?: InputMaybe<Scalars['String']['input']>;
-};
-
-export type JobMetadataEntry = MetadataEntry & {
-  __typename: 'JobMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  jobName: Scalars['String']['output'];
-  label: Scalars['String']['output'];
-  locationName: Scalars['String']['output'];
-  repositoryName: Maybe<Scalars['String']['output']>;
+  parentHandleID?: InputMaybe<Scalars['String']>;
 };
 
 export type JobOrPipelineSelector = {
   assetCheckSelection?: InputMaybe<Array<AssetCheckHandleInput>>;
   assetSelection?: InputMaybe<Array<AssetKeyInput>>;
-  jobName?: InputMaybe<Scalars['String']['input']>;
-  pipelineName?: InputMaybe<Scalars['String']['input']>;
-  repositoryLocationName: Scalars['String']['input'];
-  repositoryName: Scalars['String']['input'];
-  solidSelection?: InputMaybe<Array<Scalars['String']['input']>>;
+  jobName?: InputMaybe<Scalars['String']>;
+  pipelineName?: InputMaybe<Scalars['String']>;
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
+  solidSelection?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type JobWithOps = {
   __typename: 'JobWithOps';
-  jobName: Scalars['String']['output'];
-  opHandleIDs: Array<Scalars['String']['output']>;
+  job: Job;
+  opsUsing: Array<SolidHandle>;
 };
 
 export type JsonMetadataEntry = MetadataEntry & {
   __typename: 'JsonMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  jsonString: Scalars['String']['output'];
-  label: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  jsonString: Scalars['String'];
+  label: Scalars['String'];
 };
 
 export type LaunchBackfillMutation = {
@@ -2446,17 +1654,15 @@ export type LaunchBackfillMutation = {
 };
 
 export type LaunchBackfillParams = {
-  allPartitions?: InputMaybe<Scalars['Boolean']['input']>;
+  allPartitions?: InputMaybe<Scalars['Boolean']>;
   assetSelection?: InputMaybe<Array<AssetKeyInput>>;
-  description?: InputMaybe<Scalars['String']['input']>;
-  forceSynchronousSubmission?: InputMaybe<Scalars['Boolean']['input']>;
-  fromFailure?: InputMaybe<Scalars['Boolean']['input']>;
-  partitionNames?: InputMaybe<Array<Scalars['String']['input']>>;
+  forceSynchronousSubmission?: InputMaybe<Scalars['Boolean']>;
+  fromFailure?: InputMaybe<Scalars['Boolean']>;
+  partitionNames?: InputMaybe<Array<Scalars['String']>>;
   partitionsByAssets?: InputMaybe<Array<InputMaybe<PartitionsByAssetSelector>>>;
-  reexecutionSteps?: InputMaybe<Array<Scalars['String']['input']>>;
+  reexecutionSteps?: InputMaybe<Array<Scalars['String']>>;
   selector?: InputMaybe<PartitionSetSelector>;
   tags?: InputMaybe<Array<ExecutionTag>>;
-  title?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type LaunchBackfillResult =
@@ -2466,7 +1672,6 @@ export type LaunchBackfillResult =
   | InvalidSubsetError
   | LaunchBackfillSuccess
   | NoModeProvidedError
-  | PartitionKeysNotFoundError
   | PartitionSetNotFoundError
   | PipelineNotFoundError
   | PresetNotFoundError
@@ -2477,21 +1682,9 @@ export type LaunchBackfillResult =
 
 export type LaunchBackfillSuccess = {
   __typename: 'LaunchBackfillSuccess';
-  backfillId: Scalars['String']['output'];
-  launchedRunIds: Maybe<Array<Maybe<Scalars['String']['output']>>>;
+  backfillId: Scalars['String'];
+  launchedRunIds: Maybe<Array<Maybe<Scalars['String']>>>;
 };
-
-export type LaunchMultipleRunsMutation = {
-  __typename: 'LaunchMultipleRunsMutation';
-  Output: LaunchMultipleRunsResultOrError;
-};
-
-export type LaunchMultipleRunsResult = {
-  __typename: 'LaunchMultipleRunsResult';
-  launchMultipleRunsResult: Array<LaunchRunResult>;
-};
-
-export type LaunchMultipleRunsResultOrError = LaunchMultipleRunsResult | PythonError;
 
 export type LaunchPipelineRunSuccess = {
   run: Run;
@@ -2543,119 +1736,47 @@ export type LaunchRunSuccess = LaunchPipelineRunSuccess & {
 export type ListDagsterType = DagsterType &
   WrappingDagsterType & {
     __typename: 'ListDagsterType';
-    description: Maybe<Scalars['String']['output']>;
-    displayName: Scalars['String']['output'];
-    innerTypes: Array<ListDagsterType | NullableDagsterType | RegularDagsterType>;
-    inputSchemaType: Maybe<
-      | ArrayConfigType
-      | CompositeConfigType
-      | EnumConfigType
-      | MapConfigType
-      | NullableConfigType
-      | RegularConfigType
-      | ScalarUnionConfigType
-    >;
-    isBuiltin: Scalars['Boolean']['output'];
-    isList: Scalars['Boolean']['output'];
-    isNothing: Scalars['Boolean']['output'];
-    isNullable: Scalars['Boolean']['output'];
-    key: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    name: Maybe<Scalars['String']['output']>;
-    ofType: ListDagsterType | NullableDagsterType | RegularDagsterType;
-    outputSchemaType: Maybe<
-      | ArrayConfigType
-      | CompositeConfigType
-      | EnumConfigType
-      | MapConfigType
-      | NullableConfigType
-      | RegularConfigType
-      | ScalarUnionConfigType
-    >;
+    description: Maybe<Scalars['String']>;
+    displayName: Scalars['String'];
+    innerTypes: Array<DagsterType>;
+    inputSchemaType: Maybe<ConfigType>;
+    isBuiltin: Scalars['Boolean'];
+    isList: Scalars['Boolean'];
+    isNothing: Scalars['Boolean'];
+    isNullable: Scalars['Boolean'];
+    key: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    name: Maybe<Scalars['String']>;
+    ofType: DagsterType;
+    outputSchemaType: Maybe<ConfigType>;
   };
 
 export type LoadedInputEvent = DisplayableEvent &
   MessageEvent &
   StepEvent & {
     __typename: 'LoadedInputEvent';
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     eventType: Maybe<DagsterEventType>;
-    inputName: Scalars['String']['output'];
-    label: Maybe<Scalars['String']['output']>;
+    inputName: Scalars['String'];
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    managerKey: Scalars['String']['output'];
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
-    upstreamOutputName: Maybe<Scalars['String']['output']>;
-    upstreamStepKey: Maybe<Scalars['String']['output']>;
+    managerKey: Scalars['String'];
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
+    upstreamOutputName: Maybe<Scalars['String']>;
+    upstreamStepKey: Maybe<Scalars['String']>;
   };
-
-export type LocalFileCodeReference = {
-  __typename: 'LocalFileCodeReference';
-  filePath: Scalars['String']['output'];
-  label: Maybe<Scalars['String']['output']>;
-  lineNumber: Maybe<Scalars['Int']['output']>;
-};
-
-export type LocationDocsJson = {
-  __typename: 'LocationDocsJson';
-  json: Scalars['JSONString']['output'];
-};
-
-export type LocationDocsJsonOrError = LocationDocsJson | PythonError;
 
 export type LocationStateChangeEvent = {
   __typename: 'LocationStateChangeEvent';
   eventType: LocationStateChangeEventType;
-  locationName: Scalars['String']['output'];
-  message: Scalars['String']['output'];
-  serverId: Maybe<Scalars['String']['output']>;
+  locationName: Scalars['String'];
+  message: Scalars['String'];
+  serverId: Maybe<Scalars['String']>;
 };
 
 export enum LocationStateChangeEventType {
@@ -2682,106 +1803,77 @@ export type LogMessageEvent = MessageEvent & {
   __typename: 'LogMessageEvent';
   eventType: Maybe<DagsterEventType>;
   level: LogLevel;
-  message: Scalars['String']['output'];
-  runId: Scalars['String']['output'];
-  solidHandleID: Maybe<Scalars['String']['output']>;
-  stepKey: Maybe<Scalars['String']['output']>;
-  timestamp: Scalars['String']['output'];
-};
-
-export type LogRetrievalShellCommand = {
-  __typename: 'LogRetrievalShellCommand';
-  stderr: Maybe<Scalars['String']['output']>;
-  stdout: Maybe<Scalars['String']['output']>;
+  message: Scalars['String'];
+  runId: Scalars['String'];
+  solidHandleID: Maybe<Scalars['String']>;
+  stepKey: Maybe<Scalars['String']>;
+  timestamp: Scalars['String'];
 };
 
 export type LogTelemetryMutationResult = LogTelemetrySuccess | PythonError;
 
 export type LogTelemetrySuccess = {
   __typename: 'LogTelemetrySuccess';
-  action: Scalars['String']['output'];
+  action: Scalars['String'];
 };
 
 export type Logger = {
   __typename: 'Logger';
   configField: Maybe<ConfigTypeField>;
-  description: Maybe<Scalars['String']['output']>;
-  name: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  name: Scalars['String'];
 };
 
 export type LogsCapturedEvent = MessageEvent & {
   __typename: 'LogsCapturedEvent';
   eventType: Maybe<DagsterEventType>;
-  externalStderrUrl: Maybe<Scalars['String']['output']>;
-  externalStdoutUrl: Maybe<Scalars['String']['output']>;
-  externalUrl: Maybe<Scalars['String']['output']>;
-  fileKey: Scalars['String']['output'];
+  externalStderrUrl: Maybe<Scalars['String']>;
+  externalStdoutUrl: Maybe<Scalars['String']>;
+  externalUrl: Maybe<Scalars['String']>;
+  fileKey: Scalars['String'];
   level: LogLevel;
-  logKey: Scalars['String']['output'];
-  message: Scalars['String']['output'];
-  pid: Maybe<Scalars['Int']['output']>;
-  runId: Scalars['String']['output'];
-  shellCmd: Maybe<LogRetrievalShellCommand>;
-  solidHandleID: Maybe<Scalars['String']['output']>;
-  stepKey: Maybe<Scalars['String']['output']>;
-  stepKeys: Maybe<Array<Scalars['String']['output']>>;
-  timestamp: Scalars['String']['output'];
+  logKey: Scalars['String'];
+  message: Scalars['String'];
+  pid: Maybe<Scalars['Int']>;
+  runId: Scalars['String'];
+  solidHandleID: Maybe<Scalars['String']>;
+  stepKey: Maybe<Scalars['String']>;
+  stepKeys: Maybe<Array<Scalars['String']>>;
+  timestamp: Scalars['String'];
 };
 
 export type MapConfigType = ConfigType & {
   __typename: 'MapConfigType';
-  description: Maybe<Scalars['String']['output']>;
-  isSelector: Scalars['Boolean']['output'];
-  key: Scalars['String']['output'];
-  keyLabelName: Maybe<Scalars['String']['output']>;
-  keyType:
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType;
-  recursiveConfigTypes: Array<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
-  typeParamKeys: Array<Scalars['String']['output']>;
-  valueType:
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType;
+  description: Maybe<Scalars['String']>;
+  isSelector: Scalars['Boolean'];
+  key: Scalars['String'];
+  keyLabelName: Maybe<Scalars['String']>;
+  keyType: ConfigType;
+  recursiveConfigTypes: Array<ConfigType>;
+  typeParamKeys: Array<Scalars['String']>;
+  valueType: ConfigType;
 };
 
 export type MarkdownMetadataEntry = MetadataEntry & {
   __typename: 'MarkdownMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  mdStr: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
+  mdStr: Scalars['String'];
 };
 
 export type MarkerEvent = {
-  markerEnd: Maybe<Scalars['String']['output']>;
-  markerStart: Maybe<Scalars['String']['output']>;
+  markerEnd: Maybe<Scalars['String']>;
+  markerStart: Maybe<Scalars['String']>;
 };
 
 export type MarshalledInput = {
-  inputName: Scalars['String']['input'];
-  key: Scalars['String']['input'];
+  inputName: Scalars['String'];
+  key: Scalars['String'];
 };
 
 export type MarshalledOutput = {
-  key: Scalars['String']['input'];
-  outputName: Scalars['String']['input'];
+  key: Scalars['String'];
+  outputName: Scalars['String'];
 };
 
 export type MaterializationEvent = DisplayableEvent &
@@ -2790,85 +1882,64 @@ export type MaterializationEvent = DisplayableEvent &
     __typename: 'MaterializationEvent';
     assetKey: Maybe<AssetKey>;
     assetLineage: Array<AssetLineageInfo>;
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    partition: Maybe<Scalars['String']['output']>;
-    runId: Scalars['String']['output'];
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    partition: Maybe<Scalars['String']>;
+    runId: Scalars['String'];
     runOrError: RunOrError;
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
     stepStats: RunStepStats;
     tags: Array<EventTag>;
-    timestamp: Scalars['String']['output'];
+    timestamp: Scalars['String'];
   };
 
 export type MaterializationUpstreamDataVersion = {
   __typename: 'MaterializationUpstreamDataVersion';
   assetKey: AssetKey;
   downstreamAssetKey: AssetKey;
-  timestamp: Scalars['String']['output'];
+  timestamp: Scalars['String'];
 };
 
 export type MaterializedPartitionRangeStatuses2D = {
   __typename: 'MaterializedPartitionRangeStatuses2D';
-  primaryDimEndKey: Scalars['String']['output'];
-  primaryDimEndTime: Maybe<Scalars['Float']['output']>;
-  primaryDimStartKey: Scalars['String']['output'];
-  primaryDimStartTime: Maybe<Scalars['Float']['output']>;
+  primaryDimEndKey: Scalars['String'];
+  primaryDimEndTime: Maybe<Scalars['Float']>;
+  primaryDimStartKey: Scalars['String'];
+  primaryDimStartTime: Maybe<Scalars['Float']>;
   secondaryDim: PartitionStatus1D;
 };
 
 export type MessageEvent = {
   eventType: Maybe<DagsterEventType>;
   level: LogLevel;
-  message: Scalars['String']['output'];
-  runId: Scalars['String']['output'];
-  solidHandleID: Maybe<Scalars['String']['output']>;
-  stepKey: Maybe<Scalars['String']['output']>;
-  timestamp: Scalars['String']['output'];
+  message: Scalars['String'];
+  runId: Scalars['String'];
+  solidHandleID: Maybe<Scalars['String']>;
+  stepKey: Maybe<Scalars['String']>;
+  timestamp: Scalars['String'];
 };
 
 export type MetadataEntry = {
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
 };
 
 export type MetadataItemDefinition = {
   __typename: 'MetadataItemDefinition';
-  key: Scalars['String']['output'];
-  value: Scalars['String']['output'];
+  key: Scalars['String'];
+  value: Scalars['String'];
 };
 
 export type MissingFieldConfigError = PipelineConfigValidationError & {
   __typename: 'MissingFieldConfigError';
   field: ConfigTypeField;
-  message: Scalars['String']['output'];
-  path: Array<Scalars['String']['output']>;
+  message: Scalars['String'];
+  path: Array<Scalars['String']>;
   reason: EvaluationErrorReason;
   stack: EvaluationStack;
 };
@@ -2876,35 +1947,35 @@ export type MissingFieldConfigError = PipelineConfigValidationError & {
 export type MissingFieldsConfigError = PipelineConfigValidationError & {
   __typename: 'MissingFieldsConfigError';
   fields: Array<ConfigTypeField>;
-  message: Scalars['String']['output'];
-  path: Array<Scalars['String']['output']>;
+  message: Scalars['String'];
+  path: Array<Scalars['String']>;
   reason: EvaluationErrorReason;
   stack: EvaluationStack;
 };
 
 export type MissingRunIdErrorEvent = {
   __typename: 'MissingRunIdErrorEvent';
-  invalidRunId: Scalars['String']['output'];
+  invalidRunId: Scalars['String'];
 };
 
 export type Mode = {
   __typename: 'Mode';
-  description: Maybe<Scalars['String']['output']>;
-  id: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  id: Scalars['String'];
   loggers: Array<Logger>;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   resources: Array<Resource>;
 };
 
 export type ModeNotFoundError = Error & {
   __typename: 'ModeNotFoundError';
-  message: Scalars['String']['output'];
-  mode: Scalars['String']['output'];
+  message: Scalars['String'];
+  mode: Scalars['String'];
 };
 
 export type MultiPartitionStatuses = {
   __typename: 'MultiPartitionStatuses';
-  primaryDimensionName: Scalars['String']['output'];
+  primaryDimensionName: Scalars['String'];
   ranges: Array<MaterializedPartitionRangeStatuses2D>;
 };
 
@@ -2912,31 +1983,23 @@ export type Mutation = {
   __typename: 'Mutation';
   addDynamicPartition: AddDynamicPartitionResult;
   cancelPartitionBackfill: CancelBackfillResult;
-  deleteConcurrencyLimit: Scalars['Boolean']['output'];
-  deleteDynamicPartitions: DeleteDynamicPartitionsResult;
   deletePipelineRun: DeletePipelineRunResult;
   deleteRun: DeletePipelineRunResult;
-  freeConcurrencySlots: Scalars['Boolean']['output'];
-  freeConcurrencySlotsForRun: Scalars['Boolean']['output'];
-  launchMultipleRuns: LaunchMultipleRunsResultOrError;
+  freeConcurrencySlotsForRun: Scalars['Boolean'];
   launchPartitionBackfill: LaunchBackfillResult;
   launchPipelineExecution: LaunchRunResult;
   launchPipelineReexecution: LaunchRunReexecutionResult;
   launchRun: LaunchRunResult;
   launchRunReexecution: LaunchRunReexecutionResult;
   logTelemetry: LogTelemetryMutationResult;
-  reexecutePartitionBackfill: LaunchBackfillResult;
   reloadRepositoryLocation: ReloadRepositoryLocationMutationResult;
   reloadWorkspace: ReloadWorkspaceMutationResult;
-  reportRunlessAssetEvents: ReportRunlessAssetEventsResult;
-  resetSchedule: ScheduleMutationResult;
-  resetSensor: SensorOrError;
   resumePartitionBackfill: ResumeBackfillResult;
   scheduleDryRun: ScheduleDryRunResult;
   sensorDryRun: SensorDryRunResult;
-  setAutoMaterializePaused: Scalars['Boolean']['output'];
-  setConcurrencyLimit: Scalars['Boolean']['output'];
-  setNuxSeen: Scalars['Boolean']['output'];
+  setAutoMaterializePaused: Scalars['Boolean'];
+  setConcurrencyLimit: Scalars['Boolean'];
+  setNuxSeen: Scalars['Boolean'];
   setSensorCursor: SensorOrError;
   shutdownRepositoryLocation: ShutdownRepositoryLocationMutationResult;
   startSchedule: ScheduleMutationResult;
@@ -2945,49 +2008,29 @@ export type Mutation = {
   stopSensor: StopSensorMutationResultOrError;
   terminatePipelineExecution: TerminateRunResult;
   terminateRun: TerminateRunResult;
-  terminateRuns: TerminateRunsResultOrError;
   wipeAssets: AssetWipeMutationResult;
 };
 
 export type MutationAddDynamicPartitionArgs = {
-  partitionKey: Scalars['String']['input'];
-  partitionsDefName: Scalars['String']['input'];
+  partitionKey: Scalars['String'];
+  partitionsDefName: Scalars['String'];
   repositorySelector: RepositorySelector;
 };
 
 export type MutationCancelPartitionBackfillArgs = {
-  backfillId: Scalars['String']['input'];
-};
-
-export type MutationDeleteConcurrencyLimitArgs = {
-  concurrencyKey: Scalars['String']['input'];
-};
-
-export type MutationDeleteDynamicPartitionsArgs = {
-  partitionKeys: Array<Scalars['String']['input']>;
-  partitionsDefName: Scalars['String']['input'];
-  repositorySelector: RepositorySelector;
+  backfillId: Scalars['String'];
 };
 
 export type MutationDeletePipelineRunArgs = {
-  runId: Scalars['String']['input'];
+  runId: Scalars['String'];
 };
 
 export type MutationDeleteRunArgs = {
-  runId: Scalars['String']['input'];
-};
-
-export type MutationFreeConcurrencySlotsArgs = {
-  runId: Scalars['String']['input'];
-  stepKey?: InputMaybe<Scalars['String']['input']>;
+  runId: Scalars['String'];
 };
 
 export type MutationFreeConcurrencySlotsForRunArgs = {
-  runId: Scalars['String']['input'];
-};
-
-export type MutationLaunchMultipleRunsArgs = {
-  executionParamsList: Array<ExecutionParams>;
+  runId: Scalars['String'];
 };
 
 export type MutationLaunchPartitionBackfillArgs = {
@@ -3013,62 +2056,46 @@ export type MutationLaunchRunReexecutionArgs = {
 };
 
 export type MutationLogTelemetryArgs = {
-  action: Scalars['String']['input'];
-  clientId: Scalars['String']['input'];
-  clientTime: Scalars['String']['input'];
-  metadata: Scalars['String']['input'];
-};
-
-export type MutationReexecutePartitionBackfillArgs = {
-  reexecutionParams?: InputMaybe<ReexecutionParams>;
+  action: Scalars['String'];
+  clientId: Scalars['String'];
+  clientTime: Scalars['String'];
+  metadata: Scalars['String'];
 };
 
 export type MutationReloadRepositoryLocationArgs = {
-  repositoryLocationName: Scalars['String']['input'];
-};
-
-export type MutationReportRunlessAssetEventsArgs = {
-  eventParams: ReportRunlessAssetEventsParams;
-};
-
-export type MutationResetScheduleArgs = {
-  scheduleSelector: ScheduleSelector;
-};
-
-export type MutationResetSensorArgs = {
-  sensorSelector: SensorSelector;
+  repositoryLocationName: Scalars['String'];
 };
 
 export type MutationResumePartitionBackfillArgs = {
-  backfillId: Scalars['String']['input'];
+  backfillId: Scalars['String'];
 };
 
 export type MutationScheduleDryRunArgs = {
   selectorData: ScheduleSelector;
-  timestamp?: InputMaybe<Scalars['Float']['input']>;
+  timestamp?: InputMaybe<Scalars['Float']>;
 };
 
 export type MutationSensorDryRunArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
   selectorData: SensorSelector;
 };
 
 export type MutationSetAutoMaterializePausedArgs = {
-  paused: Scalars['Boolean']['input'];
+  paused: Scalars['Boolean'];
 };
 
 export type MutationSetConcurrencyLimitArgs = {
-  concurrencyKey: Scalars['String']['input'];
-  limit: Scalars['Int']['input'];
+  concurrencyKey: Scalars['String'];
+  limit: Scalars['Int'];
 };
 
 export type MutationSetSensorCursorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
   sensorSelector: SensorSelector;
 };
 
 export type MutationShutdownRepositoryLocationArgs = {
-  repositoryLocationName: Scalars['String']['input'];
+  repositoryLocationName: Scalars['String'];
 };
 
 export type MutationStartScheduleArgs = {
@@ -3080,39 +2107,32 @@ export type MutationStartSensorArgs = {
 };
 
 export type MutationStopRunningScheduleArgs = {
-  id?: InputMaybe<Scalars['String']['input']>;
-  scheduleOriginId?: InputMaybe<Scalars['String']['input']>;
-  scheduleSelectorId?: InputMaybe<Scalars['String']['input']>;
+  scheduleOriginId: Scalars['String'];
+  scheduleSelectorId: Scalars['String'];
 };
 
 export type MutationStopSensorArgs = {
-  id?: InputMaybe<Scalars['String']['input']>;
-  jobOriginId?: InputMaybe<Scalars['String']['input']>;
-  jobSelectorId?: InputMaybe<Scalars['String']['input']>;
+  jobOriginId: Scalars['String'];
+  jobSelectorId: Scalars['String'];
 };
 
 export type MutationTerminatePipelineExecutionArgs = {
-  runId: Scalars['String']['input'];
+  runId: Scalars['String'];
   terminatePolicy?: InputMaybe<TerminateRunPolicy>;
 };
 
 export type MutationTerminateRunArgs = {
-  runId: Scalars['String']['input'];
-  terminatePolicy?: InputMaybe<TerminateRunPolicy>;
-};
-
-export type MutationTerminateRunsArgs = {
-  runIds: Array<Scalars['String']['input']>;
+  runId: Scalars['String'];
   terminatePolicy?: InputMaybe<TerminateRunPolicy>;
 };
 
 export type MutationWipeAssetsArgs = {
-  assetPartitionRanges: Array<PartitionsByAssetSelector>;
+  assetKeys: Array<AssetKeyInput>;
 };
 
 export type NestedResourceEntry = {
   __typename: 'NestedResourceEntry';
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   resource: Maybe<ResourceDetails>;
   type: NestedResourceType;
 };
@@ -3124,8 +2144,8 @@ export enum NestedResourceType {
 
 export type NoModeProvidedError = Error & {
   __typename: 'NoModeProvidedError';
-  message: Scalars['String']['output'];
-  pipelineName: Scalars['String']['output'];
+  message: Scalars['String'];
+  pipelineName: Scalars['String'];
 };
 
 export type NodeInvocationSite = {
@@ -3136,96 +2156,44 @@ export type NodeInvocationSite = {
 
 export type NotebookMetadataEntry = MetadataEntry & {
   __typename: 'NotebookMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  path: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
+  path: Scalars['String'];
 };
 
 export type NullMetadataEntry = MetadataEntry & {
   __typename: 'NullMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
 };
 
 export type NullableConfigType = ConfigType &
   WrappingConfigType & {
     __typename: 'NullableConfigType';
-    description: Maybe<Scalars['String']['output']>;
-    isSelector: Scalars['Boolean']['output'];
-    key: Scalars['String']['output'];
-    ofType:
-      | ArrayConfigType
-      | CompositeConfigType
-      | EnumConfigType
-      | MapConfigType
-      | NullableConfigType
-      | RegularConfigType
-      | ScalarUnionConfigType;
-    recursiveConfigTypes: Array<
-      | ArrayConfigType
-      | CompositeConfigType
-      | EnumConfigType
-      | MapConfigType
-      | NullableConfigType
-      | RegularConfigType
-      | ScalarUnionConfigType
-    >;
-    typeParamKeys: Array<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
+    isSelector: Scalars['Boolean'];
+    key: Scalars['String'];
+    ofType: ConfigType;
+    recursiveConfigTypes: Array<ConfigType>;
+    typeParamKeys: Array<Scalars['String']>;
   };
 
 export type NullableDagsterType = DagsterType &
   WrappingDagsterType & {
     __typename: 'NullableDagsterType';
-    description: Maybe<Scalars['String']['output']>;
-    displayName: Scalars['String']['output'];
-    innerTypes: Array<ListDagsterType | NullableDagsterType | RegularDagsterType>;
-    inputSchemaType: Maybe<
-      | ArrayConfigType
-      | CompositeConfigType
-      | EnumConfigType
-      | MapConfigType
-      | NullableConfigType
-      | RegularConfigType
-      | ScalarUnionConfigType
-    >;
-    isBuiltin: Scalars['Boolean']['output'];
-    isList: Scalars['Boolean']['output'];
-    isNothing: Scalars['Boolean']['output'];
-    isNullable: Scalars['Boolean']['output'];
-    key: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    name: Maybe<Scalars['String']['output']>;
-    ofType: ListDagsterType | NullableDagsterType | RegularDagsterType;
-    outputSchemaType: Maybe<
-      | ArrayConfigType
-      | CompositeConfigType
-      | EnumConfigType
-      | MapConfigType
-      | NullableConfigType
-      | RegularConfigType
-      | ScalarUnionConfigType
-    >;
+    description: Maybe<Scalars['String']>;
+    displayName: Scalars['String'];
+    innerTypes: Array<DagsterType>;
+    inputSchemaType: Maybe<ConfigType>;
+    isBuiltin: Scalars['Boolean'];
+    isList: Scalars['Boolean'];
+    isNothing: Scalars['Boolean'];
+    isNullable: Scalars['Boolean'];
+    key: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    name: Maybe<Scalars['String']>;
+    ofType: DagsterType;
+    outputSchemaType: Maybe<ConfigType>;
   };
 
 export type ObjectStoreOperationEvent = MessageEvent &
@@ -3233,40 +2201,19 @@ export type ObjectStoreOperationEvent = MessageEvent &
     __typename: 'ObjectStoreOperationEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
+    message: Scalars['String'];
     operationResult: ObjectStoreOperationResult;
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ObjectStoreOperationResult = DisplayableEvent & {
   __typename: 'ObjectStoreOperationResult';
-  description: Maybe<Scalars['String']['output']>;
-  label: Maybe<Scalars['String']['output']>;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
+  description: Maybe<Scalars['String']>;
+  label: Maybe<Scalars['String']>;
+  metadataEntries: Array<MetadataEntry>;
   op: ObjectStoreOperationType;
 };
 
@@ -3282,41 +2229,20 @@ export type ObservationEvent = DisplayableEvent &
   StepEvent & {
     __typename: 'ObservationEvent';
     assetKey: Maybe<AssetKey>;
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    partition: Maybe<Scalars['String']['output']>;
-    runId: Scalars['String']['output'];
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    partition: Maybe<Scalars['String']>;
+    runId: Scalars['String'];
     runOrError: RunOrError;
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
     stepStats: RunStepStats;
     tags: Array<EventTag>;
-    timestamp: Scalars['String']['output'];
+    timestamp: Scalars['String'];
   };
 
 export type Output = {
@@ -3328,32 +2254,12 @@ export type Output = {
 
 export type OutputDefinition = {
   __typename: 'OutputDefinition';
-  description: Maybe<Scalars['String']['output']>;
-  isDynamic: Maybe<Scalars['Boolean']['output']>;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  name: Scalars['String']['output'];
-  type: ListDagsterType | NullableDagsterType | RegularDagsterType;
+  description: Maybe<Scalars['String']>;
+  isDynamic: Maybe<Scalars['Boolean']>;
+  metadataEntries: Array<MetadataEntry>;
+  name: Scalars['String'];
+  solidDefinition: SolidDefinition;
+  type: DagsterType;
 };
 
 export type OutputMapping = {
@@ -3370,79 +2276,55 @@ export type ParentMaterializedRuleEvaluationData = {
 
 export type Partition = {
   __typename: 'Partition';
-  mode: Scalars['String']['output'];
-  name: Scalars['String']['output'];
-  partitionSetName: Scalars['String']['output'];
+  mode: Scalars['String'];
+  name: Scalars['String'];
+  partitionSetName: Scalars['String'];
   runConfigOrError: PartitionRunConfigOrError;
   runs: Array<Run>;
-  solidSelection: Maybe<Array<Scalars['String']['output']>>;
+  solidSelection: Maybe<Array<Scalars['String']>>;
   status: Maybe<RunStatus>;
   tagsOrError: PartitionTagsOrError;
 };
 
 export type PartitionRunsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
   filter?: InputMaybe<RunsFilter>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
-export type PartitionBackfill = RunsFeedEntry & {
+export type PartitionBackfill = {
   __typename: 'PartitionBackfill';
   assetBackfillData: Maybe<AssetBackfillData>;
-  assetCheckSelection: Maybe<Array<AssetCheckhandle>>;
   assetSelection: Maybe<Array<AssetKey>>;
-  cancelableRuns: Array<Run>;
-  creationTime: Scalars['Float']['output'];
-  description: Maybe<Scalars['String']['output']>;
-  endTime: Maybe<Scalars['Float']['output']>;
-  endTimestamp: Maybe<Scalars['Float']['output']>;
+  endTimestamp: Maybe<Scalars['Float']>;
   error: Maybe<PythonError>;
-  fromFailure: Scalars['Boolean']['output'];
-  hasCancelPermission: Scalars['Boolean']['output'];
-  hasResumePermission: Scalars['Boolean']['output'];
-  id: Scalars['ID']['output'];
-  isAssetBackfill: Scalars['Boolean']['output'];
-  isValidSerialization: Scalars['Boolean']['output'];
-  jobName: Maybe<Scalars['String']['output']>;
-  logEvents: InstigationEventConnection;
-  numCancelable: Scalars['Int']['output'];
-  numPartitions: Maybe<Scalars['Int']['output']>;
-  partitionNames: Maybe<Array<Scalars['String']['output']>>;
+  fromFailure: Scalars['Boolean'];
+  hasCancelPermission: Scalars['Boolean'];
+  hasResumePermission: Scalars['Boolean'];
+  id: Scalars['String'];
+  isAssetBackfill: Scalars['Boolean'];
+  isValidSerialization: Scalars['Boolean'];
+  numCancelable: Scalars['Int'];
+  numPartitions: Maybe<Scalars['Int']>;
+  partitionNames: Maybe<Array<Scalars['String']>>;
   partitionSet: Maybe<PartitionSet>;
-  partitionSetName: Maybe<Scalars['String']['output']>;
+  partitionSetName: Maybe<Scalars['String']>;
   partitionStatusCounts: Array<PartitionStatusCounts>;
   partitionStatuses: Maybe<PartitionStatuses>;
-  partitionsTargetedForAssetKey: Maybe<AssetBackfillTargetPartitions>;
-  reexecutionSteps: Maybe<Array<Scalars['String']['output']>>;
-  runStatus: RunStatus;
+  reexecutionSteps: Maybe<Array<Scalars['String']>>;
   runs: Array<Run>;
-  startTime: Maybe<Scalars['Float']['output']>;
   status: BulkActionStatus;
-  tags: Array<PipelineTag>;
-  timestamp: Scalars['Float']['output'];
-  title: Maybe<Scalars['String']['output']>;
+  timestamp: Scalars['Float'];
   unfinishedRuns: Array<Run>;
-  user: Maybe<Scalars['String']['output']>;
-};
-
-export type PartitionBackfillCancelableRunsArgs = {
-  limit?: InputMaybe<Scalars['Int']['input']>;
-};
-
-export type PartitionBackfillLogEventsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-};
-
-export type PartitionBackfillPartitionsTargetedForAssetKeyArgs = {
-  assetKey?: InputMaybe<AssetKeyInput>;
+  user: Maybe<Scalars['String']>;
 };
 
 export type PartitionBackfillRunsArgs = {
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type PartitionBackfillUnfinishedRunsArgs = {
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type PartitionBackfillOrError = BackfillNotFoundError | PartitionBackfill | PythonError;
@@ -3456,10 +2338,9 @@ export type PartitionBackfillsOrError = PartitionBackfills | PythonError;
 
 export type PartitionDefinition = {
   __typename: 'PartitionDefinition';
-  description: Scalars['String']['output'];
+  description: Scalars['String'];
   dimensionTypes: Array<DimensionDefinitionType>;
-  fmt: Maybe<Scalars['String']['output']>;
-  name: Maybe<Scalars['String']['output']>;
+  name: Maybe<Scalars['String']>;
   type: PartitionDefinitionType;
 };
 
@@ -3470,47 +2351,22 @@ export enum PartitionDefinitionType {
   TIME_WINDOW = 'TIME_WINDOW',
 }
 
-export type PartitionKeyConnection = {
-  __typename: 'PartitionKeyConnection';
-  cursor: Scalars['String']['output'];
-  hasMore: Scalars['Boolean']['output'];
-  results: Array<Scalars['String']['output']>;
-};
-
 export type PartitionKeyRange = {
   __typename: 'PartitionKeyRange';
-  end: Scalars['String']['output'];
-  start: Scalars['String']['output'];
+  end: Scalars['String'];
+  start: Scalars['String'];
 };
 
 export type PartitionKeys = {
   __typename: 'PartitionKeys';
-  partitionKeys: Array<Scalars['String']['output']>;
-};
-
-export type PartitionKeysNotFoundError = Error & {
-  __typename: 'PartitionKeysNotFoundError';
-  message: Scalars['String']['output'];
-  partitionKeys: Array<Scalars['String']['output']>;
+  partitionKeys: Array<Scalars['String']>;
 };
 
 export type PartitionKeysOrError = PartitionKeys | PartitionSubsetDeserializationError;
 
-export type PartitionMapping = {
-  __typename: 'PartitionMapping';
-  className: Scalars['String']['output'];
-  description: Scalars['String']['output'];
-};
-
-export type PartitionRange = {
-  __typename: 'PartitionRange';
-  end: Scalars['String']['output'];
-  start: Scalars['String']['output'];
-};
-
 export type PartitionRangeSelector = {
-  end: Scalars['String']['input'];
-  start: Scalars['String']['input'];
+  end: Scalars['String'];
+  start: Scalars['String'];
 };
 
 export enum PartitionRangeStatus {
@@ -3521,14 +2377,14 @@ export enum PartitionRangeStatus {
 
 export type PartitionRun = {
   __typename: 'PartitionRun';
-  id: Scalars['String']['output'];
-  partitionName: Scalars['String']['output'];
+  id: Scalars['String'];
+  partitionName: Scalars['String'];
   run: Maybe<Run>;
 };
 
 export type PartitionRunConfig = {
   __typename: 'PartitionRunConfig';
-  yaml: Scalars['String']['output'];
+  yaml: Scalars['String'];
 };
 
 export type PartitionRunConfigOrError = PartitionRunConfig | PythonError;
@@ -3536,43 +2392,43 @@ export type PartitionRunConfigOrError = PartitionRunConfig | PythonError;
 export type PartitionSet = {
   __typename: 'PartitionSet';
   backfills: Array<PartitionBackfill>;
-  id: Scalars['ID']['output'];
-  mode: Scalars['String']['output'];
-  name: Scalars['String']['output'];
+  id: Scalars['ID'];
+  mode: Scalars['String'];
+  name: Scalars['String'];
   partition: Maybe<Partition>;
   partitionRuns: Array<PartitionRun>;
   partitionStatusesOrError: PartitionStatusesOrError;
   partitionsOrError: PartitionsOrError;
-  pipelineName: Scalars['String']['output'];
+  pipelineName: Scalars['String'];
   repositoryOrigin: RepositoryOrigin;
-  solidSelection: Maybe<Array<Scalars['String']['output']>>;
+  solidSelection: Maybe<Array<Scalars['String']>>;
 };
 
 export type PartitionSetBackfillsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type PartitionSetPartitionArgs = {
-  partitionName: Scalars['String']['input'];
+  partitionName: Scalars['String'];
 };
 
 export type PartitionSetPartitionsOrErrorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  reverse?: InputMaybe<Scalars['Boolean']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
+  reverse?: InputMaybe<Scalars['Boolean']>;
 };
 
 export type PartitionSetNotFoundError = Error & {
   __typename: 'PartitionSetNotFoundError';
-  message: Scalars['String']['output'];
-  partitionSetName: Scalars['String']['output'];
+  message: Scalars['String'];
+  partitionSetName: Scalars['String'];
 };
 
 export type PartitionSetOrError = PartitionSet | PartitionSetNotFoundError | PythonError;
 
 export type PartitionSetSelector = {
-  partitionSetName: Scalars['String']['input'];
+  partitionSetName: Scalars['String'];
   repositorySelector: RepositorySelector;
 };
 
@@ -3585,18 +2441,18 @@ export type PartitionSetsOrError = PartitionSets | PipelineNotFoundError | Pytho
 
 export type PartitionStats = {
   __typename: 'PartitionStats';
-  numFailed: Scalars['Int']['output'];
-  numMaterialized: Scalars['Int']['output'];
-  numMaterializing: Scalars['Int']['output'];
-  numPartitions: Scalars['Int']['output'];
+  numFailed: Scalars['Int'];
+  numMaterialized: Scalars['Int'];
+  numMaterializing: Scalars['Int'];
+  numPartitions: Scalars['Int'];
 };
 
 export type PartitionStatus = {
   __typename: 'PartitionStatus';
-  id: Scalars['String']['output'];
-  partitionName: Scalars['String']['output'];
-  runDuration: Maybe<Scalars['Float']['output']>;
-  runId: Maybe<Scalars['String']['output']>;
+  id: Scalars['String'];
+  partitionName: Scalars['String'];
+  runDuration: Maybe<Scalars['Float']>;
+  runId: Maybe<Scalars['String']>;
   runStatus: Maybe<RunStatus>;
 };
 
@@ -3604,7 +2460,7 @@ export type PartitionStatus1D = DefaultPartitionStatuses | TimePartitionStatuses
 
 export type PartitionStatusCounts = {
   __typename: 'PartitionStatusCounts';
-  count: Scalars['Int']['output'];
+  count: Scalars['Int'];
   runStatus: RunStatus;
 };
 
@@ -3617,7 +2473,7 @@ export type PartitionStatusesOrError = PartitionStatuses | PythonError;
 
 export type PartitionSubsetDeserializationError = Error & {
   __typename: 'PartitionSubsetDeserializationError';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type PartitionTags = {
@@ -3625,27 +2481,7 @@ export type PartitionTags = {
   results: Array<PipelineTag>;
 };
 
-export type PartitionTagsAndConfig = {
-  __typename: 'PartitionTagsAndConfig';
-  jobName: Scalars['String']['output'];
-  name: Scalars['String']['output'];
-  runConfigOrError: PartitionRunConfigOrError;
-  tagsOrError: PartitionTagsOrError;
-};
-
 export type PartitionTagsOrError = PartitionTags | PythonError;
-
-export type PartitionedAssetConditionEvaluationNode = {
-  __typename: 'PartitionedAssetConditionEvaluationNode';
-  childUniqueIds: Array<Scalars['String']['output']>;
-  description: Scalars['String']['output'];
-  endTimestamp: Maybe<Scalars['Float']['output']>;
-  entityKey: EntityKey;
-  numCandidates: Maybe<Scalars['Int']['output']>;
-  numTrue: Scalars['Int']['output'];
-  startTimestamp: Maybe<Scalars['Float']['output']>;
-  uniqueId: Scalars['String']['output'];
-};
 
 export type Partitions = {
   __typename: 'Partitions';
@@ -3660,75 +2496,40 @@ export type PartitionsByAssetSelector = {
 export type PartitionsOrError = Partitions | PythonError;
 
 export type PartitionsSelector = {
-  range?: InputMaybe<PartitionRangeSelector>;
-  ranges?: InputMaybe<Array<PartitionRangeSelector>>;
+  range: PartitionRangeSelector;
 };
 
 export type PathMetadataEntry = MetadataEntry & {
   __typename: 'PathMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  path: Scalars['String']['output'];
-};
-
-export type PendingConcurrencyStep = {
-  __typename: 'PendingConcurrencyStep';
-  assignedTimestamp: Maybe<Scalars['Float']['output']>;
-  enqueuedTimestamp: Scalars['Float']['output'];
-  priority: Maybe<Scalars['Int']['output']>;
-  runId: Scalars['String']['output'];
-  stepKey: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
+  path: Scalars['String'];
 };
 
 export type Permission = {
   __typename: 'Permission';
-  disabledReason: Maybe<Scalars['String']['output']>;
-  permission: Scalars['String']['output'];
-  value: Scalars['Boolean']['output'];
+  disabledReason: Maybe<Scalars['String']>;
+  permission: Scalars['String'];
+  value: Scalars['Boolean'];
 };
 
 export type Pipeline = IPipelineSnapshot &
   SolidContainer & {
     __typename: 'Pipeline';
     dagsterTypeOrError: DagsterTypeOrError;
-    dagsterTypes: Array<ListDagsterType | NullableDagsterType | RegularDagsterType>;
-    description: Maybe<Scalars['String']['output']>;
-    externalJobSource: Maybe<Scalars['String']['output']>;
-    graphName: Scalars['String']['output'];
-    id: Scalars['ID']['output'];
-    isAssetJob: Scalars['Boolean']['output'];
-    isJob: Scalars['Boolean']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
+    dagsterTypes: Array<DagsterType>;
+    description: Maybe<Scalars['String']>;
+    graphName: Scalars['String'];
+    id: Scalars['ID'];
+    isAssetJob: Scalars['Boolean'];
+    isJob: Scalars['Boolean'];
+    metadataEntries: Array<MetadataEntry>;
     modes: Array<Mode>;
-    name: Scalars['String']['output'];
-    parentSnapshotId: Maybe<Scalars['String']['output']>;
-    partition: Maybe<PartitionTagsAndConfig>;
-    partitionKeysOrError: PartitionKeys;
-    pipelineSnapshotId: Scalars['String']['output'];
+    name: Scalars['String'];
+    parentSnapshotId: Maybe<Scalars['String']>;
+    pipelineSnapshotId: Scalars['String'];
     presets: Array<PipelinePreset>;
     repository: Repository;
-    runTags: Array<PipelineTag>;
     runs: Array<Run>;
     schedules: Array<Schedule>;
     sensors: Array<Sensor>;
@@ -3739,51 +2540,32 @@ export type Pipeline = IPipelineSnapshot &
   };
 
 export type PipelineDagsterTypeOrErrorArgs = {
-  dagsterTypeName: Scalars['String']['input'];
-};
-
-export type PipelinePartitionArgs = {
-  partitionName: Scalars['String']['input'];
-  selectedAssetKeys?: InputMaybe<Array<AssetKeyInput>>;
-};
-
-export type PipelinePartitionKeysOrErrorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  reverse?: InputMaybe<Scalars['Boolean']['input']>;
-  selectedAssetKeys?: InputMaybe<Array<AssetKeyInput>>;
+  dagsterTypeName: Scalars['String'];
 };
 
 export type PipelineRunsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type PipelineSolidHandleArgs = {
-  handleID: Scalars['String']['input'];
+  handleID: Scalars['String'];
 };
 
 export type PipelineSolidHandlesArgs = {
-  parentHandleID?: InputMaybe<Scalars['String']['input']>;
+  parentHandleID?: InputMaybe<Scalars['String']>;
 };
 
 export type PipelineConfigValidationError = {
-  message: Scalars['String']['output'];
-  path: Array<Scalars['String']['output']>;
+  message: Scalars['String'];
+  path: Array<Scalars['String']>;
   reason: EvaluationErrorReason;
   stack: EvaluationStack;
 };
 
 export type PipelineConfigValidationInvalid = {
-  errors: Array<
-    | FieldNotDefinedConfigError
-    | FieldsNotDefinedConfigError
-    | MissingFieldConfigError
-    | MissingFieldsConfigError
-    | RuntimeMismatchConfigError
-    | SelectorTypeConfigError
-  >;
-  pipelineName: Scalars['String']['output'];
+  errors: Array<PipelineConfigValidationError>;
+  pipelineName: Scalars['String'];
 };
 
 export type PipelineConfigValidationResult =
@@ -3795,76 +2577,80 @@ export type PipelineConfigValidationResult =
 
 export type PipelineConfigValidationValid = {
   __typename: 'PipelineConfigValidationValid';
-  pipelineName: Scalars['String']['output'];
+  pipelineName: Scalars['String'];
 };
 
 export type PipelineNotFoundError = Error & {
   __typename: 'PipelineNotFoundError';
-  message: Scalars['String']['output'];
-  pipelineName: Scalars['String']['output'];
-  repositoryLocationName: Scalars['String']['output'];
-  repositoryName: Scalars['String']['output'];
+  message: Scalars['String'];
+  pipelineName: Scalars['String'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
 };
 
 export type PipelineOrError = InvalidSubsetError | Pipeline | PipelineNotFoundError | PythonError;
 
 export type PipelinePreset = {
   __typename: 'PipelinePreset';
-  mode: Scalars['String']['output'];
-  name: Scalars['String']['output'];
-  runConfigYaml: Scalars['String']['output'];
-  solidSelection: Maybe<Array<Scalars['String']['output']>>;
+  mode: Scalars['String'];
+  name: Scalars['String'];
+  runConfigYaml: Scalars['String'];
+  solidSelection: Maybe<Array<Scalars['String']>>;
   tags: Array<PipelineTag>;
 };
 
 export type PipelineReference = {
-  name: Scalars['String']['output'];
-  solidSelection: Maybe<Array<Scalars['String']['output']>>;
+  name: Scalars['String'];
+  solidSelection: Maybe<Array<Scalars['String']>>;
 };
 
 export type PipelineRun = {
   assets: Array<Asset>;
-  canTerminate: Scalars['Boolean']['output'];
+  canTerminate: Scalars['Boolean'];
   capturedLogs: CapturedLogs;
+  computeLogs: ComputeLogs;
   eventConnection: EventConnection;
   executionPlan: Maybe<ExecutionPlan>;
-  id: Scalars['ID']['output'];
-  jobName: Scalars['String']['output'];
-  mode: Scalars['String']['output'];
-  parentRunId: Maybe<Scalars['String']['output']>;
-  pipeline: PipelineSnapshot | UnknownPipeline;
-  pipelineName: Scalars['String']['output'];
-  pipelineSnapshotId: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID'];
+  jobName: Scalars['String'];
+  mode: Scalars['String'];
+  parentRunId: Maybe<Scalars['String']>;
+  pipeline: PipelineReference;
+  pipelineName: Scalars['String'];
+  pipelineSnapshotId: Maybe<Scalars['String']>;
   repositoryOrigin: Maybe<RepositoryOrigin>;
-  rootRunId: Maybe<Scalars['String']['output']>;
-  runConfig: Scalars['RunConfigData']['output'];
-  runConfigYaml: Scalars['String']['output'];
-  runId: Scalars['String']['output'];
-  solidSelection: Maybe<Array<Scalars['String']['output']>>;
+  rootRunId: Maybe<Scalars['String']>;
+  runConfig: Scalars['RunConfigData'];
+  runConfigYaml: Scalars['String'];
+  runId: Scalars['String'];
+  solidSelection: Maybe<Array<Scalars['String']>>;
   stats: RunStatsSnapshotOrError;
   status: RunStatus;
-  stepKeysToExecute: Maybe<Array<Scalars['String']['output']>>;
+  stepKeysToExecute: Maybe<Array<Scalars['String']>>;
   stepStats: Array<RunStepStats>;
   tags: Array<PipelineTag>;
 };
 
 export type PipelineRunCapturedLogsArgs = {
-  fileKey: Scalars['String']['input'];
+  fileKey: Scalars['String'];
+};
+
+export type PipelineRunComputeLogsArgs = {
+  stepKey: Scalars['String'];
 };
 
 export type PipelineRunEventConnectionArgs = {
-  afterCursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  afterCursor?: InputMaybe<Scalars['String']>;
 };
 
 export type PipelineRunConflict = {
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type PipelineRunLogsSubscriptionFailure = {
   __typename: 'PipelineRunLogsSubscriptionFailure';
-  message: Scalars['String']['output'];
-  missingRunId: Maybe<Scalars['String']['output']>;
+  message: Scalars['String'];
+  missingRunId: Maybe<Scalars['String']>;
 };
 
 export type PipelineRunLogsSubscriptionPayload =
@@ -3873,59 +2659,59 @@ export type PipelineRunLogsSubscriptionPayload =
 
 export type PipelineRunLogsSubscriptionSuccess = {
   __typename: 'PipelineRunLogsSubscriptionSuccess';
-  cursor: Scalars['String']['output'];
-  hasMorePastEvents: Scalars['Boolean']['output'];
+  cursor: Scalars['String'];
+  hasMorePastEvents: Scalars['Boolean'];
   messages: Array<DagsterRunEvent>;
   run: Run;
 };
 
 export type PipelineRunMetadataEntry = MetadataEntry & {
   __typename: 'PipelineRunMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  runId: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
+  runId: Scalars['String'];
 };
 
 export type PipelineRunNotFoundError = {
-  message: Scalars['String']['output'];
-  runId: Scalars['String']['output'];
+  message: Scalars['String'];
+  runId: Scalars['String'];
 };
 
 export type PipelineRunStatsSnapshot = {
-  endTime: Maybe<Scalars['Float']['output']>;
-  enqueuedTime: Maybe<Scalars['Float']['output']>;
-  expectations: Scalars['Int']['output'];
-  id: Scalars['String']['output'];
-  launchTime: Maybe<Scalars['Float']['output']>;
-  materializations: Scalars['Int']['output'];
-  runId: Scalars['String']['output'];
-  startTime: Maybe<Scalars['Float']['output']>;
-  stepsFailed: Scalars['Int']['output'];
-  stepsSucceeded: Scalars['Int']['output'];
+  endTime: Maybe<Scalars['Float']>;
+  enqueuedTime: Maybe<Scalars['Float']>;
+  expectations: Scalars['Int'];
+  id: Scalars['String'];
+  launchTime: Maybe<Scalars['Float']>;
+  materializations: Scalars['Int'];
+  runId: Scalars['String'];
+  startTime: Maybe<Scalars['Float']>;
+  stepsFailed: Scalars['Int'];
+  stepsSucceeded: Scalars['Int'];
 };
 
 export type PipelineRunStepStats = {
-  endTime: Maybe<Scalars['Float']['output']>;
+  endTime: Maybe<Scalars['Float']>;
   expectationResults: Array<ExpectationResult>;
   materializations: Array<MaterializationEvent>;
-  runId: Scalars['String']['output'];
-  startTime: Maybe<Scalars['Float']['output']>;
+  runId: Scalars['String'];
+  startTime: Maybe<Scalars['Float']>;
   status: Maybe<StepEventStatus>;
-  stepKey: Scalars['String']['output'];
+  stepKey: Scalars['String'];
 };
 
 export type PipelineRuns = {
-  count: Maybe<Scalars['Int']['output']>;
+  count: Maybe<Scalars['Int']>;
   results: Array<Run>;
 };
 
 export type PipelineSelector = {
   assetCheckSelection?: InputMaybe<Array<AssetCheckHandleInput>>;
   assetSelection?: InputMaybe<Array<AssetKeyInput>>;
-  pipelineName: Scalars['String']['input'];
-  repositoryLocationName: Scalars['String']['input'];
-  repositoryName: Scalars['String']['input'];
-  solidSelection?: InputMaybe<Array<Scalars['String']['input']>>;
+  pipelineName: Scalars['String'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
+  solidSelection?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type PipelineSnapshot = IPipelineSnapshot &
@@ -3933,69 +2719,46 @@ export type PipelineSnapshot = IPipelineSnapshot &
   SolidContainer & {
     __typename: 'PipelineSnapshot';
     dagsterTypeOrError: DagsterTypeOrError;
-    dagsterTypes: Array<ListDagsterType | NullableDagsterType | RegularDagsterType>;
-    description: Maybe<Scalars['String']['output']>;
-    externalJobSource: Maybe<Scalars['String']['output']>;
-    graphName: Scalars['String']['output'];
-    id: Scalars['ID']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
+    dagsterTypes: Array<DagsterType>;
+    description: Maybe<Scalars['String']>;
+    graphName: Scalars['String'];
+    id: Scalars['ID'];
+    metadataEntries: Array<MetadataEntry>;
     modes: Array<Mode>;
-    name: Scalars['String']['output'];
-    parentSnapshotId: Maybe<Scalars['String']['output']>;
-    pipelineSnapshotId: Scalars['String']['output'];
-    runTags: Array<PipelineTag>;
+    name: Scalars['String'];
+    parentSnapshotId: Maybe<Scalars['String']>;
+    pipelineSnapshotId: Scalars['String'];
     runs: Array<Run>;
     schedules: Array<Schedule>;
     sensors: Array<Sensor>;
     solidHandle: Maybe<SolidHandle>;
     solidHandles: Array<SolidHandle>;
-    solidSelection: Maybe<Array<Scalars['String']['output']>>;
+    solidSelection: Maybe<Array<Scalars['String']>>;
     solids: Array<Solid>;
     tags: Array<PipelineTag>;
   };
 
 export type PipelineSnapshotDagsterTypeOrErrorArgs = {
-  dagsterTypeName: Scalars['String']['input'];
+  dagsterTypeName: Scalars['String'];
 };
 
 export type PipelineSnapshotRunsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type PipelineSnapshotSolidHandleArgs = {
-  handleID: Scalars['String']['input'];
+  handleID: Scalars['String'];
 };
 
 export type PipelineSnapshotSolidHandlesArgs = {
-  parentHandleID?: InputMaybe<Scalars['String']['input']>;
+  parentHandleID?: InputMaybe<Scalars['String']>;
 };
 
 export type PipelineSnapshotNotFoundError = Error & {
   __typename: 'PipelineSnapshotNotFoundError';
-  message: Scalars['String']['output'];
-  snapshotId: Scalars['String']['output'];
+  message: Scalars['String'];
+  snapshotId: Scalars['String'];
 };
 
 export type PipelineSnapshotOrError =
@@ -4006,81 +2769,57 @@ export type PipelineSnapshotOrError =
 
 export type PipelineTag = {
   __typename: 'PipelineTag';
-  key: Scalars['String']['output'];
-  value: Scalars['String']['output'];
+  key: Scalars['String'];
+  value: Scalars['String'];
 };
 
 export type PipelineTagAndValues = {
   __typename: 'PipelineTagAndValues';
-  key: Scalars['String']['output'];
-  values: Array<Scalars['String']['output']>;
-};
-
-export type PoolConfig = {
-  __typename: 'PoolConfig';
-  defaultPoolLimit: Maybe<Scalars['Int']['output']>;
-  opGranularityRunBuffer: Maybe<Scalars['Int']['output']>;
-  poolGranularity: Maybe<Scalars['String']['output']>;
-};
-
-export type PoolMetadataEntry = MetadataEntry & {
-  __typename: 'PoolMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  pool: Scalars['String']['output'];
+  key: Scalars['String'];
+  values: Array<Scalars['String']>;
 };
 
 export type PresetNotFoundError = Error & {
   __typename: 'PresetNotFoundError';
-  message: Scalars['String']['output'];
-  preset: Scalars['String']['output'];
+  message: Scalars['String'];
+  preset: Scalars['String'];
 };
 
 export type PythonArtifactMetadataEntry = MetadataEntry & {
   __typename: 'PythonArtifactMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  module: Scalars['String']['output'];
-  name: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
+  module: Scalars['String'];
+  name: Scalars['String'];
 };
 
 export type PythonError = Error & {
   __typename: 'PythonError';
   cause: Maybe<PythonError>;
   causes: Array<PythonError>;
-  className: Maybe<Scalars['String']['output']>;
+  className: Maybe<Scalars['String']>;
   errorChain: Array<ErrorChainLink>;
-  message: Scalars['String']['output'];
-  stack: Array<Scalars['String']['output']>;
+  message: Scalars['String'];
+  stack: Array<Scalars['String']>;
 };
 
 export type Query = {
   __typename: 'Query';
-  allTopLevelResourceDetailsOrError: ResourceDetailsListOrError;
-  assetBackfillPreview: Array<AssetPartitions>;
-  assetCheckExecutions: Array<AssetCheckExecution>;
-  assetConditionEvaluationForPartition: Maybe<AssetConditionEvaluation>;
-  assetConditionEvaluationRecordsOrError: Maybe<AssetConditionEvaluationRecordsOrError>;
-  assetConditionEvaluationsForEvaluationId: Maybe<AssetConditionEvaluationRecordsOrError>;
-  assetNodeAdditionalRequiredKeys: Array<AssetKey>;
+  allTopLevelResourceDetailsOrError: ResourcesOrError;
+  assetChecksOrError: AssetChecksOrError;
   assetNodeDefinitionCollisions: Array<AssetNodeDefinitionCollision>;
   assetNodeOrError: AssetNodeOrError;
   assetNodes: Array<AssetNode>;
   assetOrError: AssetOrError;
-  assetRecordsOrError: AssetRecordsOrError;
   assetsLatestInfo: Array<AssetLatestInfo>;
   assetsOrError: AssetsOrError;
   autoMaterializeAssetEvaluationsOrError: Maybe<AutoMaterializeAssetEvaluationRecordsOrError>;
-  autoMaterializeEvaluationsForEvaluationId: Maybe<AutoMaterializeAssetEvaluationRecordsOrError>;
-  autoMaterializeTicks: Array<InstigationTick>;
-  canBulkTerminate: Scalars['Boolean']['output'];
   capturedLogs: CapturedLogs;
   capturedLogsMetadata: CapturedLogsMetadata;
   executionPlanOrError: ExecutionPlanOrError;
   graphOrError: GraphOrError;
   instance: Instance;
   instigationStateOrError: InstigationStateOrError;
-  instigationStatesOrError: InstigationStatesOrError;
   isPipelineConfigValid: PipelineConfigValidationResult;
   locationStatusesOrError: WorkspaceLocationStatusEntriesOrError;
   logsForRun: EventConnectionOrError;
@@ -4095,28 +2834,24 @@ export type Query = {
   pipelineSnapshotOrError: PipelineSnapshotOrError;
   repositoriesOrError: RepositoriesOrError;
   repositoryOrError: RepositoryOrError;
-  resourcesOrError: ResourcesOrError;
   runConfigSchemaOrError: RunConfigSchemaOrError;
   runGroupOrError: RunGroupOrError;
   runIdsOrError: RunIdsOrError;
   runOrError: RunOrError;
   runTagKeysOrError: Maybe<RunTagKeysOrError>;
   runTagsOrError: Maybe<RunTagsOrError>;
-  runsFeedCountOrError: RunsFeedCountOrError;
-  runsFeedOrError: RunsFeedConnectionOrError;
   runsOrError: RunsOrError;
   scheduleOrError: ScheduleOrError;
   scheduler: SchedulerOrError;
   schedulesOrError: SchedulesOrError;
   sensorOrError: SensorOrError;
   sensorsOrError: SensorsOrError;
-  shouldShowNux: Scalars['Boolean']['output'];
+  shouldShowNux: Scalars['Boolean'];
   test: Maybe<TestFields>;
   topLevelResourceDetailsOrError: ResourceDetailsOrError;
-  truePartitionsForAutomationConditionEvaluationNode: Array<Scalars['String']['output']>;
+  unloadableInstigationStatesOrError: InstigationStatesOrError;
   utilizedEnvVarsOrError: EnvVarWithConsumersOrError;
-  version: Scalars['String']['output'];
-  workspaceLocationEntryOrError: Maybe<WorkspaceLocationEntryOrError>;
+  version: Scalars['String'];
   workspaceOrError: WorkspaceOrError;
 };
 
@@ -4124,40 +2859,13 @@ export type QueryAllTopLevelResourceDetailsOrErrorArgs = {
   repositorySelector: RepositorySelector;
 };
 
-export type QueryAssetBackfillPreviewArgs = {
-  params: AssetBackfillPreviewParams;
-};
-
-export type QueryAssetCheckExecutionsArgs = {
+export type QueryAssetChecksOrErrorArgs = {
   assetKey: AssetKeyInput;
-  checkName: Scalars['String']['input'];
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit: Scalars['Int']['input'];
-};
-
-export type QueryAssetConditionEvaluationForPartitionArgs = {
-  assetKey?: InputMaybe<AssetKeyInput>;
-  evaluationId: Scalars['ID']['input'];
-  partition: Scalars['String']['input'];
-};
-
-export type QueryAssetConditionEvaluationRecordsOrErrorArgs = {
-  assetCheckKey?: InputMaybe<AssetCheckHandleInput>;
-  assetKey?: InputMaybe<AssetKeyInput>;
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit: Scalars['Int']['input'];
-};
-
-export type QueryAssetConditionEvaluationsForEvaluationIdArgs = {
-  evaluationId: Scalars['ID']['input'];
-};
-
-export type QueryAssetNodeAdditionalRequiredKeysArgs = {
-  assetKeys: Array<AssetKeyInput>;
+  checkName?: InputMaybe<Scalars['String']>;
 };
 
 export type QueryAssetNodeDefinitionCollisionsArgs = {
-  assetKeys: Array<AssetKeyInput>;
+  assetKeys?: InputMaybe<Array<AssetKeyInput>>;
 };
 
 export type QueryAssetNodeOrErrorArgs = {
@@ -4167,7 +2875,7 @@ export type QueryAssetNodeOrErrorArgs = {
 export type QueryAssetNodesArgs = {
   assetKeys?: InputMaybe<Array<AssetKeyInput>>;
   group?: InputMaybe<AssetGroupSelector>;
-  loadMaterializations?: InputMaybe<Scalars['Boolean']['input']>;
+  loadMaterializations?: InputMaybe<Scalars['Boolean']>;
   pipeline?: InputMaybe<PipelineSelector>;
 };
 
@@ -4175,57 +2883,36 @@ export type QueryAssetOrErrorArgs = {
   assetKey: AssetKeyInput;
 };
 
-export type QueryAssetRecordsOrErrorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  prefix?: InputMaybe<Array<Scalars['String']['input']>>;
-};
-
 export type QueryAssetsLatestInfoArgs = {
   assetKeys: Array<AssetKeyInput>;
 };
 
 export type QueryAssetsOrErrorArgs = {
-  assetKeys?: InputMaybe<Array<AssetKeyInput>>;
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  prefix?: InputMaybe<Array<Scalars['String']['input']>>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
+  prefix?: InputMaybe<Array<Scalars['String']>>;
 };
 
 export type QueryAutoMaterializeAssetEvaluationsOrErrorArgs = {
   assetKey: AssetKeyInput;
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit: Scalars['Int']['input'];
-};
-
-export type QueryAutoMaterializeEvaluationsForEvaluationIdArgs = {
-  evaluationId: Scalars['ID']['input'];
-};
-
-export type QueryAutoMaterializeTicksArgs = {
-  afterTimestamp?: InputMaybe<Scalars['Float']['input']>;
-  beforeTimestamp?: InputMaybe<Scalars['Float']['input']>;
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  dayOffset?: InputMaybe<Scalars['Int']['input']>;
-  dayRange?: InputMaybe<Scalars['Int']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  statuses?: InputMaybe<Array<InstigationTickStatus>>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit: Scalars['Int'];
 };
 
 export type QueryCapturedLogsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  logKey: Array<Scalars['String']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
+  logKey: Array<Scalars['String']>;
 };
 
 export type QueryCapturedLogsMetadataArgs = {
-  logKey: Array<Scalars['String']['input']>;
+  logKey: Array<Scalars['String']>;
 };
 
 export type QueryExecutionPlanOrErrorArgs = {
-  mode: Scalars['String']['input'];
+  mode: Scalars['String'];
   pipeline: PipelineSelector;
-  runConfigData?: InputMaybe<Scalars['RunConfigData']['input']>;
+  runConfigData?: InputMaybe<Scalars['RunConfigData']>;
 };
 
 export type QueryGraphOrErrorArgs = {
@@ -4233,44 +2920,38 @@ export type QueryGraphOrErrorArgs = {
 };
 
 export type QueryInstigationStateOrErrorArgs = {
-  id?: InputMaybe<Scalars['String']['input']>;
   instigationSelector: InstigationSelector;
 };
 
-export type QueryInstigationStatesOrErrorArgs = {
-  repositoryID: Scalars['String']['input'];
-};
-
 export type QueryIsPipelineConfigValidArgs = {
-  mode: Scalars['String']['input'];
+  mode: Scalars['String'];
   pipeline: PipelineSelector;
-  runConfigData?: InputMaybe<Scalars['RunConfigData']['input']>;
+  runConfigData?: InputMaybe<Scalars['RunConfigData']>;
 };
 
 export type QueryLogsForRunArgs = {
-  afterCursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  runId: Scalars['ID']['input'];
+  afterCursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
+  runId: Scalars['ID'];
 };
 
 export type QueryPartitionBackfillOrErrorArgs = {
-  backfillId: Scalars['String']['input'];
+  backfillId: Scalars['String'];
 };
 
 export type QueryPartitionBackfillsOrErrorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  filters?: InputMaybe<BulkActionsFilter>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  limit?: InputMaybe<Scalars['Int']>;
   status?: InputMaybe<BulkActionStatus>;
 };
 
 export type QueryPartitionSetOrErrorArgs = {
-  partitionSetName?: InputMaybe<Scalars['String']['input']>;
+  partitionSetName?: InputMaybe<Scalars['String']>;
   repositorySelector: RepositorySelector;
 };
 
 export type QueryPartitionSetsOrErrorArgs = {
-  pipelineName: Scalars['String']['input'];
+  pipelineName: Scalars['String'];
   repositorySelector: RepositorySelector;
 };
 
@@ -4279,18 +2960,18 @@ export type QueryPipelineOrErrorArgs = {
 };
 
 export type QueryPipelineRunOrErrorArgs = {
-  runId: Scalars['ID']['input'];
+  runId: Scalars['ID'];
 };
 
 export type QueryPipelineRunsOrErrorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
   filter?: InputMaybe<RunsFilter>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type QueryPipelineSnapshotOrErrorArgs = {
   activePipelineSelector?: InputMaybe<PipelineSelector>;
-  snapshotId?: InputMaybe<Scalars['String']['input']>;
+  snapshotId?: InputMaybe<Scalars['String']>;
 };
 
 export type QueryRepositoriesOrErrorArgs = {
@@ -4301,51 +2982,35 @@ export type QueryRepositoryOrErrorArgs = {
   repositorySelector: RepositorySelector;
 };
 
-export type QueryResourcesOrErrorArgs = {
-  pipelineSelector: PipelineSelector;
-};
-
 export type QueryRunConfigSchemaOrErrorArgs = {
-  mode?: InputMaybe<Scalars['String']['input']>;
+  mode?: InputMaybe<Scalars['String']>;
   selector: PipelineSelector;
 };
 
 export type QueryRunGroupOrErrorArgs = {
-  runId: Scalars['ID']['input'];
+  runId: Scalars['ID'];
 };
 
 export type QueryRunIdsOrErrorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
   filter?: InputMaybe<RunsFilter>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type QueryRunOrErrorArgs = {
-  runId: Scalars['ID']['input'];
+  runId: Scalars['ID'];
 };
 
 export type QueryRunTagsOrErrorArgs = {
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  tagKeys?: InputMaybe<Array<Scalars['String']['input']>>;
-  valuePrefix?: InputMaybe<Scalars['String']['input']>;
-};
-
-export type QueryRunsFeedCountOrErrorArgs = {
-  filter?: InputMaybe<RunsFilter>;
-  view: RunsFeedView;
-};
-
-export type QueryRunsFeedOrErrorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  filter?: InputMaybe<RunsFilter>;
-  limit: Scalars['Int']['input'];
-  view: RunsFeedView;
+  limit?: InputMaybe<Scalars['Int']>;
+  tagKeys?: InputMaybe<Array<Scalars['String']>>;
+  valuePrefix?: InputMaybe<Scalars['String']>;
 };
 
 export type QueryRunsOrErrorArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
   filter?: InputMaybe<RunsFilter>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type QueryScheduleOrErrorArgs = {
@@ -4370,107 +3035,53 @@ export type QueryTopLevelResourceDetailsOrErrorArgs = {
   resourceSelector: ResourceSelector;
 };
 
-export type QueryTruePartitionsForAutomationConditionEvaluationNodeArgs = {
-  assetKey?: InputMaybe<AssetKeyInput>;
-  evaluationId: Scalars['ID']['input'];
-  nodeUniqueId?: InputMaybe<Scalars['String']['input']>;
+export type QueryUnloadableInstigationStatesOrErrorArgs = {
+  instigationType?: InputMaybe<InstigationType>;
 };
 
 export type QueryUtilizedEnvVarsOrErrorArgs = {
   repositorySelector: RepositorySelector;
 };
 
-export type QueryWorkspaceLocationEntryOrErrorArgs = {
-  name: Scalars['String']['input'];
-};
-
 export type ReexecutionParams = {
-  extraTags?: InputMaybe<Array<ExecutionTag>>;
-  parentRunId: Scalars['String']['input'];
+  parentRunId: Scalars['String'];
   strategy: ReexecutionStrategy;
-  useParentRunTags?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export enum ReexecutionStrategy {
   ALL_STEPS = 'ALL_STEPS',
-  FROM_ASSET_FAILURE = 'FROM_ASSET_FAILURE',
   FROM_FAILURE = 'FROM_FAILURE',
 }
 
 export type RegularConfigType = ConfigType & {
   __typename: 'RegularConfigType';
-  description: Maybe<Scalars['String']['output']>;
-  givenName: Scalars['String']['output'];
-  isSelector: Scalars['Boolean']['output'];
-  key: Scalars['String']['output'];
-  recursiveConfigTypes: Array<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
-  typeParamKeys: Array<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']>;
+  givenName: Scalars['String'];
+  isSelector: Scalars['Boolean'];
+  key: Scalars['String'];
+  recursiveConfigTypes: Array<ConfigType>;
+  typeParamKeys: Array<Scalars['String']>;
 };
 
 export type RegularDagsterType = DagsterType & {
   __typename: 'RegularDagsterType';
-  description: Maybe<Scalars['String']['output']>;
-  displayName: Scalars['String']['output'];
-  innerTypes: Array<ListDagsterType | NullableDagsterType | RegularDagsterType>;
-  inputSchemaType: Maybe<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
-  isBuiltin: Scalars['Boolean']['output'];
-  isList: Scalars['Boolean']['output'];
-  isNothing: Scalars['Boolean']['output'];
-  isNullable: Scalars['Boolean']['output'];
-  key: Scalars['String']['output'];
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  name: Maybe<Scalars['String']['output']>;
-  outputSchemaType: Maybe<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
+  description: Maybe<Scalars['String']>;
+  displayName: Scalars['String'];
+  innerTypes: Array<DagsterType>;
+  inputSchemaType: Maybe<ConfigType>;
+  isBuiltin: Scalars['Boolean'];
+  isList: Scalars['Boolean'];
+  isNothing: Scalars['Boolean'];
+  isNullable: Scalars['Boolean'];
+  key: Scalars['String'];
+  metadataEntries: Array<MetadataEntry>;
+  name: Maybe<Scalars['String']>;
+  outputSchemaType: Maybe<ConfigType>;
 };
 
 export type ReloadNotSupported = Error & {
   __typename: 'ReloadNotSupported';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type ReloadRepositoryLocationMutation = {
@@ -4492,24 +3103,7 @@ export type ReloadWorkspaceMutation = {
 
 export type ReloadWorkspaceMutationResult = PythonError | UnauthorizedError | Workspace;
 
-export type ReportRunlessAssetEventsParams = {
-  assetKey: AssetKeyInput;
-  description?: InputMaybe<Scalars['String']['input']>;
-  eventType: AssetEventType;
-  partitionKeys?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
-};
-
-export type ReportRunlessAssetEventsResult =
-  | PythonError
-  | ReportRunlessAssetEventsSuccess
-  | UnauthorizedError;
-
-export type ReportRunlessAssetEventsSuccess = {
-  __typename: 'ReportRunlessAssetEventsSuccess';
-  assetKey: AssetKey;
-};
-
-export type RepositoriesOrError = PythonError | RepositoryConnection | RepositoryNotFoundError;
+export type RepositoriesOrError = PythonError | RepositoryConnection;
 
 export type Repository = {
   __typename: 'Repository';
@@ -4517,12 +3111,10 @@ export type Repository = {
   assetGroups: Array<AssetGroup>;
   assetNodes: Array<AssetNode>;
   displayMetadata: Array<RepositoryMetadata>;
-  hasLocationDocs: Scalars['Boolean']['output'];
-  id: Scalars['ID']['output'];
+  id: Scalars['ID'];
   jobs: Array<Job>;
   location: RepositoryLocation;
-  locationDocsJsonOrError: LocationDocsJsonOrError;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   origin: RepositoryOrigin;
   partitionSets: Array<PartitionSet>;
   pipelines: Array<Pipeline>;
@@ -4532,12 +3124,8 @@ export type Repository = {
   usedSolids: Array<UsedSolid>;
 };
 
-export type RepositorySensorsArgs = {
-  sensorType?: InputMaybe<SensorType>;
-};
-
 export type RepositoryUsedSolidArgs = {
-  name: Scalars['String']['input'];
+  name: Scalars['String'];
 };
 
 export type RepositoryConnection = {
@@ -4548,12 +3136,12 @@ export type RepositoryConnection = {
 export type RepositoryLocation = {
   __typename: 'RepositoryLocation';
   dagsterLibraryVersions: Maybe<Array<DagsterLibraryVersion>>;
-  environmentPath: Maybe<Scalars['String']['output']>;
-  id: Scalars['ID']['output'];
-  isReloadSupported: Scalars['Boolean']['output'];
-  name: Scalars['String']['output'];
+  environmentPath: Maybe<Scalars['String']>;
+  id: Scalars['ID'];
+  isReloadSupported: Scalars['Boolean'];
+  name: Scalars['String'];
   repositories: Array<Repository>;
-  serverId: Maybe<Scalars['String']['output']>;
+  serverId: Maybe<Scalars['String']>;
 };
 
 export enum RepositoryLocationLoadStatus {
@@ -4563,65 +3151,44 @@ export enum RepositoryLocationLoadStatus {
 
 export type RepositoryLocationNotFound = Error & {
   __typename: 'RepositoryLocationNotFound';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type RepositoryLocationOrLoadError = PythonError | RepositoryLocation;
 
 export type RepositoryMetadata = {
   __typename: 'RepositoryMetadata';
-  key: Scalars['String']['output'];
-  value: Scalars['String']['output'];
+  key: Scalars['String'];
+  value: Scalars['String'];
 };
 
 export type RepositoryNotFoundError = Error & {
   __typename: 'RepositoryNotFoundError';
-  message: Scalars['String']['output'];
-  repositoryLocationName: Scalars['String']['output'];
-  repositoryName: Scalars['String']['output'];
+  message: Scalars['String'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
 };
 
 export type RepositoryOrError = PythonError | Repository | RepositoryNotFoundError;
 
 export type RepositoryOrigin = {
   __typename: 'RepositoryOrigin';
-  id: Scalars['String']['output'];
+  id: Scalars['String'];
   repositoryLocationMetadata: Array<RepositoryMetadata>;
-  repositoryLocationName: Scalars['String']['output'];
-  repositoryName: Scalars['String']['output'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
 };
 
 export type RepositorySelector = {
-  repositoryLocationName: Scalars['String']['input'];
-  repositoryName: Scalars['String']['input'];
-};
-
-export type RequestedMaterializationsForAsset = {
-  __typename: 'RequestedMaterializationsForAsset';
-  assetKey: AssetKey;
-  partitionKeys: Array<Scalars['String']['output']>;
-};
-
-export type ResetScheduleMutation = {
-  __typename: 'ResetScheduleMutation';
-  Output: ScheduleMutationResult;
-};
-
-export type ResetSensorMutation = {
-  __typename: 'ResetSensorMutation';
-  Output: SensorOrError;
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
 };
 
 export type Resource = {
   __typename: 'Resource';
   configField: Maybe<ConfigTypeField>;
-  description: Maybe<Scalars['String']['output']>;
-  name: Scalars['String']['output'];
-};
-
-export type ResourceConnection = {
-  __typename: 'ResourceConnection';
-  resources: Array<Resource>;
+  description: Maybe<Scalars['String']>;
+  name: Scalars['String'];
 };
 
 export type ResourceDetails = {
@@ -4629,27 +3196,21 @@ export type ResourceDetails = {
   assetKeysUsing: Array<AssetKey>;
   configFields: Array<ConfigTypeField>;
   configuredValues: Array<ConfiguredValue>;
-  description: Maybe<Scalars['String']['output']>;
-  id: Scalars['String']['output'];
-  isTopLevel: Scalars['Boolean']['output'];
+  description: Maybe<Scalars['String']>;
+  isTopLevel: Scalars['Boolean'];
   jobsOpsUsing: Array<JobWithOps>;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   nestedResources: Array<NestedResourceEntry>;
   parentResources: Array<NestedResourceEntry>;
-  resourceType: Scalars['String']['output'];
-  schedulesUsing: Array<Scalars['String']['output']>;
-  sensorsUsing: Array<Scalars['String']['output']>;
+  resourceType: Scalars['String'];
+  schedulesUsing: Array<Scalars['String']>;
+  sensorsUsing: Array<Scalars['String']>;
 };
 
 export type ResourceDetailsList = {
   __typename: 'ResourceDetailsList';
   results: Array<ResourceDetails>;
 };
-
-export type ResourceDetailsListOrError =
-  | PythonError
-  | RepositoryNotFoundError
-  | ResourceDetailsList;
 
 export type ResourceDetailsOrError = PythonError | ResourceDetails | ResourceNotFoundError;
 
@@ -4659,40 +3220,19 @@ export type ResourceInitFailureEvent = DisplayableEvent &
   MessageEvent &
   StepEvent & {
     __typename: 'ResourceInitFailureEvent';
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     error: Maybe<PythonError>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    markerEnd: Maybe<Scalars['String']['output']>;
-    markerStart: Maybe<Scalars['String']['output']>;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    markerEnd: Maybe<Scalars['String']>;
+    markerStart: Maybe<Scalars['String']>;
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ResourceInitStartedEvent = DisplayableEvent &
@@ -4700,39 +3240,18 @@ export type ResourceInitStartedEvent = DisplayableEvent &
   MessageEvent &
   StepEvent & {
     __typename: 'ResourceInitStartedEvent';
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    markerEnd: Maybe<Scalars['String']['output']>;
-    markerStart: Maybe<Scalars['String']['output']>;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    markerEnd: Maybe<Scalars['String']>;
+    markerStart: Maybe<Scalars['String']>;
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ResourceInitSuccessEvent = DisplayableEvent &
@@ -4740,141 +3259,109 @@ export type ResourceInitSuccessEvent = DisplayableEvent &
   MessageEvent &
   StepEvent & {
     __typename: 'ResourceInitSuccessEvent';
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    markerEnd: Maybe<Scalars['String']['output']>;
-    markerStart: Maybe<Scalars['String']['output']>;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    markerEnd: Maybe<Scalars['String']>;
+    markerStart: Maybe<Scalars['String']>;
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type ResourceNotFoundError = Error & {
   __typename: 'ResourceNotFoundError';
-  message: Scalars['String']['output'];
-  resourceName: Scalars['String']['output'];
+  message: Scalars['String'];
+  resourceName: Scalars['String'];
 };
 
 export type ResourceRequirement = {
   __typename: 'ResourceRequirement';
-  resourceKey: Scalars['String']['output'];
+  resourceKey: Scalars['String'];
 };
 
 export type ResourceSelector = {
-  repositoryLocationName: Scalars['String']['input'];
-  repositoryName: Scalars['String']['input'];
-  resourceName: Scalars['String']['input'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
+  resourceName: Scalars['String'];
 };
 
-export type ResourcesOrError =
-  | InvalidSubsetError
-  | PipelineNotFoundError
-  | PythonError
-  | ResourceConnection;
+export type ResourcesOrError = PythonError | RepositoryNotFoundError | ResourceDetailsList;
 
 export type ResumeBackfillResult = PythonError | ResumeBackfillSuccess | UnauthorizedError;
 
 export type ResumeBackfillSuccess = {
   __typename: 'ResumeBackfillSuccess';
-  backfillId: Scalars['String']['output'];
+  backfillId: Scalars['String'];
 };
 
-export type Run = PipelineRun &
-  RunsFeedEntry & {
-    __typename: 'Run';
-    allPools: Maybe<Array<Scalars['String']['output']>>;
-    assetCheckSelection: Maybe<Array<AssetCheckhandle>>;
-    assetChecks: Maybe<Array<AssetCheckhandle>>;
-    assetMaterializations: Array<MaterializationEvent>;
-    assetSelection: Maybe<Array<AssetKey>>;
-    assets: Array<Asset>;
-    canTerminate: Scalars['Boolean']['output'];
-    capturedLogs: CapturedLogs;
-    creationTime: Scalars['Float']['output'];
-    endTime: Maybe<Scalars['Float']['output']>;
-    eventConnection: EventConnection;
-    executionPlan: Maybe<ExecutionPlan>;
-    externalJobSource: Maybe<Scalars['String']['output']>;
-    hasConcurrencyKeySlots: Scalars['Boolean']['output'];
-    hasDeletePermission: Scalars['Boolean']['output'];
-    hasReExecutePermission: Scalars['Boolean']['output'];
-    hasRunMetricsEnabled: Scalars['Boolean']['output'];
-    hasTerminatePermission: Scalars['Boolean']['output'];
-    hasUnconstrainedRootNodes: Scalars['Boolean']['output'];
-    id: Scalars['ID']['output'];
-    jobName: Scalars['String']['output'];
-    mode: Scalars['String']['output'];
-    parentPipelineSnapshotId: Maybe<Scalars['String']['output']>;
-    parentRunId: Maybe<Scalars['String']['output']>;
-    pipeline: PipelineSnapshot | UnknownPipeline;
-    pipelineName: Scalars['String']['output'];
-    pipelineSnapshotId: Maybe<Scalars['String']['output']>;
-    repositoryOrigin: Maybe<RepositoryOrigin>;
-    resolvedOpSelection: Maybe<Array<Scalars['String']['output']>>;
-    rootConcurrencyKeys: Maybe<Array<Scalars['String']['output']>>;
-    rootRunId: Maybe<Scalars['String']['output']>;
-    runConfig: Scalars['RunConfigData']['output'];
-    runConfigYaml: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    runStatus: RunStatus;
-    solidSelection: Maybe<Array<Scalars['String']['output']>>;
-    startTime: Maybe<Scalars['Float']['output']>;
-    stats: RunStatsSnapshotOrError;
-    status: RunStatus;
-    stepKeysToExecute: Maybe<Array<Scalars['String']['output']>>;
-    stepStats: Array<RunStepStats>;
-    tags: Array<PipelineTag>;
-    updateTime: Maybe<Scalars['Float']['output']>;
-  };
+export type Run = PipelineRun & {
+  __typename: 'Run';
+  assetCheckSelection: Maybe<Array<AssetCheckhandle>>;
+  assetMaterializations: Array<MaterializationEvent>;
+  assetSelection: Maybe<Array<AssetKey>>;
+  assets: Array<Asset>;
+  canTerminate: Scalars['Boolean'];
+  capturedLogs: CapturedLogs;
+  computeLogs: ComputeLogs;
+  endTime: Maybe<Scalars['Float']>;
+  eventConnection: EventConnection;
+  executionPlan: Maybe<ExecutionPlan>;
+  hasConcurrencyKeySlots: Scalars['Boolean'];
+  hasDeletePermission: Scalars['Boolean'];
+  hasReExecutePermission: Scalars['Boolean'];
+  hasTerminatePermission: Scalars['Boolean'];
+  id: Scalars['ID'];
+  jobName: Scalars['String'];
+  mode: Scalars['String'];
+  parentPipelineSnapshotId: Maybe<Scalars['String']>;
+  parentRunId: Maybe<Scalars['String']>;
+  pipeline: PipelineReference;
+  pipelineName: Scalars['String'];
+  pipelineSnapshotId: Maybe<Scalars['String']>;
+  repositoryOrigin: Maybe<RepositoryOrigin>;
+  resolvedOpSelection: Maybe<Array<Scalars['String']>>;
+  rootRunId: Maybe<Scalars['String']>;
+  runConfig: Scalars['RunConfigData'];
+  runConfigYaml: Scalars['String'];
+  runId: Scalars['String'];
+  solidSelection: Maybe<Array<Scalars['String']>>;
+  startTime: Maybe<Scalars['Float']>;
+  stats: RunStatsSnapshotOrError;
+  status: RunStatus;
+  stepKeysToExecute: Maybe<Array<Scalars['String']>>;
+  stepStats: Array<RunStepStats>;
+  tags: Array<PipelineTag>;
+  updateTime: Maybe<Scalars['Float']>;
+};
 
 export type RunCapturedLogsArgs = {
-  fileKey: Scalars['String']['input'];
+  fileKey: Scalars['String'];
+};
+
+export type RunComputeLogsArgs = {
+  stepKey: Scalars['String'];
 };
 
 export type RunEventConnectionArgs = {
-  afterCursor?: InputMaybe<Scalars['String']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  afterCursor?: InputMaybe<Scalars['String']>;
 };
 
-export type RunCanceledEvent = ErrorEvent &
-  MessageEvent &
+export type RunCanceledEvent = MessageEvent &
   RunEvent & {
     __typename: 'RunCanceledEvent';
-    error: Maybe<PythonError>;
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type RunCancelingEvent = MessageEvent &
@@ -4882,39 +3369,24 @@ export type RunCancelingEvent = MessageEvent &
     __typename: 'RunCancelingEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type RunConfigSchema = {
   __typename: 'RunConfigSchema';
-  allConfigTypes: Array<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
+  allConfigTypes: Array<ConfigType>;
   isRunConfigValid: PipelineConfigValidationResult;
-  rootConfigType:
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType;
-  rootDefaultYaml: Scalars['String']['output'];
+  rootConfigType: ConfigType;
+  rootDefaultYaml: Scalars['String'];
 };
 
 export type RunConfigSchemaIsRunConfigValidArgs = {
-  runConfigData?: InputMaybe<Scalars['RunConfigData']['input']>;
+  runConfigData?: InputMaybe<Scalars['RunConfigData']>;
 };
 
 export type RunConfigSchemaOrError =
@@ -4926,21 +3398,14 @@ export type RunConfigSchemaOrError =
 
 export type RunConfigValidationInvalid = PipelineConfigValidationInvalid & {
   __typename: 'RunConfigValidationInvalid';
-  errors: Array<
-    | FieldNotDefinedConfigError
-    | FieldsNotDefinedConfigError
-    | MissingFieldConfigError
-    | MissingFieldsConfigError
-    | RuntimeMismatchConfigError
-    | SelectorTypeConfigError
-  >;
-  pipelineName: Scalars['String']['output'];
+  errors: Array<PipelineConfigValidationError>;
+  pipelineName: Scalars['String'];
 };
 
 export type RunConflict = Error &
   PipelineRunConflict & {
     __typename: 'RunConflict';
-    message: Scalars['String']['output'];
+    message: Scalars['String'];
   };
 
 export type RunDequeuedEvent = MessageEvent &
@@ -4948,12 +3413,12 @@ export type RunDequeuedEvent = MessageEvent &
     __typename: 'RunDequeuedEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type RunEnqueuedEvent = MessageEvent &
@@ -4961,16 +3426,16 @@ export type RunEnqueuedEvent = MessageEvent &
     __typename: 'RunEnqueuedEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type RunEvent = {
-  pipelineName: Scalars['String']['output'];
+  pipelineName: Scalars['String'];
 };
 
 export type RunFailureEvent = ErrorEvent &
@@ -4980,24 +3445,24 @@ export type RunFailureEvent = ErrorEvent &
     error: Maybe<PythonError>;
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type RunGroup = {
   __typename: 'RunGroup';
-  rootRunId: Scalars['String']['output'];
+  rootRunId: Scalars['String'];
   runs: Maybe<Array<Maybe<Run>>>;
 };
 
 export type RunGroupNotFoundError = Error & {
   __typename: 'RunGroupNotFoundError';
-  message: Scalars['String']['output'];
-  runId: Scalars['String']['output'];
+  message: Scalars['String'];
+  runId: Scalars['String'];
 };
 
 export type RunGroupOrError = PythonError | RunGroup | RunGroupNotFoundError;
@@ -5009,44 +3474,36 @@ export type RunGroups = {
 
 export type RunIds = {
   __typename: 'RunIds';
-  results: Array<Scalars['String']['output']>;
+  results: Array<Scalars['String']>;
 };
 
 export type RunIdsOrError = InvalidPipelineRunsFilterError | PythonError | RunIds;
 
 export type RunLauncher = {
   __typename: 'RunLauncher';
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
 };
 
 export type RunMarker = {
   __typename: 'RunMarker';
-  endTime: Maybe<Scalars['Float']['output']>;
-  startTime: Maybe<Scalars['Float']['output']>;
+  endTime: Maybe<Scalars['Float']>;
+  startTime: Maybe<Scalars['Float']>;
 };
 
 export type RunNotFoundError = Error &
   PipelineRunNotFoundError & {
     __typename: 'RunNotFoundError';
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
   };
 
 export type RunOrError = PythonError | Run | RunNotFoundError;
 
-export type RunQueueConfig = {
-  __typename: 'RunQueueConfig';
-  isOpConcurrencyAware: Maybe<Scalars['Boolean']['output']>;
-  maxConcurrentRuns: Scalars['Int']['output'];
-  tagConcurrencyLimitsYaml: Maybe<Scalars['String']['output']>;
-};
-
 export type RunRequest = {
   __typename: 'RunRequest';
   assetSelection: Maybe<Array<AssetKey>>;
-  jobName: Maybe<Scalars['String']['output']>;
-  runConfigYaml: Scalars['String']['output'];
-  runKey: Maybe<Scalars['String']['output']>;
+  runConfigYaml: Scalars['String'];
+  runKey: Maybe<Scalars['String']>;
   tags: Array<PipelineTag>;
 };
 
@@ -5055,12 +3512,12 @@ export type RunStartEvent = MessageEvent &
     __typename: 'RunStartEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type RunStartingEvent = MessageEvent &
@@ -5068,26 +3525,26 @@ export type RunStartingEvent = MessageEvent &
     __typename: 'RunStartingEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type RunStatsSnapshot = PipelineRunStatsSnapshot & {
   __typename: 'RunStatsSnapshot';
-  endTime: Maybe<Scalars['Float']['output']>;
-  enqueuedTime: Maybe<Scalars['Float']['output']>;
-  expectations: Scalars['Int']['output'];
-  id: Scalars['String']['output'];
-  launchTime: Maybe<Scalars['Float']['output']>;
-  materializations: Scalars['Int']['output'];
-  runId: Scalars['String']['output'];
-  startTime: Maybe<Scalars['Float']['output']>;
-  stepsFailed: Scalars['Int']['output'];
-  stepsSucceeded: Scalars['Int']['output'];
+  endTime: Maybe<Scalars['Float']>;
+  enqueuedTime: Maybe<Scalars['Float']>;
+  expectations: Scalars['Int'];
+  id: Scalars['String'];
+  launchTime: Maybe<Scalars['Float']>;
+  materializations: Scalars['Int'];
+  runId: Scalars['String'];
+  startTime: Maybe<Scalars['Float']>;
+  stepsFailed: Scalars['Int'];
+  stepsSucceeded: Scalars['Int'];
 };
 
 export type RunStatsSnapshotOrError = PythonError | RunStatsSnapshot;
@@ -5107,14 +3564,14 @@ export enum RunStatus {
 export type RunStepStats = PipelineRunStepStats & {
   __typename: 'RunStepStats';
   attempts: Array<RunMarker>;
-  endTime: Maybe<Scalars['Float']['output']>;
+  endTime: Maybe<Scalars['Float']>;
   expectationResults: Array<ExpectationResult>;
   markers: Array<RunMarker>;
   materializations: Array<MaterializationEvent>;
-  runId: Scalars['String']['output'];
-  startTime: Maybe<Scalars['Float']['output']>;
+  runId: Scalars['String'];
+  startTime: Maybe<Scalars['Float']>;
   status: Maybe<StepEventStatus>;
-  stepKey: Scalars['String']['output'];
+  stepKey: Scalars['String'];
 };
 
 export type RunSuccessEvent = MessageEvent &
@@ -5122,17 +3579,17 @@ export type RunSuccessEvent = MessageEvent &
     __typename: 'RunSuccessEvent';
     eventType: Maybe<DagsterEventType>;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    pipelineName: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    pipelineName: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type RunTagKeys = {
   __typename: 'RunTagKeys';
-  keys: Array<Scalars['String']['output']>;
+  keys: Array<Scalars['String']>;
 };
 
 export type RunTagKeysOrError = PythonError | RunTagKeys;
@@ -5146,188 +3603,100 @@ export type RunTagsOrError = PythonError | RunTags;
 
 export type Runs = PipelineRuns & {
   __typename: 'Runs';
-  count: Maybe<Scalars['Int']['output']>;
+  count: Maybe<Scalars['Int']>;
   results: Array<Run>;
 };
 
-export type RunsFeedConnection = {
-  __typename: 'RunsFeedConnection';
-  cursor: Scalars['String']['output'];
-  hasMore: Scalars['Boolean']['output'];
-  results: Array<PartitionBackfill | Run>;
-};
-
-export type RunsFeedConnectionOrError = PythonError | RunsFeedConnection;
-
-export type RunsFeedCount = {
-  __typename: 'RunsFeedCount';
-  count: Scalars['Int']['output'];
-};
-
-export type RunsFeedCountOrError = PythonError | RunsFeedCount;
-
-export type RunsFeedEntry = {
-  assetCheckSelection: Maybe<Array<AssetCheckhandle>>;
-  assetSelection: Maybe<Array<AssetKey>>;
-  creationTime: Scalars['Float']['output'];
-  endTime: Maybe<Scalars['Float']['output']>;
-  id: Scalars['ID']['output'];
-  jobName: Maybe<Scalars['String']['output']>;
-  runStatus: Maybe<RunStatus>;
-  startTime: Maybe<Scalars['Float']['output']>;
-  tags: Array<PipelineTag>;
-};
-
-export enum RunsFeedView {
-  BACKFILLS = 'BACKFILLS',
-  ROOTS = 'ROOTS',
-  RUNS = 'RUNS',
-}
-
 export type RunsFilter = {
-  createdAfter?: InputMaybe<Scalars['Float']['input']>;
-  createdBefore?: InputMaybe<Scalars['Float']['input']>;
-  mode?: InputMaybe<Scalars['String']['input']>;
-  pipelineName?: InputMaybe<Scalars['String']['input']>;
-  runIds?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
-  snapshotId?: InputMaybe<Scalars['String']['input']>;
+  createdBefore?: InputMaybe<Scalars['Float']>;
+  mode?: InputMaybe<Scalars['String']>;
+  pipelineName?: InputMaybe<Scalars['String']>;
+  runIds?: InputMaybe<Array<InputMaybe<Scalars['String']>>>;
+  snapshotId?: InputMaybe<Scalars['String']>;
   statuses?: InputMaybe<Array<RunStatus>>;
   tags?: InputMaybe<Array<ExecutionTag>>;
-  updatedAfter?: InputMaybe<Scalars['Float']['input']>;
-  updatedBefore?: InputMaybe<Scalars['Float']['input']>;
+  updatedAfter?: InputMaybe<Scalars['Float']>;
 };
 
 export type RunsOrError = InvalidPipelineRunsFilterError | PythonError | Runs;
 
 export type RuntimeMismatchConfigError = PipelineConfigValidationError & {
   __typename: 'RuntimeMismatchConfigError';
-  message: Scalars['String']['output'];
-  path: Array<Scalars['String']['output']>;
+  message: Scalars['String'];
+  path: Array<Scalars['String']>;
   reason: EvaluationErrorReason;
   stack: EvaluationStack;
-  valueRep: Maybe<Scalars['String']['output']>;
+  valueRep: Maybe<Scalars['String']>;
 };
 
 export type ScalarUnionConfigType = ConfigType & {
   __typename: 'ScalarUnionConfigType';
-  description: Maybe<Scalars['String']['output']>;
-  isSelector: Scalars['Boolean']['output'];
-  key: Scalars['String']['output'];
-  nonScalarType:
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType;
-  nonScalarTypeKey: Scalars['String']['output'];
-  recursiveConfigTypes: Array<
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType
-  >;
-  scalarType:
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType;
-  scalarTypeKey: Scalars['String']['output'];
-  typeParamKeys: Array<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']>;
+  isSelector: Scalars['Boolean'];
+  key: Scalars['String'];
+  nonScalarType: ConfigType;
+  nonScalarTypeKey: Scalars['String'];
+  recursiveConfigTypes: Array<ConfigType>;
+  scalarType: ConfigType;
+  scalarTypeKey: Scalars['String'];
+  typeParamKeys: Array<Scalars['String']>;
 };
 
 export type Schedule = {
   __typename: 'Schedule';
-  assetSelection: Maybe<AssetSelection>;
-  canReset: Scalars['Boolean']['output'];
-  cronSchedule: Scalars['String']['output'];
-  defaultStatus: InstigationStatus;
-  description: Maybe<Scalars['String']['output']>;
-  executionTimezone: Maybe<Scalars['String']['output']>;
+  cronSchedule: Scalars['String'];
+  description: Maybe<Scalars['String']>;
+  executionTimezone: Maybe<Scalars['String']>;
   futureTick: DryRunInstigationTick;
   futureTicks: DryRunInstigationTicks;
-  id: Scalars['ID']['output'];
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  mode: Scalars['String']['output'];
-  name: Scalars['String']['output'];
+  id: Scalars['ID'];
+  mode: Scalars['String'];
+  name: Scalars['String'];
   partitionSet: Maybe<PartitionSet>;
-  pipelineName: Scalars['String']['output'];
-  potentialTickTimestamps: Array<Scalars['Float']['output']>;
+  pipelineName: Scalars['String'];
+  potentialTickTimestamps: Array<Scalars['Float']>;
   scheduleState: InstigationState;
-  solidSelection: Maybe<Array<Maybe<Scalars['String']['output']>>>;
-  tags: Array<DefinitionTag>;
+  solidSelection: Maybe<Array<Maybe<Scalars['String']>>>;
 };
 
 export type ScheduleFutureTickArgs = {
-  tickTimestamp: Scalars['Int']['input'];
+  tickTimestamp: Scalars['Int'];
 };
 
 export type ScheduleFutureTicksArgs = {
-  cursor?: InputMaybe<Scalars['Float']['input']>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  until?: InputMaybe<Scalars['Float']['input']>;
+  cursor?: InputMaybe<Scalars['Float']>;
+  limit?: InputMaybe<Scalars['Int']>;
+  until?: InputMaybe<Scalars['Float']>;
 };
 
 export type SchedulePotentialTickTimestampsArgs = {
-  lowerLimit?: InputMaybe<Scalars['Int']['input']>;
-  startTimestamp?: InputMaybe<Scalars['Float']['input']>;
-  upperLimit?: InputMaybe<Scalars['Int']['input']>;
+  lowerLimit?: InputMaybe<Scalars['Int']>;
+  startTimestamp?: InputMaybe<Scalars['Float']>;
+  upperLimit?: InputMaybe<Scalars['Int']>;
 };
 
 export type ScheduleData = {
   __typename: 'ScheduleData';
-  cronSchedule: Scalars['String']['output'];
-  startTimestamp: Maybe<Scalars['Float']['output']>;
+  cronSchedule: Scalars['String'];
+  startTimestamp: Maybe<Scalars['Float']>;
 };
 
 export type ScheduleDryRunResult = DryRunInstigationTick | PythonError | ScheduleNotFoundError;
 
-export type ScheduleMutationResult =
-  | PythonError
-  | ScheduleNotFoundError
-  | ScheduleStateResult
-  | UnauthorizedError;
+export type ScheduleMutationResult = PythonError | ScheduleStateResult | UnauthorizedError;
 
 export type ScheduleNotFoundError = Error & {
   __typename: 'ScheduleNotFoundError';
-  message: Scalars['String']['output'];
-  scheduleName: Scalars['String']['output'];
+  message: Scalars['String'];
+  scheduleName: Scalars['String'];
 };
 
 export type ScheduleOrError = PythonError | Schedule | ScheduleNotFoundError;
 
 export type ScheduleSelector = {
-  repositoryLocationName: Scalars['String']['input'];
-  repositoryName: Scalars['String']['input'];
-  scheduleName: Scalars['String']['input'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
+  scheduleName: Scalars['String'];
 };
 
 export type ScheduleStateResult = {
@@ -5344,9 +3713,9 @@ export enum ScheduleStatus {
 export type ScheduleTick = {
   __typename: 'ScheduleTick';
   status: InstigationTickStatus;
-  tickId: Scalars['String']['output'];
+  tickId: Scalars['String'];
   tickSpecificData: Maybe<ScheduleTickSpecificData>;
-  timestamp: Scalars['Float']['output'];
+  timestamp: Scalars['Float'];
 };
 
 export type ScheduleTickFailureData = {
@@ -5363,12 +3732,12 @@ export type ScheduleTickSuccessData = {
 
 export type Scheduler = {
   __typename: 'Scheduler';
-  schedulerClass: Maybe<Scalars['String']['output']>;
+  schedulerClass: Maybe<Scalars['String']>;
 };
 
 export type SchedulerNotDefinedError = Error & {
   __typename: 'SchedulerNotDefinedError';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type SchedulerOrError = PythonError | Scheduler | SchedulerNotDefinedError;
@@ -5382,58 +3751,32 @@ export type SchedulesOrError = PythonError | RepositoryNotFoundError | Schedules
 
 export type SelectorTypeConfigError = PipelineConfigValidationError & {
   __typename: 'SelectorTypeConfigError';
-  incomingFields: Array<Scalars['String']['output']>;
-  message: Scalars['String']['output'];
-  path: Array<Scalars['String']['output']>;
+  incomingFields: Array<Scalars['String']>;
+  message: Scalars['String'];
+  path: Array<Scalars['String']>;
   reason: EvaluationErrorReason;
   stack: EvaluationStack;
 };
 
 export type Sensor = {
   __typename: 'Sensor';
-  assetSelection: Maybe<AssetSelection>;
-  canReset: Scalars['Boolean']['output'];
-  defaultStatus: InstigationStatus;
-  description: Maybe<Scalars['String']['output']>;
-  id: Scalars['ID']['output'];
-  jobOriginId: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  id: Scalars['ID'];
+  jobOriginId: Scalars['String'];
   metadata: SensorMetadata;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  minIntervalSeconds: Scalars['Int']['output'];
-  name: Scalars['String']['output'];
+  minIntervalSeconds: Scalars['Int'];
+  name: Scalars['String'];
   nextTick: Maybe<DryRunInstigationTick>;
   sensorState: InstigationState;
   sensorType: SensorType;
-  tags: Array<DefinitionTag>;
   targets: Maybe<Array<Target>>;
 };
 
 export type SensorData = {
   __typename: 'SensorData';
-  lastCursor: Maybe<Scalars['String']['output']>;
-  lastRunKey: Maybe<Scalars['String']['output']>;
-  lastTickTimestamp: Maybe<Scalars['Float']['output']>;
+  lastCursor: Maybe<Scalars['String']>;
+  lastRunKey: Maybe<Scalars['String']>;
+  lastTickTimestamp: Maybe<Scalars['Float']>;
 };
 
 export type SensorDryRunResult = DryRunInstigationTick | PythonError | SensorNotFoundError;
@@ -5445,22 +3788,20 @@ export type SensorMetadata = {
 
 export type SensorNotFoundError = Error & {
   __typename: 'SensorNotFoundError';
-  message: Scalars['String']['output'];
-  sensorName: Scalars['String']['output'];
+  message: Scalars['String'];
+  sensorName: Scalars['String'];
 };
 
 export type SensorOrError = PythonError | Sensor | SensorNotFoundError | UnauthorizedError;
 
 export type SensorSelector = {
-  repositoryLocationName: Scalars['String']['input'];
-  repositoryName: Scalars['String']['input'];
-  sensorName: Scalars['String']['input'];
+  repositoryLocationName: Scalars['String'];
+  repositoryName: Scalars['String'];
+  sensorName: Scalars['String'];
 };
 
 export enum SensorType {
   ASSET = 'ASSET',
-  AUTOMATION = 'AUTOMATION',
-  AUTO_MATERIALIZE = 'AUTO_MATERIALIZE',
   FRESHNESS_POLICY = 'FRESHNESS_POLICY',
   MULTI_ASSET = 'MULTI_ASSET',
   RUN_STATUS = 'RUN_STATUS',
@@ -5493,60 +3834,58 @@ export type ShutdownRepositoryLocationMutationResult =
 
 export type ShutdownRepositoryLocationSuccess = {
   __typename: 'ShutdownRepositoryLocationSuccess';
-  repositoryLocationName: Scalars['String']['output'];
+  repositoryLocationName: Scalars['String'];
 };
 
 export type Solid = {
   __typename: 'Solid';
-  definition: CompositeSolidDefinition | SolidDefinition;
+  definition: ISolidDefinition;
   inputs: Array<Input>;
-  isDynamicMapped: Scalars['Boolean']['output'];
-  name: Scalars['String']['output'];
+  isDynamicMapped: Scalars['Boolean'];
+  name: Scalars['String'];
   outputs: Array<Output>;
 };
 
 export type SolidContainer = {
-  description: Maybe<Scalars['String']['output']>;
-  id: Scalars['ID']['output'];
+  description: Maybe<Scalars['String']>;
+  id: Scalars['ID'];
   modes: Array<Mode>;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   solidHandle: Maybe<SolidHandle>;
   solidHandles: Array<SolidHandle>;
   solids: Array<Solid>;
 };
 
 export type SolidContainerSolidHandleArgs = {
-  handleID: Scalars['String']['input'];
+  handleID: Scalars['String'];
 };
 
 export type SolidContainerSolidHandlesArgs = {
-  parentHandleID?: InputMaybe<Scalars['String']['input']>;
+  parentHandleID?: InputMaybe<Scalars['String']>;
 };
 
 export type SolidDefinition = ISolidDefinition & {
   __typename: 'SolidDefinition';
   assetNodes: Array<AssetNode>;
   configField: Maybe<ConfigTypeField>;
-  description: Maybe<Scalars['String']['output']>;
+  description: Maybe<Scalars['String']>;
   inputDefinitions: Array<InputDefinition>;
   metadata: Array<MetadataItemDefinition>;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   outputDefinitions: Array<OutputDefinition>;
-  pool: Maybe<Scalars['String']['output']>;
-  pools: Array<Scalars['String']['output']>;
   requiredResources: Array<ResourceRequirement>;
 };
 
 export type SolidHandle = {
   __typename: 'SolidHandle';
-  handleID: Scalars['String']['output'];
+  handleID: Scalars['String'];
   parent: Maybe<SolidHandle>;
   solid: Solid;
   stepStats: Maybe<SolidStepStatsOrError>;
 };
 
 export type SolidHandleStepStatsArgs = {
-  limit?: InputMaybe<Scalars['Int']['input']>;
+  limit?: InputMaybe<Scalars['Int']>;
 };
 
 export type SolidStepStatsConnection = {
@@ -5558,50 +3897,17 @@ export type SolidStepStatsOrError = SolidStepStatsConnection | SolidStepStatusUn
 
 export type SolidStepStatusUnavailableError = Error & {
   __typename: 'SolidStepStatusUnavailableError';
-  message: Scalars['String']['output'];
-};
-
-export type SourceLocation = LocalFileCodeReference | UrlCodeReference;
-
-export type SpecificPartitionAssetConditionEvaluationNode = {
-  __typename: 'SpecificPartitionAssetConditionEvaluationNode';
-  childUniqueIds: Array<Scalars['String']['output']>;
-  description: Scalars['String']['output'];
-  entityKey: EntityKey;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  status: AssetConditionEvaluationStatus;
-  uniqueId: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type StaleCause = {
   __typename: 'StaleCause';
   category: StaleCauseCategory;
   dependency: Maybe<AssetKey>;
-  dependencyPartitionKey: Maybe<Scalars['String']['output']>;
+  dependencyPartitionKey: Maybe<Scalars['String']>;
   key: AssetKey;
-  partitionKey: Maybe<Scalars['String']['output']>;
-  reason: Scalars['String']['output'];
+  partitionKey: Maybe<Scalars['String']>;
+  reason: Scalars['String'];
 };
 
 export enum StaleCauseCategory {
@@ -5622,8 +3928,8 @@ export type StartScheduleMutation = {
 };
 
 export type StepEvent = {
-  solidHandleID: Maybe<Scalars['String']['output']>;
-  stepKey: Maybe<Scalars['String']['output']>;
+  solidHandleID: Maybe<Scalars['String']>;
+  stepKey: Maybe<Scalars['String']>;
 };
 
 export enum StepEventStatus {
@@ -5636,7 +3942,7 @@ export enum StepEventStatus {
 export type StepExecution = {
   marshalledInputs?: InputMaybe<Array<MarshalledInput>>;
   marshalledOutputs?: InputMaybe<Array<MarshalledOutput>>;
-  stepKey: Scalars['String']['input'];
+  stepKey: Scalars['String'];
 };
 
 export type StepExpectationResultEvent = MessageEvent &
@@ -5645,11 +3951,11 @@ export type StepExpectationResultEvent = MessageEvent &
     eventType: Maybe<DagsterEventType>;
     expectationResult: ExpectationResult;
     level: LogLevel;
-    message: Scalars['String']['output'];
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    message: Scalars['String'];
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export enum StepKind {
@@ -5659,8 +3965,8 @@ export enum StepKind {
 }
 
 export type StepOutputHandle = {
-  outputName: Scalars['String']['input'];
-  stepKey: Scalars['String']['input'];
+  outputName: Scalars['String'];
+  stepKey: Scalars['String'];
 };
 
 export type StepWorkerStartedEvent = DisplayableEvent &
@@ -5668,39 +3974,18 @@ export type StepWorkerStartedEvent = DisplayableEvent &
   MessageEvent &
   StepEvent & {
     __typename: 'StepWorkerStartedEvent';
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    markerEnd: Maybe<Scalars['String']['output']>;
-    markerStart: Maybe<Scalars['String']['output']>;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    markerEnd: Maybe<Scalars['String']>;
+    markerStart: Maybe<Scalars['String']>;
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type StepWorkerStartingEvent = DisplayableEvent &
@@ -5708,39 +3993,18 @@ export type StepWorkerStartingEvent = DisplayableEvent &
   MessageEvent &
   StepEvent & {
     __typename: 'StepWorkerStartingEvent';
-    description: Maybe<Scalars['String']['output']>;
+    description: Maybe<Scalars['String']>;
     eventType: Maybe<DagsterEventType>;
-    label: Maybe<Scalars['String']['output']>;
+    label: Maybe<Scalars['String']>;
     level: LogLevel;
-    markerEnd: Maybe<Scalars['String']['output']>;
-    markerStart: Maybe<Scalars['String']['output']>;
-    message: Scalars['String']['output'];
-    metadataEntries: Array<
-      | AssetMetadataEntry
-      | BoolMetadataEntry
-      | CodeReferencesMetadataEntry
-      | FloatMetadataEntry
-      | IntMetadataEntry
-      | JobMetadataEntry
-      | JsonMetadataEntry
-      | MarkdownMetadataEntry
-      | NotebookMetadataEntry
-      | NullMetadataEntry
-      | PathMetadataEntry
-      | PipelineRunMetadataEntry
-      | PoolMetadataEntry
-      | PythonArtifactMetadataEntry
-      | TableColumnLineageMetadataEntry
-      | TableMetadataEntry
-      | TableSchemaMetadataEntry
-      | TextMetadataEntry
-      | TimestampMetadataEntry
-      | UrlMetadataEntry
-    >;
-    runId: Scalars['String']['output'];
-    solidHandleID: Maybe<Scalars['String']['output']>;
-    stepKey: Maybe<Scalars['String']['output']>;
-    timestamp: Scalars['String']['output'];
+    markerEnd: Maybe<Scalars['String']>;
+    markerStart: Maybe<Scalars['String']>;
+    message: Scalars['String'];
+    metadataEntries: Array<MetadataEntry>;
+    runId: Scalars['String'];
+    solidHandleID: Maybe<Scalars['String']>;
+    stepKey: Maybe<Scalars['String']>;
+    timestamp: Scalars['String'];
   };
 
 export type StopRunningScheduleMutation = {
@@ -5766,70 +4030,58 @@ export type StopSensorMutationResultOrError =
 export type Subscription = {
   __typename: 'Subscription';
   capturedLogs: CapturedLogs;
+  computeLogs: ComputeLogFile;
   locationStateChangeEvents: LocationStateChangeSubscription;
   pipelineRunLogs: PipelineRunLogsSubscriptionPayload;
 };
 
 export type SubscriptionCapturedLogsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  logKey: Array<Scalars['String']['input']>;
+  cursor?: InputMaybe<Scalars['String']>;
+  logKey: Array<Scalars['String']>;
+};
+
+export type SubscriptionComputeLogsArgs = {
+  cursor?: InputMaybe<Scalars['String']>;
+  ioType: ComputeIoType;
+  runId: Scalars['ID'];
+  stepKey: Scalars['String'];
 };
 
 export type SubscriptionPipelineRunLogsArgs = {
-  cursor?: InputMaybe<Scalars['String']['input']>;
-  runId: Scalars['ID']['input'];
+  cursor?: InputMaybe<Scalars['String']>;
+  runId: Scalars['ID'];
 };
 
 export type Table = {
   __typename: 'Table';
-  records: Array<Scalars['String']['output']>;
+  records: Array<Scalars['String']>;
   schema: TableSchema;
 };
 
 export type TableColumn = {
   __typename: 'TableColumn';
   constraints: TableColumnConstraints;
-  description: Maybe<Scalars['String']['output']>;
-  name: Scalars['String']['output'];
-  tags: Array<DefinitionTag>;
-  type: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  name: Scalars['String'];
+  type: Scalars['String'];
 };
 
 export type TableColumnConstraints = {
   __typename: 'TableColumnConstraints';
-  nullable: Scalars['Boolean']['output'];
-  other: Array<Scalars['String']['output']>;
-  unique: Scalars['Boolean']['output'];
-};
-
-export type TableColumnDep = {
-  __typename: 'TableColumnDep';
-  assetKey: AssetKey;
-  columnName: Scalars['String']['output'];
-};
-
-export type TableColumnLineageEntry = {
-  __typename: 'TableColumnLineageEntry';
-  columnDeps: Array<TableColumnDep>;
-  columnName: Scalars['String']['output'];
-};
-
-export type TableColumnLineageMetadataEntry = MetadataEntry & {
-  __typename: 'TableColumnLineageMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  lineage: Array<TableColumnLineageEntry>;
+  nullable: Scalars['Boolean'];
+  other: Array<Scalars['String']>;
+  unique: Scalars['Boolean'];
 };
 
 export type TableConstraints = {
   __typename: 'TableConstraints';
-  other: Array<Scalars['String']['output']>;
+  other: Array<Scalars['String']>;
 };
 
 export type TableMetadataEntry = MetadataEntry & {
   __typename: 'TableMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
   table: Table;
 };
 
@@ -5841,30 +4093,20 @@ export type TableSchema = {
 
 export type TableSchemaMetadataEntry = MetadataEntry & {
   __typename: 'TableSchemaMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
   schema: TableSchema;
-};
-
-export type TagInput = {
-  key: Scalars['String']['input'];
-  value: Scalars['String']['input'];
 };
 
 export type Target = {
   __typename: 'Target';
-  mode: Scalars['String']['output'];
-  pipelineName: Scalars['String']['output'];
-  solidSelection: Maybe<Array<Scalars['String']['output']>>;
-};
-
-export type TeamAssetOwner = {
-  __typename: 'TeamAssetOwner';
-  team: Scalars['String']['output'];
+  mode: Scalars['String'];
+  pipelineName: Scalars['String'];
+  solidSelection: Maybe<Array<Scalars['String']>>;
 };
 
 export type TerminatePipelineExecutionFailure = {
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
   run: Run;
 };
 
@@ -5874,7 +4116,7 @@ export type TerminatePipelineExecutionSuccess = {
 
 export type TerminateRunFailure = TerminatePipelineExecutionFailure & {
   __typename: 'TerminateRunFailure';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
   run: Run;
 };
 
@@ -5900,46 +4142,38 @@ export type TerminateRunSuccess = TerminatePipelineExecutionSuccess & {
   run: Run;
 };
 
-export type TerminateRunsResult = {
-  __typename: 'TerminateRunsResult';
-  terminateRunResults: Array<TerminateRunResult>;
-};
-
-export type TerminateRunsResultOrError = PythonError | TerminateRunsResult;
-
 export type TestFields = {
   __typename: 'TestFields';
-  alwaysException: Maybe<Scalars['String']['output']>;
-  asyncString: Maybe<Scalars['String']['output']>;
+  alwaysException: Maybe<Scalars['String']>;
 };
 
 export type TextMetadataEntry = MetadataEntry & {
   __typename: 'TextMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  text: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
+  text: Scalars['String'];
 };
 
 export type TextRuleEvaluationData = {
   __typename: 'TextRuleEvaluationData';
-  text: Maybe<Scalars['String']['output']>;
+  text: Maybe<Scalars['String']>;
 };
 
 export type TickEvaluation = {
   __typename: 'TickEvaluation';
-  cursor: Maybe<Scalars['String']['output']>;
+  cursor: Maybe<Scalars['String']>;
   dynamicPartitionsRequests: Maybe<Array<DynamicPartitionRequest>>;
   error: Maybe<PythonError>;
   runRequests: Maybe<Array<RunRequest>>;
-  skipReason: Maybe<Scalars['String']['output']>;
+  skipReason: Maybe<Scalars['String']>;
 };
 
 export type TimePartitionRangeStatus = {
   __typename: 'TimePartitionRangeStatus';
-  endKey: Scalars['String']['output'];
-  endTime: Scalars['Float']['output'];
-  startKey: Scalars['String']['output'];
-  startTime: Scalars['Float']['output'];
+  endKey: Scalars['String'];
+  endTime: Scalars['Float'];
+  startKey: Scalars['String'];
+  startTime: Scalars['Float'];
   status: PartitionRangeStatus;
 };
 
@@ -5948,127 +4182,44 @@ export type TimePartitionStatuses = {
   ranges: Array<TimePartitionRangeStatus>;
 };
 
-export type TimeWindowFreshnessPolicy = {
-  __typename: 'TimeWindowFreshnessPolicy';
-  failWindowSeconds: Scalars['Int']['output'];
-  warnWindowSeconds: Maybe<Scalars['Int']['output']>;
-};
-
-export type TimestampMetadataEntry = MetadataEntry & {
-  __typename: 'TimestampMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  timestamp: Scalars['Float']['output'];
-};
-
 export type TypeCheck = DisplayableEvent & {
   __typename: 'TypeCheck';
-  description: Maybe<Scalars['String']['output']>;
-  label: Maybe<Scalars['String']['output']>;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  success: Scalars['Boolean']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Maybe<Scalars['String']>;
+  metadataEntries: Array<MetadataEntry>;
+  success: Scalars['Boolean'];
 };
 
 export type UnauthorizedError = Error & {
   __typename: 'UnauthorizedError';
-  message: Scalars['String']['output'];
+  message: Scalars['String'];
 };
 
 export type UnknownPipeline = PipelineReference & {
   __typename: 'UnknownPipeline';
-  name: Scalars['String']['output'];
-  solidSelection: Maybe<Array<Scalars['String']['output']>>;
-};
-
-export type UnpartitionedAssetConditionEvaluationNode = {
-  __typename: 'UnpartitionedAssetConditionEvaluationNode';
-  childUniqueIds: Array<Scalars['String']['output']>;
-  description: Scalars['String']['output'];
-  endTimestamp: Maybe<Scalars['Float']['output']>;
-  entityKey: EntityKey;
-  metadataEntries: Array<
-    | AssetMetadataEntry
-    | BoolMetadataEntry
-    | CodeReferencesMetadataEntry
-    | FloatMetadataEntry
-    | IntMetadataEntry
-    | JobMetadataEntry
-    | JsonMetadataEntry
-    | MarkdownMetadataEntry
-    | NotebookMetadataEntry
-    | NullMetadataEntry
-    | PathMetadataEntry
-    | PipelineRunMetadataEntry
-    | PoolMetadataEntry
-    | PythonArtifactMetadataEntry
-    | TableColumnLineageMetadataEntry
-    | TableMetadataEntry
-    | TableSchemaMetadataEntry
-    | TextMetadataEntry
-    | TimestampMetadataEntry
-    | UrlMetadataEntry
-  >;
-  startTimestamp: Maybe<Scalars['Float']['output']>;
-  status: AssetConditionEvaluationStatus;
-  uniqueId: Scalars['String']['output'];
+  name: Scalars['String'];
+  solidSelection: Maybe<Array<Scalars['String']>>;
 };
 
 export type UnpartitionedAssetStatus = {
   __typename: 'UnpartitionedAssetStatus';
   assetKey: AssetKey;
-  failed: Scalars['Boolean']['output'];
-  inProgress: Scalars['Boolean']['output'];
-  materialized: Scalars['Boolean']['output'];
-};
-
-export type UnsupportedOperationError = Error & {
-  __typename: 'UnsupportedOperationError';
-  message: Scalars['String']['output'];
-};
-
-export type UrlCodeReference = {
-  __typename: 'UrlCodeReference';
-  label: Maybe<Scalars['String']['output']>;
-  url: Scalars['String']['output'];
+  failed: Scalars['Boolean'];
+  inProgress: Scalars['Boolean'];
+  materialized: Scalars['Boolean'];
 };
 
 export type UrlMetadataEntry = MetadataEntry & {
   __typename: 'UrlMetadataEntry';
-  description: Maybe<Scalars['String']['output']>;
-  label: Scalars['String']['output'];
-  url: Scalars['String']['output'];
+  description: Maybe<Scalars['String']>;
+  label: Scalars['String'];
+  url: Scalars['String'];
 };
 
 export type UsedSolid = {
   __typename: 'UsedSolid';
-  definition: CompositeSolidDefinition | SolidDefinition;
+  definition: ISolidDefinition;
   invocations: Array<NodeInvocationSite>;
-};
-
-export type UserAssetOwner = {
-  __typename: 'UserAssetOwner';
-  email: Scalars['String']['output'];
 };
 
 export type WaitingOnKeysRuleEvaluationData = {
@@ -6078,24 +4229,20 @@ export type WaitingOnKeysRuleEvaluationData = {
 
 export type Workspace = {
   __typename: 'Workspace';
-  id: Scalars['String']['output'];
+  id: Scalars['String'];
   locationEntries: Array<WorkspaceLocationEntry>;
 };
 
 export type WorkspaceLocationEntry = {
   __typename: 'WorkspaceLocationEntry';
   displayMetadata: Array<RepositoryMetadata>;
-  featureFlags: Array<FeatureFlag>;
-  id: Scalars['ID']['output'];
+  id: Scalars['ID'];
   loadStatus: RepositoryLocationLoadStatus;
   locationOrLoadError: Maybe<RepositoryLocationOrLoadError>;
-  name: Scalars['String']['output'];
+  name: Scalars['String'];
   permissions: Array<Permission>;
-  updatedTimestamp: Scalars['Float']['output'];
-  versionKey: Scalars['String']['output'];
+  updatedTimestamp: Scalars['Float'];
 };
-
-export type WorkspaceLocationEntryOrError = PythonError | WorkspaceLocationEntry;
 
 export type WorkspaceLocationStatusEntries = {
   __typename: 'WorkspaceLocationStatusEntries';
@@ -6106,29 +4253,20 @@ export type WorkspaceLocationStatusEntriesOrError = PythonError | WorkspaceLocat
 
 export type WorkspaceLocationStatusEntry = {
   __typename: 'WorkspaceLocationStatusEntry';
-  id: Scalars['ID']['output'];
+  id: Scalars['ID'];
   loadStatus: RepositoryLocationLoadStatus;
-  name: Scalars['String']['output'];
-  permissions: Array<Permission>;
-  updateTimestamp: Scalars['Float']['output'];
-  versionKey: Scalars['String']['output'];
+  name: Scalars['String'];
+  updateTimestamp: Scalars['Float'];
 };
 
 export type WorkspaceOrError = PythonError | Workspace;
 
 export type WrappingConfigType = {
-  ofType:
-    | ArrayConfigType
-    | CompositeConfigType
-    | EnumConfigType
-    | MapConfigType
-    | NullableConfigType
-    | RegularConfigType
-    | ScalarUnionConfigType;
+  ofType: ConfigType;
 };
 
 export type WrappingDagsterType = {
-  ofType: ListDagsterType | NullableDagsterType | RegularDagsterType;
+  ofType: DagsterType;
 };
 
 export const buildAddDynamicPartitionSuccess = (
@@ -6237,27 +4375,9 @@ export const buildArrayConfigType = (
     ofType:
       overrides && overrides.hasOwnProperty('ofType')
         ? overrides.ofType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     recursiveConfigTypes:
       overrides && overrides.hasOwnProperty('recursiveConfigTypes')
         ? overrides.recursiveConfigTypes!
@@ -6275,18 +4395,6 @@ export const buildAsset = (
   relationshipsToOmit.add('Asset');
   return {
     __typename: 'Asset',
-    assetEventHistory:
-      overrides && overrides.hasOwnProperty('assetEventHistory')
-        ? overrides.assetEventHistory!
-        : relationshipsToOmit.has('AssetResultEventHistoryConnection')
-          ? ({} as AssetResultEventHistoryConnection)
-          : buildAssetResultEventHistoryConnection({}, relationshipsToOmit),
-    assetHealth:
-      overrides && overrides.hasOwnProperty('assetHealth')
-        ? overrides.assetHealth!
-        : relationshipsToOmit.has('AssetHealth')
-          ? ({} as AssetHealth)
-          : buildAssetHealth({}, relationshipsToOmit),
     assetMaterializations:
       overrides && overrides.hasOwnProperty('assetMaterializations')
         ? overrides.assetMaterializations!
@@ -6299,19 +4407,15 @@ export const buildAsset = (
       overrides && overrides.hasOwnProperty('definition')
         ? overrides.definition!
         : relationshipsToOmit.has('AssetNode')
-          ? ({} as AssetNode)
-          : buildAssetNode({}, relationshipsToOmit),
+        ? ({} as AssetNode)
+        : buildAssetNode({}, relationshipsToOmit),
     id: overrides && overrides.hasOwnProperty('id') ? overrides.id! : 'omnis',
     key:
       overrides && overrides.hasOwnProperty('key')
         ? overrides.key!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    latestEventSortKey:
-      overrides && overrides.hasOwnProperty('latestEventSortKey')
-        ? overrides.latestEventSortKey!
-        : 'b9e5eeed-491e-4839-9bbf-1dedd727f77b',
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
   };
 };
 
@@ -6327,40 +4431,14 @@ export const buildAssetBackfillData = (
       overrides && overrides.hasOwnProperty('assetBackfillStatuses')
         ? overrides.assetBackfillStatuses!
         : [],
-    rootTargetedPartitions:
-      overrides && overrides.hasOwnProperty('rootTargetedPartitions')
-        ? overrides.rootTargetedPartitions!
-        : relationshipsToOmit.has('AssetBackfillTargetPartitions')
-          ? ({} as AssetBackfillTargetPartitions)
-          : buildAssetBackfillTargetPartitions({}, relationshipsToOmit),
-  };
-};
-
-export const buildAssetBackfillPreviewParams = (
-  overrides?: Partial<AssetBackfillPreviewParams>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): AssetBackfillPreviewParams => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetBackfillPreviewParams');
-  return {
-    assetSelection:
-      overrides && overrides.hasOwnProperty('assetSelection') ? overrides.assetSelection! : [],
-    partitionNames:
-      overrides && overrides.hasOwnProperty('partitionNames') ? overrides.partitionNames! : [],
-  };
-};
-
-export const buildAssetBackfillTargetPartitions = (
-  overrides?: Partial<AssetBackfillTargetPartitions>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetBackfillTargetPartitions'} & AssetBackfillTargetPartitions => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetBackfillTargetPartitions');
-  return {
-    __typename: 'AssetBackfillTargetPartitions',
-    partitionKeys:
-      overrides && overrides.hasOwnProperty('partitionKeys') ? overrides.partitionKeys! : [],
-    ranges: overrides && overrides.hasOwnProperty('ranges') ? overrides.ranges! : [],
+    rootAssetTargetedPartitions:
+      overrides && overrides.hasOwnProperty('rootAssetTargetedPartitions')
+        ? overrides.rootAssetTargetedPartitions!
+        : [],
+    rootAssetTargetedRanges:
+      overrides && overrides.hasOwnProperty('rootAssetTargetedRanges')
+        ? overrides.rootAssetTargetedRanges!
+        : [],
   };
 };
 
@@ -6372,23 +4450,12 @@ export const buildAssetCheck = (
   relationshipsToOmit.add('AssetCheck');
   return {
     __typename: 'AssetCheck',
-    additionalAssetKeys:
-      overrides && overrides.hasOwnProperty('additionalAssetKeys')
-        ? overrides.additionalAssetKeys!
-        : [],
     assetKey:
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    automationCondition:
-      overrides && overrides.hasOwnProperty('automationCondition')
-        ? overrides.automationCondition!
-        : relationshipsToOmit.has('AutomationCondition')
-          ? ({} as AutomationCondition)
-          : buildAutomationCondition({}, relationshipsToOmit),
-    blocking: overrides && overrides.hasOwnProperty('blocking') ? overrides.blocking! : true,
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     canExecuteIndividually:
       overrides && overrides.hasOwnProperty('canExecuteIndividually')
         ? overrides.canExecuteIndividually!
@@ -6399,9 +4466,9 @@ export const buildAssetCheck = (
       overrides && overrides.hasOwnProperty('executionForLatestMaterialization')
         ? overrides.executionForLatestMaterialization!
         : relationshipsToOmit.has('AssetCheckExecution')
-          ? ({} as AssetCheckExecution)
-          : buildAssetCheckExecution({}, relationshipsToOmit),
-    jobNames: overrides && overrides.hasOwnProperty('jobNames') ? overrides.jobNames! : [],
+        ? ({} as AssetCheckExecution)
+        : buildAssetCheckExecution({}, relationshipsToOmit),
+    executions: overrides && overrides.hasOwnProperty('executions') ? overrides.executions! : [],
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'dignissimos',
   };
 };
@@ -6418,11 +4485,9 @@ export const buildAssetCheckEvaluation = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     checkName: overrides && overrides.hasOwnProperty('checkName') ? overrides.checkName! : 'sed',
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'quia',
     metadataEntries:
       overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
     severity:
@@ -6434,8 +4499,8 @@ export const buildAssetCheckEvaluation = (
       overrides && overrides.hasOwnProperty('targetMaterialization')
         ? overrides.targetMaterialization!
         : relationshipsToOmit.has('AssetCheckEvaluationTargetMaterializationData')
-          ? ({} as AssetCheckEvaluationTargetMaterializationData)
-          : buildAssetCheckEvaluationTargetMaterializationData({}, relationshipsToOmit),
+        ? ({} as AssetCheckEvaluationTargetMaterializationData)
+        : buildAssetCheckEvaluationTargetMaterializationData({}, relationshipsToOmit),
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 3.02,
   };
 };
@@ -6452,8 +4517,8 @@ export const buildAssetCheckEvaluationEvent = (
       overrides && overrides.hasOwnProperty('evaluation')
         ? overrides.evaluation!
         : relationshipsToOmit.has('AssetCheckEvaluation')
-          ? ({} as AssetCheckEvaluation)
-          : buildAssetCheckEvaluation({}, relationshipsToOmit),
+        ? ({} as AssetCheckEvaluation)
+        : buildAssetCheckEvaluation({}, relationshipsToOmit),
     eventType:
       overrides && overrides.hasOwnProperty('eventType')
         ? overrides.eventType!
@@ -6481,8 +4546,8 @@ export const buildAssetCheckEvaluationPlannedEvent = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     checkName: overrides && overrides.hasOwnProperty('checkName') ? overrides.checkName! : 'vitae',
     eventType:
       overrides && overrides.hasOwnProperty('eventType')
@@ -6509,10 +4574,7 @@ export const buildAssetCheckEvaluationTargetMaterializationData = (
   return {
     __typename: 'AssetCheckEvaluationTargetMaterializationData',
     runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'exercitationem',
-    storageId:
-      overrides && overrides.hasOwnProperty('storageId')
-        ? overrides.storageId!
-        : '48345232-8586-483c-9958-ca65cb4208cd',
+    storageId: overrides && overrides.hasOwnProperty('storageId') ? overrides.storageId! : 3254,
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 3.87,
   };
 };
@@ -6529,15 +4591,14 @@ export const buildAssetCheckExecution = (
       overrides && overrides.hasOwnProperty('evaluation')
         ? overrides.evaluation!
         : relationshipsToOmit.has('AssetCheckEvaluation')
-          ? ({} as AssetCheckEvaluation)
-          : buildAssetCheckEvaluation({}, relationshipsToOmit),
+        ? ({} as AssetCheckEvaluation)
+        : buildAssetCheckEvaluation({}, relationshipsToOmit),
     id: overrides && overrides.hasOwnProperty('id') ? overrides.id! : 'ut',
     runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'veritatis',
     status:
       overrides && overrides.hasOwnProperty('status')
         ? overrides.status!
         : AssetCheckExecutionResolvedStatus.EXECUTION_FAILED,
-    stepKey: overrides && overrides.hasOwnProperty('stepKey') ? overrides.stepKey! : 'aspernatur',
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 2.57,
   };
 };
@@ -6553,21 +4614,9 @@ export const buildAssetCheckHandleInput = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKeyInput')
-          ? ({} as AssetKeyInput)
-          : buildAssetKeyInput({}, relationshipsToOmit),
+        ? ({} as AssetKeyInput)
+        : buildAssetKeyInput({}, relationshipsToOmit),
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'aliquam',
-  };
-};
-
-export const buildAssetCheckNeedsAgentUpgradeError = (
-  overrides?: Partial<AssetCheckNeedsAgentUpgradeError>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetCheckNeedsAgentUpgradeError'} & AssetCheckNeedsAgentUpgradeError => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetCheckNeedsAgentUpgradeError');
-  return {
-    __typename: 'AssetCheckNeedsAgentUpgradeError',
-    message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'quia',
   };
 };
 
@@ -6583,18 +4632,6 @@ export const buildAssetCheckNeedsMigrationError = (
   };
 };
 
-export const buildAssetCheckNeedsUserCodeUpgrade = (
-  overrides?: Partial<AssetCheckNeedsUserCodeUpgrade>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetCheckNeedsUserCodeUpgrade'} & AssetCheckNeedsUserCodeUpgrade => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetCheckNeedsUserCodeUpgrade');
-  return {
-    __typename: 'AssetCheckNeedsUserCodeUpgrade',
-    message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'tempora',
-  };
-};
-
 export const buildAssetCheckhandle = (
   overrides?: Partial<AssetCheckhandle>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -6607,8 +4644,8 @@ export const buildAssetCheckhandle = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'est',
   };
 };
@@ -6625,85 +4662,6 @@ export const buildAssetChecks = (
   };
 };
 
-export const buildAssetConditionEvaluation = (
-  overrides?: Partial<AssetConditionEvaluation>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetConditionEvaluation'} & AssetConditionEvaluation => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetConditionEvaluation');
-  return {
-    __typename: 'AssetConditionEvaluation',
-    evaluationNodes:
-      overrides && overrides.hasOwnProperty('evaluationNodes') ? overrides.evaluationNodes! : [],
-    rootUniqueId:
-      overrides && overrides.hasOwnProperty('rootUniqueId') ? overrides.rootUniqueId! : 'eos',
-  };
-};
-
-export const buildAssetConditionEvaluationRecord = (
-  overrides?: Partial<AssetConditionEvaluationRecord>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetConditionEvaluationRecord'} & AssetConditionEvaluationRecord => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetConditionEvaluationRecord');
-  return {
-    __typename: 'AssetConditionEvaluationRecord',
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    endTimestamp:
-      overrides && overrides.hasOwnProperty('endTimestamp') ? overrides.endTimestamp! : 4.33,
-    entityKey:
-      overrides && overrides.hasOwnProperty('entityKey')
-        ? overrides.entityKey!
-        : relationshipsToOmit.has('AssetCheckhandle')
-          ? ({} as AssetCheckhandle)
-          : buildAssetCheckhandle({}, relationshipsToOmit),
-    evaluation:
-      overrides && overrides.hasOwnProperty('evaluation')
-        ? overrides.evaluation!
-        : relationshipsToOmit.has('AssetConditionEvaluation')
-          ? ({} as AssetConditionEvaluation)
-          : buildAssetConditionEvaluation({}, relationshipsToOmit),
-    evaluationId:
-      overrides && overrides.hasOwnProperty('evaluationId')
-        ? overrides.evaluationId!
-        : '9239f05d-b105-4691-86f3-1d5a918e58b2',
-    evaluationNodes:
-      overrides && overrides.hasOwnProperty('evaluationNodes') ? overrides.evaluationNodes! : [],
-    id:
-      overrides && overrides.hasOwnProperty('id')
-        ? overrides.id!
-        : '1c158e55-c1c1-43c2-9f14-8e369549e154',
-    isLegacy: overrides && overrides.hasOwnProperty('isLegacy') ? overrides.isLegacy! : true,
-    numRequested:
-      overrides && overrides.hasOwnProperty('numRequested') ? overrides.numRequested! : 2364,
-    rootUniqueId:
-      overrides && overrides.hasOwnProperty('rootUniqueId')
-        ? overrides.rootUniqueId!
-        : 'voluptatibus',
-    runIds: overrides && overrides.hasOwnProperty('runIds') ? overrides.runIds! : [],
-    startTimestamp:
-      overrides && overrides.hasOwnProperty('startTimestamp') ? overrides.startTimestamp! : 6.66,
-    timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 6.88,
-  };
-};
-
-export const buildAssetConditionEvaluationRecords = (
-  overrides?: Partial<AssetConditionEvaluationRecords>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetConditionEvaluationRecords'} & AssetConditionEvaluationRecords => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetConditionEvaluationRecords');
-  return {
-    __typename: 'AssetConditionEvaluationRecords',
-    records: overrides && overrides.hasOwnProperty('records') ? overrides.records! : [],
-  };
-};
-
 export const buildAssetConnection = (
   overrides?: Partial<AssetConnection>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -6712,7 +4670,6 @@ export const buildAssetConnection = (
   relationshipsToOmit.add('AssetConnection');
   return {
     __typename: 'AssetConnection',
-    cursor: overrides && overrides.hasOwnProperty('cursor') ? overrides.cursor! : 'quo',
     nodes: overrides && overrides.hasOwnProperty('nodes') ? overrides.nodes! : [],
   };
 };
@@ -6729,14 +4686,10 @@ export const buildAssetDependency = (
       overrides && overrides.hasOwnProperty('asset')
         ? overrides.asset!
         : relationshipsToOmit.has('AssetNode')
-          ? ({} as AssetNode)
-          : buildAssetNode({}, relationshipsToOmit),
-    partitionMapping:
-      overrides && overrides.hasOwnProperty('partitionMapping')
-        ? overrides.partitionMapping!
-        : relationshipsToOmit.has('PartitionMapping')
-          ? ({} as PartitionMapping)
-          : buildPartitionMapping({}, relationshipsToOmit),
+        ? ({} as AssetNode)
+        : buildAssetNode({}, relationshipsToOmit),
+    inputName:
+      overrides && overrides.hasOwnProperty('inputName') ? overrides.inputName! : 'aspernatur',
   };
 };
 
@@ -6773,7 +4726,6 @@ export const buildAssetGroup = (
     __typename: 'AssetGroup',
     assetKeys: overrides && overrides.hasOwnProperty('assetKeys') ? overrides.assetKeys! : [],
     groupName: overrides && overrides.hasOwnProperty('groupName') ? overrides.groupName! : 'aut',
-    id: overrides && overrides.hasOwnProperty('id') ? overrides.id! : 'eligendi',
   };
 };
 
@@ -6792,180 +4744,6 @@ export const buildAssetGroupSelector = (
         : 'fuga',
     repositoryName:
       overrides && overrides.hasOwnProperty('repositoryName') ? overrides.repositoryName! : 'vel',
-  };
-};
-
-export const buildAssetHealth = (
-  overrides?: Partial<AssetHealth>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetHealth'} & AssetHealth => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetHealth');
-  return {
-    __typename: 'AssetHealth',
-    assetChecksStatus:
-      overrides && overrides.hasOwnProperty('assetChecksStatus')
-        ? overrides.assetChecksStatus!
-        : AssetHealthStatus.DEGRADED,
-    assetChecksStatusMetadata:
-      overrides && overrides.hasOwnProperty('assetChecksStatusMetadata')
-        ? overrides.assetChecksStatusMetadata!
-        : relationshipsToOmit.has('AssetHealthCheckDegradedMeta')
-          ? ({} as AssetHealthCheckDegradedMeta)
-          : buildAssetHealthCheckDegradedMeta({}, relationshipsToOmit),
-    assetHealth:
-      overrides && overrides.hasOwnProperty('assetHealth')
-        ? overrides.assetHealth!
-        : AssetHealthStatus.DEGRADED,
-    freshnessStatus:
-      overrides && overrides.hasOwnProperty('freshnessStatus')
-        ? overrides.freshnessStatus!
-        : AssetHealthStatus.DEGRADED,
-    freshnessStatusMetadata:
-      overrides && overrides.hasOwnProperty('freshnessStatusMetadata')
-        ? overrides.freshnessStatusMetadata!
-        : relationshipsToOmit.has('AssetHealthFreshnessMeta')
-          ? ({} as AssetHealthFreshnessMeta)
-          : buildAssetHealthFreshnessMeta({}, relationshipsToOmit),
-    materializationStatus:
-      overrides && overrides.hasOwnProperty('materializationStatus')
-        ? overrides.materializationStatus!
-        : AssetHealthStatus.DEGRADED,
-    materializationStatusMetadata:
-      overrides && overrides.hasOwnProperty('materializationStatusMetadata')
-        ? overrides.materializationStatusMetadata!
-        : relationshipsToOmit.has('AssetHealthMaterializationDegradedNotPartitionedMeta')
-          ? ({} as AssetHealthMaterializationDegradedNotPartitionedMeta)
-          : buildAssetHealthMaterializationDegradedNotPartitionedMeta({}, relationshipsToOmit),
-  };
-};
-
-export const buildAssetHealthCheckDegradedMeta = (
-  overrides?: Partial<AssetHealthCheckDegradedMeta>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetHealthCheckDegradedMeta'} & AssetHealthCheckDegradedMeta => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetHealthCheckDegradedMeta');
-  return {
-    __typename: 'AssetHealthCheckDegradedMeta',
-    numFailedChecks:
-      overrides && overrides.hasOwnProperty('numFailedChecks') ? overrides.numFailedChecks! : 5187,
-    numWarningChecks:
-      overrides && overrides.hasOwnProperty('numWarningChecks')
-        ? overrides.numWarningChecks!
-        : 5678,
-    totalNumChecks:
-      overrides && overrides.hasOwnProperty('totalNumChecks') ? overrides.totalNumChecks! : 6689,
-  };
-};
-
-export const buildAssetHealthCheckUnknownMeta = (
-  overrides?: Partial<AssetHealthCheckUnknownMeta>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetHealthCheckUnknownMeta'} & AssetHealthCheckUnknownMeta => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetHealthCheckUnknownMeta');
-  return {
-    __typename: 'AssetHealthCheckUnknownMeta',
-    numNotExecutedChecks:
-      overrides && overrides.hasOwnProperty('numNotExecutedChecks')
-        ? overrides.numNotExecutedChecks!
-        : 9394,
-    totalNumChecks:
-      overrides && overrides.hasOwnProperty('totalNumChecks') ? overrides.totalNumChecks! : 7235,
-  };
-};
-
-export const buildAssetHealthCheckWarningMeta = (
-  overrides?: Partial<AssetHealthCheckWarningMeta>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetHealthCheckWarningMeta'} & AssetHealthCheckWarningMeta => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetHealthCheckWarningMeta');
-  return {
-    __typename: 'AssetHealthCheckWarningMeta',
-    numWarningChecks:
-      overrides && overrides.hasOwnProperty('numWarningChecks')
-        ? overrides.numWarningChecks!
-        : 4025,
-    totalNumChecks:
-      overrides && overrides.hasOwnProperty('totalNumChecks') ? overrides.totalNumChecks! : 9768,
-  };
-};
-
-export const buildAssetHealthFreshnessMeta = (
-  overrides?: Partial<AssetHealthFreshnessMeta>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetHealthFreshnessMeta'} & AssetHealthFreshnessMeta => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetHealthFreshnessMeta');
-  return {
-    __typename: 'AssetHealthFreshnessMeta',
-    lastMaterializedTimestamp:
-      overrides && overrides.hasOwnProperty('lastMaterializedTimestamp')
-        ? overrides.lastMaterializedTimestamp!
-        : 5.66,
-  };
-};
-
-export const buildAssetHealthMaterializationDegradedNotPartitionedMeta = (
-  overrides?: Partial<AssetHealthMaterializationDegradedNotPartitionedMeta>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {
-  __typename: 'AssetHealthMaterializationDegradedNotPartitionedMeta';
-} & AssetHealthMaterializationDegradedNotPartitionedMeta => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetHealthMaterializationDegradedNotPartitionedMeta');
-  return {
-    __typename: 'AssetHealthMaterializationDegradedNotPartitionedMeta',
-    failedRunId:
-      overrides && overrides.hasOwnProperty('failedRunId') ? overrides.failedRunId! : 'magnam',
-  };
-};
-
-export const buildAssetHealthMaterializationDegradedPartitionedMeta = (
-  overrides?: Partial<AssetHealthMaterializationDegradedPartitionedMeta>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {
-  __typename: 'AssetHealthMaterializationDegradedPartitionedMeta';
-} & AssetHealthMaterializationDegradedPartitionedMeta => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetHealthMaterializationDegradedPartitionedMeta');
-  return {
-    __typename: 'AssetHealthMaterializationDegradedPartitionedMeta',
-    numFailedPartitions:
-      overrides && overrides.hasOwnProperty('numFailedPartitions')
-        ? overrides.numFailedPartitions!
-        : 2012,
-    numMissingPartitions:
-      overrides && overrides.hasOwnProperty('numMissingPartitions')
-        ? overrides.numMissingPartitions!
-        : 4091,
-    totalNumPartitions:
-      overrides && overrides.hasOwnProperty('totalNumPartitions')
-        ? overrides.totalNumPartitions!
-        : 5405,
-  };
-};
-
-export const buildAssetHealthMaterializationHealthyPartitionedMeta = (
-  overrides?: Partial<AssetHealthMaterializationHealthyPartitionedMeta>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {
-  __typename: 'AssetHealthMaterializationHealthyPartitionedMeta';
-} & AssetHealthMaterializationHealthyPartitionedMeta => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetHealthMaterializationHealthyPartitionedMeta');
-  return {
-    __typename: 'AssetHealthMaterializationHealthyPartitionedMeta',
-    numMissingPartitions:
-      overrides && overrides.hasOwnProperty('numMissingPartitions')
-        ? overrides.numMissingPartitions!
-        : 9751,
-    totalNumPartitions:
-      overrides && overrides.hasOwnProperty('totalNumPartitions')
-        ? overrides.totalNumPartitions!
-        : 4020,
   };
 };
 
@@ -7004,26 +4782,22 @@ export const buildAssetLatestInfo = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    id:
-      overrides && overrides.hasOwnProperty('id')
-        ? overrides.id!
-        : 'b2af0f98-465f-4081-8979-be6bc1cfd1f3',
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     inProgressRunIds:
       overrides && overrides.hasOwnProperty('inProgressRunIds') ? overrides.inProgressRunIds! : [],
     latestMaterialization:
       overrides && overrides.hasOwnProperty('latestMaterialization')
         ? overrides.latestMaterialization!
         : relationshipsToOmit.has('MaterializationEvent')
-          ? ({} as MaterializationEvent)
-          : buildMaterializationEvent({}, relationshipsToOmit),
+        ? ({} as MaterializationEvent)
+        : buildMaterializationEvent({}, relationshipsToOmit),
     latestRun:
       overrides && overrides.hasOwnProperty('latestRun')
         ? overrides.latestRun!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
     unstartedRunIds:
       overrides && overrides.hasOwnProperty('unstartedRunIds') ? overrides.unstartedRunIds! : [],
   };
@@ -7041,8 +4815,8 @@ export const buildAssetLineageInfo = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     partitions: overrides && overrides.hasOwnProperty('partitions') ? overrides.partitions! : [],
   };
 };
@@ -7059,8 +4833,8 @@ export const buildAssetMaterializationPlannedEvent = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     eventType:
       overrides && overrides.hasOwnProperty('eventType')
         ? overrides.eventType!
@@ -7074,8 +4848,8 @@ export const buildAssetMaterializationPlannedEvent = (
       overrides && overrides.hasOwnProperty('runOrError')
         ? overrides.runOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     solidHandleID:
       overrides && overrides.hasOwnProperty('solidHandleID') ? overrides.solidHandleID! : 'dolor',
     stepKey: overrides && overrides.hasOwnProperty('stepKey') ? overrides.stepKey! : 'nulla',
@@ -7095,8 +4869,8 @@ export const buildAssetMetadataEntry = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'quasi',
     label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'iste',
@@ -7111,18 +4885,13 @@ export const buildAssetNode = (
   relationshipsToOmit.add('AssetNode');
   return {
     __typename: 'AssetNode',
-    assetChecksOrError:
-      overrides && overrides.hasOwnProperty('assetChecksOrError')
-        ? overrides.assetChecksOrError!
-        : relationshipsToOmit.has('AssetCheckNeedsAgentUpgradeError')
-          ? ({} as AssetCheckNeedsAgentUpgradeError)
-          : buildAssetCheckNeedsAgentUpgradeError({}, relationshipsToOmit),
+    assetChecks: overrides && overrides.hasOwnProperty('assetChecks') ? overrides.assetChecks! : [],
     assetKey:
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     assetMaterializationUsedData:
       overrides && overrides.hasOwnProperty('assetMaterializationUsedData')
         ? overrides.assetMaterializationUsedData!
@@ -7139,40 +4908,22 @@ export const buildAssetNode = (
       overrides && overrides.hasOwnProperty('assetPartitionStatuses')
         ? overrides.assetPartitionStatuses!
         : relationshipsToOmit.has('DefaultPartitionStatuses')
-          ? ({} as DefaultPartitionStatuses)
-          : buildDefaultPartitionStatuses({}, relationshipsToOmit),
+        ? ({} as DefaultPartitionStatuses)
+        : buildDefaultPartitionStatuses({}, relationshipsToOmit),
     autoMaterializePolicy:
       overrides && overrides.hasOwnProperty('autoMaterializePolicy')
         ? overrides.autoMaterializePolicy!
         : relationshipsToOmit.has('AutoMaterializePolicy')
-          ? ({} as AutoMaterializePolicy)
-          : buildAutoMaterializePolicy({}, relationshipsToOmit),
-    automationCondition:
-      overrides && overrides.hasOwnProperty('automationCondition')
-        ? overrides.automationCondition!
-        : relationshipsToOmit.has('AutomationCondition')
-          ? ({} as AutomationCondition)
-          : buildAutomationCondition({}, relationshipsToOmit),
-    backfillPolicy:
-      overrides && overrides.hasOwnProperty('backfillPolicy')
-        ? overrides.backfillPolicy!
-        : relationshipsToOmit.has('BackfillPolicy')
-          ? ({} as BackfillPolicy)
-          : buildBackfillPolicy({}, relationshipsToOmit),
-    changedReasons:
-      overrides && overrides.hasOwnProperty('changedReasons') ? overrides.changedReasons! : [],
+        ? ({} as AutoMaterializePolicy)
+        : buildAutoMaterializePolicy({}, relationshipsToOmit),
     computeKind:
       overrides && overrides.hasOwnProperty('computeKind') ? overrides.computeKind! : 'quasi',
     configField:
       overrides && overrides.hasOwnProperty('configField')
         ? overrides.configField!
         : relationshipsToOmit.has('ConfigTypeField')
-          ? ({} as ConfigTypeField)
-          : buildConfigTypeField({}, relationshipsToOmit),
-    currentAutoMaterializeEvaluationId:
-      overrides && overrides.hasOwnProperty('currentAutoMaterializeEvaluationId')
-        ? overrides.currentAutoMaterializeEvaluationId!
-        : 'bcbeb9b8-1fb4-4466-a03e-1185d19566d1',
+        ? ({} as ConfigTypeField)
+        : buildConfigTypeField({}, relationshipsToOmit),
     dataVersion:
       overrides && overrides.hasOwnProperty('dataVersion') ? overrides.dataVersion! : 'a',
     dataVersionByPartition:
@@ -7192,20 +4943,14 @@ export const buildAssetNode = (
       overrides && overrides.hasOwnProperty('freshnessInfo')
         ? overrides.freshnessInfo!
         : relationshipsToOmit.has('AssetFreshnessInfo')
-          ? ({} as AssetFreshnessInfo)
-          : buildAssetFreshnessInfo({}, relationshipsToOmit),
+        ? ({} as AssetFreshnessInfo)
+        : buildAssetFreshnessInfo({}, relationshipsToOmit),
     freshnessPolicy:
       overrides && overrides.hasOwnProperty('freshnessPolicy')
         ? overrides.freshnessPolicy!
         : relationshipsToOmit.has('FreshnessPolicy')
-          ? ({} as FreshnessPolicy)
-          : buildFreshnessPolicy({}, relationshipsToOmit),
-    freshnessStatusInfo:
-      overrides && overrides.hasOwnProperty('freshnessStatusInfo')
-        ? overrides.freshnessStatusInfo!
-        : relationshipsToOmit.has('FreshnessStatusInfo')
-          ? ({} as FreshnessStatusInfo)
-          : buildFreshnessStatusInfo({}, relationshipsToOmit),
+        ? ({} as FreshnessPolicy)
+        : buildFreshnessPolicy({}, relationshipsToOmit),
     graphName: overrides && overrides.hasOwnProperty('graphName') ? overrides.graphName! : 'et',
     groupName:
       overrides && overrides.hasOwnProperty('groupName') ? overrides.groupName! : 'asperiores',
@@ -7215,43 +4960,19 @@ export const buildAssetNode = (
       overrides && overrides.hasOwnProperty('hasMaterializePermission')
         ? overrides.hasMaterializePermission!
         : false,
-    hasReportRunlessAssetEventPermission:
-      overrides && overrides.hasOwnProperty('hasReportRunlessAssetEventPermission')
-        ? overrides.hasReportRunlessAssetEventPermission!
-        : false,
     id:
       overrides && overrides.hasOwnProperty('id')
         ? overrides.id!
         : '006fc1b6-3c6e-432d-ac6a-c1c16c0c05b9',
-    internalFreshnessPolicy:
-      overrides && overrides.hasOwnProperty('internalFreshnessPolicy')
-        ? overrides.internalFreshnessPolicy!
-        : relationshipsToOmit.has('CronFreshnessPolicy')
-          ? ({} as CronFreshnessPolicy)
-          : buildCronFreshnessPolicy({}, relationshipsToOmit),
-    isAutoCreatedStub:
-      overrides && overrides.hasOwnProperty('isAutoCreatedStub')
-        ? overrides.isAutoCreatedStub!
-        : false,
     isExecutable:
       overrides && overrides.hasOwnProperty('isExecutable') ? overrides.isExecutable! : false,
-    isMaterializable:
-      overrides && overrides.hasOwnProperty('isMaterializable')
-        ? overrides.isMaterializable!
-        : true,
     isObservable:
       overrides && overrides.hasOwnProperty('isObservable') ? overrides.isObservable! : false,
     isPartitioned:
       overrides && overrides.hasOwnProperty('isPartitioned') ? overrides.isPartitioned! : true,
+    isSource: overrides && overrides.hasOwnProperty('isSource') ? overrides.isSource! : false,
     jobNames: overrides && overrides.hasOwnProperty('jobNames') ? overrides.jobNames! : [],
     jobs: overrides && overrides.hasOwnProperty('jobs') ? overrides.jobs! : [],
-    kinds: overrides && overrides.hasOwnProperty('kinds') ? overrides.kinds! : [],
-    lastAutoMaterializationEvaluationRecord:
-      overrides && overrides.hasOwnProperty('lastAutoMaterializationEvaluationRecord')
-        ? overrides.lastAutoMaterializationEvaluationRecord!
-        : relationshipsToOmit.has('AutoMaterializeAssetEvaluationRecord')
-          ? ({} as AutoMaterializeAssetEvaluationRecord)
-          : buildAutoMaterializeAssetEvaluationRecord({}, relationshipsToOmit),
     latestMaterializationByPartition:
       overrides && overrides.hasOwnProperty('latestMaterializationByPartition')
         ? overrides.latestMaterializationByPartition!
@@ -7260,33 +4981,26 @@ export const buildAssetNode = (
       overrides && overrides.hasOwnProperty('latestRunForPartition')
         ? overrides.latestRunForPartition!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
     metadataEntries:
       overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
     op:
       overrides && overrides.hasOwnProperty('op')
         ? overrides.op!
         : relationshipsToOmit.has('SolidDefinition')
-          ? ({} as SolidDefinition)
-          : buildSolidDefinition({}, relationshipsToOmit),
+        ? ({} as SolidDefinition)
+        : buildSolidDefinition({}, relationshipsToOmit),
     opName: overrides && overrides.hasOwnProperty('opName') ? overrides.opName! : 'veritatis',
     opNames: overrides && overrides.hasOwnProperty('opNames') ? overrides.opNames! : [],
     opVersion:
       overrides && overrides.hasOwnProperty('opVersion') ? overrides.opVersion! : 'cupiditate',
-    owners: overrides && overrides.hasOwnProperty('owners') ? overrides.owners! : [],
     partitionDefinition:
       overrides && overrides.hasOwnProperty('partitionDefinition')
         ? overrides.partitionDefinition!
         : relationshipsToOmit.has('PartitionDefinition')
-          ? ({} as PartitionDefinition)
-          : buildPartitionDefinition({}, relationshipsToOmit),
-    partitionKeyConnection:
-      overrides && overrides.hasOwnProperty('partitionKeyConnection')
-        ? overrides.partitionKeyConnection!
-        : relationshipsToOmit.has('PartitionKeyConnection')
-          ? ({} as PartitionKeyConnection)
-          : buildPartitionKeyConnection({}, relationshipsToOmit),
+        ? ({} as PartitionDefinition)
+        : buildPartitionDefinition({}, relationshipsToOmit),
     partitionKeys:
       overrides && overrides.hasOwnProperty('partitionKeys') ? overrides.partitionKeys! : [],
     partitionKeysByDimension:
@@ -7297,15 +5011,14 @@ export const buildAssetNode = (
       overrides && overrides.hasOwnProperty('partitionStats')
         ? overrides.partitionStats!
         : relationshipsToOmit.has('PartitionStats')
-          ? ({} as PartitionStats)
-          : buildPartitionStats({}, relationshipsToOmit),
-    pools: overrides && overrides.hasOwnProperty('pools') ? overrides.pools! : [],
+        ? ({} as PartitionStats)
+        : buildPartitionStats({}, relationshipsToOmit),
     repository:
       overrides && overrides.hasOwnProperty('repository')
         ? overrides.repository!
         : relationshipsToOmit.has('Repository')
-          ? ({} as Repository)
-          : buildRepository({}, relationshipsToOmit),
+        ? ({} as Repository)
+        : buildRepository({}, relationshipsToOmit),
     requiredResources:
       overrides && overrides.hasOwnProperty('requiredResources')
         ? overrides.requiredResources!
@@ -7323,23 +5036,12 @@ export const buildAssetNode = (
       overrides && overrides.hasOwnProperty('staleStatusByPartition')
         ? overrides.staleStatusByPartition!
         : [],
-    tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
-    targetingInstigators:
-      overrides && overrides.hasOwnProperty('targetingInstigators')
-        ? overrides.targetingInstigators!
-        : [],
     type:
       overrides && overrides.hasOwnProperty('type')
         ? overrides.type!
-        : relationshipsToOmit.has('ListDagsterType')
-          ? ({} as ListDagsterType)
-          : buildListDagsterType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('NullableDagsterType')
-            ? ({} as NullableDagsterType)
-            : buildNullableDagsterType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('RegularDagsterType')
-              ? ({} as RegularDagsterType)
-              : buildRegularDagsterType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('DagsterType')
+        ? ({} as DagsterType)
+        : buildDagsterType({}, relationshipsToOmit),
   };
 };
 
@@ -7355,8 +5057,8 @@ export const buildAssetNodeDefinitionCollision = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     repositories:
       overrides && overrides.hasOwnProperty('repositories') ? overrides.repositories! : [],
   };
@@ -7374,52 +5076,6 @@ export const buildAssetNotFoundError = (
   };
 };
 
-export const buildAssetPartitionRange = (
-  overrides?: Partial<AssetPartitionRange>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetPartitionRange'} & AssetPartitionRange => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetPartitionRange');
-  return {
-    __typename: 'AssetPartitionRange',
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    partitionRange:
-      overrides && overrides.hasOwnProperty('partitionRange')
-        ? overrides.partitionRange!
-        : relationshipsToOmit.has('PartitionRange')
-          ? ({} as PartitionRange)
-          : buildPartitionRange({}, relationshipsToOmit),
-  };
-};
-
-export const buildAssetPartitions = (
-  overrides?: Partial<AssetPartitions>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetPartitions'} & AssetPartitions => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetPartitions');
-  return {
-    __typename: 'AssetPartitions',
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    partitions:
-      overrides && overrides.hasOwnProperty('partitions')
-        ? overrides.partitions!
-        : relationshipsToOmit.has('AssetBackfillTargetPartitions')
-          ? ({} as AssetBackfillTargetPartitions)
-          : buildAssetBackfillTargetPartitions({}, relationshipsToOmit),
-  };
-};
-
 export const buildAssetPartitionsStatusCounts = (
   overrides?: Partial<AssetPartitionsStatusCounts>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -7432,8 +5088,8 @@ export const buildAssetPartitionsStatusCounts = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     numPartitionsFailed:
       overrides && overrides.hasOwnProperty('numPartitionsFailed')
         ? overrides.numPartitionsFailed!
@@ -7453,74 +5109,6 @@ export const buildAssetPartitionsStatusCounts = (
   };
 };
 
-export const buildAssetRecord = (
-  overrides?: Partial<AssetRecord>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetRecord'} & AssetRecord => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetRecord');
-  return {
-    __typename: 'AssetRecord',
-    id: overrides && overrides.hasOwnProperty('id') ? overrides.id! : 'nemo',
-    key:
-      overrides && overrides.hasOwnProperty('key')
-        ? overrides.key!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-  };
-};
-
-export const buildAssetRecordConnection = (
-  overrides?: Partial<AssetRecordConnection>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetRecordConnection'} & AssetRecordConnection => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetRecordConnection');
-  return {
-    __typename: 'AssetRecordConnection',
-    assets: overrides && overrides.hasOwnProperty('assets') ? overrides.assets! : [],
-    cursor: overrides && overrides.hasOwnProperty('cursor') ? overrides.cursor! : 'voluptatem',
-  };
-};
-
-export const buildAssetResultEventHistoryConnection = (
-  overrides?: Partial<AssetResultEventHistoryConnection>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetResultEventHistoryConnection'} & AssetResultEventHistoryConnection => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetResultEventHistoryConnection');
-  return {
-    __typename: 'AssetResultEventHistoryConnection',
-    cursor: overrides && overrides.hasOwnProperty('cursor') ? overrides.cursor! : 'vero',
-    results: overrides && overrides.hasOwnProperty('results') ? overrides.results! : [],
-  };
-};
-
-export const buildAssetSelection = (
-  overrides?: Partial<AssetSelection>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AssetSelection'} & AssetSelection => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AssetSelection');
-  return {
-    __typename: 'AssetSelection',
-    assetChecks: overrides && overrides.hasOwnProperty('assetChecks') ? overrides.assetChecks! : [],
-    assetKeys: overrides && overrides.hasOwnProperty('assetKeys') ? overrides.assetKeys! : [],
-    assetSelectionString:
-      overrides && overrides.hasOwnProperty('assetSelectionString')
-        ? overrides.assetSelectionString!
-        : 'dolores',
-    assets: overrides && overrides.hasOwnProperty('assets') ? overrides.assets! : [],
-    assetsOrError:
-      overrides && overrides.hasOwnProperty('assetsOrError')
-        ? overrides.assetsOrError!
-        : relationshipsToOmit.has('AssetConnection')
-          ? ({} as AssetConnection)
-          : buildAssetConnection({}, relationshipsToOmit),
-  };
-};
-
 export const buildAssetWipeSuccess = (
   overrides?: Partial<AssetWipeSuccess>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -7529,10 +5117,7 @@ export const buildAssetWipeSuccess = (
   relationshipsToOmit.add('AssetWipeSuccess');
   return {
     __typename: 'AssetWipeSuccess',
-    assetPartitionRanges:
-      overrides && overrides.hasOwnProperty('assetPartitionRanges')
-        ? overrides.assetPartitionRanges!
-        : [],
+    assetKeys: overrides && overrides.hasOwnProperty('assetKeys') ? overrides.assetKeys! : [],
   };
 };
 
@@ -7558,16 +5143,8 @@ export const buildAutoMaterializeAssetEvaluationRecord = (
   relationshipsToOmit.add('AutoMaterializeAssetEvaluationRecord');
   return {
     __typename: 'AutoMaterializeAssetEvaluationRecord',
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
     evaluationId:
-      overrides && overrides.hasOwnProperty('evaluationId')
-        ? overrides.evaluationId!
-        : 'f9a60fcd-3c3e-48fc-b5b9-05e77c55711f',
+      overrides && overrides.hasOwnProperty('evaluationId') ? overrides.evaluationId! : 9286,
     id:
       overrides && overrides.hasOwnProperty('id')
         ? overrides.id!
@@ -7597,6 +5174,10 @@ export const buildAutoMaterializeAssetEvaluationRecords = (
   relationshipsToOmit.add('AutoMaterializeAssetEvaluationRecords');
   return {
     __typename: 'AutoMaterializeAssetEvaluationRecords',
+    currentEvaluationId:
+      overrides && overrides.hasOwnProperty('currentEvaluationId')
+        ? overrides.currentEvaluationId!
+        : 9797,
     records: overrides && overrides.hasOwnProperty('records') ? overrides.records! : [],
   };
 };
@@ -7652,14 +5233,14 @@ export const buildAutoMaterializeRuleEvaluation = (
       overrides && overrides.hasOwnProperty('evaluationData')
         ? overrides.evaluationData!
         : relationshipsToOmit.has('ParentMaterializedRuleEvaluationData')
-          ? ({} as ParentMaterializedRuleEvaluationData)
-          : buildParentMaterializedRuleEvaluationData({}, relationshipsToOmit),
+        ? ({} as ParentMaterializedRuleEvaluationData)
+        : buildParentMaterializedRuleEvaluationData({}, relationshipsToOmit),
     partitionKeysOrError:
       overrides && overrides.hasOwnProperty('partitionKeysOrError')
         ? overrides.partitionKeysOrError!
         : relationshipsToOmit.has('PartitionKeys')
-          ? ({} as PartitionKeys)
-          : buildPartitionKeys({}, relationshipsToOmit),
+        ? ({} as PartitionKeys)
+        : buildPartitionKeys({}, relationshipsToOmit),
   };
 };
 
@@ -7677,59 +5258,10 @@ export const buildAutoMaterializeRuleWithRuleEvaluations = (
       overrides && overrides.hasOwnProperty('rule')
         ? overrides.rule!
         : relationshipsToOmit.has('AutoMaterializeRule')
-          ? ({} as AutoMaterializeRule)
-          : buildAutoMaterializeRule({}, relationshipsToOmit),
+        ? ({} as AutoMaterializeRule)
+        : buildAutoMaterializeRule({}, relationshipsToOmit),
     ruleEvaluations:
       overrides && overrides.hasOwnProperty('ruleEvaluations') ? overrides.ruleEvaluations! : [],
-  };
-};
-
-export const buildAutomationCondition = (
-  overrides?: Partial<AutomationCondition>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AutomationCondition'} & AutomationCondition => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AutomationCondition');
-  return {
-    __typename: 'AutomationCondition',
-    expandedLabel:
-      overrides && overrides.hasOwnProperty('expandedLabel') ? overrides.expandedLabel! : [],
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'eligendi',
-  };
-};
-
-export const buildAutomationConditionEvaluationNode = (
-  overrides?: Partial<AutomationConditionEvaluationNode>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'AutomationConditionEvaluationNode'} & AutomationConditionEvaluationNode => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('AutomationConditionEvaluationNode');
-  return {
-    __typename: 'AutomationConditionEvaluationNode',
-    childUniqueIds:
-      overrides && overrides.hasOwnProperty('childUniqueIds') ? overrides.childUniqueIds! : [],
-    endTimestamp:
-      overrides && overrides.hasOwnProperty('endTimestamp') ? overrides.endTimestamp! : 4.53,
-    entityKey:
-      overrides && overrides.hasOwnProperty('entityKey')
-        ? overrides.entityKey!
-        : relationshipsToOmit.has('AssetCheckhandle')
-          ? ({} as AssetCheckhandle)
-          : buildAssetCheckhandle({}, relationshipsToOmit),
-    expandedLabel:
-      overrides && overrides.hasOwnProperty('expandedLabel') ? overrides.expandedLabel! : [],
-    isPartitioned:
-      overrides && overrides.hasOwnProperty('isPartitioned') ? overrides.isPartitioned! : true,
-    numCandidates:
-      overrides && overrides.hasOwnProperty('numCandidates') ? overrides.numCandidates! : 6123,
-    numTrue: overrides && overrides.hasOwnProperty('numTrue') ? overrides.numTrue! : 5212,
-    operatorType:
-      overrides && overrides.hasOwnProperty('operatorType') ? overrides.operatorType! : 'modi',
-    startTimestamp:
-      overrides && overrides.hasOwnProperty('startTimestamp') ? overrides.startTimestamp! : 5.42,
-    uniqueId: overrides && overrides.hasOwnProperty('uniqueId') ? overrides.uniqueId! : 'sit',
-    userLabel:
-      overrides && overrides.hasOwnProperty('userLabel') ? overrides.userLabel! : 'dolorem',
   };
 };
 
@@ -7747,27 +5279,6 @@ export const buildBackfillNotFoundError = (
   };
 };
 
-export const buildBackfillPolicy = (
-  overrides?: Partial<BackfillPolicy>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'BackfillPolicy'} & BackfillPolicy => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('BackfillPolicy');
-  return {
-    __typename: 'BackfillPolicy',
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'molestiae',
-    maxPartitionsPerRun:
-      overrides && overrides.hasOwnProperty('maxPartitionsPerRun')
-        ? overrides.maxPartitionsPerRun!
-        : 9025,
-    policyType:
-      overrides && overrides.hasOwnProperty('policyType')
-        ? overrides.policyType!
-        : BackfillPolicyType.MULTI_RUN,
-  };
-};
-
 export const buildBoolMetadataEntry = (
   overrides?: Partial<BoolMetadataEntry>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -7780,21 +5291,6 @@ export const buildBoolMetadataEntry = (
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'illum',
     label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'dolorum',
-  };
-};
-
-export const buildBulkActionsFilter = (
-  overrides?: Partial<BulkActionsFilter>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): BulkActionsFilter => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('BulkActionsFilter');
-  return {
-    createdAfter:
-      overrides && overrides.hasOwnProperty('createdAfter') ? overrides.createdAfter! : 6.09,
-    createdBefore:
-      overrides && overrides.hasOwnProperty('createdBefore') ? overrides.createdBefore! : 1.5,
-    statuses: overrides && overrides.hasOwnProperty('statuses') ? overrides.statuses! : [],
   };
 };
 
@@ -7853,35 +5349,6 @@ export const buildCapturedLogsMetadata = (
   };
 };
 
-export const buildClaimedConcurrencySlot = (
-  overrides?: Partial<ClaimedConcurrencySlot>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'ClaimedConcurrencySlot'} & ClaimedConcurrencySlot => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('ClaimedConcurrencySlot');
-  return {
-    __typename: 'ClaimedConcurrencySlot',
-    runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'ullam',
-    stepKey: overrides && overrides.hasOwnProperty('stepKey') ? overrides.stepKey! : 'ut',
-  };
-};
-
-export const buildCodeReferencesMetadataEntry = (
-  overrides?: Partial<CodeReferencesMetadataEntry>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'CodeReferencesMetadataEntry'} & CodeReferencesMetadataEntry => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('CodeReferencesMetadataEntry');
-  return {
-    __typename: 'CodeReferencesMetadataEntry',
-    codeReferences:
-      overrides && overrides.hasOwnProperty('codeReferences') ? overrides.codeReferences! : [],
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'beatae',
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'eveniet',
-  };
-};
-
 export const buildCompositeConfigType = (
   overrides?: Partial<CompositeConfigType>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -7932,16 +5399,57 @@ export const buildCompositeSolidDefinition = (
         : [],
     outputMappings:
       overrides && overrides.hasOwnProperty('outputMappings') ? overrides.outputMappings! : [],
-    pools: overrides && overrides.hasOwnProperty('pools') ? overrides.pools! : [],
     solidHandle:
       overrides && overrides.hasOwnProperty('solidHandle')
         ? overrides.solidHandle!
         : relationshipsToOmit.has('SolidHandle')
-          ? ({} as SolidHandle)
-          : buildSolidHandle({}, relationshipsToOmit),
+        ? ({} as SolidHandle)
+        : buildSolidHandle({}, relationshipsToOmit),
     solidHandles:
       overrides && overrides.hasOwnProperty('solidHandles') ? overrides.solidHandles! : [],
     solids: overrides && overrides.hasOwnProperty('solids') ? overrides.solids! : [],
+  };
+};
+
+export const buildComputeLogFile = (
+  overrides?: Partial<ComputeLogFile>,
+  _relationshipsToOmit: Set<string> = new Set(),
+): {__typename: 'ComputeLogFile'} & ComputeLogFile => {
+  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
+  relationshipsToOmit.add('ComputeLogFile');
+  return {
+    __typename: 'ComputeLogFile',
+    cursor: overrides && overrides.hasOwnProperty('cursor') ? overrides.cursor! : 1566,
+    data: overrides && overrides.hasOwnProperty('data') ? overrides.data! : 'quia',
+    downloadUrl:
+      overrides && overrides.hasOwnProperty('downloadUrl') ? overrides.downloadUrl! : 'sed',
+    path: overrides && overrides.hasOwnProperty('path') ? overrides.path! : 'beatae',
+    size: overrides && overrides.hasOwnProperty('size') ? overrides.size! : 7860,
+  };
+};
+
+export const buildComputeLogs = (
+  overrides?: Partial<ComputeLogs>,
+  _relationshipsToOmit: Set<string> = new Set(),
+): {__typename: 'ComputeLogs'} & ComputeLogs => {
+  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
+  relationshipsToOmit.add('ComputeLogs');
+  return {
+    __typename: 'ComputeLogs',
+    runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'est',
+    stderr:
+      overrides && overrides.hasOwnProperty('stderr')
+        ? overrides.stderr!
+        : relationshipsToOmit.has('ComputeLogFile')
+        ? ({} as ComputeLogFile)
+        : buildComputeLogFile({}, relationshipsToOmit),
+    stdout:
+      overrides && overrides.hasOwnProperty('stdout')
+        ? overrides.stdout!
+        : relationshipsToOmit.has('ComputeLogFile')
+        ? ({} as ComputeLogFile)
+        : buildComputeLogFile({}, relationshipsToOmit),
+    stepKey: overrides && overrides.hasOwnProperty('stepKey') ? overrides.stepKey! : 'cum',
   };
 };
 
@@ -7965,24 +5473,15 @@ export const buildConcurrencyKeyInfo = (
       overrides && overrides.hasOwnProperty('assignedStepRunIds')
         ? overrides.assignedStepRunIds!
         : [],
-    claimedSlots:
-      overrides && overrides.hasOwnProperty('claimedSlots') ? overrides.claimedSlots! : [],
     concurrencyKey:
       overrides && overrides.hasOwnProperty('concurrencyKey') ? overrides.concurrencyKey! : 'quasi',
-    limit: overrides && overrides.hasOwnProperty('limit') ? overrides.limit! : 703,
     pendingStepCount:
       overrides && overrides.hasOwnProperty('pendingStepCount') ? overrides.pendingStepCount! : 370,
     pendingStepRunIds:
       overrides && overrides.hasOwnProperty('pendingStepRunIds')
         ? overrides.pendingStepRunIds!
         : [],
-    pendingSteps:
-      overrides && overrides.hasOwnProperty('pendingSteps') ? overrides.pendingSteps! : [],
     slotCount: overrides && overrides.hasOwnProperty('slotCount') ? overrides.slotCount! : 455,
-    usingDefaultLimit:
-      overrides && overrides.hasOwnProperty('usingDefaultLimit')
-        ? overrides.usingDefaultLimit!
-        : true,
   };
 };
 
@@ -8018,27 +5517,9 @@ export const buildConfigTypeField = (
     configType:
       overrides && overrides.hasOwnProperty('configType')
         ? overrides.configType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     configTypeKey:
       overrides && overrides.hasOwnProperty('configTypeKey')
         ? overrides.configTypeKey!
@@ -8069,8 +5550,8 @@ export const buildConfigTypeNotFoundError = (
       overrides && overrides.hasOwnProperty('pipeline')
         ? overrides.pipeline!
         : relationshipsToOmit.has('Pipeline')
-          ? ({} as Pipeline)
-          : buildPipeline({}, relationshipsToOmit),
+        ? ({} as Pipeline)
+        : buildPipeline({}, relationshipsToOmit),
   };
 };
 
@@ -8101,24 +5582,6 @@ export const buildConflictingExecutionParamsError = (
   };
 };
 
-export const buildCronFreshnessPolicy = (
-  overrides?: Partial<CronFreshnessPolicy>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'CronFreshnessPolicy'} & CronFreshnessPolicy => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('CronFreshnessPolicy');
-  return {
-    __typename: 'CronFreshnessPolicy',
-    deadlineCron:
-      overrides && overrides.hasOwnProperty('deadlineCron') ? overrides.deadlineCron! : 'mollitia',
-    lowerBoundDeltaSeconds:
-      overrides && overrides.hasOwnProperty('lowerBoundDeltaSeconds')
-        ? overrides.lowerBoundDeltaSeconds!
-        : 1084,
-    timezone: overrides && overrides.hasOwnProperty('timezone') ? overrides.timezone! : 'vero',
-  };
-};
-
 export const buildDaemonHealth = (
   overrides?: Partial<DaemonHealth>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -8135,8 +5598,8 @@ export const buildDaemonHealth = (
       overrides && overrides.hasOwnProperty('daemonStatus')
         ? overrides.daemonStatus!
         : relationshipsToOmit.has('DaemonStatus')
-          ? ({} as DaemonStatus)
-          : buildDaemonStatus({}, relationshipsToOmit),
+        ? ({} as DaemonStatus)
+        : buildDaemonStatus({}, relationshipsToOmit),
     id: overrides && overrides.hasOwnProperty('id') ? overrides.id! : 'omnis',
   };
 };
@@ -8197,27 +5660,9 @@ export const buildDagsterType = (
     inputSchemaType:
       overrides && overrides.hasOwnProperty('inputSchemaType')
         ? overrides.inputSchemaType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     isBuiltin: overrides && overrides.hasOwnProperty('isBuiltin') ? overrides.isBuiltin! : true,
     isList: overrides && overrides.hasOwnProperty('isList') ? overrides.isList! : true,
     isNothing: overrides && overrides.hasOwnProperty('isNothing') ? overrides.isNothing! : true,
@@ -8229,27 +5674,9 @@ export const buildDagsterType = (
     outputSchemaType:
       overrides && overrides.hasOwnProperty('outputSchemaType')
         ? overrides.outputSchemaType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
   };
 };
 
@@ -8294,34 +5721,6 @@ export const buildDefaultPartitionStatuses = (
   };
 };
 
-export const buildDefinitionTag = (
-  overrides?: Partial<DefinitionTag>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'DefinitionTag'} & DefinitionTag => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('DefinitionTag');
-  return {
-    __typename: 'DefinitionTag',
-    key: overrides && overrides.hasOwnProperty('key') ? overrides.key! : 'itaque',
-    value: overrides && overrides.hasOwnProperty('value') ? overrides.value! : 'consequatur',
-  };
-};
-
-export const buildDeleteDynamicPartitionsSuccess = (
-  overrides?: Partial<DeleteDynamicPartitionsSuccess>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'DeleteDynamicPartitionsSuccess'} & DeleteDynamicPartitionsSuccess => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('DeleteDynamicPartitionsSuccess');
-  return {
-    __typename: 'DeleteDynamicPartitionsSuccess',
-    partitionsDefName:
-      overrides && overrides.hasOwnProperty('partitionsDefName')
-        ? overrides.partitionsDefName!
-        : 'tenetur',
-  };
-};
-
 export const buildDeletePipelineRunSuccess = (
   overrides?: Partial<DeletePipelineRunSuccess>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -8346,8 +5745,8 @@ export const buildDeleteRunMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('DeletePipelineRunSuccess')
-          ? ({} as DeletePipelineRunSuccess)
-          : buildDeletePipelineRunSuccess({}, relationshipsToOmit),
+        ? ({} as DeletePipelineRunSuccess)
+        : buildDeletePipelineRunSuccess({}, relationshipsToOmit),
   };
 };
 
@@ -8423,8 +5822,8 @@ export const buildDryRunInstigationTick = (
       overrides && overrides.hasOwnProperty('evaluationResult')
         ? overrides.evaluationResult!
         : relationshipsToOmit.has('TickEvaluation')
-          ? ({} as TickEvaluation)
-          : buildTickEvaluation({}, relationshipsToOmit),
+        ? ({} as TickEvaluation)
+        : buildTickEvaluation({}, relationshipsToOmit),
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 7.53,
   };
 };
@@ -8520,8 +5919,8 @@ export const buildEngineEvent = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     eventType:
       overrides && overrides.hasOwnProperty('eventType')
         ? overrides.eventType!
@@ -8645,8 +6044,8 @@ export const buildErrorChainLink = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     isExplicitLink:
       overrides && overrides.hasOwnProperty('isExplicitLink') ? overrides.isExplicitLink! : true,
     message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'ut',
@@ -8665,8 +6064,8 @@ export const buildErrorEvent = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -8767,6 +6166,7 @@ export const buildExecutionMetadata = (
     parentRunId:
       overrides && overrides.hasOwnProperty('parentRunId') ? overrides.parentRunId! : 'autem',
     rootRunId: overrides && overrides.hasOwnProperty('rootRunId') ? overrides.rootRunId! : 'ut',
+    runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'dolor',
     tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
   };
 };
@@ -8782,8 +6182,8 @@ export const buildExecutionParams = (
       overrides && overrides.hasOwnProperty('executionMetadata')
         ? overrides.executionMetadata!
         : relationshipsToOmit.has('ExecutionMetadata')
-          ? ({} as ExecutionMetadata)
-          : buildExecutionMetadata({}, relationshipsToOmit),
+        ? ({} as ExecutionMetadata)
+        : buildExecutionMetadata({}, relationshipsToOmit),
     mode: overrides && overrides.hasOwnProperty('mode') ? overrides.mode! : 'porro',
     preset: overrides && overrides.hasOwnProperty('preset') ? overrides.preset! : 'voluptates',
     runConfigData:
@@ -8794,8 +6194,8 @@ export const buildExecutionParams = (
       overrides && overrides.hasOwnProperty('selector')
         ? overrides.selector!
         : relationshipsToOmit.has('JobOrPipelineSelector')
-          ? ({} as JobOrPipelineSelector)
-          : buildJobOrPipelineSelector({}, relationshipsToOmit),
+        ? ({} as JobOrPipelineSelector)
+        : buildJobOrPipelineSelector({}, relationshipsToOmit),
     stepKeys: overrides && overrides.hasOwnProperty('stepKeys') ? overrides.stepKeys! : [],
   };
 };
@@ -8812,8 +6212,6 @@ export const buildExecutionPlan = (
       overrides && overrides.hasOwnProperty('artifactsPersisted')
         ? overrides.artifactsPersisted!
         : true,
-    assetSelection:
-      overrides && overrides.hasOwnProperty('assetSelection') ? overrides.assetSelection! : [],
     steps: overrides && overrides.hasOwnProperty('steps') ? overrides.steps! : [],
   };
 };
@@ -8850,8 +6248,8 @@ export const buildExecutionStepFailureEvent = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     errorSource:
       overrides && overrides.hasOwnProperty('errorSource')
         ? overrides.errorSource!
@@ -8864,8 +6262,8 @@ export const buildExecutionStepFailureEvent = (
       overrides && overrides.hasOwnProperty('failureMetadata')
         ? overrides.failureMetadata!
         : relationshipsToOmit.has('FailureMetadata')
-          ? ({} as FailureMetadata)
-          : buildFailureMetadata({}, relationshipsToOmit),
+        ? ({} as FailureMetadata)
+        : buildFailureMetadata({}, relationshipsToOmit),
     level: overrides && overrides.hasOwnProperty('level') ? overrides.level! : LogLevel.CRITICAL,
     message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'eligendi',
     runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'itaque',
@@ -8917,8 +6315,8 @@ export const buildExecutionStepInputEvent = (
       overrides && overrides.hasOwnProperty('typeCheck')
         ? overrides.typeCheck!
         : relationshipsToOmit.has('TypeCheck')
-          ? ({} as TypeCheck)
-          : buildTypeCheck({}, relationshipsToOmit),
+        ? ({} as TypeCheck)
+        : buildTypeCheck({}, relationshipsToOmit),
   };
 };
 
@@ -8965,8 +6363,8 @@ export const buildExecutionStepOutputEvent = (
       overrides && overrides.hasOwnProperty('typeCheck')
         ? overrides.typeCheck!
         : relationshipsToOmit.has('TypeCheck')
-          ? ({} as TypeCheck)
-          : buildTypeCheck({}, relationshipsToOmit),
+        ? ({} as TypeCheck)
+        : buildTypeCheck({}, relationshipsToOmit),
   };
 };
 
@@ -9077,8 +6475,8 @@ export const buildExecutionStepUpForRetryEvent = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     eventType:
       overrides && overrides.hasOwnProperty('eventType')
         ? overrides.eventType!
@@ -9124,65 +6522,6 @@ export const buildExpectationResult = (
   };
 };
 
-export const buildFailedToMaterializeEvent = (
-  overrides?: Partial<FailedToMaterializeEvent>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'FailedToMaterializeEvent'} & FailedToMaterializeEvent => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('FailedToMaterializeEvent');
-  return {
-    __typename: 'FailedToMaterializeEvent',
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'et',
-    eventType:
-      overrides && overrides.hasOwnProperty('eventType')
-        ? overrides.eventType!
-        : DagsterEventType.ALERT_FAILURE,
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'aliquam',
-    level: overrides && overrides.hasOwnProperty('level') ? overrides.level! : LogLevel.CRITICAL,
-    materializationFailureReason:
-      overrides && overrides.hasOwnProperty('materializationFailureReason')
-        ? overrides.materializationFailureReason!
-        : AssetMaterializationFailureReason.FAILED_TO_MATERIALIZE,
-    materializationFailureType:
-      overrides && overrides.hasOwnProperty('materializationFailureType')
-        ? overrides.materializationFailureType!
-        : AssetMaterializationFailureType.FAILED,
-    message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'libero',
-    metadataEntries:
-      overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
-    partition:
-      overrides && overrides.hasOwnProperty('partition') ? overrides.partition! : 'voluptatibus',
-    runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'et',
-    runOrError:
-      overrides && overrides.hasOwnProperty('runOrError')
-        ? overrides.runOrError!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    solidHandleID:
-      overrides && overrides.hasOwnProperty('solidHandleID')
-        ? overrides.solidHandleID!
-        : 'voluptatem',
-    stepKey:
-      overrides && overrides.hasOwnProperty('stepKey') ? overrides.stepKey! : 'reprehenderit',
-    stepStats:
-      overrides && overrides.hasOwnProperty('stepStats')
-        ? overrides.stepStats!
-        : relationshipsToOmit.has('RunStepStats')
-          ? ({} as RunStepStats)
-          : buildRunStepStats({}, relationshipsToOmit),
-    tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
-    timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 'enim',
-  };
-};
-
 export const buildFailureMetadata = (
   overrides?: Partial<FailureMetadata>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -9196,19 +6535,6 @@ export const buildFailureMetadata = (
     label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'unde',
     metadataEntries:
       overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
-  };
-};
-
-export const buildFeatureFlag = (
-  overrides?: Partial<FeatureFlag>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'FeatureFlag'} & FeatureFlag => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('FeatureFlag');
-  return {
-    __typename: 'FeatureFlag',
-    enabled: overrides && overrides.hasOwnProperty('enabled') ? overrides.enabled! : true,
-    name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'et',
   };
 };
 
@@ -9232,8 +6558,8 @@ export const buildFieldNotDefinedConfigError = (
       overrides && overrides.hasOwnProperty('stack')
         ? overrides.stack!
         : relationshipsToOmit.has('EvaluationStack')
-          ? ({} as EvaluationStack)
-          : buildEvaluationStack({}, relationshipsToOmit),
+        ? ({} as EvaluationStack)
+        : buildEvaluationStack({}, relationshipsToOmit),
   };
 };
 
@@ -9256,8 +6582,8 @@ export const buildFieldsNotDefinedConfigError = (
       overrides && overrides.hasOwnProperty('stack')
         ? overrides.stack!
         : relationshipsToOmit.has('EvaluationStack')
-          ? ({} as EvaluationStack)
-          : buildEvaluationStack({}, relationshipsToOmit),
+        ? ({} as EvaluationStack)
+        : buildEvaluationStack({}, relationshipsToOmit),
   };
 };
 
@@ -9301,27 +6627,6 @@ export const buildFreshnessPolicy = (
   };
 };
 
-export const buildFreshnessStatusInfo = (
-  overrides?: Partial<FreshnessStatusInfo>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'FreshnessStatusInfo'} & FreshnessStatusInfo => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('FreshnessStatusInfo');
-  return {
-    __typename: 'FreshnessStatusInfo',
-    freshnessStatus:
-      overrides && overrides.hasOwnProperty('freshnessStatus')
-        ? overrides.freshnessStatus!
-        : AssetHealthStatus.DEGRADED,
-    freshnessStatusMetadata:
-      overrides && overrides.hasOwnProperty('freshnessStatusMetadata')
-        ? overrides.freshnessStatusMetadata!
-        : relationshipsToOmit.has('AssetHealthFreshnessMeta')
-          ? ({} as AssetHealthFreshnessMeta)
-          : buildAssetHealthFreshnessMeta({}, relationshipsToOmit),
-  };
-};
-
 export const buildGraph = (
   overrides?: Partial<Graph>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -9342,8 +6647,8 @@ export const buildGraph = (
       overrides && overrides.hasOwnProperty('solidHandle')
         ? overrides.solidHandle!
         : relationshipsToOmit.has('SolidHandle')
-          ? ({} as SolidHandle)
-          : buildSolidHandle({}, relationshipsToOmit),
+        ? ({} as SolidHandle)
+        : buildSolidHandle({}, relationshipsToOmit),
     solidHandles:
       overrides && overrides.hasOwnProperty('solidHandles') ? overrides.solidHandles! : [],
     solids: overrides && overrides.hasOwnProperty('solids') ? overrides.solids! : [],
@@ -9419,55 +6724,6 @@ export const buildHandledOutputEvent = (
   };
 };
 
-export const buildHealthChangedEvent = (
-  overrides?: Partial<HealthChangedEvent>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'HealthChangedEvent'} & HealthChangedEvent => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('HealthChangedEvent');
-  return {
-    __typename: 'HealthChangedEvent',
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'quam',
-    eventType:
-      overrides && overrides.hasOwnProperty('eventType')
-        ? overrides.eventType!
-        : DagsterEventType.ALERT_FAILURE,
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'consequuntur',
-    level: overrides && overrides.hasOwnProperty('level') ? overrides.level! : LogLevel.CRITICAL,
-    message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'tempora',
-    metadataEntries:
-      overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
-    partition: overrides && overrides.hasOwnProperty('partition') ? overrides.partition! : 'qui',
-    runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'et',
-    runOrError:
-      overrides && overrides.hasOwnProperty('runOrError')
-        ? overrides.runOrError!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    solidHandleID:
-      overrides && overrides.hasOwnProperty('solidHandleID')
-        ? overrides.solidHandleID!
-        : 'repellendus',
-    stepKey: overrides && overrides.hasOwnProperty('stepKey') ? overrides.stepKey! : 'mollitia',
-    stepStats:
-      overrides && overrides.hasOwnProperty('stepStats')
-        ? overrides.stepStats!
-        : relationshipsToOmit.has('RunStepStats')
-          ? ({} as RunStepStats)
-          : buildRunStepStats({}, relationshipsToOmit),
-    tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
-    timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 'neque',
-  };
-};
-
 export const buildHookCompletedEvent = (
   overrides?: Partial<HookCompletedEvent>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -9502,8 +6758,8 @@ export const buildHookErroredEvent = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     eventType:
       overrides && overrides.hasOwnProperty('eventType')
         ? overrides.eventType!
@@ -9552,8 +6808,8 @@ export const buildIPipelineSnapshot = (
       overrides && overrides.hasOwnProperty('dagsterTypeOrError')
         ? overrides.dagsterTypeOrError!
         : relationshipsToOmit.has('DagsterTypeNotFoundError')
-          ? ({} as DagsterTypeNotFoundError)
-          : buildDagsterTypeNotFoundError({}, relationshipsToOmit),
+        ? ({} as DagsterTypeNotFoundError)
+        : buildDagsterTypeNotFoundError({}, relationshipsToOmit),
     dagsterTypes:
       overrides && overrides.hasOwnProperty('dagsterTypes') ? overrides.dagsterTypes! : [],
     description:
@@ -9579,8 +6835,8 @@ export const buildIPipelineSnapshot = (
       overrides && overrides.hasOwnProperty('solidHandle')
         ? overrides.solidHandle!
         : relationshipsToOmit.has('SolidHandle')
-          ? ({} as SolidHandle)
-          : buildSolidHandle({}, relationshipsToOmit),
+        ? ({} as SolidHandle)
+        : buildSolidHandle({}, relationshipsToOmit),
     solidHandles:
       overrides && overrides.hasOwnProperty('solidHandles') ? overrides.solidHandles! : [],
     solids: overrides && overrides.hasOwnProperty('solids') ? overrides.solids! : [],
@@ -9607,7 +6863,6 @@ export const buildISolidDefinition = (
       overrides && overrides.hasOwnProperty('outputDefinitions')
         ? overrides.outputDefinitions!
         : [],
-    pools: overrides && overrides.hasOwnProperty('pools') ? overrides.pools! : [],
   };
 };
 
@@ -9623,8 +6878,8 @@ export const buildInput = (
       overrides && overrides.hasOwnProperty('definition')
         ? overrides.definition!
         : relationshipsToOmit.has('InputDefinition')
-          ? ({} as InputDefinition)
-          : buildInputDefinition({}, relationshipsToOmit),
+        ? ({} as InputDefinition)
+        : buildInputDefinition({}, relationshipsToOmit),
     dependsOn: overrides && overrides.hasOwnProperty('dependsOn') ? overrides.dependsOn! : [],
     isDynamicCollect:
       overrides && overrides.hasOwnProperty('isDynamicCollect')
@@ -9634,8 +6889,8 @@ export const buildInput = (
       overrides && overrides.hasOwnProperty('solid')
         ? overrides.solid!
         : relationshipsToOmit.has('Solid')
-          ? ({} as Solid)
-          : buildSolid({}, relationshipsToOmit),
+        ? ({} as Solid)
+        : buildSolid({}, relationshipsToOmit),
   };
 };
 
@@ -9652,18 +6907,18 @@ export const buildInputDefinition = (
     metadataEntries:
       overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'non',
+    solidDefinition:
+      overrides && overrides.hasOwnProperty('solidDefinition')
+        ? overrides.solidDefinition!
+        : relationshipsToOmit.has('SolidDefinition')
+        ? ({} as SolidDefinition)
+        : buildSolidDefinition({}, relationshipsToOmit),
     type:
       overrides && overrides.hasOwnProperty('type')
         ? overrides.type!
-        : relationshipsToOmit.has('ListDagsterType')
-          ? ({} as ListDagsterType)
-          : buildListDagsterType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('NullableDagsterType')
-            ? ({} as NullableDagsterType)
-            : buildNullableDagsterType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('RegularDagsterType')
-              ? ({} as RegularDagsterType)
-              : buildRegularDagsterType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('DagsterType')
+        ? ({} as DagsterType)
+        : buildDagsterType({}, relationshipsToOmit),
   };
 };
 
@@ -9679,14 +6934,26 @@ export const buildInputMapping = (
       overrides && overrides.hasOwnProperty('definition')
         ? overrides.definition!
         : relationshipsToOmit.has('InputDefinition')
-          ? ({} as InputDefinition)
-          : buildInputDefinition({}, relationshipsToOmit),
+        ? ({} as InputDefinition)
+        : buildInputDefinition({}, relationshipsToOmit),
     mappedInput:
       overrides && overrides.hasOwnProperty('mappedInput')
         ? overrides.mappedInput!
         : relationshipsToOmit.has('Input')
-          ? ({} as Input)
-          : buildInput({}, relationshipsToOmit),
+        ? ({} as Input)
+        : buildInput({}, relationshipsToOmit),
+  };
+};
+
+export const buildInputTag = (
+  overrides?: Partial<InputTag>,
+  _relationshipsToOmit: Set<string> = new Set(),
+): InputTag => {
+  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
+  relationshipsToOmit.add('InputTag');
+  return {
+    name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'possimus',
+    value: overrides && overrides.hasOwnProperty('value') ? overrides.value! : 'quod',
   };
 };
 
@@ -9702,12 +6969,6 @@ export const buildInstance = (
       overrides && overrides.hasOwnProperty('autoMaterializePaused')
         ? overrides.autoMaterializePaused!
         : true,
-    concurrencyLimit:
-      overrides && overrides.hasOwnProperty('concurrencyLimit')
-        ? overrides.concurrencyLimit!
-        : relationshipsToOmit.has('ConcurrencyKeyInfo')
-          ? ({} as ConcurrencyKeyInfo)
-          : buildConcurrencyKeyInfo({}, relationshipsToOmit),
     concurrencyLimits:
       overrides && overrides.hasOwnProperty('concurrencyLimits')
         ? overrides.concurrencyLimits!
@@ -9716,43 +6977,23 @@ export const buildInstance = (
       overrides && overrides.hasOwnProperty('daemonHealth')
         ? overrides.daemonHealth!
         : relationshipsToOmit.has('DaemonHealth')
-          ? ({} as DaemonHealth)
-          : buildDaemonHealth({}, relationshipsToOmit),
+        ? ({} as DaemonHealth)
+        : buildDaemonHealth({}, relationshipsToOmit),
     executablePath:
       overrides && overrides.hasOwnProperty('executablePath') ? overrides.executablePath! : 'fuga',
-    freshnessEvaluationEnabled:
-      overrides && overrides.hasOwnProperty('freshnessEvaluationEnabled')
-        ? overrides.freshnessEvaluationEnabled!
+    hasCapturedLogManager:
+      overrides && overrides.hasOwnProperty('hasCapturedLogManager')
+        ? overrides.hasCapturedLogManager!
         : true,
     hasInfo: overrides && overrides.hasOwnProperty('hasInfo') ? overrides.hasInfo! : true,
     id: overrides && overrides.hasOwnProperty('id') ? overrides.id! : 'deleniti',
     info: overrides && overrides.hasOwnProperty('info') ? overrides.info! : 'qui',
-    maxConcurrencyLimitValue:
-      overrides && overrides.hasOwnProperty('maxConcurrencyLimitValue')
-        ? overrides.maxConcurrencyLimitValue!
-        : 8998,
-    minConcurrencyLimitValue:
-      overrides && overrides.hasOwnProperty('minConcurrencyLimitValue')
-        ? overrides.minConcurrencyLimitValue!
-        : 4538,
-    poolConfig:
-      overrides && overrides.hasOwnProperty('poolConfig')
-        ? overrides.poolConfig!
-        : relationshipsToOmit.has('PoolConfig')
-          ? ({} as PoolConfig)
-          : buildPoolConfig({}, relationshipsToOmit),
     runLauncher:
       overrides && overrides.hasOwnProperty('runLauncher')
         ? overrides.runLauncher!
         : relationshipsToOmit.has('RunLauncher')
-          ? ({} as RunLauncher)
-          : buildRunLauncher({}, relationshipsToOmit),
-    runQueueConfig:
-      overrides && overrides.hasOwnProperty('runQueueConfig')
-        ? overrides.runQueueConfig!
-        : relationshipsToOmit.has('RunQueueConfig')
-          ? ({} as RunQueueConfig)
-          : buildRunQueueConfig({}, relationshipsToOmit),
+        ? ({} as RunLauncher)
+        : buildRunLauncher({}, relationshipsToOmit),
     runQueuingSupported:
       overrides && overrides.hasOwnProperty('runQueuingSupported')
         ? overrides.runQueuingSupported!
@@ -9760,10 +7001,6 @@ export const buildInstance = (
     supportsConcurrencyLimits:
       overrides && overrides.hasOwnProperty('supportsConcurrencyLimits')
         ? overrides.supportsConcurrencyLimits!
-        : false,
-    useAutoMaterializeSensors:
-      overrides && overrides.hasOwnProperty('useAutoMaterializeSensors')
-        ? overrides.useAutoMaterializeSensors!
         : false,
   };
 };
@@ -9839,14 +7076,14 @@ export const buildInstigationState = (
     instigationType:
       overrides && overrides.hasOwnProperty('instigationType')
         ? overrides.instigationType!
-        : InstigationType.AUTO_MATERIALIZE,
+        : InstigationType.SCHEDULE,
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'praesentium',
     nextTick:
       overrides && overrides.hasOwnProperty('nextTick')
         ? overrides.nextTick!
         : relationshipsToOmit.has('DryRunInstigationTick')
-          ? ({} as DryRunInstigationTick)
-          : buildDryRunInstigationTick({}, relationshipsToOmit),
+        ? ({} as DryRunInstigationTick)
+        : buildDryRunInstigationTick({}, relationshipsToOmit),
     repositoryLocationName:
       overrides && overrides.hasOwnProperty('repositoryLocationName')
         ? overrides.repositoryLocationName!
@@ -9857,8 +7094,8 @@ export const buildInstigationState = (
       overrides && overrides.hasOwnProperty('repositoryOrigin')
         ? overrides.repositoryOrigin!
         : relationshipsToOmit.has('RepositoryOrigin')
-          ? ({} as RepositoryOrigin)
-          : buildRepositoryOrigin({}, relationshipsToOmit),
+        ? ({} as RepositoryOrigin)
+        : buildRepositoryOrigin({}, relationshipsToOmit),
     runningCount:
       overrides && overrides.hasOwnProperty('runningCount') ? overrides.runningCount! : 6523,
     runs: overrides && overrides.hasOwnProperty('runs') ? overrides.runs! : [],
@@ -9872,15 +7109,15 @@ export const buildInstigationState = (
       overrides && overrides.hasOwnProperty('tick')
         ? overrides.tick!
         : relationshipsToOmit.has('InstigationTick')
-          ? ({} as InstigationTick)
-          : buildInstigationTick({}, relationshipsToOmit),
+        ? ({} as InstigationTick)
+        : buildInstigationTick({}, relationshipsToOmit),
     ticks: overrides && overrides.hasOwnProperty('ticks') ? overrides.ticks! : [],
     typeSpecificData:
       overrides && overrides.hasOwnProperty('typeSpecificData')
         ? overrides.typeSpecificData!
         : relationshipsToOmit.has('ScheduleData')
-          ? ({} as ScheduleData)
-          : buildScheduleData({}, relationshipsToOmit),
+        ? ({} as ScheduleData)
+        : buildScheduleData({}, relationshipsToOmit),
   };
 };
 
@@ -9917,52 +7154,30 @@ export const buildInstigationTick = (
   relationshipsToOmit.add('InstigationTick');
   return {
     __typename: 'InstigationTick',
-    autoMaterializeAssetEvaluationId:
-      overrides && overrides.hasOwnProperty('autoMaterializeAssetEvaluationId')
-        ? overrides.autoMaterializeAssetEvaluationId!
-        : '95e99e1c-3377-4875-abc8-9f50fc5b7778',
     cursor: overrides && overrides.hasOwnProperty('cursor') ? overrides.cursor! : 'voluptatem',
     dynamicPartitionsRequestResults:
       overrides && overrides.hasOwnProperty('dynamicPartitionsRequestResults')
         ? overrides.dynamicPartitionsRequestResults!
         : [],
-    endTimestamp:
-      overrides && overrides.hasOwnProperty('endTimestamp') ? overrides.endTimestamp! : 8.87,
     error:
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     id:
       overrides && overrides.hasOwnProperty('id')
         ? overrides.id!
         : 'd7be0ce0-364e-498b-98ec-cc8b0f746723',
-    instigationType:
-      overrides && overrides.hasOwnProperty('instigationType')
-        ? overrides.instigationType!
-        : InstigationType.AUTO_MATERIALIZE,
     logEvents:
       overrides && overrides.hasOwnProperty('logEvents')
         ? overrides.logEvents!
         : relationshipsToOmit.has('InstigationEventConnection')
-          ? ({} as InstigationEventConnection)
-          : buildInstigationEventConnection({}, relationshipsToOmit),
+        ? ({} as InstigationEventConnection)
+        : buildInstigationEventConnection({}, relationshipsToOmit),
     logKey: overrides && overrides.hasOwnProperty('logKey') ? overrides.logKey! : [],
     originRunIds:
       overrides && overrides.hasOwnProperty('originRunIds') ? overrides.originRunIds! : [],
-    requestedAssetKeys:
-      overrides && overrides.hasOwnProperty('requestedAssetKeys')
-        ? overrides.requestedAssetKeys!
-        : [],
-    requestedAssetMaterializationCount:
-      overrides && overrides.hasOwnProperty('requestedAssetMaterializationCount')
-        ? overrides.requestedAssetMaterializationCount!
-        : 412,
-    requestedMaterializationsForAssets:
-      overrides && overrides.hasOwnProperty('requestedMaterializationsForAssets')
-        ? overrides.requestedMaterializationsForAssets!
-        : [],
     runIds: overrides && overrides.hasOwnProperty('runIds') ? overrides.runIds! : [],
     runKeys: overrides && overrides.hasOwnProperty('runKeys') ? overrides.runKeys! : [],
     runs: overrides && overrides.hasOwnProperty('runs') ? overrides.runs! : [],
@@ -9972,10 +7187,6 @@ export const buildInstigationTick = (
       overrides && overrides.hasOwnProperty('status')
         ? overrides.status!
         : InstigationTickStatus.FAILURE,
-    tickId:
-      overrides && overrides.hasOwnProperty('tickId')
-        ? overrides.tickId!
-        : '664bf548-9cd0-4a28-8f90-61c0e5d4d811',
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 6.06,
   };
 };
@@ -10052,8 +7263,8 @@ export const buildInvalidSubsetError = (
       overrides && overrides.hasOwnProperty('pipeline')
         ? overrides.pipeline!
         : relationshipsToOmit.has('Pipeline')
-          ? ({} as Pipeline)
-          : buildPipeline({}, relationshipsToOmit),
+        ? ({} as Pipeline)
+        : buildPipeline({}, relationshipsToOmit),
   };
 };
 
@@ -10069,16 +7280,12 @@ export const buildJob = (
       overrides && overrides.hasOwnProperty('dagsterTypeOrError')
         ? overrides.dagsterTypeOrError!
         : relationshipsToOmit.has('DagsterTypeNotFoundError')
-          ? ({} as DagsterTypeNotFoundError)
-          : buildDagsterTypeNotFoundError({}, relationshipsToOmit),
+        ? ({} as DagsterTypeNotFoundError)
+        : buildDagsterTypeNotFoundError({}, relationshipsToOmit),
     dagsterTypes:
       overrides && overrides.hasOwnProperty('dagsterTypes') ? overrides.dagsterTypes! : [],
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'occaecati',
-    externalJobSource:
-      overrides && overrides.hasOwnProperty('externalJobSource')
-        ? overrides.externalJobSource!
-        : 'suscipit',
     graphName:
       overrides && overrides.hasOwnProperty('graphName') ? overrides.graphName! : 'eveniet',
     id:
@@ -10095,18 +7302,6 @@ export const buildJob = (
       overrides && overrides.hasOwnProperty('parentSnapshotId')
         ? overrides.parentSnapshotId!
         : 'tempore',
-    partition:
-      overrides && overrides.hasOwnProperty('partition')
-        ? overrides.partition!
-        : relationshipsToOmit.has('PartitionTagsAndConfig')
-          ? ({} as PartitionTagsAndConfig)
-          : buildPartitionTagsAndConfig({}, relationshipsToOmit),
-    partitionKeysOrError:
-      overrides && overrides.hasOwnProperty('partitionKeysOrError')
-        ? overrides.partitionKeysOrError!
-        : relationshipsToOmit.has('PartitionKeys')
-          ? ({} as PartitionKeys)
-          : buildPartitionKeys({}, relationshipsToOmit),
     pipelineSnapshotId:
       overrides && overrides.hasOwnProperty('pipelineSnapshotId')
         ? overrides.pipelineSnapshotId!
@@ -10116,9 +7311,8 @@ export const buildJob = (
       overrides && overrides.hasOwnProperty('repository')
         ? overrides.repository!
         : relationshipsToOmit.has('Repository')
-          ? ({} as Repository)
-          : buildRepository({}, relationshipsToOmit),
-    runTags: overrides && overrides.hasOwnProperty('runTags') ? overrides.runTags! : [],
+        ? ({} as Repository)
+        : buildRepository({}, relationshipsToOmit),
     runs: overrides && overrides.hasOwnProperty('runs') ? overrides.runs! : [],
     schedules: overrides && overrides.hasOwnProperty('schedules') ? overrides.schedules! : [],
     sensors: overrides && overrides.hasOwnProperty('sensors') ? overrides.sensors! : [],
@@ -10126,31 +7320,12 @@ export const buildJob = (
       overrides && overrides.hasOwnProperty('solidHandle')
         ? overrides.solidHandle!
         : relationshipsToOmit.has('SolidHandle')
-          ? ({} as SolidHandle)
-          : buildSolidHandle({}, relationshipsToOmit),
+        ? ({} as SolidHandle)
+        : buildSolidHandle({}, relationshipsToOmit),
     solidHandles:
       overrides && overrides.hasOwnProperty('solidHandles') ? overrides.solidHandles! : [],
     solids: overrides && overrides.hasOwnProperty('solids') ? overrides.solids! : [],
     tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
-  };
-};
-
-export const buildJobMetadataEntry = (
-  overrides?: Partial<JobMetadataEntry>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'JobMetadataEntry'} & JobMetadataEntry => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('JobMetadataEntry');
-  return {
-    __typename: 'JobMetadataEntry',
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'id',
-    jobName: overrides && overrides.hasOwnProperty('jobName') ? overrides.jobName! : 'eum',
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'illo',
-    locationName:
-      overrides && overrides.hasOwnProperty('locationName') ? overrides.locationName! : 'quidem',
-    repositoryName:
-      overrides && overrides.hasOwnProperty('repositoryName') ? overrides.repositoryName! : 'eos',
   };
 };
 
@@ -10191,8 +7366,13 @@ export const buildJobWithOps = (
   relationshipsToOmit.add('JobWithOps');
   return {
     __typename: 'JobWithOps',
-    jobName: overrides && overrides.hasOwnProperty('jobName') ? overrides.jobName! : 'nihil',
-    opHandleIDs: overrides && overrides.hasOwnProperty('opHandleIDs') ? overrides.opHandleIDs! : [],
+    job:
+      overrides && overrides.hasOwnProperty('job')
+        ? overrides.job!
+        : relationshipsToOmit.has('Job')
+        ? ({} as Job)
+        : buildJob({}, relationshipsToOmit),
+    opsUsing: overrides && overrides.hasOwnProperty('opsUsing') ? overrides.opsUsing! : [],
   };
 };
 
@@ -10223,8 +7403,8 @@ export const buildLaunchBackfillMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('ConflictingExecutionParamsError')
-          ? ({} as ConflictingExecutionParamsError)
-          : buildConflictingExecutionParamsError({}, relationshipsToOmit),
+        ? ({} as ConflictingExecutionParamsError)
+        : buildConflictingExecutionParamsError({}, relationshipsToOmit),
   };
 };
 
@@ -10239,8 +7419,6 @@ export const buildLaunchBackfillParams = (
       overrides && overrides.hasOwnProperty('allPartitions') ? overrides.allPartitions! : false,
     assetSelection:
       overrides && overrides.hasOwnProperty('assetSelection') ? overrides.assetSelection! : [],
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'expedita',
     forceSynchronousSubmission:
       overrides && overrides.hasOwnProperty('forceSynchronousSubmission')
         ? overrides.forceSynchronousSubmission!
@@ -10259,10 +7437,9 @@ export const buildLaunchBackfillParams = (
       overrides && overrides.hasOwnProperty('selector')
         ? overrides.selector!
         : relationshipsToOmit.has('PartitionSetSelector')
-          ? ({} as PartitionSetSelector)
-          : buildPartitionSetSelector({}, relationshipsToOmit),
+        ? ({} as PartitionSetSelector)
+        : buildPartitionSetSelector({}, relationshipsToOmit),
     tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
-    title: overrides && overrides.hasOwnProperty('title') ? overrides.title! : 'soluta',
   };
 };
 
@@ -10280,38 +7457,6 @@ export const buildLaunchBackfillSuccess = (
   };
 };
 
-export const buildLaunchMultipleRunsMutation = (
-  overrides?: Partial<LaunchMultipleRunsMutation>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'LaunchMultipleRunsMutation'} & LaunchMultipleRunsMutation => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('LaunchMultipleRunsMutation');
-  return {
-    __typename: 'LaunchMultipleRunsMutation',
-    Output:
-      overrides && overrides.hasOwnProperty('Output')
-        ? overrides.Output!
-        : relationshipsToOmit.has('LaunchMultipleRunsResult')
-          ? ({} as LaunchMultipleRunsResult)
-          : buildLaunchMultipleRunsResult({}, relationshipsToOmit),
-  };
-};
-
-export const buildLaunchMultipleRunsResult = (
-  overrides?: Partial<LaunchMultipleRunsResult>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'LaunchMultipleRunsResult'} & LaunchMultipleRunsResult => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('LaunchMultipleRunsResult');
-  return {
-    __typename: 'LaunchMultipleRunsResult',
-    launchMultipleRunsResult:
-      overrides && overrides.hasOwnProperty('launchMultipleRunsResult')
-        ? overrides.launchMultipleRunsResult!
-        : [],
-  };
-};
-
 export const buildLaunchPipelineRunSuccess = (
   overrides?: Partial<LaunchPipelineRunSuccess>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -10324,8 +7469,8 @@ export const buildLaunchPipelineRunSuccess = (
       overrides && overrides.hasOwnProperty('run')
         ? overrides.run!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
   };
 };
 
@@ -10341,8 +7486,8 @@ export const buildLaunchRunMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('ConflictingExecutionParamsError')
-          ? ({} as ConflictingExecutionParamsError)
-          : buildConflictingExecutionParamsError({}, relationshipsToOmit),
+        ? ({} as ConflictingExecutionParamsError)
+        : buildConflictingExecutionParamsError({}, relationshipsToOmit),
   };
 };
 
@@ -10358,8 +7503,8 @@ export const buildLaunchRunReexecutionMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('ConflictingExecutionParamsError')
-          ? ({} as ConflictingExecutionParamsError)
-          : buildConflictingExecutionParamsError({}, relationshipsToOmit),
+        ? ({} as ConflictingExecutionParamsError)
+        : buildConflictingExecutionParamsError({}, relationshipsToOmit),
   };
 };
 
@@ -10375,8 +7520,8 @@ export const buildLaunchRunSuccess = (
       overrides && overrides.hasOwnProperty('run')
         ? overrides.run!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
   };
 };
 
@@ -10396,27 +7541,9 @@ export const buildListDagsterType = (
     inputSchemaType:
       overrides && overrides.hasOwnProperty('inputSchemaType')
         ? overrides.inputSchemaType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     isBuiltin: overrides && overrides.hasOwnProperty('isBuiltin') ? overrides.isBuiltin! : true,
     isList: overrides && overrides.hasOwnProperty('isList') ? overrides.isList! : true,
     isNothing: overrides && overrides.hasOwnProperty('isNothing') ? overrides.isNothing! : true,
@@ -10428,39 +7555,15 @@ export const buildListDagsterType = (
     ofType:
       overrides && overrides.hasOwnProperty('ofType')
         ? overrides.ofType!
-        : relationshipsToOmit.has('ListDagsterType')
-          ? ({} as ListDagsterType)
-          : buildListDagsterType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('NullableDagsterType')
-            ? ({} as NullableDagsterType)
-            : buildNullableDagsterType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('RegularDagsterType')
-              ? ({} as RegularDagsterType)
-              : buildRegularDagsterType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('DagsterType')
+        ? ({} as DagsterType)
+        : buildDagsterType({}, relationshipsToOmit),
     outputSchemaType:
       overrides && overrides.hasOwnProperty('outputSchemaType')
         ? overrides.outputSchemaType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
   };
 };
 
@@ -10502,33 +7605,6 @@ export const buildLoadedInputEvent = (
   };
 };
 
-export const buildLocalFileCodeReference = (
-  overrides?: Partial<LocalFileCodeReference>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'LocalFileCodeReference'} & LocalFileCodeReference => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('LocalFileCodeReference');
-  return {
-    __typename: 'LocalFileCodeReference',
-    filePath:
-      overrides && overrides.hasOwnProperty('filePath') ? overrides.filePath! : 'accusantium',
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'voluptatibus',
-    lineNumber: overrides && overrides.hasOwnProperty('lineNumber') ? overrides.lineNumber! : 1573,
-  };
-};
-
-export const buildLocationDocsJson = (
-  overrides?: Partial<LocationDocsJson>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'LocationDocsJson'} & LocationDocsJson => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('LocationDocsJson');
-  return {
-    __typename: 'LocationDocsJson',
-    json: overrides && overrides.hasOwnProperty('json') ? overrides.json! : 'eos',
-  };
-};
-
 export const buildLocationStateChangeEvent = (
   overrides?: Partial<LocationStateChangeEvent>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -10560,8 +7636,8 @@ export const buildLocationStateChangeSubscription = (
       overrides && overrides.hasOwnProperty('event')
         ? overrides.event!
         : relationshipsToOmit.has('LocationStateChangeEvent')
-          ? ({} as LocationStateChangeEvent)
-          : buildLocationStateChangeEvent({}, relationshipsToOmit),
+        ? ({} as LocationStateChangeEvent)
+        : buildLocationStateChangeEvent({}, relationshipsToOmit),
   };
 };
 
@@ -10590,19 +7666,6 @@ export const buildLogMessageEvent = (
   };
 };
 
-export const buildLogRetrievalShellCommand = (
-  overrides?: Partial<LogRetrievalShellCommand>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'LogRetrievalShellCommand'} & LogRetrievalShellCommand => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('LogRetrievalShellCommand');
-  return {
-    __typename: 'LogRetrievalShellCommand',
-    stderr: overrides && overrides.hasOwnProperty('stderr') ? overrides.stderr! : 'adipisci',
-    stdout: overrides && overrides.hasOwnProperty('stdout') ? overrides.stdout! : 'voluptas',
-  };
-};
-
 export const buildLogTelemetrySuccess = (
   overrides?: Partial<LogTelemetrySuccess>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -10627,8 +7690,8 @@ export const buildLogger = (
       overrides && overrides.hasOwnProperty('configField')
         ? overrides.configField!
         : relationshipsToOmit.has('ConfigTypeField')
-          ? ({} as ConfigTypeField)
-          : buildConfigTypeField({}, relationshipsToOmit),
+        ? ({} as ConfigTypeField)
+        : buildConfigTypeField({}, relationshipsToOmit),
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'non',
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'quas',
@@ -10663,12 +7726,6 @@ export const buildLogsCapturedEvent = (
     message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'ex',
     pid: overrides && overrides.hasOwnProperty('pid') ? overrides.pid! : 7623,
     runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'modi',
-    shellCmd:
-      overrides && overrides.hasOwnProperty('shellCmd')
-        ? overrides.shellCmd!
-        : relationshipsToOmit.has('LogRetrievalShellCommand')
-          ? ({} as LogRetrievalShellCommand)
-          : buildLogRetrievalShellCommand({}, relationshipsToOmit),
     solidHandleID:
       overrides && overrides.hasOwnProperty('solidHandleID')
         ? overrides.solidHandleID!
@@ -10696,27 +7753,9 @@ export const buildMapConfigType = (
     keyType:
       overrides && overrides.hasOwnProperty('keyType')
         ? overrides.keyType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     recursiveConfigTypes:
       overrides && overrides.hasOwnProperty('recursiveConfigTypes')
         ? overrides.recursiveConfigTypes!
@@ -10726,27 +7765,9 @@ export const buildMapConfigType = (
     valueType:
       overrides && overrides.hasOwnProperty('valueType')
         ? overrides.valueType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
   };
 };
 
@@ -10817,8 +7838,8 @@ export const buildMaterializationEvent = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     assetLineage:
       overrides && overrides.hasOwnProperty('assetLineage') ? overrides.assetLineage! : [],
     description:
@@ -10838,8 +7859,8 @@ export const buildMaterializationEvent = (
       overrides && overrides.hasOwnProperty('runOrError')
         ? overrides.runOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     solidHandleID:
       overrides && overrides.hasOwnProperty('solidHandleID') ? overrides.solidHandleID! : 'qui',
     stepKey: overrides && overrides.hasOwnProperty('stepKey') ? overrides.stepKey! : 'ratione',
@@ -10847,8 +7868,8 @@ export const buildMaterializationEvent = (
       overrides && overrides.hasOwnProperty('stepStats')
         ? overrides.stepStats!
         : relationshipsToOmit.has('RunStepStats')
-          ? ({} as RunStepStats)
-          : buildRunStepStats({}, relationshipsToOmit),
+        ? ({} as RunStepStats)
+        : buildRunStepStats({}, relationshipsToOmit),
     tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 'id',
   };
@@ -10866,14 +7887,14 @@ export const buildMaterializationUpstreamDataVersion = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     downstreamAssetKey:
       overrides && overrides.hasOwnProperty('downstreamAssetKey')
         ? overrides.downstreamAssetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 'aut',
   };
 };
@@ -10906,8 +7927,8 @@ export const buildMaterializedPartitionRangeStatuses2D = (
       overrides && overrides.hasOwnProperty('secondaryDim')
         ? overrides.secondaryDim!
         : relationshipsToOmit.has('DefaultPartitionStatuses')
-          ? ({} as DefaultPartitionStatuses)
-          : buildDefaultPartitionStatuses({}, relationshipsToOmit),
+        ? ({} as DefaultPartitionStatuses)
+        : buildDefaultPartitionStatuses({}, relationshipsToOmit),
   };
 };
 
@@ -10974,8 +7995,8 @@ export const buildMissingFieldConfigError = (
       overrides && overrides.hasOwnProperty('field')
         ? overrides.field!
         : relationshipsToOmit.has('ConfigTypeField')
-          ? ({} as ConfigTypeField)
-          : buildConfigTypeField({}, relationshipsToOmit),
+        ? ({} as ConfigTypeField)
+        : buildConfigTypeField({}, relationshipsToOmit),
     message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'autem',
     path: overrides && overrides.hasOwnProperty('path') ? overrides.path! : [],
     reason:
@@ -10986,8 +8007,8 @@ export const buildMissingFieldConfigError = (
       overrides && overrides.hasOwnProperty('stack')
         ? overrides.stack!
         : relationshipsToOmit.has('EvaluationStack')
-          ? ({} as EvaluationStack)
-          : buildEvaluationStack({}, relationshipsToOmit),
+        ? ({} as EvaluationStack)
+        : buildEvaluationStack({}, relationshipsToOmit),
   };
 };
 
@@ -11010,8 +8031,8 @@ export const buildMissingFieldsConfigError = (
       overrides && overrides.hasOwnProperty('stack')
         ? overrides.stack!
         : relationshipsToOmit.has('EvaluationStack')
-          ? ({} as EvaluationStack)
-          : buildEvaluationStack({}, relationshipsToOmit),
+        ? ({} as EvaluationStack)
+        : buildEvaluationStack({}, relationshipsToOmit),
   };
 };
 
@@ -11086,140 +8107,96 @@ export const buildMutation = (
       overrides && overrides.hasOwnProperty('addDynamicPartition')
         ? overrides.addDynamicPartition!
         : relationshipsToOmit.has('AddDynamicPartitionSuccess')
-          ? ({} as AddDynamicPartitionSuccess)
-          : buildAddDynamicPartitionSuccess({}, relationshipsToOmit),
+        ? ({} as AddDynamicPartitionSuccess)
+        : buildAddDynamicPartitionSuccess({}, relationshipsToOmit),
     cancelPartitionBackfill:
       overrides && overrides.hasOwnProperty('cancelPartitionBackfill')
         ? overrides.cancelPartitionBackfill!
         : relationshipsToOmit.has('CancelBackfillSuccess')
-          ? ({} as CancelBackfillSuccess)
-          : buildCancelBackfillSuccess({}, relationshipsToOmit),
-    deleteConcurrencyLimit:
-      overrides && overrides.hasOwnProperty('deleteConcurrencyLimit')
-        ? overrides.deleteConcurrencyLimit!
-        : false,
-    deleteDynamicPartitions:
-      overrides && overrides.hasOwnProperty('deleteDynamicPartitions')
-        ? overrides.deleteDynamicPartitions!
-        : relationshipsToOmit.has('DeleteDynamicPartitionsSuccess')
-          ? ({} as DeleteDynamicPartitionsSuccess)
-          : buildDeleteDynamicPartitionsSuccess({}, relationshipsToOmit),
+        ? ({} as CancelBackfillSuccess)
+        : buildCancelBackfillSuccess({}, relationshipsToOmit),
     deletePipelineRun:
       overrides && overrides.hasOwnProperty('deletePipelineRun')
         ? overrides.deletePipelineRun!
         : relationshipsToOmit.has('DeletePipelineRunSuccess')
-          ? ({} as DeletePipelineRunSuccess)
-          : buildDeletePipelineRunSuccess({}, relationshipsToOmit),
+        ? ({} as DeletePipelineRunSuccess)
+        : buildDeletePipelineRunSuccess({}, relationshipsToOmit),
     deleteRun:
       overrides && overrides.hasOwnProperty('deleteRun')
         ? overrides.deleteRun!
         : relationshipsToOmit.has('DeletePipelineRunSuccess')
-          ? ({} as DeletePipelineRunSuccess)
-          : buildDeletePipelineRunSuccess({}, relationshipsToOmit),
-    freeConcurrencySlots:
-      overrides && overrides.hasOwnProperty('freeConcurrencySlots')
-        ? overrides.freeConcurrencySlots!
-        : false,
+        ? ({} as DeletePipelineRunSuccess)
+        : buildDeletePipelineRunSuccess({}, relationshipsToOmit),
     freeConcurrencySlotsForRun:
       overrides && overrides.hasOwnProperty('freeConcurrencySlotsForRun')
         ? overrides.freeConcurrencySlotsForRun!
         : false,
-    launchMultipleRuns:
-      overrides && overrides.hasOwnProperty('launchMultipleRuns')
-        ? overrides.launchMultipleRuns!
-        : relationshipsToOmit.has('LaunchMultipleRunsResult')
-          ? ({} as LaunchMultipleRunsResult)
-          : buildLaunchMultipleRunsResult({}, relationshipsToOmit),
     launchPartitionBackfill:
       overrides && overrides.hasOwnProperty('launchPartitionBackfill')
         ? overrides.launchPartitionBackfill!
         : relationshipsToOmit.has('ConflictingExecutionParamsError')
-          ? ({} as ConflictingExecutionParamsError)
-          : buildConflictingExecutionParamsError({}, relationshipsToOmit),
+        ? ({} as ConflictingExecutionParamsError)
+        : buildConflictingExecutionParamsError({}, relationshipsToOmit),
     launchPipelineExecution:
       overrides && overrides.hasOwnProperty('launchPipelineExecution')
         ? overrides.launchPipelineExecution!
         : relationshipsToOmit.has('ConflictingExecutionParamsError')
-          ? ({} as ConflictingExecutionParamsError)
-          : buildConflictingExecutionParamsError({}, relationshipsToOmit),
+        ? ({} as ConflictingExecutionParamsError)
+        : buildConflictingExecutionParamsError({}, relationshipsToOmit),
     launchPipelineReexecution:
       overrides && overrides.hasOwnProperty('launchPipelineReexecution')
         ? overrides.launchPipelineReexecution!
         : relationshipsToOmit.has('ConflictingExecutionParamsError')
-          ? ({} as ConflictingExecutionParamsError)
-          : buildConflictingExecutionParamsError({}, relationshipsToOmit),
+        ? ({} as ConflictingExecutionParamsError)
+        : buildConflictingExecutionParamsError({}, relationshipsToOmit),
     launchRun:
       overrides && overrides.hasOwnProperty('launchRun')
         ? overrides.launchRun!
         : relationshipsToOmit.has('ConflictingExecutionParamsError')
-          ? ({} as ConflictingExecutionParamsError)
-          : buildConflictingExecutionParamsError({}, relationshipsToOmit),
+        ? ({} as ConflictingExecutionParamsError)
+        : buildConflictingExecutionParamsError({}, relationshipsToOmit),
     launchRunReexecution:
       overrides && overrides.hasOwnProperty('launchRunReexecution')
         ? overrides.launchRunReexecution!
         : relationshipsToOmit.has('ConflictingExecutionParamsError')
-          ? ({} as ConflictingExecutionParamsError)
-          : buildConflictingExecutionParamsError({}, relationshipsToOmit),
+        ? ({} as ConflictingExecutionParamsError)
+        : buildConflictingExecutionParamsError({}, relationshipsToOmit),
     logTelemetry:
       overrides && overrides.hasOwnProperty('logTelemetry')
         ? overrides.logTelemetry!
         : relationshipsToOmit.has('LogTelemetrySuccess')
-          ? ({} as LogTelemetrySuccess)
-          : buildLogTelemetrySuccess({}, relationshipsToOmit),
-    reexecutePartitionBackfill:
-      overrides && overrides.hasOwnProperty('reexecutePartitionBackfill')
-        ? overrides.reexecutePartitionBackfill!
-        : relationshipsToOmit.has('ConflictingExecutionParamsError')
-          ? ({} as ConflictingExecutionParamsError)
-          : buildConflictingExecutionParamsError({}, relationshipsToOmit),
+        ? ({} as LogTelemetrySuccess)
+        : buildLogTelemetrySuccess({}, relationshipsToOmit),
     reloadRepositoryLocation:
       overrides && overrides.hasOwnProperty('reloadRepositoryLocation')
         ? overrides.reloadRepositoryLocation!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     reloadWorkspace:
       overrides && overrides.hasOwnProperty('reloadWorkspace')
         ? overrides.reloadWorkspace!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    reportRunlessAssetEvents:
-      overrides && overrides.hasOwnProperty('reportRunlessAssetEvents')
-        ? overrides.reportRunlessAssetEvents!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    resetSchedule:
-      overrides && overrides.hasOwnProperty('resetSchedule')
-        ? overrides.resetSchedule!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    resetSensor:
-      overrides && overrides.hasOwnProperty('resetSensor')
-        ? overrides.resetSensor!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     resumePartitionBackfill:
       overrides && overrides.hasOwnProperty('resumePartitionBackfill')
         ? overrides.resumePartitionBackfill!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     scheduleDryRun:
       overrides && overrides.hasOwnProperty('scheduleDryRun')
         ? overrides.scheduleDryRun!
         : relationshipsToOmit.has('DryRunInstigationTick')
-          ? ({} as DryRunInstigationTick)
-          : buildDryRunInstigationTick({}, relationshipsToOmit),
+        ? ({} as DryRunInstigationTick)
+        : buildDryRunInstigationTick({}, relationshipsToOmit),
     sensorDryRun:
       overrides && overrides.hasOwnProperty('sensorDryRun')
         ? overrides.sensorDryRun!
         : relationshipsToOmit.has('DryRunInstigationTick')
-          ? ({} as DryRunInstigationTick)
-          : buildDryRunInstigationTick({}, relationshipsToOmit),
+        ? ({} as DryRunInstigationTick)
+        : buildDryRunInstigationTick({}, relationshipsToOmit),
     setAutoMaterializePaused:
       overrides && overrides.hasOwnProperty('setAutoMaterializePaused')
         ? overrides.setAutoMaterializePaused!
@@ -11233,62 +8210,56 @@ export const buildMutation = (
       overrides && overrides.hasOwnProperty('setSensorCursor')
         ? overrides.setSensorCursor!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     shutdownRepositoryLocation:
       overrides && overrides.hasOwnProperty('shutdownRepositoryLocation')
         ? overrides.shutdownRepositoryLocation!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     startSchedule:
       overrides && overrides.hasOwnProperty('startSchedule')
         ? overrides.startSchedule!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     startSensor:
       overrides && overrides.hasOwnProperty('startSensor')
         ? overrides.startSensor!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     stopRunningSchedule:
       overrides && overrides.hasOwnProperty('stopRunningSchedule')
         ? overrides.stopRunningSchedule!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     stopSensor:
       overrides && overrides.hasOwnProperty('stopSensor')
         ? overrides.stopSensor!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     terminatePipelineExecution:
       overrides && overrides.hasOwnProperty('terminatePipelineExecution')
         ? overrides.terminatePipelineExecution!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     terminateRun:
       overrides && overrides.hasOwnProperty('terminateRun')
         ? overrides.terminateRun!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    terminateRuns:
-      overrides && overrides.hasOwnProperty('terminateRuns')
-        ? overrides.terminateRuns!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     wipeAssets:
       overrides && overrides.hasOwnProperty('wipeAssets')
         ? overrides.wipeAssets!
         : relationshipsToOmit.has('AssetNotFoundError')
-          ? ({} as AssetNotFoundError)
-          : buildAssetNotFoundError({}, relationshipsToOmit),
+        ? ({} as AssetNotFoundError)
+        : buildAssetNotFoundError({}, relationshipsToOmit),
   };
 };
 
@@ -11305,8 +8276,8 @@ export const buildNestedResourceEntry = (
       overrides && overrides.hasOwnProperty('resource')
         ? overrides.resource!
         : relationshipsToOmit.has('ResourceDetails')
-          ? ({} as ResourceDetails)
-          : buildResourceDetails({}, relationshipsToOmit),
+        ? ({} as ResourceDetails)
+        : buildResourceDetails({}, relationshipsToOmit),
     type:
       overrides && overrides.hasOwnProperty('type')
         ? overrides.type!
@@ -11340,14 +8311,14 @@ export const buildNodeInvocationSite = (
       overrides && overrides.hasOwnProperty('pipeline')
         ? overrides.pipeline!
         : relationshipsToOmit.has('Pipeline')
-          ? ({} as Pipeline)
-          : buildPipeline({}, relationshipsToOmit),
+        ? ({} as Pipeline)
+        : buildPipeline({}, relationshipsToOmit),
     solidHandle:
       overrides && overrides.hasOwnProperty('solidHandle')
         ? overrides.solidHandle!
         : relationshipsToOmit.has('SolidHandle')
-          ? ({} as SolidHandle)
-          : buildSolidHandle({}, relationshipsToOmit),
+        ? ({} as SolidHandle)
+        : buildSolidHandle({}, relationshipsToOmit),
   };
 };
 
@@ -11395,27 +8366,9 @@ export const buildNullableConfigType = (
     ofType:
       overrides && overrides.hasOwnProperty('ofType')
         ? overrides.ofType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     recursiveConfigTypes:
       overrides && overrides.hasOwnProperty('recursiveConfigTypes')
         ? overrides.recursiveConfigTypes!
@@ -11443,27 +8396,9 @@ export const buildNullableDagsterType = (
     inputSchemaType:
       overrides && overrides.hasOwnProperty('inputSchemaType')
         ? overrides.inputSchemaType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     isBuiltin: overrides && overrides.hasOwnProperty('isBuiltin') ? overrides.isBuiltin! : false,
     isList: overrides && overrides.hasOwnProperty('isList') ? overrides.isList! : false,
     isNothing: overrides && overrides.hasOwnProperty('isNothing') ? overrides.isNothing! : true,
@@ -11475,39 +8410,15 @@ export const buildNullableDagsterType = (
     ofType:
       overrides && overrides.hasOwnProperty('ofType')
         ? overrides.ofType!
-        : relationshipsToOmit.has('ListDagsterType')
-          ? ({} as ListDagsterType)
-          : buildListDagsterType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('NullableDagsterType')
-            ? ({} as NullableDagsterType)
-            : buildNullableDagsterType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('RegularDagsterType')
-              ? ({} as RegularDagsterType)
-              : buildRegularDagsterType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('DagsterType')
+        ? ({} as DagsterType)
+        : buildDagsterType({}, relationshipsToOmit),
     outputSchemaType:
       overrides && overrides.hasOwnProperty('outputSchemaType')
         ? overrides.outputSchemaType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
   };
 };
 
@@ -11529,8 +8440,8 @@ export const buildObjectStoreOperationEvent = (
       overrides && overrides.hasOwnProperty('operationResult')
         ? overrides.operationResult!
         : relationshipsToOmit.has('ObjectStoreOperationResult')
-          ? ({} as ObjectStoreOperationResult)
-          : buildObjectStoreOperationResult({}, relationshipsToOmit),
+        ? ({} as ObjectStoreOperationResult)
+        : buildObjectStoreOperationResult({}, relationshipsToOmit),
     runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'vero',
     solidHandleID:
       overrides && overrides.hasOwnProperty('solidHandleID')
@@ -11573,8 +8484,8 @@ export const buildObservationEvent = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'dolorum',
     eventType:
@@ -11592,8 +8503,8 @@ export const buildObservationEvent = (
       overrides && overrides.hasOwnProperty('runOrError')
         ? overrides.runOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     solidHandleID:
       overrides && overrides.hasOwnProperty('solidHandleID')
         ? overrides.solidHandleID!
@@ -11603,8 +8514,8 @@ export const buildObservationEvent = (
       overrides && overrides.hasOwnProperty('stepStats')
         ? overrides.stepStats!
         : relationshipsToOmit.has('RunStepStats')
-          ? ({} as RunStepStats)
-          : buildRunStepStats({}, relationshipsToOmit),
+        ? ({} as RunStepStats)
+        : buildRunStepStats({}, relationshipsToOmit),
     tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 'ut',
   };
@@ -11622,15 +8533,15 @@ export const buildOutput = (
       overrides && overrides.hasOwnProperty('definition')
         ? overrides.definition!
         : relationshipsToOmit.has('OutputDefinition')
-          ? ({} as OutputDefinition)
-          : buildOutputDefinition({}, relationshipsToOmit),
+        ? ({} as OutputDefinition)
+        : buildOutputDefinition({}, relationshipsToOmit),
     dependedBy: overrides && overrides.hasOwnProperty('dependedBy') ? overrides.dependedBy! : [],
     solid:
       overrides && overrides.hasOwnProperty('solid')
         ? overrides.solid!
         : relationshipsToOmit.has('Solid')
-          ? ({} as Solid)
-          : buildSolid({}, relationshipsToOmit),
+        ? ({} as Solid)
+        : buildSolid({}, relationshipsToOmit),
   };
 };
 
@@ -11648,18 +8559,18 @@ export const buildOutputDefinition = (
     metadataEntries:
       overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'repellendus',
+    solidDefinition:
+      overrides && overrides.hasOwnProperty('solidDefinition')
+        ? overrides.solidDefinition!
+        : relationshipsToOmit.has('SolidDefinition')
+        ? ({} as SolidDefinition)
+        : buildSolidDefinition({}, relationshipsToOmit),
     type:
       overrides && overrides.hasOwnProperty('type')
         ? overrides.type!
-        : relationshipsToOmit.has('ListDagsterType')
-          ? ({} as ListDagsterType)
-          : buildListDagsterType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('NullableDagsterType')
-            ? ({} as NullableDagsterType)
-            : buildNullableDagsterType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('RegularDagsterType')
-              ? ({} as RegularDagsterType)
-              : buildRegularDagsterType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('DagsterType')
+        ? ({} as DagsterType)
+        : buildDagsterType({}, relationshipsToOmit),
   };
 };
 
@@ -11675,14 +8586,14 @@ export const buildOutputMapping = (
       overrides && overrides.hasOwnProperty('definition')
         ? overrides.definition!
         : relationshipsToOmit.has('OutputDefinition')
-          ? ({} as OutputDefinition)
-          : buildOutputDefinition({}, relationshipsToOmit),
+        ? ({} as OutputDefinition)
+        : buildOutputDefinition({}, relationshipsToOmit),
     mappedOutput:
       overrides && overrides.hasOwnProperty('mappedOutput')
         ? overrides.mappedOutput!
         : relationshipsToOmit.has('Output')
-          ? ({} as Output)
-          : buildOutput({}, relationshipsToOmit),
+        ? ({} as Output)
+        : buildOutput({}, relationshipsToOmit),
   };
 };
 
@@ -11721,8 +8632,8 @@ export const buildPartition = (
       overrides && overrides.hasOwnProperty('runConfigOrError')
         ? overrides.runConfigOrError!
         : relationshipsToOmit.has('PartitionRunConfig')
-          ? ({} as PartitionRunConfig)
-          : buildPartitionRunConfig({}, relationshipsToOmit),
+        ? ({} as PartitionRunConfig)
+        : buildPartitionRunConfig({}, relationshipsToOmit),
     runs: overrides && overrides.hasOwnProperty('runs') ? overrides.runs! : [],
     solidSelection:
       overrides && overrides.hasOwnProperty('solidSelection') ? overrides.solidSelection! : [],
@@ -11732,8 +8643,8 @@ export const buildPartition = (
       overrides && overrides.hasOwnProperty('tagsOrError')
         ? overrides.tagsOrError!
         : relationshipsToOmit.has('PartitionTags')
-          ? ({} as PartitionTags)
-          : buildPartitionTags({}, relationshipsToOmit),
+        ? ({} as PartitionTags)
+        : buildPartitionTags({}, relationshipsToOmit),
   };
 };
 
@@ -11749,31 +8660,18 @@ export const buildPartitionBackfill = (
       overrides && overrides.hasOwnProperty('assetBackfillData')
         ? overrides.assetBackfillData!
         : relationshipsToOmit.has('AssetBackfillData')
-          ? ({} as AssetBackfillData)
-          : buildAssetBackfillData({}, relationshipsToOmit),
-    assetCheckSelection:
-      overrides && overrides.hasOwnProperty('assetCheckSelection')
-        ? overrides.assetCheckSelection!
-        : [],
+        ? ({} as AssetBackfillData)
+        : buildAssetBackfillData({}, relationshipsToOmit),
     assetSelection:
       overrides && overrides.hasOwnProperty('assetSelection') ? overrides.assetSelection! : [],
-    cancelableRuns:
-      overrides && overrides.hasOwnProperty('cancelableRuns') ? overrides.cancelableRuns! : [],
-    creationTime:
-      overrides && overrides.hasOwnProperty('creationTime') ? overrides.creationTime! : 1.18,
-    description:
-      overrides && overrides.hasOwnProperty('description')
-        ? overrides.description!
-        : 'reprehenderit',
-    endTime: overrides && overrides.hasOwnProperty('endTime') ? overrides.endTime! : 4.91,
     endTimestamp:
       overrides && overrides.hasOwnProperty('endTimestamp') ? overrides.endTimestamp! : 0.33,
     error:
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     fromFailure:
       overrides && overrides.hasOwnProperty('fromFailure') ? overrides.fromFailure! : true,
     hasCancelPermission:
@@ -11784,23 +8682,13 @@ export const buildPartitionBackfill = (
       overrides && overrides.hasOwnProperty('hasResumePermission')
         ? overrides.hasResumePermission!
         : true,
-    id:
-      overrides && overrides.hasOwnProperty('id')
-        ? overrides.id!
-        : 'f1a3860d-b771-4e91-ada6-719fa6fdc27f',
+    id: overrides && overrides.hasOwnProperty('id') ? overrides.id! : 'recusandae',
     isAssetBackfill:
       overrides && overrides.hasOwnProperty('isAssetBackfill') ? overrides.isAssetBackfill! : false,
     isValidSerialization:
       overrides && overrides.hasOwnProperty('isValidSerialization')
         ? overrides.isValidSerialization!
         : false,
-    jobName: overrides && overrides.hasOwnProperty('jobName') ? overrides.jobName! : 'est',
-    logEvents:
-      overrides && overrides.hasOwnProperty('logEvents')
-        ? overrides.logEvents!
-        : relationshipsToOmit.has('InstigationEventConnection')
-          ? ({} as InstigationEventConnection)
-          : buildInstigationEventConnection({}, relationshipsToOmit),
     numCancelable:
       overrides && overrides.hasOwnProperty('numCancelable') ? overrides.numCancelable! : 53,
     numPartitions:
@@ -11811,8 +8699,8 @@ export const buildPartitionBackfill = (
       overrides && overrides.hasOwnProperty('partitionSet')
         ? overrides.partitionSet!
         : relationshipsToOmit.has('PartitionSet')
-          ? ({} as PartitionSet)
-          : buildPartitionSet({}, relationshipsToOmit),
+        ? ({} as PartitionSet)
+        : buildPartitionSet({}, relationshipsToOmit),
     partitionSetName:
       overrides && overrides.hasOwnProperty('partitionSetName')
         ? overrides.partitionSetName!
@@ -11825,29 +8713,16 @@ export const buildPartitionBackfill = (
       overrides && overrides.hasOwnProperty('partitionStatuses')
         ? overrides.partitionStatuses!
         : relationshipsToOmit.has('PartitionStatuses')
-          ? ({} as PartitionStatuses)
-          : buildPartitionStatuses({}, relationshipsToOmit),
-    partitionsTargetedForAssetKey:
-      overrides && overrides.hasOwnProperty('partitionsTargetedForAssetKey')
-        ? overrides.partitionsTargetedForAssetKey!
-        : relationshipsToOmit.has('AssetBackfillTargetPartitions')
-          ? ({} as AssetBackfillTargetPartitions)
-          : buildAssetBackfillTargetPartitions({}, relationshipsToOmit),
+        ? ({} as PartitionStatuses)
+        : buildPartitionStatuses({}, relationshipsToOmit),
     reexecutionSteps:
       overrides && overrides.hasOwnProperty('reexecutionSteps') ? overrides.reexecutionSteps! : [],
-    runStatus:
-      overrides && overrides.hasOwnProperty('runStatus')
-        ? overrides.runStatus!
-        : RunStatus.CANCELED,
     runs: overrides && overrides.hasOwnProperty('runs') ? overrides.runs! : [],
-    startTime: overrides && overrides.hasOwnProperty('startTime') ? overrides.startTime! : 9.35,
     status:
       overrides && overrides.hasOwnProperty('status')
         ? overrides.status!
         : BulkActionStatus.CANCELED,
-    tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 8.28,
-    title: overrides && overrides.hasOwnProperty('title') ? overrides.title! : 'veritatis',
     unfinishedRuns:
       overrides && overrides.hasOwnProperty('unfinishedRuns') ? overrides.unfinishedRuns! : [],
     user: overrides && overrides.hasOwnProperty('user') ? overrides.user! : 'eius',
@@ -11878,26 +8753,11 @@ export const buildPartitionDefinition = (
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'ab',
     dimensionTypes:
       overrides && overrides.hasOwnProperty('dimensionTypes') ? overrides.dimensionTypes! : [],
-    fmt: overrides && overrides.hasOwnProperty('fmt') ? overrides.fmt! : 'earum',
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'facilis',
     type:
       overrides && overrides.hasOwnProperty('type')
         ? overrides.type!
         : PartitionDefinitionType.DYNAMIC,
-  };
-};
-
-export const buildPartitionKeyConnection = (
-  overrides?: Partial<PartitionKeyConnection>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'PartitionKeyConnection'} & PartitionKeyConnection => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('PartitionKeyConnection');
-  return {
-    __typename: 'PartitionKeyConnection',
-    cursor: overrides && overrides.hasOwnProperty('cursor') ? overrides.cursor! : 'quia',
-    hasMore: overrides && overrides.hasOwnProperty('hasMore') ? overrides.hasMore! : false,
-    results: overrides && overrides.hasOwnProperty('results') ? overrides.results! : [],
   };
 };
 
@@ -11924,49 +8784,6 @@ export const buildPartitionKeys = (
     __typename: 'PartitionKeys',
     partitionKeys:
       overrides && overrides.hasOwnProperty('partitionKeys') ? overrides.partitionKeys! : [],
-  };
-};
-
-export const buildPartitionKeysNotFoundError = (
-  overrides?: Partial<PartitionKeysNotFoundError>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'PartitionKeysNotFoundError'} & PartitionKeysNotFoundError => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('PartitionKeysNotFoundError');
-  return {
-    __typename: 'PartitionKeysNotFoundError',
-    message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'minima',
-    partitionKeys:
-      overrides && overrides.hasOwnProperty('partitionKeys') ? overrides.partitionKeys! : [],
-  };
-};
-
-export const buildPartitionMapping = (
-  overrides?: Partial<PartitionMapping>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'PartitionMapping'} & PartitionMapping => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('PartitionMapping');
-  return {
-    __typename: 'PartitionMapping',
-    className: overrides && overrides.hasOwnProperty('className') ? overrides.className! : 'quos',
-    description:
-      overrides && overrides.hasOwnProperty('description')
-        ? overrides.description!
-        : 'voluptatibus',
-  };
-};
-
-export const buildPartitionRange = (
-  overrides?: Partial<PartitionRange>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'PartitionRange'} & PartitionRange => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('PartitionRange');
-  return {
-    __typename: 'PartitionRange',
-    end: overrides && overrides.hasOwnProperty('end') ? overrides.end! : 'non',
-    start: overrides && overrides.hasOwnProperty('start') ? overrides.start! : 'dolorem',
   };
 };
 
@@ -11997,8 +8814,8 @@ export const buildPartitionRun = (
       overrides && overrides.hasOwnProperty('run')
         ? overrides.run!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
   };
 };
 
@@ -12033,30 +8850,30 @@ export const buildPartitionSet = (
       overrides && overrides.hasOwnProperty('partition')
         ? overrides.partition!
         : relationshipsToOmit.has('Partition')
-          ? ({} as Partition)
-          : buildPartition({}, relationshipsToOmit),
+        ? ({} as Partition)
+        : buildPartition({}, relationshipsToOmit),
     partitionRuns:
       overrides && overrides.hasOwnProperty('partitionRuns') ? overrides.partitionRuns! : [],
     partitionStatusesOrError:
       overrides && overrides.hasOwnProperty('partitionStatusesOrError')
         ? overrides.partitionStatusesOrError!
         : relationshipsToOmit.has('PartitionStatuses')
-          ? ({} as PartitionStatuses)
-          : buildPartitionStatuses({}, relationshipsToOmit),
+        ? ({} as PartitionStatuses)
+        : buildPartitionStatuses({}, relationshipsToOmit),
     partitionsOrError:
       overrides && overrides.hasOwnProperty('partitionsOrError')
         ? overrides.partitionsOrError!
         : relationshipsToOmit.has('Partitions')
-          ? ({} as Partitions)
-          : buildPartitions({}, relationshipsToOmit),
+        ? ({} as Partitions)
+        : buildPartitions({}, relationshipsToOmit),
     pipelineName:
       overrides && overrides.hasOwnProperty('pipelineName') ? overrides.pipelineName! : 'nihil',
     repositoryOrigin:
       overrides && overrides.hasOwnProperty('repositoryOrigin')
         ? overrides.repositoryOrigin!
         : relationshipsToOmit.has('RepositoryOrigin')
-          ? ({} as RepositoryOrigin)
-          : buildRepositoryOrigin({}, relationshipsToOmit),
+        ? ({} as RepositoryOrigin)
+        : buildRepositoryOrigin({}, relationshipsToOmit),
     solidSelection:
       overrides && overrides.hasOwnProperty('solidSelection') ? overrides.solidSelection! : [],
   };
@@ -12093,8 +8910,8 @@ export const buildPartitionSetSelector = (
       overrides && overrides.hasOwnProperty('repositorySelector')
         ? overrides.repositorySelector!
         : relationshipsToOmit.has('RepositorySelector')
-          ? ({} as RepositorySelector)
-          : buildRepositorySelector({}, relationshipsToOmit),
+        ? ({} as RepositorySelector)
+        : buildRepositorySelector({}, relationshipsToOmit),
   };
 };
 
@@ -12205,62 +9022,6 @@ export const buildPartitionTags = (
   };
 };
 
-export const buildPartitionTagsAndConfig = (
-  overrides?: Partial<PartitionTagsAndConfig>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'PartitionTagsAndConfig'} & PartitionTagsAndConfig => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('PartitionTagsAndConfig');
-  return {
-    __typename: 'PartitionTagsAndConfig',
-    jobName: overrides && overrides.hasOwnProperty('jobName') ? overrides.jobName! : 'quia',
-    name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'eaque',
-    runConfigOrError:
-      overrides && overrides.hasOwnProperty('runConfigOrError')
-        ? overrides.runConfigOrError!
-        : relationshipsToOmit.has('PartitionRunConfig')
-          ? ({} as PartitionRunConfig)
-          : buildPartitionRunConfig({}, relationshipsToOmit),
-    tagsOrError:
-      overrides && overrides.hasOwnProperty('tagsOrError')
-        ? overrides.tagsOrError!
-        : relationshipsToOmit.has('PartitionTags')
-          ? ({} as PartitionTags)
-          : buildPartitionTags({}, relationshipsToOmit),
-  };
-};
-
-export const buildPartitionedAssetConditionEvaluationNode = (
-  overrides?: Partial<PartitionedAssetConditionEvaluationNode>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {
-  __typename: 'PartitionedAssetConditionEvaluationNode';
-} & PartitionedAssetConditionEvaluationNode => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('PartitionedAssetConditionEvaluationNode');
-  return {
-    __typename: 'PartitionedAssetConditionEvaluationNode',
-    childUniqueIds:
-      overrides && overrides.hasOwnProperty('childUniqueIds') ? overrides.childUniqueIds! : [],
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'quam',
-    endTimestamp:
-      overrides && overrides.hasOwnProperty('endTimestamp') ? overrides.endTimestamp! : 9.74,
-    entityKey:
-      overrides && overrides.hasOwnProperty('entityKey')
-        ? overrides.entityKey!
-        : relationshipsToOmit.has('AssetCheckhandle')
-          ? ({} as AssetCheckhandle)
-          : buildAssetCheckhandle({}, relationshipsToOmit),
-    numCandidates:
-      overrides && overrides.hasOwnProperty('numCandidates') ? overrides.numCandidates! : 9986,
-    numTrue: overrides && overrides.hasOwnProperty('numTrue') ? overrides.numTrue! : 3015,
-    startTimestamp:
-      overrides && overrides.hasOwnProperty('startTimestamp') ? overrides.startTimestamp! : 5.96,
-    uniqueId: overrides && overrides.hasOwnProperty('uniqueId') ? overrides.uniqueId! : 'sed',
-  };
-};
-
 export const buildPartitions = (
   overrides?: Partial<Partitions>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -12284,14 +9045,14 @@ export const buildPartitionsByAssetSelector = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKeyInput')
-          ? ({} as AssetKeyInput)
-          : buildAssetKeyInput({}, relationshipsToOmit),
+        ? ({} as AssetKeyInput)
+        : buildAssetKeyInput({}, relationshipsToOmit),
     partitions:
       overrides && overrides.hasOwnProperty('partitions')
         ? overrides.partitions!
         : relationshipsToOmit.has('PartitionsSelector')
-          ? ({} as PartitionsSelector)
-          : buildPartitionsSelector({}, relationshipsToOmit),
+        ? ({} as PartitionsSelector)
+        : buildPartitionsSelector({}, relationshipsToOmit),
   };
 };
 
@@ -12306,9 +9067,8 @@ export const buildPartitionsSelector = (
       overrides && overrides.hasOwnProperty('range')
         ? overrides.range!
         : relationshipsToOmit.has('PartitionRangeSelector')
-          ? ({} as PartitionRangeSelector)
-          : buildPartitionRangeSelector({}, relationshipsToOmit),
-    ranges: overrides && overrides.hasOwnProperty('ranges') ? overrides.ranges! : [],
+        ? ({} as PartitionRangeSelector)
+        : buildPartitionRangeSelector({}, relationshipsToOmit),
   };
 };
 
@@ -12324,28 +9084,6 @@ export const buildPathMetadataEntry = (
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'et',
     label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'rerum',
     path: overrides && overrides.hasOwnProperty('path') ? overrides.path! : 'soluta',
-  };
-};
-
-export const buildPendingConcurrencyStep = (
-  overrides?: Partial<PendingConcurrencyStep>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'PendingConcurrencyStep'} & PendingConcurrencyStep => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('PendingConcurrencyStep');
-  return {
-    __typename: 'PendingConcurrencyStep',
-    assignedTimestamp:
-      overrides && overrides.hasOwnProperty('assignedTimestamp')
-        ? overrides.assignedTimestamp!
-        : 9.29,
-    enqueuedTimestamp:
-      overrides && overrides.hasOwnProperty('enqueuedTimestamp')
-        ? overrides.enqueuedTimestamp!
-        : 1.74,
-    priority: overrides && overrides.hasOwnProperty('priority') ? overrides.priority! : 8863,
-    runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'facere',
-    stepKey: overrides && overrides.hasOwnProperty('stepKey') ? overrides.stepKey! : 'fuga',
   };
 };
 
@@ -12377,16 +9115,12 @@ export const buildPipeline = (
       overrides && overrides.hasOwnProperty('dagsterTypeOrError')
         ? overrides.dagsterTypeOrError!
         : relationshipsToOmit.has('DagsterTypeNotFoundError')
-          ? ({} as DagsterTypeNotFoundError)
-          : buildDagsterTypeNotFoundError({}, relationshipsToOmit),
+        ? ({} as DagsterTypeNotFoundError)
+        : buildDagsterTypeNotFoundError({}, relationshipsToOmit),
     dagsterTypes:
       overrides && overrides.hasOwnProperty('dagsterTypes') ? overrides.dagsterTypes! : [],
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'quisquam',
-    externalJobSource:
-      overrides && overrides.hasOwnProperty('externalJobSource')
-        ? overrides.externalJobSource!
-        : 'quis',
     graphName: overrides && overrides.hasOwnProperty('graphName') ? overrides.graphName! : 'eius',
     id:
       overrides && overrides.hasOwnProperty('id')
@@ -12402,18 +9136,6 @@ export const buildPipeline = (
       overrides && overrides.hasOwnProperty('parentSnapshotId')
         ? overrides.parentSnapshotId!
         : 'et',
-    partition:
-      overrides && overrides.hasOwnProperty('partition')
-        ? overrides.partition!
-        : relationshipsToOmit.has('PartitionTagsAndConfig')
-          ? ({} as PartitionTagsAndConfig)
-          : buildPartitionTagsAndConfig({}, relationshipsToOmit),
-    partitionKeysOrError:
-      overrides && overrides.hasOwnProperty('partitionKeysOrError')
-        ? overrides.partitionKeysOrError!
-        : relationshipsToOmit.has('PartitionKeys')
-          ? ({} as PartitionKeys)
-          : buildPartitionKeys({}, relationshipsToOmit),
     pipelineSnapshotId:
       overrides && overrides.hasOwnProperty('pipelineSnapshotId')
         ? overrides.pipelineSnapshotId!
@@ -12423,9 +9145,8 @@ export const buildPipeline = (
       overrides && overrides.hasOwnProperty('repository')
         ? overrides.repository!
         : relationshipsToOmit.has('Repository')
-          ? ({} as Repository)
-          : buildRepository({}, relationshipsToOmit),
-    runTags: overrides && overrides.hasOwnProperty('runTags') ? overrides.runTags! : [],
+        ? ({} as Repository)
+        : buildRepository({}, relationshipsToOmit),
     runs: overrides && overrides.hasOwnProperty('runs') ? overrides.runs! : [],
     schedules: overrides && overrides.hasOwnProperty('schedules') ? overrides.schedules! : [],
     sensors: overrides && overrides.hasOwnProperty('sensors') ? overrides.sensors! : [],
@@ -12433,8 +9154,8 @@ export const buildPipeline = (
       overrides && overrides.hasOwnProperty('solidHandle')
         ? overrides.solidHandle!
         : relationshipsToOmit.has('SolidHandle')
-          ? ({} as SolidHandle)
-          : buildSolidHandle({}, relationshipsToOmit),
+        ? ({} as SolidHandle)
+        : buildSolidHandle({}, relationshipsToOmit),
     solidHandles:
       overrides && overrides.hasOwnProperty('solidHandles') ? overrides.solidHandles! : [],
     solids: overrides && overrides.hasOwnProperty('solids') ? overrides.solids! : [],
@@ -12460,8 +9181,8 @@ export const buildPipelineConfigValidationError = (
       overrides && overrides.hasOwnProperty('stack')
         ? overrides.stack!
         : relationshipsToOmit.has('EvaluationStack')
-          ? ({} as EvaluationStack)
-          : buildEvaluationStack({}, relationshipsToOmit),
+        ? ({} as EvaluationStack)
+        : buildEvaluationStack({}, relationshipsToOmit),
   };
 };
 
@@ -12561,20 +9282,26 @@ export const buildPipelineRun = (
       overrides && overrides.hasOwnProperty('capturedLogs')
         ? overrides.capturedLogs!
         : relationshipsToOmit.has('CapturedLogs')
-          ? ({} as CapturedLogs)
-          : buildCapturedLogs({}, relationshipsToOmit),
+        ? ({} as CapturedLogs)
+        : buildCapturedLogs({}, relationshipsToOmit),
+    computeLogs:
+      overrides && overrides.hasOwnProperty('computeLogs')
+        ? overrides.computeLogs!
+        : relationshipsToOmit.has('ComputeLogs')
+        ? ({} as ComputeLogs)
+        : buildComputeLogs({}, relationshipsToOmit),
     eventConnection:
       overrides && overrides.hasOwnProperty('eventConnection')
         ? overrides.eventConnection!
         : relationshipsToOmit.has('EventConnection')
-          ? ({} as EventConnection)
-          : buildEventConnection({}, relationshipsToOmit),
+        ? ({} as EventConnection)
+        : buildEventConnection({}, relationshipsToOmit),
     executionPlan:
       overrides && overrides.hasOwnProperty('executionPlan')
         ? overrides.executionPlan!
         : relationshipsToOmit.has('ExecutionPlan')
-          ? ({} as ExecutionPlan)
-          : buildExecutionPlan({}, relationshipsToOmit),
+        ? ({} as ExecutionPlan)
+        : buildExecutionPlan({}, relationshipsToOmit),
     id:
       overrides && overrides.hasOwnProperty('id')
         ? overrides.id!
@@ -12586,12 +9313,9 @@ export const buildPipelineRun = (
     pipeline:
       overrides && overrides.hasOwnProperty('pipeline')
         ? overrides.pipeline!
-        : relationshipsToOmit.has('PipelineSnapshot')
-          ? ({} as PipelineSnapshot)
-          : buildPipelineSnapshot({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('UnknownPipeline')
-            ? ({} as UnknownPipeline)
-            : buildUnknownPipeline({}, relationshipsToOmit),
+        : relationshipsToOmit.has('PipelineReference')
+        ? ({} as PipelineReference)
+        : buildPipelineReference({}, relationshipsToOmit),
     pipelineName:
       overrides && overrides.hasOwnProperty('pipelineName') ? overrides.pipelineName! : 'animi',
     pipelineSnapshotId:
@@ -12602,8 +9326,8 @@ export const buildPipelineRun = (
       overrides && overrides.hasOwnProperty('repositoryOrigin')
         ? overrides.repositoryOrigin!
         : relationshipsToOmit.has('RepositoryOrigin')
-          ? ({} as RepositoryOrigin)
-          : buildRepositoryOrigin({}, relationshipsToOmit),
+        ? ({} as RepositoryOrigin)
+        : buildRepositoryOrigin({}, relationshipsToOmit),
     rootRunId: overrides && overrides.hasOwnProperty('rootRunId') ? overrides.rootRunId! : 'quia',
     runConfig:
       overrides && overrides.hasOwnProperty('runConfig') ? overrides.runConfig! : 'aspernatur',
@@ -12616,8 +9340,8 @@ export const buildPipelineRun = (
       overrides && overrides.hasOwnProperty('stats')
         ? overrides.stats!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     status:
       overrides && overrides.hasOwnProperty('status') ? overrides.status! : RunStatus.CANCELED,
     stepKeysToExecute:
@@ -12673,8 +9397,8 @@ export const buildPipelineRunLogsSubscriptionSuccess = (
       overrides && overrides.hasOwnProperty('run')
         ? overrides.run!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
   };
 };
 
@@ -12810,16 +9534,12 @@ export const buildPipelineSnapshot = (
       overrides && overrides.hasOwnProperty('dagsterTypeOrError')
         ? overrides.dagsterTypeOrError!
         : relationshipsToOmit.has('DagsterTypeNotFoundError')
-          ? ({} as DagsterTypeNotFoundError)
-          : buildDagsterTypeNotFoundError({}, relationshipsToOmit),
+        ? ({} as DagsterTypeNotFoundError)
+        : buildDagsterTypeNotFoundError({}, relationshipsToOmit),
     dagsterTypes:
       overrides && overrides.hasOwnProperty('dagsterTypes') ? overrides.dagsterTypes! : [],
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'corporis',
-    externalJobSource:
-      overrides && overrides.hasOwnProperty('externalJobSource')
-        ? overrides.externalJobSource!
-        : 'ut',
     graphName:
       overrides && overrides.hasOwnProperty('graphName') ? overrides.graphName! : 'dolorum',
     id:
@@ -12838,7 +9558,6 @@ export const buildPipelineSnapshot = (
       overrides && overrides.hasOwnProperty('pipelineSnapshotId')
         ? overrides.pipelineSnapshotId!
         : 'labore',
-    runTags: overrides && overrides.hasOwnProperty('runTags') ? overrides.runTags! : [],
     runs: overrides && overrides.hasOwnProperty('runs') ? overrides.runs! : [],
     schedules: overrides && overrides.hasOwnProperty('schedules') ? overrides.schedules! : [],
     sensors: overrides && overrides.hasOwnProperty('sensors') ? overrides.sensors! : [],
@@ -12846,8 +9565,8 @@ export const buildPipelineSnapshot = (
       overrides && overrides.hasOwnProperty('solidHandle')
         ? overrides.solidHandle!
         : relationshipsToOmit.has('SolidHandle')
-          ? ({} as SolidHandle)
-          : buildSolidHandle({}, relationshipsToOmit),
+        ? ({} as SolidHandle)
+        : buildSolidHandle({}, relationshipsToOmit),
     solidHandles:
       overrides && overrides.hasOwnProperty('solidHandles') ? overrides.solidHandles! : [],
     solidSelection:
@@ -12897,44 +9616,6 @@ export const buildPipelineTagAndValues = (
   };
 };
 
-export const buildPoolConfig = (
-  overrides?: Partial<PoolConfig>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'PoolConfig'} & PoolConfig => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('PoolConfig');
-  return {
-    __typename: 'PoolConfig',
-    defaultPoolLimit:
-      overrides && overrides.hasOwnProperty('defaultPoolLimit')
-        ? overrides.defaultPoolLimit!
-        : 2648,
-    opGranularityRunBuffer:
-      overrides && overrides.hasOwnProperty('opGranularityRunBuffer')
-        ? overrides.opGranularityRunBuffer!
-        : 3091,
-    poolGranularity:
-      overrides && overrides.hasOwnProperty('poolGranularity')
-        ? overrides.poolGranularity!
-        : 'enim',
-  };
-};
-
-export const buildPoolMetadataEntry = (
-  overrides?: Partial<PoolMetadataEntry>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'PoolMetadataEntry'} & PoolMetadataEntry => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('PoolMetadataEntry');
-  return {
-    __typename: 'PoolMetadataEntry',
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'enim',
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'vel',
-    pool: overrides && overrides.hasOwnProperty('pool') ? overrides.pool! : 'exercitationem',
-  };
-};
-
 export const buildPresetNotFoundError = (
   overrides?: Partial<PresetNotFoundError>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -12976,8 +9657,8 @@ export const buildPythonError = (
       overrides && overrides.hasOwnProperty('cause')
         ? overrides.cause!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     causes: overrides && overrides.hasOwnProperty('causes') ? overrides.causes! : [],
     className: overrides && overrides.hasOwnProperty('className') ? overrides.className! : 'magni',
     errorChain: overrides && overrides.hasOwnProperty('errorChain') ? overrides.errorChain! : [],
@@ -12998,38 +9679,14 @@ export const buildQuery = (
       overrides && overrides.hasOwnProperty('allTopLevelResourceDetailsOrError')
         ? overrides.allTopLevelResourceDetailsOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    assetBackfillPreview:
-      overrides && overrides.hasOwnProperty('assetBackfillPreview')
-        ? overrides.assetBackfillPreview!
-        : [],
-    assetCheckExecutions:
-      overrides && overrides.hasOwnProperty('assetCheckExecutions')
-        ? overrides.assetCheckExecutions!
-        : [],
-    assetConditionEvaluationForPartition:
-      overrides && overrides.hasOwnProperty('assetConditionEvaluationForPartition')
-        ? overrides.assetConditionEvaluationForPartition!
-        : relationshipsToOmit.has('AssetConditionEvaluation')
-          ? ({} as AssetConditionEvaluation)
-          : buildAssetConditionEvaluation({}, relationshipsToOmit),
-    assetConditionEvaluationRecordsOrError:
-      overrides && overrides.hasOwnProperty('assetConditionEvaluationRecordsOrError')
-        ? overrides.assetConditionEvaluationRecordsOrError!
-        : relationshipsToOmit.has('AssetConditionEvaluationRecords')
-          ? ({} as AssetConditionEvaluationRecords)
-          : buildAssetConditionEvaluationRecords({}, relationshipsToOmit),
-    assetConditionEvaluationsForEvaluationId:
-      overrides && overrides.hasOwnProperty('assetConditionEvaluationsForEvaluationId')
-        ? overrides.assetConditionEvaluationsForEvaluationId!
-        : relationshipsToOmit.has('AssetConditionEvaluationRecords')
-          ? ({} as AssetConditionEvaluationRecords)
-          : buildAssetConditionEvaluationRecords({}, relationshipsToOmit),
-    assetNodeAdditionalRequiredKeys:
-      overrides && overrides.hasOwnProperty('assetNodeAdditionalRequiredKeys')
-        ? overrides.assetNodeAdditionalRequiredKeys!
-        : [],
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
+    assetChecksOrError:
+      overrides && overrides.hasOwnProperty('assetChecksOrError')
+        ? overrides.assetChecksOrError!
+        : relationshipsToOmit.has('AssetCheckNeedsMigrationError')
+        ? ({} as AssetCheckNeedsMigrationError)
+        : buildAssetCheckNeedsMigrationError({}, relationshipsToOmit),
     assetNodeDefinitionCollisions:
       overrides && overrides.hasOwnProperty('assetNodeDefinitionCollisions')
         ? overrides.assetNodeDefinitionCollisions!
@@ -13038,297 +9695,249 @@ export const buildQuery = (
       overrides && overrides.hasOwnProperty('assetNodeOrError')
         ? overrides.assetNodeOrError!
         : relationshipsToOmit.has('AssetNode')
-          ? ({} as AssetNode)
-          : buildAssetNode({}, relationshipsToOmit),
+        ? ({} as AssetNode)
+        : buildAssetNode({}, relationshipsToOmit),
     assetNodes: overrides && overrides.hasOwnProperty('assetNodes') ? overrides.assetNodes! : [],
     assetOrError:
       overrides && overrides.hasOwnProperty('assetOrError')
         ? overrides.assetOrError!
         : relationshipsToOmit.has('Asset')
-          ? ({} as Asset)
-          : buildAsset({}, relationshipsToOmit),
-    assetRecordsOrError:
-      overrides && overrides.hasOwnProperty('assetRecordsOrError')
-        ? overrides.assetRecordsOrError!
-        : relationshipsToOmit.has('AssetRecordConnection')
-          ? ({} as AssetRecordConnection)
-          : buildAssetRecordConnection({}, relationshipsToOmit),
+        ? ({} as Asset)
+        : buildAsset({}, relationshipsToOmit),
     assetsLatestInfo:
       overrides && overrides.hasOwnProperty('assetsLatestInfo') ? overrides.assetsLatestInfo! : [],
     assetsOrError:
       overrides && overrides.hasOwnProperty('assetsOrError')
         ? overrides.assetsOrError!
         : relationshipsToOmit.has('AssetConnection')
-          ? ({} as AssetConnection)
-          : buildAssetConnection({}, relationshipsToOmit),
+        ? ({} as AssetConnection)
+        : buildAssetConnection({}, relationshipsToOmit),
     autoMaterializeAssetEvaluationsOrError:
       overrides && overrides.hasOwnProperty('autoMaterializeAssetEvaluationsOrError')
         ? overrides.autoMaterializeAssetEvaluationsOrError!
         : relationshipsToOmit.has('AutoMaterializeAssetEvaluationNeedsMigrationError')
-          ? ({} as AutoMaterializeAssetEvaluationNeedsMigrationError)
-          : buildAutoMaterializeAssetEvaluationNeedsMigrationError({}, relationshipsToOmit),
-    autoMaterializeEvaluationsForEvaluationId:
-      overrides && overrides.hasOwnProperty('autoMaterializeEvaluationsForEvaluationId')
-        ? overrides.autoMaterializeEvaluationsForEvaluationId!
-        : relationshipsToOmit.has('AutoMaterializeAssetEvaluationNeedsMigrationError')
-          ? ({} as AutoMaterializeAssetEvaluationNeedsMigrationError)
-          : buildAutoMaterializeAssetEvaluationNeedsMigrationError({}, relationshipsToOmit),
-    autoMaterializeTicks:
-      overrides && overrides.hasOwnProperty('autoMaterializeTicks')
-        ? overrides.autoMaterializeTicks!
-        : [],
-    canBulkTerminate:
-      overrides && overrides.hasOwnProperty('canBulkTerminate')
-        ? overrides.canBulkTerminate!
-        : false,
+        ? ({} as AutoMaterializeAssetEvaluationNeedsMigrationError)
+        : buildAutoMaterializeAssetEvaluationNeedsMigrationError({}, relationshipsToOmit),
     capturedLogs:
       overrides && overrides.hasOwnProperty('capturedLogs')
         ? overrides.capturedLogs!
         : relationshipsToOmit.has('CapturedLogs')
-          ? ({} as CapturedLogs)
-          : buildCapturedLogs({}, relationshipsToOmit),
+        ? ({} as CapturedLogs)
+        : buildCapturedLogs({}, relationshipsToOmit),
     capturedLogsMetadata:
       overrides && overrides.hasOwnProperty('capturedLogsMetadata')
         ? overrides.capturedLogsMetadata!
         : relationshipsToOmit.has('CapturedLogsMetadata')
-          ? ({} as CapturedLogsMetadata)
-          : buildCapturedLogsMetadata({}, relationshipsToOmit),
+        ? ({} as CapturedLogsMetadata)
+        : buildCapturedLogsMetadata({}, relationshipsToOmit),
     executionPlanOrError:
       overrides && overrides.hasOwnProperty('executionPlanOrError')
         ? overrides.executionPlanOrError!
         : relationshipsToOmit.has('ExecutionPlan')
-          ? ({} as ExecutionPlan)
-          : buildExecutionPlan({}, relationshipsToOmit),
+        ? ({} as ExecutionPlan)
+        : buildExecutionPlan({}, relationshipsToOmit),
     graphOrError:
       overrides && overrides.hasOwnProperty('graphOrError')
         ? overrides.graphOrError!
         : relationshipsToOmit.has('Graph')
-          ? ({} as Graph)
-          : buildGraph({}, relationshipsToOmit),
+        ? ({} as Graph)
+        : buildGraph({}, relationshipsToOmit),
     instance:
       overrides && overrides.hasOwnProperty('instance')
         ? overrides.instance!
         : relationshipsToOmit.has('Instance')
-          ? ({} as Instance)
-          : buildInstance({}, relationshipsToOmit),
+        ? ({} as Instance)
+        : buildInstance({}, relationshipsToOmit),
     instigationStateOrError:
       overrides && overrides.hasOwnProperty('instigationStateOrError')
         ? overrides.instigationStateOrError!
         : relationshipsToOmit.has('InstigationState')
-          ? ({} as InstigationState)
-          : buildInstigationState({}, relationshipsToOmit),
-    instigationStatesOrError:
-      overrides && overrides.hasOwnProperty('instigationStatesOrError')
-        ? overrides.instigationStatesOrError!
-        : relationshipsToOmit.has('InstigationStates')
-          ? ({} as InstigationStates)
-          : buildInstigationStates({}, relationshipsToOmit),
+        ? ({} as InstigationState)
+        : buildInstigationState({}, relationshipsToOmit),
     isPipelineConfigValid:
       overrides && overrides.hasOwnProperty('isPipelineConfigValid')
         ? overrides.isPipelineConfigValid!
         : relationshipsToOmit.has('InvalidSubsetError')
-          ? ({} as InvalidSubsetError)
-          : buildInvalidSubsetError({}, relationshipsToOmit),
+        ? ({} as InvalidSubsetError)
+        : buildInvalidSubsetError({}, relationshipsToOmit),
     locationStatusesOrError:
       overrides && overrides.hasOwnProperty('locationStatusesOrError')
         ? overrides.locationStatusesOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     logsForRun:
       overrides && overrides.hasOwnProperty('logsForRun')
         ? overrides.logsForRun!
         : relationshipsToOmit.has('EventConnection')
-          ? ({} as EventConnection)
-          : buildEventConnection({}, relationshipsToOmit),
+        ? ({} as EventConnection)
+        : buildEventConnection({}, relationshipsToOmit),
     partitionBackfillOrError:
       overrides && overrides.hasOwnProperty('partitionBackfillOrError')
         ? overrides.partitionBackfillOrError!
         : relationshipsToOmit.has('BackfillNotFoundError')
-          ? ({} as BackfillNotFoundError)
-          : buildBackfillNotFoundError({}, relationshipsToOmit),
+        ? ({} as BackfillNotFoundError)
+        : buildBackfillNotFoundError({}, relationshipsToOmit),
     partitionBackfillsOrError:
       overrides && overrides.hasOwnProperty('partitionBackfillsOrError')
         ? overrides.partitionBackfillsOrError!
         : relationshipsToOmit.has('PartitionBackfills')
-          ? ({} as PartitionBackfills)
-          : buildPartitionBackfills({}, relationshipsToOmit),
+        ? ({} as PartitionBackfills)
+        : buildPartitionBackfills({}, relationshipsToOmit),
     partitionSetOrError:
       overrides && overrides.hasOwnProperty('partitionSetOrError')
         ? overrides.partitionSetOrError!
         : relationshipsToOmit.has('PartitionSet')
-          ? ({} as PartitionSet)
-          : buildPartitionSet({}, relationshipsToOmit),
+        ? ({} as PartitionSet)
+        : buildPartitionSet({}, relationshipsToOmit),
     partitionSetsOrError:
       overrides && overrides.hasOwnProperty('partitionSetsOrError')
         ? overrides.partitionSetsOrError!
         : relationshipsToOmit.has('PartitionSets')
-          ? ({} as PartitionSets)
-          : buildPartitionSets({}, relationshipsToOmit),
+        ? ({} as PartitionSets)
+        : buildPartitionSets({}, relationshipsToOmit),
     permissions: overrides && overrides.hasOwnProperty('permissions') ? overrides.permissions! : [],
     pipelineOrError:
       overrides && overrides.hasOwnProperty('pipelineOrError')
         ? overrides.pipelineOrError!
         : relationshipsToOmit.has('InvalidSubsetError')
-          ? ({} as InvalidSubsetError)
-          : buildInvalidSubsetError({}, relationshipsToOmit),
+        ? ({} as InvalidSubsetError)
+        : buildInvalidSubsetError({}, relationshipsToOmit),
     pipelineRunOrError:
       overrides && overrides.hasOwnProperty('pipelineRunOrError')
         ? overrides.pipelineRunOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     pipelineRunsOrError:
       overrides && overrides.hasOwnProperty('pipelineRunsOrError')
         ? overrides.pipelineRunsOrError!
         : relationshipsToOmit.has('InvalidPipelineRunsFilterError')
-          ? ({} as InvalidPipelineRunsFilterError)
-          : buildInvalidPipelineRunsFilterError({}, relationshipsToOmit),
+        ? ({} as InvalidPipelineRunsFilterError)
+        : buildInvalidPipelineRunsFilterError({}, relationshipsToOmit),
     pipelineSnapshotOrError:
       overrides && overrides.hasOwnProperty('pipelineSnapshotOrError')
         ? overrides.pipelineSnapshotOrError!
         : relationshipsToOmit.has('PipelineNotFoundError')
-          ? ({} as PipelineNotFoundError)
-          : buildPipelineNotFoundError({}, relationshipsToOmit),
+        ? ({} as PipelineNotFoundError)
+        : buildPipelineNotFoundError({}, relationshipsToOmit),
     repositoriesOrError:
       overrides && overrides.hasOwnProperty('repositoriesOrError')
         ? overrides.repositoriesOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     repositoryOrError:
       overrides && overrides.hasOwnProperty('repositoryOrError')
         ? overrides.repositoryOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    resourcesOrError:
-      overrides && overrides.hasOwnProperty('resourcesOrError')
-        ? overrides.resourcesOrError!
-        : relationshipsToOmit.has('InvalidSubsetError')
-          ? ({} as InvalidSubsetError)
-          : buildInvalidSubsetError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     runConfigSchemaOrError:
       overrides && overrides.hasOwnProperty('runConfigSchemaOrError')
         ? overrides.runConfigSchemaOrError!
         : relationshipsToOmit.has('InvalidSubsetError')
-          ? ({} as InvalidSubsetError)
-          : buildInvalidSubsetError({}, relationshipsToOmit),
+        ? ({} as InvalidSubsetError)
+        : buildInvalidSubsetError({}, relationshipsToOmit),
     runGroupOrError:
       overrides && overrides.hasOwnProperty('runGroupOrError')
         ? overrides.runGroupOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     runIdsOrError:
       overrides && overrides.hasOwnProperty('runIdsOrError')
         ? overrides.runIdsOrError!
         : relationshipsToOmit.has('InvalidPipelineRunsFilterError')
-          ? ({} as InvalidPipelineRunsFilterError)
-          : buildInvalidPipelineRunsFilterError({}, relationshipsToOmit),
+        ? ({} as InvalidPipelineRunsFilterError)
+        : buildInvalidPipelineRunsFilterError({}, relationshipsToOmit),
     runOrError:
       overrides && overrides.hasOwnProperty('runOrError')
         ? overrides.runOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     runTagKeysOrError:
       overrides && overrides.hasOwnProperty('runTagKeysOrError')
         ? overrides.runTagKeysOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     runTagsOrError:
       overrides && overrides.hasOwnProperty('runTagsOrError')
         ? overrides.runTagsOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    runsFeedCountOrError:
-      overrides && overrides.hasOwnProperty('runsFeedCountOrError')
-        ? overrides.runsFeedCountOrError!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    runsFeedOrError:
-      overrides && overrides.hasOwnProperty('runsFeedOrError')
-        ? overrides.runsFeedOrError!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     runsOrError:
       overrides && overrides.hasOwnProperty('runsOrError')
         ? overrides.runsOrError!
         : relationshipsToOmit.has('InvalidPipelineRunsFilterError')
-          ? ({} as InvalidPipelineRunsFilterError)
-          : buildInvalidPipelineRunsFilterError({}, relationshipsToOmit),
+        ? ({} as InvalidPipelineRunsFilterError)
+        : buildInvalidPipelineRunsFilterError({}, relationshipsToOmit),
     scheduleOrError:
       overrides && overrides.hasOwnProperty('scheduleOrError')
         ? overrides.scheduleOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     scheduler:
       overrides && overrides.hasOwnProperty('scheduler')
         ? overrides.scheduler!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     schedulesOrError:
       overrides && overrides.hasOwnProperty('schedulesOrError')
         ? overrides.schedulesOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     sensorOrError:
       overrides && overrides.hasOwnProperty('sensorOrError')
         ? overrides.sensorOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     sensorsOrError:
       overrides && overrides.hasOwnProperty('sensorsOrError')
         ? overrides.sensorsOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     shouldShowNux:
       overrides && overrides.hasOwnProperty('shouldShowNux') ? overrides.shouldShowNux! : false,
     test:
       overrides && overrides.hasOwnProperty('test')
         ? overrides.test!
         : relationshipsToOmit.has('TestFields')
-          ? ({} as TestFields)
-          : buildTestFields({}, relationshipsToOmit),
+        ? ({} as TestFields)
+        : buildTestFields({}, relationshipsToOmit),
     topLevelResourceDetailsOrError:
       overrides && overrides.hasOwnProperty('topLevelResourceDetailsOrError')
         ? overrides.topLevelResourceDetailsOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-    truePartitionsForAutomationConditionEvaluationNode:
-      overrides && overrides.hasOwnProperty('truePartitionsForAutomationConditionEvaluationNode')
-        ? overrides.truePartitionsForAutomationConditionEvaluationNode!
-        : [],
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
+    unloadableInstigationStatesOrError:
+      overrides && overrides.hasOwnProperty('unloadableInstigationStatesOrError')
+        ? overrides.unloadableInstigationStatesOrError!
+        : relationshipsToOmit.has('InstigationStates')
+        ? ({} as InstigationStates)
+        : buildInstigationStates({}, relationshipsToOmit),
     utilizedEnvVarsOrError:
       overrides && overrides.hasOwnProperty('utilizedEnvVarsOrError')
         ? overrides.utilizedEnvVarsOrError!
         : relationshipsToOmit.has('EnvVarWithConsumersList')
-          ? ({} as EnvVarWithConsumersList)
-          : buildEnvVarWithConsumersList({}, relationshipsToOmit),
+        ? ({} as EnvVarWithConsumersList)
+        : buildEnvVarWithConsumersList({}, relationshipsToOmit),
     version: overrides && overrides.hasOwnProperty('version') ? overrides.version! : 'et',
-    workspaceLocationEntryOrError:
-      overrides && overrides.hasOwnProperty('workspaceLocationEntryOrError')
-        ? overrides.workspaceLocationEntryOrError!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
     workspaceOrError:
       overrides && overrides.hasOwnProperty('workspaceOrError')
         ? overrides.workspaceOrError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -13339,17 +9948,12 @@ export const buildReexecutionParams = (
   const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
   relationshipsToOmit.add('ReexecutionParams');
   return {
-    extraTags: overrides && overrides.hasOwnProperty('extraTags') ? overrides.extraTags! : [],
     parentRunId:
       overrides && overrides.hasOwnProperty('parentRunId') ? overrides.parentRunId! : 'sunt',
     strategy:
       overrides && overrides.hasOwnProperty('strategy')
         ? overrides.strategy!
         : ReexecutionStrategy.ALL_STEPS,
-    useParentRunTags:
-      overrides && overrides.hasOwnProperty('useParentRunTags')
-        ? overrides.useParentRunTags!
-        : false,
   };
 };
 
@@ -13395,27 +9999,9 @@ export const buildRegularDagsterType = (
     inputSchemaType:
       overrides && overrides.hasOwnProperty('inputSchemaType')
         ? overrides.inputSchemaType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     isBuiltin: overrides && overrides.hasOwnProperty('isBuiltin') ? overrides.isBuiltin! : true,
     isList: overrides && overrides.hasOwnProperty('isList') ? overrides.isList! : false,
     isNothing: overrides && overrides.hasOwnProperty('isNothing') ? overrides.isNothing! : false,
@@ -13427,27 +10013,9 @@ export const buildRegularDagsterType = (
     outputSchemaType:
       overrides && overrides.hasOwnProperty('outputSchemaType')
         ? overrides.outputSchemaType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
   };
 };
 
@@ -13475,8 +10043,8 @@ export const buildReloadRepositoryLocationMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -13492,49 +10060,8 @@ export const buildReloadWorkspaceMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-  };
-};
-
-export const buildReportRunlessAssetEventsParams = (
-  overrides?: Partial<ReportRunlessAssetEventsParams>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): ReportRunlessAssetEventsParams => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('ReportRunlessAssetEventsParams');
-  return {
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKeyInput')
-          ? ({} as AssetKeyInput)
-          : buildAssetKeyInput({}, relationshipsToOmit),
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'dolores',
-    eventType:
-      overrides && overrides.hasOwnProperty('eventType')
-        ? overrides.eventType!
-        : AssetEventType.ASSET_MATERIALIZATION,
-    partitionKeys:
-      overrides && overrides.hasOwnProperty('partitionKeys') ? overrides.partitionKeys! : [],
-  };
-};
-
-export const buildReportRunlessAssetEventsSuccess = (
-  overrides?: Partial<ReportRunlessAssetEventsSuccess>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'ReportRunlessAssetEventsSuccess'} & ReportRunlessAssetEventsSuccess => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('ReportRunlessAssetEventsSuccess');
-  return {
-    __typename: 'ReportRunlessAssetEventsSuccess',
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -13554,8 +10081,6 @@ export const buildRepository = (
     assetNodes: overrides && overrides.hasOwnProperty('assetNodes') ? overrides.assetNodes! : [],
     displayMetadata:
       overrides && overrides.hasOwnProperty('displayMetadata') ? overrides.displayMetadata! : [],
-    hasLocationDocs:
-      overrides && overrides.hasOwnProperty('hasLocationDocs') ? overrides.hasLocationDocs! : false,
     id:
       overrides && overrides.hasOwnProperty('id')
         ? overrides.id!
@@ -13565,21 +10090,15 @@ export const buildRepository = (
       overrides && overrides.hasOwnProperty('location')
         ? overrides.location!
         : relationshipsToOmit.has('RepositoryLocation')
-          ? ({} as RepositoryLocation)
-          : buildRepositoryLocation({}, relationshipsToOmit),
-    locationDocsJsonOrError:
-      overrides && overrides.hasOwnProperty('locationDocsJsonOrError')
-        ? overrides.locationDocsJsonOrError!
-        : relationshipsToOmit.has('LocationDocsJson')
-          ? ({} as LocationDocsJson)
-          : buildLocationDocsJson({}, relationshipsToOmit),
+        ? ({} as RepositoryLocation)
+        : buildRepositoryLocation({}, relationshipsToOmit),
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'dolor',
     origin:
       overrides && overrides.hasOwnProperty('origin')
         ? overrides.origin!
         : relationshipsToOmit.has('RepositoryOrigin')
-          ? ({} as RepositoryOrigin)
-          : buildRepositoryOrigin({}, relationshipsToOmit),
+        ? ({} as RepositoryOrigin)
+        : buildRepositoryOrigin({}, relationshipsToOmit),
     partitionSets:
       overrides && overrides.hasOwnProperty('partitionSets') ? overrides.partitionSets! : [],
     pipelines: overrides && overrides.hasOwnProperty('pipelines') ? overrides.pipelines! : [],
@@ -13589,8 +10108,8 @@ export const buildRepository = (
       overrides && overrides.hasOwnProperty('usedSolid')
         ? overrides.usedSolid!
         : relationshipsToOmit.has('UsedSolid')
-          ? ({} as UsedSolid)
-          : buildUsedSolid({}, relationshipsToOmit),
+        ? ({} as UsedSolid)
+        : buildUsedSolid({}, relationshipsToOmit),
     usedSolids: overrides && overrides.hasOwnProperty('usedSolids') ? overrides.usedSolids! : [],
   };
 };
@@ -13719,59 +10238,6 @@ export const buildRepositorySelector = (
   };
 };
 
-export const buildRequestedMaterializationsForAsset = (
-  overrides?: Partial<RequestedMaterializationsForAsset>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'RequestedMaterializationsForAsset'} & RequestedMaterializationsForAsset => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('RequestedMaterializationsForAsset');
-  return {
-    __typename: 'RequestedMaterializationsForAsset',
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    partitionKeys:
-      overrides && overrides.hasOwnProperty('partitionKeys') ? overrides.partitionKeys! : [],
-  };
-};
-
-export const buildResetScheduleMutation = (
-  overrides?: Partial<ResetScheduleMutation>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'ResetScheduleMutation'} & ResetScheduleMutation => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('ResetScheduleMutation');
-  return {
-    __typename: 'ResetScheduleMutation',
-    Output:
-      overrides && overrides.hasOwnProperty('Output')
-        ? overrides.Output!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-  };
-};
-
-export const buildResetSensorMutation = (
-  overrides?: Partial<ResetSensorMutation>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'ResetSensorMutation'} & ResetSensorMutation => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('ResetSensorMutation');
-  return {
-    __typename: 'ResetSensorMutation',
-    Output:
-      overrides && overrides.hasOwnProperty('Output')
-        ? overrides.Output!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
-  };
-};
-
 export const buildResource = (
   overrides?: Partial<Resource>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -13784,23 +10250,11 @@ export const buildResource = (
       overrides && overrides.hasOwnProperty('configField')
         ? overrides.configField!
         : relationshipsToOmit.has('ConfigTypeField')
-          ? ({} as ConfigTypeField)
-          : buildConfigTypeField({}, relationshipsToOmit),
+        ? ({} as ConfigTypeField)
+        : buildConfigTypeField({}, relationshipsToOmit),
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'perferendis',
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'fuga',
-  };
-};
-
-export const buildResourceConnection = (
-  overrides?: Partial<ResourceConnection>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'ResourceConnection'} & ResourceConnection => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('ResourceConnection');
-  return {
-    __typename: 'ResourceConnection',
-    resources: overrides && overrides.hasOwnProperty('resources') ? overrides.resources! : [],
   };
 };
 
@@ -13820,7 +10274,6 @@ export const buildResourceDetails = (
       overrides && overrides.hasOwnProperty('configuredValues') ? overrides.configuredValues! : [],
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'laudantium',
-    id: overrides && overrides.hasOwnProperty('id') ? overrides.id! : 'quia',
     isTopLevel: overrides && overrides.hasOwnProperty('isTopLevel') ? overrides.isTopLevel! : false,
     jobsOpsUsing:
       overrides && overrides.hasOwnProperty('jobsOpsUsing') ? overrides.jobsOpsUsing! : [],
@@ -13864,8 +10317,8 @@ export const buildResourceInitFailureEvent = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     eventType:
       overrides && overrides.hasOwnProperty('eventType')
         ? overrides.eventType!
@@ -14017,12 +10470,10 @@ export const buildRun = (
   relationshipsToOmit.add('Run');
   return {
     __typename: 'Run',
-    allPools: overrides && overrides.hasOwnProperty('allPools') ? overrides.allPools! : [],
     assetCheckSelection:
       overrides && overrides.hasOwnProperty('assetCheckSelection')
         ? overrides.assetCheckSelection!
         : [],
-    assetChecks: overrides && overrides.hasOwnProperty('assetChecks') ? overrides.assetChecks! : [],
     assetMaterializations:
       overrides && overrides.hasOwnProperty('assetMaterializations')
         ? overrides.assetMaterializations!
@@ -14036,27 +10487,27 @@ export const buildRun = (
       overrides && overrides.hasOwnProperty('capturedLogs')
         ? overrides.capturedLogs!
         : relationshipsToOmit.has('CapturedLogs')
-          ? ({} as CapturedLogs)
-          : buildCapturedLogs({}, relationshipsToOmit),
-    creationTime:
-      overrides && overrides.hasOwnProperty('creationTime') ? overrides.creationTime! : 5.95,
+        ? ({} as CapturedLogs)
+        : buildCapturedLogs({}, relationshipsToOmit),
+    computeLogs:
+      overrides && overrides.hasOwnProperty('computeLogs')
+        ? overrides.computeLogs!
+        : relationshipsToOmit.has('ComputeLogs')
+        ? ({} as ComputeLogs)
+        : buildComputeLogs({}, relationshipsToOmit),
     endTime: overrides && overrides.hasOwnProperty('endTime') ? overrides.endTime! : 7.08,
     eventConnection:
       overrides && overrides.hasOwnProperty('eventConnection')
         ? overrides.eventConnection!
         : relationshipsToOmit.has('EventConnection')
-          ? ({} as EventConnection)
-          : buildEventConnection({}, relationshipsToOmit),
+        ? ({} as EventConnection)
+        : buildEventConnection({}, relationshipsToOmit),
     executionPlan:
       overrides && overrides.hasOwnProperty('executionPlan')
         ? overrides.executionPlan!
         : relationshipsToOmit.has('ExecutionPlan')
-          ? ({} as ExecutionPlan)
-          : buildExecutionPlan({}, relationshipsToOmit),
-    externalJobSource:
-      overrides && overrides.hasOwnProperty('externalJobSource')
-        ? overrides.externalJobSource!
-        : 'similique',
+        ? ({} as ExecutionPlan)
+        : buildExecutionPlan({}, relationshipsToOmit),
     hasConcurrencyKeySlots:
       overrides && overrides.hasOwnProperty('hasConcurrencyKeySlots')
         ? overrides.hasConcurrencyKeySlots!
@@ -14069,17 +10520,9 @@ export const buildRun = (
       overrides && overrides.hasOwnProperty('hasReExecutePermission')
         ? overrides.hasReExecutePermission!
         : true,
-    hasRunMetricsEnabled:
-      overrides && overrides.hasOwnProperty('hasRunMetricsEnabled')
-        ? overrides.hasRunMetricsEnabled!
-        : false,
     hasTerminatePermission:
       overrides && overrides.hasOwnProperty('hasTerminatePermission')
         ? overrides.hasTerminatePermission!
-        : true,
-    hasUnconstrainedRootNodes:
-      overrides && overrides.hasOwnProperty('hasUnconstrainedRootNodes')
-        ? overrides.hasUnconstrainedRootNodes!
         : true,
     id:
       overrides && overrides.hasOwnProperty('id')
@@ -14096,12 +10539,9 @@ export const buildRun = (
     pipeline:
       overrides && overrides.hasOwnProperty('pipeline')
         ? overrides.pipeline!
-        : relationshipsToOmit.has('PipelineSnapshot')
-          ? ({} as PipelineSnapshot)
-          : buildPipelineSnapshot({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('UnknownPipeline')
-            ? ({} as UnknownPipeline)
-            : buildUnknownPipeline({}, relationshipsToOmit),
+        : relationshipsToOmit.has('PipelineReference')
+        ? ({} as PipelineReference)
+        : buildPipelineReference({}, relationshipsToOmit),
     pipelineName:
       overrides && overrides.hasOwnProperty('pipelineName') ? overrides.pipelineName! : 'enim',
     pipelineSnapshotId:
@@ -14112,25 +10552,17 @@ export const buildRun = (
       overrides && overrides.hasOwnProperty('repositoryOrigin')
         ? overrides.repositoryOrigin!
         : relationshipsToOmit.has('RepositoryOrigin')
-          ? ({} as RepositoryOrigin)
-          : buildRepositoryOrigin({}, relationshipsToOmit),
+        ? ({} as RepositoryOrigin)
+        : buildRepositoryOrigin({}, relationshipsToOmit),
     resolvedOpSelection:
       overrides && overrides.hasOwnProperty('resolvedOpSelection')
         ? overrides.resolvedOpSelection!
-        : [],
-    rootConcurrencyKeys:
-      overrides && overrides.hasOwnProperty('rootConcurrencyKeys')
-        ? overrides.rootConcurrencyKeys!
         : [],
     rootRunId: overrides && overrides.hasOwnProperty('rootRunId') ? overrides.rootRunId! : 'fugit',
     runConfig: overrides && overrides.hasOwnProperty('runConfig') ? overrides.runConfig! : 'quas',
     runConfigYaml:
       overrides && overrides.hasOwnProperty('runConfigYaml') ? overrides.runConfigYaml! : 'eveniet',
     runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'fuga',
-    runStatus:
-      overrides && overrides.hasOwnProperty('runStatus')
-        ? overrides.runStatus!
-        : RunStatus.CANCELED,
     solidSelection:
       overrides && overrides.hasOwnProperty('solidSelection') ? overrides.solidSelection! : [],
     startTime: overrides && overrides.hasOwnProperty('startTime') ? overrides.startTime! : 2.52,
@@ -14138,8 +10570,8 @@ export const buildRun = (
       overrides && overrides.hasOwnProperty('stats')
         ? overrides.stats!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     status:
       overrides && overrides.hasOwnProperty('status') ? overrides.status! : RunStatus.CANCELED,
     stepKeysToExecute:
@@ -14160,12 +10592,6 @@ export const buildRunCanceledEvent = (
   relationshipsToOmit.add('RunCanceledEvent');
   return {
     __typename: 'RunCanceledEvent',
-    error:
-      overrides && overrides.hasOwnProperty('error')
-        ? overrides.error!
-        : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
     eventType:
       overrides && overrides.hasOwnProperty('eventType')
         ? overrides.eventType!
@@ -14221,32 +10647,14 @@ export const buildRunConfigSchema = (
       overrides && overrides.hasOwnProperty('isRunConfigValid')
         ? overrides.isRunConfigValid!
         : relationshipsToOmit.has('InvalidSubsetError')
-          ? ({} as InvalidSubsetError)
-          : buildInvalidSubsetError({}, relationshipsToOmit),
+        ? ({} as InvalidSubsetError)
+        : buildInvalidSubsetError({}, relationshipsToOmit),
     rootConfigType:
       overrides && overrides.hasOwnProperty('rootConfigType')
         ? overrides.rootConfigType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     rootDefaultYaml:
       overrides && overrides.hasOwnProperty('rootDefaultYaml') ? overrides.rootDefaultYaml! : 'cum',
   };
@@ -14355,8 +10763,8 @@ export const buildRunFailureEvent = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     eventType:
       overrides && overrides.hasOwnProperty('eventType')
         ? overrides.eventType!
@@ -14465,29 +10873,6 @@ export const buildRunNotFoundError = (
   };
 };
 
-export const buildRunQueueConfig = (
-  overrides?: Partial<RunQueueConfig>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'RunQueueConfig'} & RunQueueConfig => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('RunQueueConfig');
-  return {
-    __typename: 'RunQueueConfig',
-    isOpConcurrencyAware:
-      overrides && overrides.hasOwnProperty('isOpConcurrencyAware')
-        ? overrides.isOpConcurrencyAware!
-        : false,
-    maxConcurrentRuns:
-      overrides && overrides.hasOwnProperty('maxConcurrentRuns')
-        ? overrides.maxConcurrentRuns!
-        : 9835,
-    tagConcurrencyLimitsYaml:
-      overrides && overrides.hasOwnProperty('tagConcurrencyLimitsYaml')
-        ? overrides.tagConcurrencyLimitsYaml!
-        : 'reprehenderit',
-  };
-};
-
 export const buildRunRequest = (
   overrides?: Partial<RunRequest>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -14498,7 +10883,6 @@ export const buildRunRequest = (
     __typename: 'RunRequest',
     assetSelection:
       overrides && overrides.hasOwnProperty('assetSelection') ? overrides.assetSelection! : [],
-    jobName: overrides && overrides.hasOwnProperty('jobName') ? overrides.jobName! : 'saepe',
     runConfigYaml:
       overrides && overrides.hasOwnProperty('runConfigYaml') ? overrides.runConfigYaml! : 'ut',
     runKey: overrides && overrides.hasOwnProperty('runKey') ? overrides.runKey! : 'eius',
@@ -14674,63 +11058,6 @@ export const buildRuns = (
   };
 };
 
-export const buildRunsFeedConnection = (
-  overrides?: Partial<RunsFeedConnection>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'RunsFeedConnection'} & RunsFeedConnection => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('RunsFeedConnection');
-  return {
-    __typename: 'RunsFeedConnection',
-    cursor: overrides && overrides.hasOwnProperty('cursor') ? overrides.cursor! : 'iure',
-    hasMore: overrides && overrides.hasOwnProperty('hasMore') ? overrides.hasMore! : false,
-    results: overrides && overrides.hasOwnProperty('results') ? overrides.results! : [],
-  };
-};
-
-export const buildRunsFeedCount = (
-  overrides?: Partial<RunsFeedCount>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'RunsFeedCount'} & RunsFeedCount => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('RunsFeedCount');
-  return {
-    __typename: 'RunsFeedCount',
-    count: overrides && overrides.hasOwnProperty('count') ? overrides.count! : 1273,
-  };
-};
-
-export const buildRunsFeedEntry = (
-  overrides?: Partial<RunsFeedEntry>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'RunsFeedEntry'} & RunsFeedEntry => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('RunsFeedEntry');
-  return {
-    __typename: 'RunsFeedEntry',
-    assetCheckSelection:
-      overrides && overrides.hasOwnProperty('assetCheckSelection')
-        ? overrides.assetCheckSelection!
-        : [],
-    assetSelection:
-      overrides && overrides.hasOwnProperty('assetSelection') ? overrides.assetSelection! : [],
-    creationTime:
-      overrides && overrides.hasOwnProperty('creationTime') ? overrides.creationTime! : 5.76,
-    endTime: overrides && overrides.hasOwnProperty('endTime') ? overrides.endTime! : 9.19,
-    id:
-      overrides && overrides.hasOwnProperty('id')
-        ? overrides.id!
-        : '6d9ebb9a-e183-4642-b24f-468c247b375f',
-    jobName: overrides && overrides.hasOwnProperty('jobName') ? overrides.jobName! : 'sed',
-    runStatus:
-      overrides && overrides.hasOwnProperty('runStatus')
-        ? overrides.runStatus!
-        : RunStatus.CANCELED,
-    startTime: overrides && overrides.hasOwnProperty('startTime') ? overrides.startTime! : 8.94,
-    tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
-  };
-};
-
 export const buildRunsFilter = (
   overrides?: Partial<RunsFilter>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -14738,8 +11065,6 @@ export const buildRunsFilter = (
   const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
   relationshipsToOmit.add('RunsFilter');
   return {
-    createdAfter:
-      overrides && overrides.hasOwnProperty('createdAfter') ? overrides.createdAfter! : 2.71,
     createdBefore:
       overrides && overrides.hasOwnProperty('createdBefore') ? overrides.createdBefore! : 2.25,
     mode: overrides && overrides.hasOwnProperty('mode') ? overrides.mode! : 'voluptatem',
@@ -14752,8 +11077,6 @@ export const buildRunsFilter = (
     tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
     updatedAfter:
       overrides && overrides.hasOwnProperty('updatedAfter') ? overrides.updatedAfter! : 6.85,
-    updatedBefore:
-      overrides && overrides.hasOwnProperty('updatedBefore') ? overrides.updatedBefore! : 7.58,
   };
 };
 
@@ -14775,8 +11098,8 @@ export const buildRuntimeMismatchConfigError = (
       overrides && overrides.hasOwnProperty('stack')
         ? overrides.stack!
         : relationshipsToOmit.has('EvaluationStack')
-          ? ({} as EvaluationStack)
-          : buildEvaluationStack({}, relationshipsToOmit),
+        ? ({} as EvaluationStack)
+        : buildEvaluationStack({}, relationshipsToOmit),
     valueRep: overrides && overrides.hasOwnProperty('valueRep') ? overrides.valueRep! : 'in',
   };
 };
@@ -14796,27 +11119,9 @@ export const buildScalarUnionConfigType = (
     nonScalarType:
       overrides && overrides.hasOwnProperty('nonScalarType')
         ? overrides.nonScalarType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     nonScalarTypeKey:
       overrides && overrides.hasOwnProperty('nonScalarTypeKey')
         ? overrides.nonScalarTypeKey!
@@ -14828,27 +11133,9 @@ export const buildScalarUnionConfigType = (
     scalarType:
       overrides && overrides.hasOwnProperty('scalarType')
         ? overrides.scalarType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
     scalarTypeKey:
       overrides && overrides.hasOwnProperty('scalarTypeKey') ? overrides.scalarTypeKey! : 'esse',
     typeParamKeys:
@@ -14864,19 +11151,8 @@ export const buildSchedule = (
   relationshipsToOmit.add('Schedule');
   return {
     __typename: 'Schedule',
-    assetSelection:
-      overrides && overrides.hasOwnProperty('assetSelection')
-        ? overrides.assetSelection!
-        : relationshipsToOmit.has('AssetSelection')
-          ? ({} as AssetSelection)
-          : buildAssetSelection({}, relationshipsToOmit),
-    canReset: overrides && overrides.hasOwnProperty('canReset') ? overrides.canReset! : false,
     cronSchedule:
       overrides && overrides.hasOwnProperty('cronSchedule') ? overrides.cronSchedule! : 'possimus',
-    defaultStatus:
-      overrides && overrides.hasOwnProperty('defaultStatus')
-        ? overrides.defaultStatus!
-        : InstigationStatus.RUNNING,
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'porro',
     executionTimezone:
@@ -14887,28 +11163,26 @@ export const buildSchedule = (
       overrides && overrides.hasOwnProperty('futureTick')
         ? overrides.futureTick!
         : relationshipsToOmit.has('DryRunInstigationTick')
-          ? ({} as DryRunInstigationTick)
-          : buildDryRunInstigationTick({}, relationshipsToOmit),
+        ? ({} as DryRunInstigationTick)
+        : buildDryRunInstigationTick({}, relationshipsToOmit),
     futureTicks:
       overrides && overrides.hasOwnProperty('futureTicks')
         ? overrides.futureTicks!
         : relationshipsToOmit.has('DryRunInstigationTicks')
-          ? ({} as DryRunInstigationTicks)
-          : buildDryRunInstigationTicks({}, relationshipsToOmit),
+        ? ({} as DryRunInstigationTicks)
+        : buildDryRunInstigationTicks({}, relationshipsToOmit),
     id:
       overrides && overrides.hasOwnProperty('id')
         ? overrides.id!
         : '71db947a-c94a-4681-979f-7d72688947d9',
-    metadataEntries:
-      overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
     mode: overrides && overrides.hasOwnProperty('mode') ? overrides.mode! : 'in',
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'ut',
     partitionSet:
       overrides && overrides.hasOwnProperty('partitionSet')
         ? overrides.partitionSet!
         : relationshipsToOmit.has('PartitionSet')
-          ? ({} as PartitionSet)
-          : buildPartitionSet({}, relationshipsToOmit),
+        ? ({} as PartitionSet)
+        : buildPartitionSet({}, relationshipsToOmit),
     pipelineName:
       overrides && overrides.hasOwnProperty('pipelineName')
         ? overrides.pipelineName!
@@ -14921,11 +11195,10 @@ export const buildSchedule = (
       overrides && overrides.hasOwnProperty('scheduleState')
         ? overrides.scheduleState!
         : relationshipsToOmit.has('InstigationState')
-          ? ({} as InstigationState)
-          : buildInstigationState({}, relationshipsToOmit),
+        ? ({} as InstigationState)
+        : buildInstigationState({}, relationshipsToOmit),
     solidSelection:
       overrides && overrides.hasOwnProperty('solidSelection') ? overrides.solidSelection! : [],
-    tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
   };
 };
 
@@ -14988,8 +11261,8 @@ export const buildScheduleStateResult = (
       overrides && overrides.hasOwnProperty('scheduleState')
         ? overrides.scheduleState!
         : relationshipsToOmit.has('InstigationState')
-          ? ({} as InstigationState)
-          : buildInstigationState({}, relationshipsToOmit),
+        ? ({} as InstigationState)
+        : buildInstigationState({}, relationshipsToOmit),
   };
 };
 
@@ -15010,8 +11283,8 @@ export const buildScheduleTick = (
       overrides && overrides.hasOwnProperty('tickSpecificData')
         ? overrides.tickSpecificData!
         : relationshipsToOmit.has('ScheduleTickFailureData')
-          ? ({} as ScheduleTickFailureData)
-          : buildScheduleTickFailureData({}, relationshipsToOmit),
+        ? ({} as ScheduleTickFailureData)
+        : buildScheduleTickFailureData({}, relationshipsToOmit),
     timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 2.14,
   };
 };
@@ -15028,8 +11301,8 @@ export const buildScheduleTickFailureData = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -15045,8 +11318,8 @@ export const buildScheduleTickSuccessData = (
       overrides && overrides.hasOwnProperty('run')
         ? overrides.run!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
   };
 };
 
@@ -15107,8 +11380,8 @@ export const buildSelectorTypeConfigError = (
       overrides && overrides.hasOwnProperty('stack')
         ? overrides.stack!
         : relationshipsToOmit.has('EvaluationStack')
-          ? ({} as EvaluationStack)
-          : buildEvaluationStack({}, relationshipsToOmit),
+        ? ({} as EvaluationStack)
+        : buildEvaluationStack({}, relationshipsToOmit),
   };
 };
 
@@ -15120,17 +11393,6 @@ export const buildSensor = (
   relationshipsToOmit.add('Sensor');
   return {
     __typename: 'Sensor',
-    assetSelection:
-      overrides && overrides.hasOwnProperty('assetSelection')
-        ? overrides.assetSelection!
-        : relationshipsToOmit.has('AssetSelection')
-          ? ({} as AssetSelection)
-          : buildAssetSelection({}, relationshipsToOmit),
-    canReset: overrides && overrides.hasOwnProperty('canReset') ? overrides.canReset! : true,
-    defaultStatus:
-      overrides && overrides.hasOwnProperty('defaultStatus')
-        ? overrides.defaultStatus!
-        : InstigationStatus.RUNNING,
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'sapiente',
     id:
@@ -15143,10 +11405,8 @@ export const buildSensor = (
       overrides && overrides.hasOwnProperty('metadata')
         ? overrides.metadata!
         : relationshipsToOmit.has('SensorMetadata')
-          ? ({} as SensorMetadata)
-          : buildSensorMetadata({}, relationshipsToOmit),
-    metadataEntries:
-      overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
+        ? ({} as SensorMetadata)
+        : buildSensorMetadata({}, relationshipsToOmit),
     minIntervalSeconds:
       overrides && overrides.hasOwnProperty('minIntervalSeconds')
         ? overrides.minIntervalSeconds!
@@ -15156,19 +11416,18 @@ export const buildSensor = (
       overrides && overrides.hasOwnProperty('nextTick')
         ? overrides.nextTick!
         : relationshipsToOmit.has('DryRunInstigationTick')
-          ? ({} as DryRunInstigationTick)
-          : buildDryRunInstigationTick({}, relationshipsToOmit),
+        ? ({} as DryRunInstigationTick)
+        : buildDryRunInstigationTick({}, relationshipsToOmit),
     sensorState:
       overrides && overrides.hasOwnProperty('sensorState')
         ? overrides.sensorState!
         : relationshipsToOmit.has('InstigationState')
-          ? ({} as InstigationState)
-          : buildInstigationState({}, relationshipsToOmit),
+        ? ({} as InstigationState)
+        : buildInstigationState({}, relationshipsToOmit),
     sensorType:
       overrides && overrides.hasOwnProperty('sensorType')
         ? overrides.sensorType!
         : SensorType.ASSET,
-    tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
     targets: overrides && overrides.hasOwnProperty('targets') ? overrides.targets! : [],
   };
 };
@@ -15262,8 +11521,8 @@ export const buildSetSensorCursorMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -15279,8 +11538,8 @@ export const buildShutdownRepositoryLocationMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -15310,12 +11569,9 @@ export const buildSolid = (
     definition:
       overrides && overrides.hasOwnProperty('definition')
         ? overrides.definition!
-        : relationshipsToOmit.has('CompositeSolidDefinition')
-          ? ({} as CompositeSolidDefinition)
-          : buildCompositeSolidDefinition({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('SolidDefinition')
-            ? ({} as SolidDefinition)
-            : buildSolidDefinition({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ISolidDefinition')
+        ? ({} as ISolidDefinition)
+        : buildISolidDefinition({}, relationshipsToOmit),
     inputs: overrides && overrides.hasOwnProperty('inputs') ? overrides.inputs! : [],
     isDynamicMapped:
       overrides && overrides.hasOwnProperty('isDynamicMapped') ? overrides.isDynamicMapped! : true,
@@ -15344,8 +11600,8 @@ export const buildSolidContainer = (
       overrides && overrides.hasOwnProperty('solidHandle')
         ? overrides.solidHandle!
         : relationshipsToOmit.has('SolidHandle')
-          ? ({} as SolidHandle)
-          : buildSolidHandle({}, relationshipsToOmit),
+        ? ({} as SolidHandle)
+        : buildSolidHandle({}, relationshipsToOmit),
     solidHandles:
       overrides && overrides.hasOwnProperty('solidHandles') ? overrides.solidHandles! : [],
     solids: overrides && overrides.hasOwnProperty('solids') ? overrides.solids! : [],
@@ -15365,8 +11621,8 @@ export const buildSolidDefinition = (
       overrides && overrides.hasOwnProperty('configField')
         ? overrides.configField!
         : relationshipsToOmit.has('ConfigTypeField')
-          ? ({} as ConfigTypeField)
-          : buildConfigTypeField({}, relationshipsToOmit),
+        ? ({} as ConfigTypeField)
+        : buildConfigTypeField({}, relationshipsToOmit),
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'qui',
     inputDefinitions:
@@ -15377,8 +11633,6 @@ export const buildSolidDefinition = (
       overrides && overrides.hasOwnProperty('outputDefinitions')
         ? overrides.outputDefinitions!
         : [],
-    pool: overrides && overrides.hasOwnProperty('pool') ? overrides.pool! : 'voluptates',
-    pools: overrides && overrides.hasOwnProperty('pools') ? overrides.pools! : [],
     requiredResources:
       overrides && overrides.hasOwnProperty('requiredResources')
         ? overrides.requiredResources!
@@ -15399,20 +11653,20 @@ export const buildSolidHandle = (
       overrides && overrides.hasOwnProperty('parent')
         ? overrides.parent!
         : relationshipsToOmit.has('SolidHandle')
-          ? ({} as SolidHandle)
-          : buildSolidHandle({}, relationshipsToOmit),
+        ? ({} as SolidHandle)
+        : buildSolidHandle({}, relationshipsToOmit),
     solid:
       overrides && overrides.hasOwnProperty('solid')
         ? overrides.solid!
         : relationshipsToOmit.has('Solid')
-          ? ({} as Solid)
-          : buildSolid({}, relationshipsToOmit),
+        ? ({} as Solid)
+        : buildSolid({}, relationshipsToOmit),
     stepStats:
       overrides && overrides.hasOwnProperty('stepStats')
         ? overrides.stepStats!
         : relationshipsToOmit.has('SolidStepStatsConnection')
-          ? ({} as SolidStepStatsConnection)
-          : buildSolidStepStatsConnection({}, relationshipsToOmit),
+        ? ({} as SolidStepStatsConnection)
+        : buildSolidStepStatsConnection({}, relationshipsToOmit),
   };
 };
 
@@ -15440,37 +11694,6 @@ export const buildSolidStepStatusUnavailableError = (
   };
 };
 
-export const buildSpecificPartitionAssetConditionEvaluationNode = (
-  overrides?: Partial<SpecificPartitionAssetConditionEvaluationNode>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {
-  __typename: 'SpecificPartitionAssetConditionEvaluationNode';
-} & SpecificPartitionAssetConditionEvaluationNode => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('SpecificPartitionAssetConditionEvaluationNode');
-  return {
-    __typename: 'SpecificPartitionAssetConditionEvaluationNode',
-    childUniqueIds:
-      overrides && overrides.hasOwnProperty('childUniqueIds') ? overrides.childUniqueIds! : [],
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'ut',
-    entityKey:
-      overrides && overrides.hasOwnProperty('entityKey')
-        ? overrides.entityKey!
-        : relationshipsToOmit.has('AssetCheckhandle')
-          ? ({} as AssetCheckhandle)
-          : buildAssetCheckhandle({}, relationshipsToOmit),
-    metadataEntries:
-      overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
-    status:
-      overrides && overrides.hasOwnProperty('status')
-        ? overrides.status!
-        : AssetConditionEvaluationStatus.FALSE,
-    uniqueId:
-      overrides && overrides.hasOwnProperty('uniqueId') ? overrides.uniqueId! : 'repudiandae',
-  };
-};
-
 export const buildStaleCause = (
   overrides?: Partial<StaleCause>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -15487,8 +11710,8 @@ export const buildStaleCause = (
       overrides && overrides.hasOwnProperty('dependency')
         ? overrides.dependency!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     dependencyPartitionKey:
       overrides && overrides.hasOwnProperty('dependencyPartitionKey')
         ? overrides.dependencyPartitionKey!
@@ -15497,8 +11720,8 @@ export const buildStaleCause = (
       overrides && overrides.hasOwnProperty('key')
         ? overrides.key!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     partitionKey:
       overrides && overrides.hasOwnProperty('partitionKey') ? overrides.partitionKey! : 'autem',
     reason: overrides && overrides.hasOwnProperty('reason') ? overrides.reason! : 'et',
@@ -15517,8 +11740,8 @@ export const buildStartScheduleMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -15569,8 +11792,8 @@ export const buildStepExpectationResultEvent = (
       overrides && overrides.hasOwnProperty('expectationResult')
         ? overrides.expectationResult!
         : relationshipsToOmit.has('ExpectationResult')
-          ? ({} as ExpectationResult)
-          : buildExpectationResult({}, relationshipsToOmit),
+        ? ({} as ExpectationResult)
+        : buildExpectationResult({}, relationshipsToOmit),
     level: overrides && overrides.hasOwnProperty('level') ? overrides.level! : LogLevel.CRITICAL,
     message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'ullam',
     runId: overrides && overrides.hasOwnProperty('runId') ? overrides.runId! : 'nisi',
@@ -15670,8 +11893,8 @@ export const buildStopRunningScheduleMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -15687,8 +11910,8 @@ export const buildStopSensorMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -15704,8 +11927,8 @@ export const buildStopSensorMutationResult = (
       overrides && overrides.hasOwnProperty('instigationState')
         ? overrides.instigationState!
         : relationshipsToOmit.has('InstigationState')
-          ? ({} as InstigationState)
-          : buildInstigationState({}, relationshipsToOmit),
+        ? ({} as InstigationState)
+        : buildInstigationState({}, relationshipsToOmit),
   };
 };
 
@@ -15721,20 +11944,26 @@ export const buildSubscription = (
       overrides && overrides.hasOwnProperty('capturedLogs')
         ? overrides.capturedLogs!
         : relationshipsToOmit.has('CapturedLogs')
-          ? ({} as CapturedLogs)
-          : buildCapturedLogs({}, relationshipsToOmit),
+        ? ({} as CapturedLogs)
+        : buildCapturedLogs({}, relationshipsToOmit),
+    computeLogs:
+      overrides && overrides.hasOwnProperty('computeLogs')
+        ? overrides.computeLogs!
+        : relationshipsToOmit.has('ComputeLogFile')
+        ? ({} as ComputeLogFile)
+        : buildComputeLogFile({}, relationshipsToOmit),
     locationStateChangeEvents:
       overrides && overrides.hasOwnProperty('locationStateChangeEvents')
         ? overrides.locationStateChangeEvents!
         : relationshipsToOmit.has('LocationStateChangeSubscription')
-          ? ({} as LocationStateChangeSubscription)
-          : buildLocationStateChangeSubscription({}, relationshipsToOmit),
+        ? ({} as LocationStateChangeSubscription)
+        : buildLocationStateChangeSubscription({}, relationshipsToOmit),
     pipelineRunLogs:
       overrides && overrides.hasOwnProperty('pipelineRunLogs')
         ? overrides.pipelineRunLogs!
         : relationshipsToOmit.has('PipelineRunLogsSubscriptionFailure')
-          ? ({} as PipelineRunLogsSubscriptionFailure)
-          : buildPipelineRunLogsSubscriptionFailure({}, relationshipsToOmit),
+        ? ({} as PipelineRunLogsSubscriptionFailure)
+        : buildPipelineRunLogsSubscriptionFailure({}, relationshipsToOmit),
   };
 };
 
@@ -15751,8 +11980,8 @@ export const buildTable = (
       overrides && overrides.hasOwnProperty('schema')
         ? overrides.schema!
         : relationshipsToOmit.has('TableSchema')
-          ? ({} as TableSchema)
-          : buildTableSchema({}, relationshipsToOmit),
+        ? ({} as TableSchema)
+        : buildTableSchema({}, relationshipsToOmit),
   };
 };
 
@@ -15768,12 +11997,11 @@ export const buildTableColumn = (
       overrides && overrides.hasOwnProperty('constraints')
         ? overrides.constraints!
         : relationshipsToOmit.has('TableColumnConstraints')
-          ? ({} as TableColumnConstraints)
-          : buildTableColumnConstraints({}, relationshipsToOmit),
+        ? ({} as TableColumnConstraints)
+        : buildTableColumnConstraints({}, relationshipsToOmit),
     description:
       overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'illum',
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'explicabo',
-    tags: overrides && overrides.hasOwnProperty('tags') ? overrides.tags! : [],
     type: overrides && overrides.hasOwnProperty('type') ? overrides.type! : 'a',
   };
 };
@@ -15789,53 +12017,6 @@ export const buildTableColumnConstraints = (
     nullable: overrides && overrides.hasOwnProperty('nullable') ? overrides.nullable! : true,
     other: overrides && overrides.hasOwnProperty('other') ? overrides.other! : [],
     unique: overrides && overrides.hasOwnProperty('unique') ? overrides.unique! : false,
-  };
-};
-
-export const buildTableColumnDep = (
-  overrides?: Partial<TableColumnDep>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'TableColumnDep'} & TableColumnDep => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('TableColumnDep');
-  return {
-    __typename: 'TableColumnDep',
-    assetKey:
-      overrides && overrides.hasOwnProperty('assetKey')
-        ? overrides.assetKey!
-        : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
-    columnName:
-      overrides && overrides.hasOwnProperty('columnName') ? overrides.columnName! : 'vitae',
-  };
-};
-
-export const buildTableColumnLineageEntry = (
-  overrides?: Partial<TableColumnLineageEntry>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'TableColumnLineageEntry'} & TableColumnLineageEntry => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('TableColumnLineageEntry');
-  return {
-    __typename: 'TableColumnLineageEntry',
-    columnDeps: overrides && overrides.hasOwnProperty('columnDeps') ? overrides.columnDeps! : [],
-    columnName: overrides && overrides.hasOwnProperty('columnName') ? overrides.columnName! : 'aut',
-  };
-};
-
-export const buildTableColumnLineageMetadataEntry = (
-  overrides?: Partial<TableColumnLineageMetadataEntry>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'TableColumnLineageMetadataEntry'} & TableColumnLineageMetadataEntry => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('TableColumnLineageMetadataEntry');
-  return {
-    __typename: 'TableColumnLineageMetadataEntry',
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'vero',
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'iusto',
-    lineage: overrides && overrides.hasOwnProperty('lineage') ? overrides.lineage! : [],
   };
 };
 
@@ -15866,8 +12047,8 @@ export const buildTableMetadataEntry = (
       overrides && overrides.hasOwnProperty('table')
         ? overrides.table!
         : relationshipsToOmit.has('Table')
-          ? ({} as Table)
-          : buildTable({}, relationshipsToOmit),
+        ? ({} as Table)
+        : buildTable({}, relationshipsToOmit),
   };
 };
 
@@ -15884,8 +12065,8 @@ export const buildTableSchema = (
       overrides && overrides.hasOwnProperty('constraints')
         ? overrides.constraints!
         : relationshipsToOmit.has('TableConstraints')
-          ? ({} as TableConstraints)
-          : buildTableConstraints({}, relationshipsToOmit),
+        ? ({} as TableConstraints)
+        : buildTableConstraints({}, relationshipsToOmit),
   };
 };
 
@@ -15904,20 +12085,8 @@ export const buildTableSchemaMetadataEntry = (
       overrides && overrides.hasOwnProperty('schema')
         ? overrides.schema!
         : relationshipsToOmit.has('TableSchema')
-          ? ({} as TableSchema)
-          : buildTableSchema({}, relationshipsToOmit),
-  };
-};
-
-export const buildTagInput = (
-  overrides?: Partial<TagInput>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): TagInput => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('TagInput');
-  return {
-    key: overrides && overrides.hasOwnProperty('key') ? overrides.key! : 'ut',
-    value: overrides && overrides.hasOwnProperty('value') ? overrides.value! : 'nostrum',
+        ? ({} as TableSchema)
+        : buildTableSchema({}, relationshipsToOmit),
   };
 };
 
@@ -15937,18 +12106,6 @@ export const buildTarget = (
   };
 };
 
-export const buildTeamAssetOwner = (
-  overrides?: Partial<TeamAssetOwner>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'TeamAssetOwner'} & TeamAssetOwner => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('TeamAssetOwner');
-  return {
-    __typename: 'TeamAssetOwner',
-    team: overrides && overrides.hasOwnProperty('team') ? overrides.team! : 'est',
-  };
-};
-
 export const buildTerminatePipelineExecutionFailure = (
   overrides?: Partial<TerminatePipelineExecutionFailure>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -15962,8 +12119,8 @@ export const buildTerminatePipelineExecutionFailure = (
       overrides && overrides.hasOwnProperty('run')
         ? overrides.run!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
   };
 };
 
@@ -15979,8 +12136,8 @@ export const buildTerminatePipelineExecutionSuccess = (
       overrides && overrides.hasOwnProperty('run')
         ? overrides.run!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
   };
 };
 
@@ -15997,8 +12154,8 @@ export const buildTerminateRunFailure = (
       overrides && overrides.hasOwnProperty('run')
         ? overrides.run!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
   };
 };
 
@@ -16014,8 +12171,8 @@ export const buildTerminateRunMutation = (
       overrides && overrides.hasOwnProperty('Output')
         ? overrides.Output!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
   };
 };
 
@@ -16031,23 +12188,8 @@ export const buildTerminateRunSuccess = (
       overrides && overrides.hasOwnProperty('run')
         ? overrides.run!
         : relationshipsToOmit.has('Run')
-          ? ({} as Run)
-          : buildRun({}, relationshipsToOmit),
-  };
-};
-
-export const buildTerminateRunsResult = (
-  overrides?: Partial<TerminateRunsResult>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'TerminateRunsResult'} & TerminateRunsResult => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('TerminateRunsResult');
-  return {
-    __typename: 'TerminateRunsResult',
-    terminateRunResults:
-      overrides && overrides.hasOwnProperty('terminateRunResults')
-        ? overrides.terminateRunResults!
-        : [],
+        ? ({} as Run)
+        : buildRun({}, relationshipsToOmit),
   };
 };
 
@@ -16063,8 +12205,6 @@ export const buildTestFields = (
       overrides && overrides.hasOwnProperty('alwaysException')
         ? overrides.alwaysException!
         : 'quibusdam',
-    asyncString:
-      overrides && overrides.hasOwnProperty('asyncString') ? overrides.asyncString! : 'non',
   };
 };
 
@@ -16112,8 +12252,8 @@ export const buildTickEvaluation = (
       overrides && overrides.hasOwnProperty('error')
         ? overrides.error!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     runRequests: overrides && overrides.hasOwnProperty('runRequests') ? overrides.runRequests! : [],
     skipReason:
       overrides && overrides.hasOwnProperty('skipReason') ? overrides.skipReason! : 'dicta',
@@ -16148,40 +12288,6 @@ export const buildTimePartitionStatuses = (
   return {
     __typename: 'TimePartitionStatuses',
     ranges: overrides && overrides.hasOwnProperty('ranges') ? overrides.ranges! : [],
-  };
-};
-
-export const buildTimeWindowFreshnessPolicy = (
-  overrides?: Partial<TimeWindowFreshnessPolicy>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'TimeWindowFreshnessPolicy'} & TimeWindowFreshnessPolicy => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('TimeWindowFreshnessPolicy');
-  return {
-    __typename: 'TimeWindowFreshnessPolicy',
-    failWindowSeconds:
-      overrides && overrides.hasOwnProperty('failWindowSeconds')
-        ? overrides.failWindowSeconds!
-        : 7890,
-    warnWindowSeconds:
-      overrides && overrides.hasOwnProperty('warnWindowSeconds')
-        ? overrides.warnWindowSeconds!
-        : 9594,
-  };
-};
-
-export const buildTimestampMetadataEntry = (
-  overrides?: Partial<TimestampMetadataEntry>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'TimestampMetadataEntry'} & TimestampMetadataEntry => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('TimestampMetadataEntry');
-  return {
-    __typename: 'TimestampMetadataEntry',
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'dolores',
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'fuga',
-    timestamp: overrides && overrides.hasOwnProperty('timestamp') ? overrides.timestamp! : 9.36,
   };
 };
 
@@ -16228,40 +12334,6 @@ export const buildUnknownPipeline = (
   };
 };
 
-export const buildUnpartitionedAssetConditionEvaluationNode = (
-  overrides?: Partial<UnpartitionedAssetConditionEvaluationNode>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {
-  __typename: 'UnpartitionedAssetConditionEvaluationNode';
-} & UnpartitionedAssetConditionEvaluationNode => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('UnpartitionedAssetConditionEvaluationNode');
-  return {
-    __typename: 'UnpartitionedAssetConditionEvaluationNode',
-    childUniqueIds:
-      overrides && overrides.hasOwnProperty('childUniqueIds') ? overrides.childUniqueIds! : [],
-    description:
-      overrides && overrides.hasOwnProperty('description') ? overrides.description! : 'veniam',
-    endTimestamp:
-      overrides && overrides.hasOwnProperty('endTimestamp') ? overrides.endTimestamp! : 3.21,
-    entityKey:
-      overrides && overrides.hasOwnProperty('entityKey')
-        ? overrides.entityKey!
-        : relationshipsToOmit.has('AssetCheckhandle')
-          ? ({} as AssetCheckhandle)
-          : buildAssetCheckhandle({}, relationshipsToOmit),
-    metadataEntries:
-      overrides && overrides.hasOwnProperty('metadataEntries') ? overrides.metadataEntries! : [],
-    startTimestamp:
-      overrides && overrides.hasOwnProperty('startTimestamp') ? overrides.startTimestamp! : 2.94,
-    status:
-      overrides && overrides.hasOwnProperty('status')
-        ? overrides.status!
-        : AssetConditionEvaluationStatus.FALSE,
-    uniqueId: overrides && overrides.hasOwnProperty('uniqueId') ? overrides.uniqueId! : 'et',
-  };
-};
-
 export const buildUnpartitionedAssetStatus = (
   overrides?: Partial<UnpartitionedAssetStatus>,
   _relationshipsToOmit: Set<string> = new Set(),
@@ -16274,37 +12346,12 @@ export const buildUnpartitionedAssetStatus = (
       overrides && overrides.hasOwnProperty('assetKey')
         ? overrides.assetKey!
         : relationshipsToOmit.has('AssetKey')
-          ? ({} as AssetKey)
-          : buildAssetKey({}, relationshipsToOmit),
+        ? ({} as AssetKey)
+        : buildAssetKey({}, relationshipsToOmit),
     failed: overrides && overrides.hasOwnProperty('failed') ? overrides.failed! : true,
     inProgress: overrides && overrides.hasOwnProperty('inProgress') ? overrides.inProgress! : false,
     materialized:
       overrides && overrides.hasOwnProperty('materialized') ? overrides.materialized! : false,
-  };
-};
-
-export const buildUnsupportedOperationError = (
-  overrides?: Partial<UnsupportedOperationError>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'UnsupportedOperationError'} & UnsupportedOperationError => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('UnsupportedOperationError');
-  return {
-    __typename: 'UnsupportedOperationError',
-    message: overrides && overrides.hasOwnProperty('message') ? overrides.message! : 'aut',
-  };
-};
-
-export const buildUrlCodeReference = (
-  overrides?: Partial<UrlCodeReference>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'UrlCodeReference'} & UrlCodeReference => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('UrlCodeReference');
-  return {
-    __typename: 'UrlCodeReference',
-    label: overrides && overrides.hasOwnProperty('label') ? overrides.label! : 'alias',
-    url: overrides && overrides.hasOwnProperty('url') ? overrides.url! : 'quia',
   };
 };
 
@@ -16334,25 +12381,10 @@ export const buildUsedSolid = (
     definition:
       overrides && overrides.hasOwnProperty('definition')
         ? overrides.definition!
-        : relationshipsToOmit.has('CompositeSolidDefinition')
-          ? ({} as CompositeSolidDefinition)
-          : buildCompositeSolidDefinition({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('SolidDefinition')
-            ? ({} as SolidDefinition)
-            : buildSolidDefinition({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ISolidDefinition')
+        ? ({} as ISolidDefinition)
+        : buildISolidDefinition({}, relationshipsToOmit),
     invocations: overrides && overrides.hasOwnProperty('invocations') ? overrides.invocations! : [],
-  };
-};
-
-export const buildUserAssetOwner = (
-  overrides?: Partial<UserAssetOwner>,
-  _relationshipsToOmit: Set<string> = new Set(),
-): {__typename: 'UserAssetOwner'} & UserAssetOwner => {
-  const relationshipsToOmit: Set<string> = new Set(_relationshipsToOmit);
-  relationshipsToOmit.add('UserAssetOwner');
-  return {
-    __typename: 'UserAssetOwner',
-    email: overrides && overrides.hasOwnProperty('email') ? overrides.email! : 'velit',
   };
 };
 
@@ -16395,8 +12427,6 @@ export const buildWorkspaceLocationEntry = (
     __typename: 'WorkspaceLocationEntry',
     displayMetadata:
       overrides && overrides.hasOwnProperty('displayMetadata') ? overrides.displayMetadata! : [],
-    featureFlags:
-      overrides && overrides.hasOwnProperty('featureFlags') ? overrides.featureFlags! : [],
     id:
       overrides && overrides.hasOwnProperty('id')
         ? overrides.id!
@@ -16409,16 +12439,14 @@ export const buildWorkspaceLocationEntry = (
       overrides && overrides.hasOwnProperty('locationOrLoadError')
         ? overrides.locationOrLoadError!
         : relationshipsToOmit.has('PythonError')
-          ? ({} as PythonError)
-          : buildPythonError({}, relationshipsToOmit),
+        ? ({} as PythonError)
+        : buildPythonError({}, relationshipsToOmit),
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'sint',
     permissions: overrides && overrides.hasOwnProperty('permissions') ? overrides.permissions! : [],
     updatedTimestamp:
       overrides && overrides.hasOwnProperty('updatedTimestamp')
         ? overrides.updatedTimestamp!
         : 2.68,
-    versionKey:
-      overrides && overrides.hasOwnProperty('versionKey') ? overrides.versionKey! : 'enim',
   };
 };
 
@@ -16451,10 +12479,8 @@ export const buildWorkspaceLocationStatusEntry = (
         ? overrides.loadStatus!
         : RepositoryLocationLoadStatus.LOADED,
     name: overrides && overrides.hasOwnProperty('name') ? overrides.name! : 'corporis',
-    permissions: overrides && overrides.hasOwnProperty('permissions') ? overrides.permissions! : [],
     updateTimestamp:
       overrides && overrides.hasOwnProperty('updateTimestamp') ? overrides.updateTimestamp! : 7.09,
-    versionKey: overrides && overrides.hasOwnProperty('versionKey') ? overrides.versionKey! : 'nam',
   };
 };
 
@@ -16469,27 +12495,9 @@ export const buildWrappingConfigType = (
     ofType:
       overrides && overrides.hasOwnProperty('ofType')
         ? overrides.ofType!
-        : relationshipsToOmit.has('ArrayConfigType')
-          ? ({} as ArrayConfigType)
-          : buildArrayConfigType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('CompositeConfigType')
-            ? ({} as CompositeConfigType)
-            : buildCompositeConfigType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('EnumConfigType')
-              ? ({} as EnumConfigType)
-              : buildEnumConfigType({}, relationshipsToOmit) ||
-                  relationshipsToOmit.has('MapConfigType')
-                ? ({} as MapConfigType)
-                : buildMapConfigType({}, relationshipsToOmit) ||
-                    relationshipsToOmit.has('NullableConfigType')
-                  ? ({} as NullableConfigType)
-                  : buildNullableConfigType({}, relationshipsToOmit) ||
-                      relationshipsToOmit.has('RegularConfigType')
-                    ? ({} as RegularConfigType)
-                    : buildRegularConfigType({}, relationshipsToOmit) ||
-                        relationshipsToOmit.has('ScalarUnionConfigType')
-                      ? ({} as ScalarUnionConfigType)
-                      : buildScalarUnionConfigType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('ConfigType')
+        ? ({} as ConfigType)
+        : buildConfigType({}, relationshipsToOmit),
   };
 };
 
@@ -16504,14 +12512,8 @@ export const buildWrappingDagsterType = (
     ofType:
       overrides && overrides.hasOwnProperty('ofType')
         ? overrides.ofType!
-        : relationshipsToOmit.has('ListDagsterType')
-          ? ({} as ListDagsterType)
-          : buildListDagsterType({}, relationshipsToOmit) ||
-              relationshipsToOmit.has('NullableDagsterType')
-            ? ({} as NullableDagsterType)
-            : buildNullableDagsterType({}, relationshipsToOmit) ||
-                relationshipsToOmit.has('RegularDagsterType')
-              ? ({} as RegularDagsterType)
-              : buildRegularDagsterType({}, relationshipsToOmit),
+        : relationshipsToOmit.has('DagsterType')
+        ? ({} as DagsterType)
+        : buildDagsterType({}, relationshipsToOmit),
   };
 };

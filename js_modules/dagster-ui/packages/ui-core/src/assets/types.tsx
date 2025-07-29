@@ -11,7 +11,7 @@ export type AssetDefinition = Extract<
 
 export type AssetLineageScope = 'neighbors' | 'upstream' | 'downstream';
 
-export type AssetViewParams = {
+export interface AssetViewParams {
   view?: string;
   lineageScope?: AssetLineageScope;
   lineageDepth?: number;
@@ -21,8 +21,4 @@ export type AssetViewParams = {
   evaluation?: string;
   checkDetail?: string;
   default_range?: string;
-  column?: string;
-  showAllEvents?: boolean;
-  status?: string;
-  'asset-selection'?: string;
-};
+}

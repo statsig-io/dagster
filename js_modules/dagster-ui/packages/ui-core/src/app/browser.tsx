@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useRef} from 'react';
+import * as React from 'react';
 
 /**
  * A hook that provides a mechanism for copying a string, triggered by user
@@ -12,9 +12,9 @@ import {useCallback, useEffect, useRef} from 'react';
  */
 export const useCopyToClipboard = () => {
   const clipboardAPI = navigator.clipboard;
-  const node = useRef<HTMLInputElement | null>(null);
+  const node = React.useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!clipboardAPI) {
       node.current = document.createElement('input');
       node.current.style.position = 'fixed';
@@ -23,13 +23,11 @@ export const useCopyToClipboard = () => {
     }
 
     return () => {
-      if (node.current) {
-        document.body.removeChild(node.current);
-      }
+      node.current && document.body.removeChild(node.current);
     };
   }, [clipboardAPI]);
 
-  return useCallback(
+  return React.useCallback(
     (text: string) => {
       if (clipboardAPI) {
         clipboardAPI.writeText(text);

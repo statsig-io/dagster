@@ -1,4 +1,4 @@
-from typing import ContextManager, Optional, cast  # noqa: UP035
+from typing import ContextManager, Optional, cast
 
 import dagster._check as check
 import sqlalchemy as db
@@ -27,14 +27,17 @@ from dagster._core.storage.sql import (
 from dagster._serdes import ConfigurableClass, ConfigurableClassData
 from sqlalchemy.engine import Connection
 
-from dagster_mysql.utils import (
+from ..utils import (
     create_mysql_connection,
     mysql_alembic_config,
     mysql_isolation_level,
     mysql_url_from_config,
+    parse_mysql_version,
     retry_mysql_connection_fn,
     retry_mysql_creation_fn,
 )
+
+MINIMUM_MYSQL_INTERSECT_VERSION = "8.0.31"
 
 
 class MySQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
@@ -58,7 +61,9 @@ class MySQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     def __init__(self, mysql_url: str, inst_data: Optional[ConfigurableClassData] = None):
         self._inst_data = check.opt_inst_param(inst_data, "inst_data", ConfigurableClassData)
         self.mysql_url = check.str_param(mysql_url, "mysql_url")
-        self._event_watcher: Optional[SqlPollingEventWatcher] = None
+        self._disposed = False
+
+        self._event_watcher = SqlPollingEventWatcher(self)
 
         # Default to not holding any connections open to prevent accumulating connections per DagsterInstance
         self._engine = create_engine(
@@ -86,9 +91,7 @@ class MySQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
             SqlEventLogStorageMetadata.create_all(conn)
             stamp_alembic_rev(mysql_alembic_config(__file__), conn)
 
-    def optimize_for_webserver(
-        self, statement_timeout: int, pool_recycle: int, max_overflow: int
-    ) -> None:
+    def optimize_for_webserver(self, statement_timeout: int, pool_recycle: int) -> None:
         # When running in dagster-webserver, hold an open connection
         # https://github.com/dagster-io/dagster/issues/3719
         self._engine = create_engine(
@@ -96,7 +99,6 @@ class MySQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
             isolation_level=mysql_isolation_level(),
             pool_size=1,
             pool_recycle=pool_recycle,
-            max_overflow=max_overflow,
         )
 
     def upgrade(self) -> None:
@@ -113,7 +115,7 @@ class MySQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         return mysql_config()
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_config_value(
         cls, inst_data: Optional[ConfigurableClassData], config_value: MySqlStorageConfig
     ) -> "MySQLEventLogStorage":
         return MySQLEventLogStorage(
@@ -142,7 +144,7 @@ class MySQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         if not row:
             return None
 
-        return cast("str", row[0])
+        return cast(str, row[0])
 
     def store_asset_event(self, event: EventLogEntry, event_id: int) -> None:
         # last_materialization_timestamp is updated upon observation, materialization, materialization_planned
@@ -188,31 +190,41 @@ class MySQLEventLogStorage(SqlEventLogStorage, ConfigurableClass):
 
     def has_secondary_index(self, name: str) -> bool:
         if name not in self._secondary_index_cache:
-            self._secondary_index_cache[name] = super().has_secondary_index(name)
+            self._secondary_index_cache[name] = super(
+                MySQLEventLogStorage, self
+            ).has_secondary_index(name)
         return self._secondary_index_cache[name]
 
     def enable_secondary_index(self, name: str) -> None:
-        super().enable_secondary_index(name)
+        super(MySQLEventLogStorage, self).enable_secondary_index(name)
         if name in self._secondary_index_cache:
             del self._secondary_index_cache[name]
 
     def watch(self, run_id: str, cursor: Optional[str], callback: EventHandlerFn) -> None:
         if cursor and EventLogCursor.parse(cursor).is_offset_cursor():
             check.failed("Cannot call `watch` with an offset cursor")
-
-        if self._event_watcher is None:
-            self._event_watcher = SqlPollingEventWatcher(self)
-
         self._event_watcher.watch_run(run_id, cursor, callback)
 
     def end_watch(self, run_id: str, handler: EventHandlerFn) -> None:
-        if self._event_watcher:
-            self._event_watcher.unwatch_run(run_id, handler)
+        self._event_watcher.unwatch_run(run_id, handler)
+
+    @property
+    def supports_intersect(self) -> bool:
+        return parse_mysql_version(self._mysql_version) >= parse_mysql_version(  # type: ignore  # (possible none)
+            MINIMUM_MYSQL_INTERSECT_VERSION
+        )
+
+    @property
+    def event_watcher(self) -> SqlPollingEventWatcher:
+        return self._event_watcher
+
+    def __del__(self) -> None:
+        self.dispose()
 
     def dispose(self) -> None:
-        if self._event_watcher:
+        if not self._disposed:
+            self._disposed = True
             self._event_watcher.close()
-            self._event_watcher = None
 
     def alembic_version(self) -> AlembicVersion:
         alembic_config = mysql_alembic_config(__file__)

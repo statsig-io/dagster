@@ -1,23 +1,26 @@
-import dagster as dg
+from dagster import (
+    IOManager,
+    build_input_context,
+    build_output_context,
+)
 
 
-class MyIOManager(dg.IOManager):
+class MyIOManager(IOManager):
     def __init__(self):
         self.storage_dict = {}
 
-    def handle_output(self, context: dg.OutputContext, obj):
+    def handle_output(self, context, obj):
         self.storage_dict[(context.step_key, context.name)] = obj
 
-    def load_input(self, context: dg.InputContext):
-        if context.upstream_output:
-            return self.storage_dict[
-                (context.upstream_output.step_key, context.upstream_output.name)
-            ]
+    def load_input(self, context):
+        return self.storage_dict[
+            (context.upstream_output.step_key, context.upstream_output.name)
+        ]
 
 
 def test_my_io_manager_handle_output():
     manager = MyIOManager()
-    context = dg.build_output_context(name="abc", step_key="123")
+    context = build_output_context(name="abc", step_key="123")
     manager.handle_output(context, 5)
     assert manager.storage_dict[("123", "abc")] == 5
 
@@ -26,7 +29,7 @@ def test_my_io_manager_load_input():
     manager = MyIOManager()
     manager.storage_dict[("123", "abc")] = 5
 
-    context = dg.build_input_context(
-        upstream_output=dg.build_output_context(name="abc", step_key="123")
+    context = build_input_context(
+        upstream_output=build_output_context(name="abc", step_key="123")
     )
     assert manager.load_input(context) == 5

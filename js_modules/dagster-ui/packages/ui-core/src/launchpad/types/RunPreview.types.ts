@@ -2,21 +2,21 @@
 
 import * as Types from '../../graphql/types';
 
-export type RunPreviewValidationFragment_InvalidSubsetError = {
+export type RunPreviewValidationFragment_InvalidSubsetError_ = {
   __typename: 'InvalidSubsetError';
   message: string;
 };
 
-export type RunPreviewValidationFragment_PipelineConfigValidationValid = {
+export type RunPreviewValidationFragment_PipelineConfigValidationValid_ = {
   __typename: 'PipelineConfigValidationValid';
 };
 
-export type RunPreviewValidationFragment_PipelineNotFoundError = {
+export type RunPreviewValidationFragment_PipelineNotFoundError_ = {
   __typename: 'PipelineNotFoundError';
   message: string;
 };
 
-export type RunPreviewValidationFragment_PythonError = {
+export type RunPreviewValidationFragment_PythonError_ = {
   __typename: 'PythonError';
   message: string;
   stack: Array<string>;
@@ -27,7 +27,7 @@ export type RunPreviewValidationFragment_PythonError = {
   }>;
 };
 
-export type RunPreviewValidationFragment_RunConfigValidationInvalid = {
+export type RunPreviewValidationFragment_RunConfigValidationInvalid_ = {
   __typename: 'RunConfigValidationInvalid';
   errors: Array<
     | {
@@ -122,11 +122,11 @@ export type RunPreviewValidationFragment_RunConfigValidationInvalid = {
 };
 
 export type RunPreviewValidationFragment =
-  | RunPreviewValidationFragment_InvalidSubsetError
-  | RunPreviewValidationFragment_PipelineConfigValidationValid
-  | RunPreviewValidationFragment_PipelineNotFoundError
-  | RunPreviewValidationFragment_PythonError
-  | RunPreviewValidationFragment_RunConfigValidationInvalid;
+  | RunPreviewValidationFragment_InvalidSubsetError_
+  | RunPreviewValidationFragment_PipelineConfigValidationValid_
+  | RunPreviewValidationFragment_PipelineNotFoundError_
+  | RunPreviewValidationFragment_PythonError_
+  | RunPreviewValidationFragment_RunConfigValidationInvalid_;
 
 export type RunPreviewValidationErrors_FieldNotDefinedConfigError_Fragment = {
   __typename: 'FieldNotDefinedConfigError';

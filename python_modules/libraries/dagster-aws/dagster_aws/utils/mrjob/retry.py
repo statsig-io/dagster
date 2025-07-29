@@ -21,7 +21,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Wrappers for gracefully retrying on error."""
-
 import logging
 import time
 from functools import partial
@@ -121,8 +120,8 @@ class RetryWrapper:
                     if self.__retry_if(ex) and (
                         tries < self.__max_tries - 1 or not self.__max_tries
                     ):
-                        log.info(f"Got retriable error: {ex!r}")
-                        log.info(f"Backing off for {backoff:.1f} seconds")
+                        log.info("Got retriable error: %r" % ex)
+                        log.info("Backing off for %.1f seconds" % backoff)
                         time.sleep(backoff)
                         tries += 1
                         backoff *= self.__multiplier

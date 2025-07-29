@@ -1,6 +1,6 @@
 import {render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {useMemo} from 'react';
+import * as React from 'react';
 
 import {TestProvider} from '../../testing/TestProvider';
 import {
@@ -28,7 +28,7 @@ describe('useRepositoryReloadLocation', () => {
   };
 
   const Test = () => {
-    const reloadFn = useMemo(() => buildReloadFnForLocation(LOCATION), []);
+    const reloadFn = React.useMemo(() => buildReloadFnForLocation(LOCATION), []);
     const {reloading, error, tryReload} = useRepositoryLocationReload({
       scope: 'location',
       reloadFn,
@@ -134,8 +134,7 @@ describe('useRepositoryReloadLocation', () => {
     });
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('waits for polling when attempting reload', async () => {
+  it('waits for polling when attempting reload', async () => {
     const mocks = {
       WorkspaceLocationEntry: () => ({
         id: () => LOCATION,

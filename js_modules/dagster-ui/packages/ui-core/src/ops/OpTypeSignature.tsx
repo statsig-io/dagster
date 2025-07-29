@@ -1,16 +1,20 @@
-import {Code} from '@dagster-io/ui-components';
+import {gql} from '@apollo/client';
+// eslint-disable-next-line no-restricted-imports
+import {Code} from '@blueprintjs/core';
+import {Colors, FontFamily} from '@dagster-io/ui-components';
+import * as React from 'react';
 import styled from 'styled-components';
 
-import {gql} from '../apollo-client';
-import {OpTypeSignatureFragment} from './types/OpTypeSignature.types';
 import {breakOnUnderscores} from '../app/Util';
 import {DAGSTER_TYPE_WITH_TOOLTIP_FRAGMENT, TypeWithTooltip} from '../typeexplorer/TypeWithTooltip';
+
+import {OpTypeSignatureFragment} from './types/OpTypeSignature.types';
 
 interface IOpTypeSignature {
   definition: OpTypeSignatureFragment;
 }
 
-export const OpTypeSignature = (props: IOpTypeSignature) => {
+export const OpTypeSignature: React.FC<IOpTypeSignature> = (props) => {
   const {inputDefinitions, outputDefinitions} = props.definition;
 
   const inputSide = inputDefinitions.map((input, i) => (
@@ -52,8 +56,12 @@ export const OP_TYPE_SIGNATURE_FRAGMENT = gql`
 `;
 
 const TypeSignature = styled(Code)`
-  padding: 4px;
-  box-shadow: none;
-  font-size: 12px;
-  line-height: 20px;
+  && {
+    background: ${Colors.Blue50};
+    font-family: ${FontFamily.monospace};
+    font-size: 14px;
+    padding: 4px;
+    box-shadow: none;
+    color: black;
+  }
 `;

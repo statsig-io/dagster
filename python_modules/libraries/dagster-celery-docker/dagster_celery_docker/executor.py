@@ -15,6 +15,7 @@ from dagster._cli.api import ExecuteStepArgs
 from dagster._core.events import EngineEventData
 from dagster._core.events.utils import filter_dagster_events_from_cli_logs
 from dagster._core.execution.retries import RetryMode
+from dagster._core.storage.dagster_run import DagsterRun
 from dagster._serdes import pack_value, serialize_value, unpack_value
 from dagster._utils.merger import merge_dicts
 from dagster_celery.config import DEFAULT_CONFIG, dict_wrapper
@@ -200,7 +201,7 @@ def _submit_task_docker(app, plan_context, step, queue, priority, known_state):
     )
 
     task = create_docker_task(app)
-    task_signature = task.si(  # pyright: ignore[reportFunctionMemberAccess]
+    task_signature = task.si(
         execute_step_args_packed=pack_value(execute_step_args),
         docker_config=plan_context.executor.docker_config,
     )
@@ -229,17 +230,19 @@ def create_docker_task(celery_app, **task_kwargs):
 
         check.dict_param(docker_config, "docker_config")
 
-        instance = DagsterInstance.from_ref(execute_step_args.instance_ref)  # pyright: ignore[reportArgumentType]
-        dagster_run = check.not_none(
-            instance.get_run_by_id(execute_step_args.run_id),
+        instance = DagsterInstance.from_ref(execute_step_args.instance_ref)
+        dagster_run = instance.get_run_by_id(execute_step_args.run_id)
+        check.inst(
+            dagster_run,
+            DagsterRun,
             f"Could not load run {execute_step_args.run_id}",
         )
-        step_keys_str = ", ".join(execute_step_args.step_keys_to_execute)  # pyright: ignore[reportCallIssue,reportArgumentType]
+        step_keys_str = ", ".join(execute_step_args.step_keys_to_execute)
 
         docker_image = (
             docker_config["image"]
             if docker_config.get("image")
-            else dagster_run.job_code_origin.repository_origin.container_image  # pyright: ignore[reportOptionalMemberAccess]
+            else dagster_run.job_code_origin.repository_origin.container_image
         )
 
         if not docker_image:
@@ -267,7 +270,7 @@ def create_docker_task(celery_app, **task_kwargs):
                 marker_end=DELEGATE_MARKER,
             ),
             CeleryDockerExecutor,
-            step_key=execute_step_args.step_keys_to_execute[0],  # pyright: ignore[reportOptionalSubscript]
+            step_key=execute_step_args.step_keys_to_execute[0],
         )
 
         serialized_events = [serialize_value(engine_event)]
@@ -290,7 +293,7 @@ def create_docker_task(celery_app, **task_kwargs):
             if isinstance(e_vars, dict):
                 docker_env.update(e_vars)
             else:
-                for v in e_vars:  # pyright: ignore[reportOptionalIterable]
+                for v in e_vars:
                     key, val = v.split("=")
                     docker_env[key] = val
             del container_kwargs["environment"]
@@ -298,14 +301,15 @@ def create_docker_task(celery_app, **task_kwargs):
         try:
             docker_response = client.containers.run(
                 docker_image,
-                command=execute_step_args.get_command_args(),  # type: ignore # Sequence list mismatch
-                environment=docker_env,  # type: ignore # Mapping dict mismatch
+                command=execute_step_args.get_command_args(),
+                # pass through this worker's environment for things like AWS creds etc.
+                environment=docker_env,
                 network=docker_config.get("network", None),
                 **container_kwargs,
             )
 
             res = docker_response.decode("utf-8")
-        except docker.errors.ContainerError as err:  # pyright: ignore[reportAttributeAccessIssue]
+        except docker.errors.ContainerError as err:
             metadata = {"Job image": docker_image}
             if err.stderr is not None:
                 metadata["Docker stderr"] = err.stderr
@@ -315,7 +319,7 @@ def create_docker_task(celery_app, **task_kwargs):
                 dagster_run,
                 EngineEventData(metadata),
                 CeleryDockerExecutor,
-                step_key=execute_step_args.step_keys_to_execute[0],  # pyright: ignore[reportOptionalSubscript]
+                step_key=execute_step_args.step_keys_to_execute[0],
             )
             raise
         else:

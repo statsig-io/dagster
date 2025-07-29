@@ -1,3 +1,5 @@
+from typing import Dict
+
 from typing_extensions import TypedDict
 
 from dagster._config import Field, IntSource, Permissive, Selector, StringSource
@@ -43,7 +45,7 @@ class PostgresStorageConfigDb(TypedDict):
     hostname: str
     db_name: str
     port: int
-    params: dict[str, object]
+    params: Dict[str, object]
     scheme: str
 
 

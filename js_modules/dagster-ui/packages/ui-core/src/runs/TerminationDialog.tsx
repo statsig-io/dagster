@@ -1,3 +1,4 @@
+import {useMutation} from '@apollo/client';
 // eslint-disable-next-line no-restricted-imports
 import {ProgressBar} from '@blueprintjs/core';
 import {
@@ -5,85 +6,65 @@ import {
   Button,
   Checkbox,
   Colors,
-  Dialog,
   DialogBody,
   DialogFooter,
+  Dialog,
   Group,
   Icon,
   Mono,
-  showToast,
 } from '@dagster-io/ui-components';
-import chunk from 'lodash/chunk';
 import * as React from 'react';
+
+import {TerminateRunPolicy} from '../graphql/types';
 
 import {NavigationBlock} from './NavigationBlock';
 import {TERMINATE_MUTATION} from './RunUtils';
-import {useMutation} from '../apollo-client';
 import {TerminateMutation, TerminateMutationVariables} from './types/RunUtils.types';
-import {TerminateRunPolicy} from '../graphql/types';
-import {testId} from '../testing/testId';
 
 export interface Props {
   isOpen: boolean;
   onClose: () => void;
-
-  // Fired when terimation has finished. You may want to refresh data in the parent
-  // view but keep the dialog open so the user can view the results of termination.
-  onComplete: (result: TerminationDialogResult) => void;
-
+  onComplete: (terminationState: TerminationState) => void;
   // A map from the run ID to its `canTerminate` value
   selectedRuns: {[id: string]: boolean};
-  selectedRunsAllQueued?: boolean;
 }
 
-type TerminationError = Exclude<
-  Extract<
-    TerminateMutation['terminateRuns'],
-    {__typename: 'TerminateRunsResult'}
-  >['terminateRunResults'][0],
-  {__typename: 'TerminateRunSuccess'}
->;
-
-export type TerminationDialogResult = {
-  completed: number;
-  errors: {[id: string]: TerminationError};
+const refineToError = (data: TerminateMutation | null | undefined) => {
+  if (data?.terminatePipelineExecution.__typename === 'TerminateRunSuccess') {
+    throw new ErrorEvent('Not an error!');
+  }
+  return data?.terminatePipelineExecution;
 };
 
+type Error = ReturnType<typeof refineToError> | undefined;
+
+export type TerminationState = {completed: number; errors: {[id: string]: Error}};
+
 type TerminationDialogState = {
-  policy: TerminateRunPolicy;
-  safeTerminationPossible: boolean;
-  runs: SelectedRuns;
+  mustForce: boolean;
+  frozenRuns: SelectedRuns;
   step: 'initial' | 'terminating' | 'completed';
-  termination: TerminationDialogResult;
+  termination: TerminationState;
 };
 
 type SelectedRuns = {[id: string]: boolean};
 
-const initializeState = ({
-  selectedRuns,
-  selectedRunsAllQueued,
-}: PropsForInitializer): TerminationDialogState => {
-  // If any selected runs have `canTerminate`, we don't necessarily have to force and we
-  // can show the "safe" terimnation option
-  const safeTerminationPossible =
-    !selectedRunsAllQueued && Object.keys(selectedRuns).some((id) => selectedRuns[id]);
+const initializeState = (selectedRuns: SelectedRuns): TerminationDialogState => {
   return {
-    safeTerminationPossible,
-    policy: safeTerminationPossible
-      ? TerminateRunPolicy.SAFE_TERMINATE
-      : TerminateRunPolicy.MARK_AS_CANCELED_IMMEDIATELY,
-    runs: selectedRuns,
+    // If any selected runs have `canTerminate`, we don't necessarily have to force.
+    mustForce: !Object.keys(selectedRuns).some((id) => selectedRuns[id]),
+    frozenRuns: selectedRuns,
     step: 'initial',
     termination: {completed: 0, errors: {}},
   };
 };
 
 type TerminationDialogAction =
-  | {type: 'reset'; initializerProps: PropsForInitializer}
-  | {type: 'set-policy'; policy: TerminateRunPolicy}
+  | {type: 'reset'; frozenRuns: SelectedRuns}
+  | {type: 'toggle-force-terminate'; checked: boolean}
   | {type: 'start'}
   | {type: 'termination-success'}
-  | {type: 'termination-error'; id: string; error: TerminationError}
+  | {type: 'termination-error'; id: string; error: Error}
   | {type: 'complete'};
 
 const terminationDialogReducer = (
@@ -92,9 +73,9 @@ const terminationDialogReducer = (
 ): TerminationDialogState => {
   switch (action.type) {
     case 'reset':
-      return initializeState(action.initializerProps);
-    case 'set-policy':
-      return {...prevState, policy: action.policy};
+      return initializeState(action.frozenRuns);
+    case 'toggle-force-terminate':
+      return {...prevState, mustForce: action.checked};
     case 'start':
       return {...prevState, step: 'terminating'};
     case 'termination-success': {
@@ -122,55 +103,55 @@ const terminationDialogReducer = (
   }
 };
 
-type PropsForInitializer = Pick<Props, 'selectedRuns' | 'selectedRunsAllQueued'>;
-
 export const TerminationDialog = (props: Props) => {
-  const {isOpen, onClose, onComplete} = props;
+  const {isOpen, onClose, onComplete, selectedRuns} = props;
 
-  // Note: The dialog captures the runs passed in `props` into reducer state because
-  // runs may disappear (and no longer be passed) as they are terminated. This means
-  // that when the dialog goes from isOpen=false to isOpen=true we need to reset the
-  // reducer, hence the initializerPropsRef + useEffect below.
-  const [state, dispatch] = React.useReducer(terminationDialogReducer, props, initializeState);
+  // Freeze the selected IDs, since the list may change as runs continue processing and
+  // terminating. We want to preserve the list we're given.
+  const frozenRuns = React.useRef<SelectedRuns>(selectedRuns);
 
-  const initializerPropsRef = React.useRef<PropsForInitializer>(props);
-  initializerPropsRef.current = props;
+  const [state, dispatch] = React.useReducer(
+    terminationDialogReducer,
+    frozenRuns.current,
+    initializeState,
+  );
+
+  const count = Object.keys(state.frozenRuns).length;
+
+  // If the dialog is newly open, update state to match the frozen list.
   React.useEffect(() => {
     if (isOpen) {
-      dispatch({type: 'reset', initializerProps: initializerPropsRef.current});
+      dispatch({type: 'reset', frozenRuns: frozenRuns.current});
     }
   }, [isOpen]);
+
+  // If the dialog is not open, update the ref so that the frozen list will be entered
+  // into state the next time the dialog opens.
+  React.useEffect(() => {
+    if (!isOpen) {
+      frozenRuns.current = selectedRuns;
+    }
+  }, [isOpen, selectedRuns]);
 
   const [terminate] = useMutation<TerminateMutation, TerminateMutationVariables>(
     TERMINATE_MUTATION,
   );
+  const policy = state.mustForce
+    ? TerminateRunPolicy.MARK_AS_CANCELED_IMMEDIATELY
+    : TerminateRunPolicy.SAFE_TERMINATE;
 
   const mutate = async () => {
     dispatch({type: 'start'});
 
-    const runIds = Object.keys(state.runs);
-    for (const runIdsChunk of chunk(runIds, 75)) {
-      const {data} = await terminate({
-        variables: {runIds: runIdsChunk, terminatePolicy: state.policy},
-      });
-      if (!data || data?.terminateRuns.__typename === 'PythonError') {
-        showToast({
-          message: 'Sorry, an error occurred and the runs could not be terminated.',
-          intent: 'danger',
-        });
-        return;
+    const runList = Object.keys(state.frozenRuns);
+    for (const runId of runList) {
+      const {data} = await terminate({variables: {runId, terminatePolicy: policy}});
+
+      if (data?.terminatePipelineExecution.__typename === 'TerminateRunSuccess') {
+        dispatch({type: 'termination-success'});
+      } else {
+        dispatch({type: 'termination-error', id: runId, error: refineToError(data)});
       }
-      data.terminateRuns.terminateRunResults.forEach((result, idx) => {
-        const runId = runIdsChunk[idx];
-        if (!runId) {
-          return;
-        }
-        if (result.__typename === 'TerminateRunSuccess') {
-          dispatch({type: 'termination-success'});
-        } else {
-          dispatch({type: 'termination-error', id: runId, error: result});
-        }
-      });
     }
 
     dispatch({type: 'complete'});
@@ -178,16 +159,10 @@ export const TerminationDialog = (props: Props) => {
   };
 
   const onToggleForce = (event: React.ChangeEvent<HTMLInputElement>) => {
-    dispatch({
-      type: 'set-policy',
-      policy: event.target.checked
-        ? TerminateRunPolicy.MARK_AS_CANCELED_IMMEDIATELY
-        : TerminateRunPolicy.SAFE_TERMINATE,
-    });
+    dispatch({type: 'toggle-force-terminate', checked: event.target.checked});
   };
 
-  const force = state.policy === TerminateRunPolicy.MARK_AS_CANCELED_IMMEDIATELY;
-  const count = Object.keys(state.runs).length;
+  const showCheckbox = Object.keys(state.frozenRuns).some((id) => state.frozenRuns[id]);
 
   const progressContent = () => {
     switch (state.step) {
@@ -208,34 +183,35 @@ export const TerminationDialog = (props: Props) => {
                 count === 1 ? 'run' : 'runs'
               } will be terminated. Do you wish to continue?`}
             </div>
-            {state.safeTerminationPossible ? (
-              <div>
-                <Checkbox
-                  checked={force}
-                  size="small"
-                  data-testid={testId('force-termination-checkbox')}
-                  label="Force termination immediately"
-                  onChange={onToggleForce}
-                />
-                {force ? (
-                  <Box flex={{display: 'flex', direction: 'row', gap: 8}} margin={{top: 8}}>
-                    <Icon name="warning" color={Colors.accentYellow()} />
-                    <div>
-                      <strong>Warning:</strong> computational resources created by runs may not be
-                      cleaned up.
-                    </div>
-                  </Box>
-                ) : null}
-              </div>
-            ) : !props.selectedRunsAllQueued ? (
-              <Group direction="row" spacing={8}>
-                <Icon name="warning" color={Colors.accentYellow()} />
-                <div>
-                  <strong>Warning:</strong> computational resources created by runs may not be
-                  cleaned up.
-                </div>
-              </Group>
-            ) : undefined}
+            <div>
+              {showCheckbox ? (
+                <>
+                  <Checkbox
+                    checked={state.mustForce}
+                    size="small"
+                    label="Force termination immediately"
+                    onChange={onToggleForce}
+                  />
+                  {state.mustForce ? (
+                    <Box flex={{display: 'flex', direction: 'row', gap: 8}} margin={{top: 8}}>
+                      <Icon name="warning" color={Colors.Yellow500} />
+                      <div>
+                        <strong>Warning:</strong> computational resources created by runs may not be
+                        cleaned up.
+                      </div>
+                    </Box>
+                  ) : null}
+                </>
+              ) : (
+                <Group direction="row" spacing={8}>
+                  <Icon name="warning" color={Colors.Yellow500} />
+                  <div>
+                    <strong>Warning:</strong> computational resources created by runs may not be
+                    cleaned up.
+                  </div>
+                </Group>
+              )}
+            </div>
           </Group>
         );
       case 'terminating':
@@ -243,7 +219,7 @@ export const TerminationDialog = (props: Props) => {
         const value = count > 0 ? state.termination.completed / count : 1;
         return (
           <Group direction="column" spacing={8}>
-            <div>{force ? 'Forcing termination…' : 'Terminating…'}</div>
+            <div>{state.mustForce ? 'Forcing termination…' : 'Terminating…'}</div>
             <ProgressBar intent="primary" value={Math.max(0.1, value)} animate={value < 1} />
             {state.step === 'terminating' ? (
               <NavigationBlock message="Termination in progress, please do not navigate away yet." />
@@ -271,8 +247,8 @@ export const TerminationDialog = (props: Props) => {
             <Button intent="none" onClick={onClose}>
               Cancel
             </Button>
-            <Button intent="danger" onClick={mutate} data-testid={testId('terminate-button')}>
-              {`${force ? 'Force termination for' : 'Terminate'} ${`${count} ${
+            <Button intent="danger" onClick={mutate}>
+              {`${state.mustForce ? 'Force termination for' : 'Terminate'} ${`${count} ${
                 count === 1 ? 'run' : 'runs'
               }`}`}
             </Button>
@@ -281,7 +257,7 @@ export const TerminationDialog = (props: Props) => {
       case 'terminating':
         return (
           <Button intent="danger" disabled>
-            {force
+            {state.mustForce
               ? `Forcing termination for ${`${count} ${count === 1 ? 'run' : 'runs'}...`}`
               : `Terminating ${`${count} ${count === 1 ? 'run' : 'runs'}...`}`}
           </Button>
@@ -312,24 +288,22 @@ export const TerminationDialog = (props: Props) => {
       <Group direction="column" spacing={8}>
         {successCount ? (
           <Group direction="row" spacing={8} alignItems="flex-start">
-            <Icon name="check_circle" color={Colors.accentGreen()} />
+            <Icon name="check_circle" color={Colors.Green500} />
             <div>
-              {force
-                ? `Successfully forced termination for ${successCount} ${
-                    successCount === 1 ? 'run' : `runs`
-                  }.`
-                : `Successfully requested termination for ${successCount} ${
-                    successCount === 1 ? 'run' : `runs`
-                  }.`}
+              {state.mustForce
+                ? `Successfully forced termination for ${successCount}
+                ${successCount === 1 ? 'run' : `runs`}.`
+                : `Successfully requested termination for ${successCount}
+              ${successCount === 1 ? 'run' : `runs`}.`}
             </div>
           </Group>
         ) : null}
         {errorCount ? (
           <Group direction="column" spacing={8}>
             <Group direction="row" spacing={8} alignItems="flex-start">
-              <Icon name="warning" color={Colors.accentYellow()} />
+              <Icon name="warning" color={Colors.Yellow500} />
               <div>
-                {force
+                {state.mustForce
                   ? `Could not force termination for ${errorCount} ${
                       errorCount === 1 ? 'run' : 'runs'
                     }:`

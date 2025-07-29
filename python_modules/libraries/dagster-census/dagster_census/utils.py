@@ -1,8 +1,8 @@
-from collections.abc import Sequence
+from typing import Sequence
 
 from dagster import AssetMaterialization
 
-from dagster_census.types import CensusOutput
+from .types import CensusOutput
 
 
 def generate_materialization(

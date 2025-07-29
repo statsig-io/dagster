@@ -1,11 +1,17 @@
-import dagster as dg
+# ruff: isort: skip_file
+from dagster import job, op
+
+# start_custom_file_output_log
 
 
-@dg.op
-def file_log_op(context: dg.OpExecutionContext):
+@op
+def file_log_op(context):
     context.log.info("Hello world!")
 
 
-@dg.job
+@job
 def file_log_job():
     file_log_op()
+
+
+# end_custom_file_output_log

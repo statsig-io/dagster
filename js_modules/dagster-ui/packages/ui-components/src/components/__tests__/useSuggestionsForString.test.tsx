@@ -1,6 +1,6 @@
 import {render, screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {useState} from 'react';
+import * as React from 'react';
 
 import {useSuggestionsForString} from '../useSuggestionsForString';
 
@@ -23,7 +23,7 @@ describe('useSuggestionsForString', () => {
       : [...empties];
 
   const Test = () => {
-    const [value, setValue] = useState('');
+    const [value, setValue] = React.useState('');
     const {suggestions, onSelectSuggestion} = useSuggestionsForString(buildSuggestions, value);
 
     return (

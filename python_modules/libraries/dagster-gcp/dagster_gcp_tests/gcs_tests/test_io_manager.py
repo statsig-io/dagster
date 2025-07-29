@@ -12,6 +12,7 @@ from dagster import (
     Int,
     Out,
     ResourceDefinition,
+    StaticPartitionsDefinition,
     asset,
     build_input_context,
     build_output_context,
@@ -20,16 +21,18 @@ from dagster import (
     materialize,
     op,
     resource,
+    with_resources,
 )
 from dagster._core.definitions.definitions_class import Definitions
 from dagster._core.definitions.job_base import InMemoryJob
-from dagster._core.definitions.partitions.definition import StaticPartitionsDefinition
 from dagster._core.definitions.source_asset import SourceAsset
 from dagster._core.definitions.unresolved_asset_job_definition import define_asset_job
 from dagster._core.events import DagsterEventType
 from dagster._core.execution.api import create_execution_plan, execute_plan
 from dagster._core.execution.plan.outputs import StepOutputHandle
-from dagster._core.storage.dagster_run import DagsterRun as DagsterRun
+from dagster._core.storage.dagster_run import (
+    DagsterRun as DagsterRun,
+)
 from dagster._core.system_config.objects import ResolvedRunConfig
 from dagster._core.types.dagster_type import resolve_dagster_type
 from dagster._core.utils import make_new_run_id
@@ -207,12 +210,9 @@ def test_asset_io_manager(gcs_bucket):
     def graph_asset(downstream):
         return second_op(first_op(downstream))
 
-    shared_counter = {"counter": 0}
-
     @asset(partitions_def=StaticPartitionsDefinition(["apple", "orange"]))
     def partitioned():
-        shared_counter["counter"] = shared_counter["counter"] + 1
-        return shared_counter["counter"]
+        return 8
 
     defs = Definitions(
         assets=[
@@ -230,7 +230,7 @@ def test_asset_io_manager(gcs_bucket):
         },
         jobs=[define_asset_job("my_asset_job")],
     )
-    asset_job = defs.resolve_job_def("my_asset_job")
+    asset_job = defs.get_job_def("my_asset_job")
 
     result = asset_job.execute_in_process(partition_key="apple")
     assert result.success
@@ -244,26 +244,31 @@ def test_asset_io_manager(gcs_bucket):
         f"{gcs_bucket}/assets/source1/bar",
     }
 
-    # Verify that partitioned/apple has value 1 after first execution
-    path = UPath("assets", "partitioned", "apple")
-    assert pickle.loads(fake_gcs_client.bucket(gcs_bucket).blob(str(path)).download_as_bytes()) == 1
 
-    # re-execution does not cause issues, overwrites the buckets
-    result2 = asset_job.execute_in_process(partition_key="apple")
-    assert fake_gcs_client.get_all_blob_paths() == {
-        f"{gcs_bucket}/assets/upstream",
-        f"{gcs_bucket}/assets/downstream",
-        f"{gcs_bucket}/assets/partitioned/apple",
-        f"{gcs_bucket}/assets/asset3",
-        f"{gcs_bucket}/assets/storage/{result.run_id}/files/graph_asset.first_op/result",
-        f"{gcs_bucket}/assets/storage/{result2.run_id}/files/graph_asset.first_op/result",
-        f"{gcs_bucket}/assets/source1/foo",
-        f"{gcs_bucket}/assets/source1/bar",
-    }
+def test_nothing(gcs_bucket):
+    @asset
+    def asset1() -> None: ...
 
-    # Verify that partitioned/apple has value 2 after second execution
-    path = UPath("assets", "partitioned", "apple")
-    assert pickle.loads(fake_gcs_client.bucket(gcs_bucket).blob(str(path)).download_as_bytes()) == 2
+    @asset(deps=[asset1])
+    def asset2() -> None: ...
+
+    result = materialize(
+        with_resources(
+            [asset1, asset2],
+            resource_defs={
+                "io_manager": gcs_pickle_io_manager.configured(
+                    {"gcs_bucket": gcs_bucket, "gcs_prefix": "assets"}
+                ),
+                "gcs": ResourceDefinition.hardcoded_resource(FakeGCSClient()),
+            },
+        )
+    )
+
+    handled_output_events = list(filter(lambda evt: evt.is_handled_output, result.all_node_events))
+    assert len(handled_output_events) == 2
+
+    for event in handled_output_events:
+        assert len(event.event_specific_data.metadata) == 0
 
 
 def test_asset_pythonic_io_manager(gcs_bucket):
@@ -314,3 +319,30 @@ def test_asset_pythonic_io_manager(gcs_bucket):
         f"{gcs_bucket}/assets/asset3",
         f"{gcs_bucket}/assets/storage/{result.run_id}/files/graph_asset.first_op/result",
     }
+
+
+def test_nothing_pythonic_io_manager(gcs_bucket):
+    @asset
+    def asset1() -> None: ...
+
+    @asset(deps=[asset1])
+    def asset2() -> None: ...
+
+    result = materialize(
+        with_resources(
+            [asset1, asset2],
+            resource_defs={
+                "io_manager": GCSPickleIOManager(
+                    gcs_bucket=gcs_bucket,
+                    gcs_prefix="assets",
+                    gcs=ResourceDefinition.hardcoded_resource(FakeConfigurableGCSClient()),
+                ),
+            },
+        )
+    )
+
+    handled_output_events = list(filter(lambda evt: evt.is_handled_output, result.all_node_events))
+    assert len(handled_output_events) == 2
+
+    for event in handled_output_events:
+        assert len(event.event_specific_data.metadata) == 0

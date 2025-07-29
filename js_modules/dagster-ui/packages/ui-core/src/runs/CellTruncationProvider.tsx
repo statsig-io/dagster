@@ -1,8 +1,8 @@
-import {Button, Dialog, DialogFooter, Icon} from '@dagster-io/ui-components';
+import {Colors} from '@dagster-io/ui-components';
 import * as React from 'react';
 import styled from 'styled-components';
 
-import {MAX_ROW_HEIGHT_PX} from './LogsRowComponents';
+import {showCustomAlert} from '../app/CustomAlertProvider';
 
 const OverflowFade = styled.div`
   position: absolute;
@@ -12,6 +12,7 @@ const OverflowFade = styled.div`
   height: 40px;
   user-select: none;
   pointer-events: none;
+  background: linear-gradient(to bottom, rgba(245, 248, 250, 0) 0%, rgba(245, 248, 250, 255) 100%);
 `;
 
 const OverflowButtonContainer = styled.div`
@@ -22,86 +23,100 @@ const OverflowButtonContainer = styled.div`
   display: flex;
   flex-direction: row;
   justify-content: center;
-  gap: 8px;
 `;
 
-interface Props {
-  children: React.ReactNode;
-  style: React.CSSProperties;
-  onExpand?: () => void;
-  forceExpandability?: boolean;
-  buttons?: React.ReactNode;
-}
+const OverflowButton = styled.button`
+  border: 0;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(100, 100, 100, 0.7);
+  border-radius: 4px;
+  line-height: 32px;
+  padding: 0 12px;
+  color: ${Colors.White};
+  &:hover {
+    background: rgba(100, 100, 100, 0.85);
+  }
 
-export const CellTruncationProvider = (props: Props) => {
-  const [state, setState] = React.useState({
+  &:focus,
+  &:active {
+    outline: none;
+  }
+
+  &:active {
+    background: rgba(0, 0, 0, 0.7);
+  }
+`;
+
+export class CellTruncationProvider extends React.Component<
+  {
+    children: React.ReactNode;
+    style: React.CSSProperties;
+    onExpand?: () => void;
+    forceExpandability?: boolean;
+  },
+  {isOverflowing: boolean}
+> {
+  state = {
     isOverflowing: false,
-    showDialog: false,
-  });
-  const contentContainerRef = React.useRef<HTMLDivElement>(null);
+  };
 
-  const detectOverflow = React.useCallback(() => {
-    const child = contentContainerRef.current?.firstElementChild;
+  private contentContainerRef: React.RefObject<HTMLDivElement> = React.createRef();
+
+  componentDidMount() {
+    this.detectOverflow();
+  }
+
+  componentDidUpdate() {
+    this.detectOverflow();
+  }
+
+  detectOverflow() {
+    const child =
+      this.contentContainerRef.current && this.contentContainerRef.current.firstElementChild;
+
     if (!child) {
       return;
     }
 
-    const isOverflowing = child.scrollHeight > MAX_ROW_HEIGHT_PX;
-    setState((prev) => (prev.isOverflowing !== isOverflowing ? {...prev, isOverflowing} : prev));
-  }, []);
-
-  React.useEffect(() => {
-    detectOverflow();
-  });
-
-  const dialogContents = () => {
-    const message = contentContainerRef.current?.textContent;
-    return message ? <div style={{whiteSpace: 'pre-wrap'}}>{message}</div> : null;
-  };
-
-  const onView = () => {
-    if (props.onExpand) {
-      props.onExpand();
-    } else {
-      setState((prev) => ({...prev, showDialog: true}));
+    const isOverflowing =
+      typeof this.props.style.height === 'number' && child.scrollHeight > this.props.style.height;
+    if (isOverflowing !== this.state.isOverflowing) {
+      this.setState({isOverflowing});
     }
+  }
+
+  defaultExpand() {
+    const message =
+      this.contentContainerRef.current && this.contentContainerRef.current.textContent;
+    message &&
+      showCustomAlert({
+        body: <div style={{whiteSpace: 'pre-wrap'}}>{message}</div>,
+      });
+  }
+
+  onView = () => {
+    const {onExpand} = this.props;
+    onExpand ? onExpand() : this.defaultExpand();
   };
 
-  const style = {...props.style, overflow: 'hidden'};
+  render() {
+    const style = {...this.props.style, overflow: 'hidden'};
 
-  return (
-    <div style={style}>
-      <div ref={contentContainerRef}>{props.children}</div>
-      {(state.isOverflowing || props.forceExpandability) && (
-        <>
-          <OverflowFade />
-          <OverflowButtonContainer>
-            <Button intent="primary" icon={<Icon name="unfold_more" />} onClick={onView}>
-              View full message
-            </Button>
-            {props.buttons}
-          </OverflowButtonContainer>
-          {props.onExpand ? null : (
-            <Dialog
-              canEscapeKeyClose
-              canOutsideClickClose
-              isOpen={state.showDialog}
-              onClose={() => setState((prev) => ({...prev, showDialog: false}))}
-              style={{width: 'auto', maxWidth: '80vw'}}
-            >
-              <div>{dialogContents()}</div>
-              <DialogFooter topBorder>
-                <Button
-                  intent="primary"
-                  onClick={() => setState((prev) => ({...prev, showDialog: false}))}
-                >
-                  Done
-                </Button>
-              </DialogFooter>
-            </Dialog>
-          )}
-        </>
-      )}
-    </div>
-  );
-};
+    return (
+      <div style={style}>
+        <div ref={this.contentContainerRef}>{this.props.children}</div>
+        {(this.state.isOverflowing || this.props.forceExpandability) && (
+          <>
+            <OverflowFade />
+            <OverflowButtonContainer>
+              <OverflowButton onClick={this.onView}>View full message</OverflowButton>
+            </OverflowButtonContainer>
+          </>
+        )}
+      </div>
+    );
+  }
+}

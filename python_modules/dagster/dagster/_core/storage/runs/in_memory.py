@@ -1,17 +1,17 @@
 import uuid
-from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from typing import Optional
+from typing import Iterator, Optional, Sequence
 
 import sqlalchemy as db
 from sqlalchemy.engine import Connection
 from sqlalchemy.pool import NullPool
 
 from dagster._core.debug import DebugRunPayload
-from dagster._core.storage.runs.schema import InstanceInfo, RunStorageSqlMetadata
-from dagster._core.storage.runs.sql_run_storage import SqlRunStorage
 from dagster._core.storage.sql import create_engine, get_alembic_config, stamp_alembic_rev
 from dagster._core.storage.sqlite import create_in_memory_conn_string
+
+from .schema import InstanceInfo, RunStorageSqlMetadata
+from .sql_run_storage import SqlRunStorage
 
 
 class InMemoryRunStorage(SqlRunStorage):
@@ -39,23 +39,16 @@ class InMemoryRunStorage(SqlRunStorage):
             if "instance_info" not in table_names:
                 InstanceInfo.create(self._held_conn)
 
+        self.migrate()
+        self.optimize()
+
         if preload:
             for payload in preload:
-                run = payload.dagster_run
-                job_snap_id = self.add_job_snapshot(payload.job_snapshot)
-                plan_snap_id = self.add_execution_plan_snapshot(payload.execution_plan_snapshot)
-
-                # if the snapshot id has shifted due to changes in json structure
-                # update the runs pointers
-                if job_snap_id != run.job_snapshot_id:
-                    run = run._replace(job_snapshot_id=job_snap_id)
-                if plan_snap_id != run.execution_plan_snapshot_id:
-                    run = run._replace(execution_plan_snapshot_id=plan_snap_id)
-
-                self.add_run(run)
-
-    def has_secondary_index(self, name: str) -> bool:
-        return True
+                self.add_job_snapshot(payload.job_snapshot, payload.dagster_run.job_snapshot_id)
+                self.add_execution_plan_snapshot(
+                    payload.execution_plan_snapshot, payload.dagster_run.execution_plan_snapshot_id
+                )
+                self.add_run(payload.dagster_run)
 
     @contextmanager
     def connect(self) -> Iterator[Connection]:

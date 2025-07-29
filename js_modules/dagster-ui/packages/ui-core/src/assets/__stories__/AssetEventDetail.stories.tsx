@@ -1,9 +1,10 @@
 import {MockedProvider} from '@apollo/client/testing';
 import {Box} from '@dagster-io/ui-components';
+import React from 'react';
 
 import {createAppCache} from '../../app/AppCache';
 import {StorybookProvider} from '../../testing/StorybookProvider';
-import {WorkspaceProvider} from '../../workspace/WorkspaceContext/WorkspaceContext';
+import {WorkspaceProvider} from '../../workspace/WorkspaceContext';
 import {AssetEventDetail, AssetEventDetailEmpty} from '../AssetEventDetail';
 import {
   BasicObservationEvent,

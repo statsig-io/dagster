@@ -1,19 +1,17 @@
+import {gql} from '@apollo/client';
 import {Box, ButtonLink, Tooltip} from '@dagster-io/ui-components';
-import * as React from 'react';
+import React from 'react';
 import {Link} from 'react-router-dom';
 
-import {assetDetailsPathForKey} from './assetDetailsPathForKey';
-import {gql} from '../apollo-client';
-import {AssetLineageFragment} from './types/AssetLineageElements.types';
 import {Timestamp} from '../app/time/Timestamp';
 
-const AssetLineageInfoElement = ({
-  lineage_info,
-  timestamp,
-}: {
+import {assetDetailsPathForKey} from './assetDetailsPathForKey';
+import {AssetLineageFragment} from './types/AssetLineageElements.types';
+
+const AssetLineageInfoElement: React.FC<{
   lineage_info: AssetLineageFragment;
   timestamp: string;
-}) => {
+}> = ({lineage_info, timestamp}) => {
   const partition_list_label = lineage_info.partitions.length === 1 ? 'Partition' : 'Partitions';
   const partition_list_str = lineage_info.partitions
     .map((partition) => `"${partition}"`)
@@ -42,15 +40,16 @@ const AssetLineageInfoElement = ({
           <Box flex={{display: 'inline-flex', alignItems: 'center'}}>
             {lineage_info.assetKey.path
               .map((p, i) => <span key={i}>{p}</span>)
-              .reduce((accum, curr, ii) => {
-                if (ii > 0) {
-                  accum.push(
-                    <React.Fragment key={`${ii}-space`}>&nbsp;{'>'}&nbsp;</React.Fragment>,
-                  );
-                }
-                accum.push(curr);
-                return accum;
-              }, [] as React.ReactNode[])}
+              .reduce(
+                (accum, curr, ii) => [
+                  ...accum,
+                  ii > 0 ? (
+                    <React.Fragment key={`${ii}-space`}>&nbsp;{'>'}&nbsp;</React.Fragment>
+                  ) : null,
+                  curr,
+                ],
+                [] as React.ReactNode[],
+              )}
           </Box>
         </Link>
       </Tooltip>
@@ -60,13 +59,10 @@ const AssetLineageInfoElement = ({
 
 const MAX_COLLAPSED = 5;
 
-export const AssetLineageElements = ({
-  elements,
-  timestamp,
-}: {
+export const AssetLineageElements: React.FC<{
   elements: AssetLineageFragment[];
   timestamp: string;
-}) => {
+}> = ({elements, timestamp}) => {
   const [collapsed, setCollapsed] = React.useState(true);
 
   return (

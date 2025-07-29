@@ -1,44 +1,57 @@
-import dagster as dg
 import pytest
-from dagster import Int
+from dagster import (
+    DagsterInvalidDefinitionError,
+    DependencyDefinition,
+    GraphDefinition,
+    In,
+    Int,
+    Out,
+    Output,
+    graph,
+    in_process_executor,
+    job,
+    op,
+    usable_as_dagster_type,
+    validate_run_config,
+)
 
 
 def builder(graph):
     return graph.add_one(graph.return_one())
 
 
-@dg.op
+@op
 def return_one():
     return 1
 
 
-@dg.op
+@op
 def return_two():
     return 2
 
 
-@dg.op
+@op
 def return_three():
     return 3
 
 
-@dg.op(ins={"num": dg.In()})
+@op(ins={"num": In()})
 def add_one(num):
     return num + 1
 
 
 def test_basic_use_case():
-    graph_def = dg.GraphDefinition(
+    graph_def = GraphDefinition(
         name="basic",
         node_defs=[return_one, add_one],
-        dependencies={"add_one": {"num": dg.DependencyDefinition("return_one")}},
+        dependencies={"add_one": {"num": DependencyDefinition("return_one")}},
     )
 
     assert graph_def.execute_in_process().output_for_node("add_one") == 2
 
 
 def test_basic_use_case_with_dsl():
-    @dg.job
+    @job
     def test():
         add_one(num=return_one())
 
@@ -46,17 +59,17 @@ def test_basic_use_case_with_dsl():
 
 
 def test_two_inputs_without_dsl():
-    @dg.op(ins={"num_one": dg.In(), "num_two": dg.In()})
+    @op(ins={"num_one": In(), "num_two": In()})
     def subtract(num_one, num_two):
         return num_one - num_two
 
-    graph_def = dg.GraphDefinition(
+    graph_def = GraphDefinition(
         node_defs=[subtract, return_two, return_three],
         name="test",
         dependencies={
             "subtract": {
-                "num_one": dg.DependencyDefinition("return_two"),
-                "num_two": dg.DependencyDefinition("return_three"),
+                "num_one": DependencyDefinition("return_two"),
+                "num_two": DependencyDefinition("return_three"),
             }
         },
     )
@@ -65,11 +78,11 @@ def test_two_inputs_without_dsl():
 
 
 def test_two_inputs_with_dsl():
-    @dg.op(ins={"num_one": dg.In(), "num_two": dg.In()})
+    @op(ins={"num_one": In(), "num_two": In()})
     def subtract(num_one, num_two):
         return num_one - num_two
 
-    @dg.job
+    @job
     def test():
         subtract(num_one=return_two(), num_two=return_three())
 
@@ -77,7 +90,7 @@ def test_two_inputs_with_dsl():
 
 
 def test_basic_aliasing_with_dsl():
-    @dg.job
+    @job
     def test():
         add_one.alias("renamed")(num=return_one())
 
@@ -85,16 +98,16 @@ def test_basic_aliasing_with_dsl():
 
 
 def test_diamond_graph():
-    @dg.op(out={"value_one": dg.Out(), "value_two": dg.Out()})
+    @op(out={"value_one": Out(), "value_two": Out()})
     def emit_values(_context):
-        yield dg.Output(1, "value_one")
-        yield dg.Output(2, "value_two")
+        yield Output(1, "value_one")
+        yield Output(2, "value_two")
 
-    @dg.op(ins={"num_one": dg.In(), "num_two": dg.In()})
+    @op(ins={"num_one": In(), "num_two": In()})
     def subtract(num_one, num_two):
         return num_one - num_two
 
-    @dg.job
+    @job
     def diamond_job():
         value_one, value_two = emit_values()
         subtract(
@@ -108,7 +121,7 @@ def test_diamond_graph():
 
 
 def test_two_cliques():
-    @dg.job
+    @job
     def diamond_job():
         return_one()
         return_two()
@@ -120,31 +133,31 @@ def test_two_cliques():
 
 
 def test_deep_graph():
-    @dg.op(config_schema=Int)
+    @op(config_schema=Int)
     def download_num(context):
         return context.op_config
 
-    @dg.op(ins={"num": dg.In()})
+    @op(ins={"num": In()})
     def unzip_num(num):
         return num
 
-    @dg.op(ins={"num": dg.In()})
+    @op(ins={"num": In()})
     def ingest_num(num):
         return num
 
-    @dg.op(ins={"num": dg.In()})
+    @op(ins={"num": In()})
     def subsample_num(num):
         return num
 
-    @dg.op(ins={"num": dg.In()})
+    @op(ins={"num": In()})
     def canonicalize_num(num):
         return num
 
-    @dg.op(ins={"num": dg.In()})
+    @op(ins={"num": In()})
     def load_num(num):
         return num + 3
 
-    @dg.job
+    @job
     def test():
         load_num(
             num=canonicalize_num(
@@ -158,89 +171,89 @@ def test_deep_graph():
 
 
 def test_unconfigurable_inputs_job():
-    @dg.usable_as_dagster_type
+    @usable_as_dagster_type
     class NewType:
         pass
 
-    @dg.op(ins={"_unused": dg.In(NewType)})
+    @op(ins={"_unused": In(NewType)})
     def noop(_unused):
         pass
 
     with pytest.raises(
-        dg.DagsterInvalidDefinitionError,
+        DagsterInvalidDefinitionError,
         match="Input '_unused' of op 'noop' has no way of being resolved",
     ):
 
-        @dg.job
+        @job
         def _bad_inputs():
             noop()
 
 
 def test_dupe_defs_fail():
-    @dg.op(name="same")
+    @op(name="same")
     def noop():
         pass
 
-    @dg.op(name="same")
+    @op(name="same")
     def noop2():
         pass
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
+    with pytest.raises(DagsterInvalidDefinitionError):
 
-        @dg.job
+        @job
         def _dupes():
             noop()
             noop2()
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
-        dg.GraphDefinition(name="dupes", node_defs=[noop, noop2]).to_job()
+    with pytest.raises(DagsterInvalidDefinitionError):
+        GraphDefinition(name="dupes", node_defs=[noop, noop2]).to_job()
 
 
 def test_composite_dupe_defs_fail():
-    @dg.op
+    @op
     def noop():
         pass
 
-    @dg.graph(name="same")
+    @graph(name="same")
     def graph_noop():
         noop()
         noop()
         noop()
 
-    @dg.graph(name="same")
+    @graph(name="same")
     def graph_noop2():
         noop()
 
-    @dg.graph
+    @graph
     def wrapper():
         graph_noop2()
 
-    @dg.graph
+    @graph
     def top():
         wrapper()
         graph_noop()
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
+    with pytest.raises(DagsterInvalidDefinitionError):
 
-        @dg.job
+        @job
         def _dupes():
             graph_noop()
             graph_noop2()
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError):
-        dg.GraphDefinition(name="dupes", node_defs=[top]).to_job()
+    with pytest.raises(DagsterInvalidDefinitionError):
+        GraphDefinition(name="dupes", node_defs=[top]).to_job()
 
 
 def test_two_inputs_with_reversed_input_defs_and_dsl():
-    @dg.op(ins={"num_two": dg.In(), "num_one": dg.In()})
+    @op(ins={"num_two": In(), "num_one": In()})
     def subtract_ctx(_context, num_one, num_two):
         return num_one - num_two
 
-    @dg.op(ins={"num_two": dg.In(), "num_one": dg.In()})
+    @op(ins={"num_two": In(), "num_one": In()})
     def subtract(num_one, num_two):
         return num_one - num_two
 
-    @dg.job
+    @job
     def test():
         two = return_two()
         three = return_three()
@@ -253,11 +266,11 @@ def test_two_inputs_with_reversed_input_defs_and_dsl():
 
 
 def test_single_non_positional_input_use():
-    @dg.op(ins={"num": dg.In()})
+    @op(ins={"num": In()})
     def add_one_kw(**kwargs):
         return kwargs["num"] + 1
 
-    @dg.job
+    @job
     def test():
         # the decorated solid fn doesn't define args
         # but since there is only one it is unambiguous
@@ -267,11 +280,11 @@ def test_single_non_positional_input_use():
 
 
 def test_single_positional_single_kwarg_input_use():
-    @dg.op(ins={"num_two": dg.In(), "num_one": dg.In()})
+    @op(ins={"num_two": In(), "num_one": In()})
     def subtract_kw(num_one, **kwargs):
         return num_one - kwargs["num_two"]
 
-    @dg.job
+    @job
     def test():
         # the decorated solid fn only defines one positional arg
         # and one kwarg so passing two by position is unambiguous
@@ -282,13 +295,13 @@ def test_single_positional_single_kwarg_input_use():
 
 
 def test_bad_positional_input_use():
-    @dg.op(ins={"num_two": dg.In(), "num_one": dg.In(), "num_three": dg.In()})
+    @op(ins={"num_two": In(), "num_one": In(), "num_three": In()})
     def add_kw(num_one, **kwargs):
         return num_one + kwargs["num_two"] + kwargs["num_three"]
 
-    with pytest.raises(dg.DagsterInvalidDefinitionError, match="Use keyword args instead"):
+    with pytest.raises(DagsterInvalidDefinitionError, match="Use keyword args instead"):
 
-        @dg.job
+        @job
         def _fail():
             # the decorated solid fn only defines one positional arg
             # so the two remaining have no positions and this is
@@ -297,16 +310,16 @@ def test_bad_positional_input_use():
 
 
 def test_job_recreation_works() -> None:
-    @dg.op(config_schema={"foo": str})
+    @op(config_schema={"foo": str})
     def requires_config(_):
         pass
 
-    @dg.job
+    @job
     def job_requires_config():
         requires_config()
 
-    result = dg.validate_run_config(
-        job_requires_config.with_executor_def(dg.in_process_executor),
+    result = validate_run_config(
+        job_requires_config.with_executor_def(in_process_executor),
         {"ops": {"requires_config": {"config": {"foo": "bar"}}}},
     )
     # Ensure that the validated config has an in_process_executor execution entry
@@ -316,18 +329,3 @@ def test_job_recreation_works() -> None:
         "resources": {"io_manager": {"config": None}},
         "loggers": {},
     }
-
-
-def test_metadata():
-    @dg.job(metadata={"foo": "bar", "four": 4})
-    def original(): ...
-
-    assert original.metadata["foo"] == dg.TextMetadataValue("bar")
-    assert original.metadata["four"] == dg.IntMetadataValue(4)
-
-    blanked = original.with_metadata({})
-    assert blanked.metadata == {}
-
-    updated = original.with_metadata({**original.metadata, "foo": "baz"})
-    assert updated.metadata["foo"] == dg.TextMetadataValue("baz")
-    assert updated.metadata["four"] == dg.IntMetadataValue(4)

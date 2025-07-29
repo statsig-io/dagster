@@ -1,12 +1,6 @@
-import importlib.util
 import os
 
 from dagster import Field, In, String, graph, op, resource
-
-_has_pyspark = importlib.util.find_spec("pyspark") is not None
-if not _has_pyspark:
-    raise Exception("This example requires the pyspark package")
-
 from pyspark.sql import SparkSession, Window
 from pyspark.sql.functions import (
     col,
@@ -17,7 +11,7 @@ from pyspark.sql.functions import (
 
 
 def create_spark_session():
-    return SparkSession.builder.getOrCreate()  # pyright: ignore[reportAttributeAccessIssue]
+    return SparkSession.builder.getOrCreate()
 
 
 def df_from_csv(path):

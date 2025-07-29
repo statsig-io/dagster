@@ -1,87 +1,57 @@
-import {Colors, ExternalAnchorButton, Icon} from '@dagster-io/ui-components';
+import {Box, Colors, Icon} from '@dagster-io/ui-components';
+import * as React from 'react';
 
 interface Metadata {
   key: string;
   value: string;
 }
 
-export const CodeLocationSource = ({metadata}: {metadata: Metadata[]}) => {
-  const urlValue = extractRepoURL(metadata);
-
-  if (urlValue.type === 'none') {
-    return <div style={{color: Colors.textDisabled()}}>{'\u2013'}</div>;
-  }
-
-  if (urlValue.type === 'non-url') {
-    return <div>{urlValue.value}</div>;
-  }
-
-  if (urlValue.type === 'unknown-url') {
-    const {url} = urlValue;
-    return (
-      <a href={url.href} target="_blank" rel="noreferrer">
-        {url.toString()}
-      </a>
-    );
-  }
-
-  const {type, url} = urlValue;
-
-  return (
-    <div>
-      <ExternalAnchorButton
-        href={url.toString()}
-        icon={<Icon name={type === 'github-url' ? 'github' : 'gitlab'} />}
-        rightIcon={<Icon name="open_in_new" />}
-      >
-        View repo
-      </ExternalAnchorButton>
-    </div>
-  );
-};
-
-type RepoURLType =
-  | {type: 'none'}
-  | {type: 'non-url'; value: string}
-  | {type: 'github-url'; url: URL}
-  | {type: 'gitlab-url'; url: URL}
-  | {type: 'unknown-url'; url: URL};
-
-const GITHUB_HOSTNAMES = new Set(['github.com', 'www.github.com']);
-const GITLAB_HOSTNAMES = new Set(['gitlab.com', 'www.gitlab.com']);
-
-export const extractRepoURL = (metadata: Metadata[]): RepoURLType => {
+export const CodeLocationSource: React.FC<{metadata: Metadata[]}> = ({metadata}) => {
   const metadataWithURL = metadata.find(({key}) => key === 'url');
   if (!metadataWithURL) {
-    return {type: 'none'};
+    return <div>{'\u2013'}</div>;
   }
 
-  const {value} = metadataWithURL;
   let url = null;
   try {
     url = new URL(metadataWithURL.value);
-  } catch {
+  } catch (e) {
     // Not a URL. Just show the string, don't try to link it.
   }
 
   if (!url) {
-    return {type: 'non-url', value};
+    return <div>{metadataWithURL.value}</div>;
   }
 
-  const isGithub = GITHUB_HOSTNAMES.has(url.hostname);
-  if (isGithub) {
-    return {type: 'github-url', url};
+  const isGithub = url.hostname.includes('github.com');
+  const isGitlab = url.hostname.includes('gitlab.com');
+
+  if (!isGithub && !isGitlab) {
+    // Unknown URL type. Just render the text.
+    return <div>{metadataWithURL.value}</div>;
   }
 
-  const isGitlab = GITLAB_HOSTNAMES.has(url.hostname);
-  if (isGitlab) {
-    return {type: 'gitlab-url', url};
-  }
-
-  return {type: 'unknown-url', url};
-};
-
-export const extractCommitHash = (metadata: Metadata[]) => {
   const metadataWithCommit = metadata.find(({key}) => key === 'commit_hash');
-  return metadataWithCommit?.value || null;
+  const commitHash = () => {
+    const hashSlice = metadataWithCommit?.value.slice(0, 8);
+    return hashSlice ? (
+      <>
+        <span style={{fontWeight: 500}}>Commit:</span> {hashSlice}
+      </>
+    ) : null;
+  };
+
+  return (
+    <Box flex={{direction: 'column', gap: 4, alignItems: 'flex-start'}}>
+      <Box flex={{direction: 'row', gap: 4, alignItems: 'center'}}>
+        <Icon name={isGithub ? 'github' : 'gitlab'} color={Colors.Link} />
+        <a href={metadataWithURL.value} target="_blank" rel="noreferrer">
+          {extractProjectName(url.pathname)}
+        </a>
+      </Box>
+      <div style={{fontSize: 12, color: Colors.Gray700}}>{commitHash()}</div>
+    </Box>
+  );
 };
+
+const extractProjectName = (pathname: string) => pathname.split('/').slice(1, 3).join('/');

@@ -2,23 +2,30 @@ import functools
 import inspect
 import re
 import textwrap
-from collections.abc import Mapping, Sequence
 from inspect import Parameter, signature
-from typing import (  # noqa: UP035
+from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
     ContextManager,
+    Mapping,
     Optional,
+    Sequence,
+    Set,
+    Type,
     TypeVar,
     Union,
     cast,
+)
+
+from typing_extensions import (
+    Concatenate,
+    ParamSpec,
+    TypeAlias,
+    TypeGuard,
     get_type_hints as typing_get_type_hints,
 )
 
-from typing_extensions import Concatenate, ParamSpec, TypeAlias, TypeGuard
-
-import dagster._check as check
 from dagster._core.errors import DagsterInvalidDefinitionError
 
 if TYPE_CHECKING:
@@ -26,7 +33,7 @@ if TYPE_CHECKING:
     from dagster._core.definitions.resource_definition import ResourceDefinition
 
 Decoratable: TypeAlias = Union[
-    type, Callable, property, staticmethod, classmethod, "OpDefinition", "ResourceDefinition"
+    Type, Callable, property, staticmethod, classmethod, "OpDefinition", "ResourceDefinition"
 ]
 
 
@@ -38,7 +45,7 @@ T_Decoratable = TypeVar("T_Decoratable", bound=Decoratable)
 T_Type = TypeVar("T_Type", bound=type)
 
 
-def get_valid_name_permutations(param_name: str) -> set[str]:
+def get_valid_name_permutations(param_name: str) -> Set[str]:
     """Get all underscore permutations for provided arg name."""
     return {
         "_",
@@ -65,15 +72,8 @@ def get_function_params(fn: Callable[..., Any]) -> Sequence[Parameter]:
     return list(signature(fn).parameters.values())
 
 
-def get_type_hints(fn: Callable[..., Any]) -> Mapping[str, Any]:
-    if isinstance(fn, functools.partial):
-        target = fn.func
-    elif inspect.isfunction(fn):
-        target = fn
-    elif hasattr(fn, "__call__"):
-        target = fn.__call__  # pyright: ignore[reportFunctionMemberAccess]
-    else:
-        check.failed(f"Unhandled Callable object {fn}")
+def get_type_hints(fn: Callable) -> Mapping[str, Any]:
+    target = fn.func if isinstance(fn, functools.partial) else fn
 
     try:
         return typing_get_type_hints(target, include_extras=True)
@@ -120,7 +120,7 @@ def param_is_var_keyword(param: Parameter) -> bool:
     return param.kind == Parameter.VAR_KEYWORD
 
 
-def format_docstring_for_description(fn: Callable[..., Any]) -> Optional[str]:
+def format_docstring_for_description(fn: Callable) -> Optional[str]:
     if fn.__doc__ is not None:
         docstring = fn.__doc__
         if len(docstring) > 0 and docstring[0].isspace():
@@ -194,7 +194,7 @@ def _wrap_with_pre_call_fn(
             pre_call_fn()
         return fn(*args, **kwargs)
 
-    return cast("T_Callable", wrapped_with_pre_call_fn)
+    return cast(T_Callable, wrapped_with_pre_call_fn)
 
 
 def apply_context_manager_decorator(
@@ -214,10 +214,10 @@ def _wrap_with_context_manager(
         with cm():
             return fn(*args, **kwargs)
 
-    return cast("T_Callable", wrapped_with_context_manager_fn)
+    return cast(T_Callable, wrapped_with_context_manager_fn)
 
 
-def _update_decoratable(decoratable: T_Decoratable, new_fn: Callable[..., Any]) -> T_Decoratable:
+def _update_decoratable(decoratable: T_Decoratable, new_fn: Callable) -> T_Decoratable:
     """Update a property with a new `fget` function.
 
     `property` objects are immutable, so if we want to apply a decorator to the underlying `fget`,
@@ -251,7 +251,7 @@ def _update_decoratable(decoratable: T_Decoratable, new_fn: Callable[..., Any]) 
 
     # Pyright is unable to infer based on our checks that the return type is the same as the input
     # type.
-    return cast("T_Decoratable", val)
+    return cast(T_Decoratable, val)
 
 
 def is_decoratable(obj: Any) -> TypeGuard[Decoratable]:

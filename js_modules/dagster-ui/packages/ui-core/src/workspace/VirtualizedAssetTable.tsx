@@ -1,21 +1,17 @@
 import {useVirtualizer} from '@tanstack/react-virtual';
 import * as React from 'react';
 
-import {
-  ShimmerRow,
-  VirtualizedAssetCatalogHeader,
-  VirtualizedAssetRow,
-} from './VirtualizedAssetRow';
-import {buildRepoAddress} from './buildRepoAddress';
 import {AssetTableFragment} from '../assets/types/AssetTableFragment.types';
 import {AssetViewType} from '../assets/useAssetView';
-import {IndeterminateLoadingBar} from '../ui/IndeterminateLoadingBar';
+import {AssetKeyInput} from '../graphql/types';
 import {Container, Inner} from '../ui/VirtualizedTable';
+
+import {VirtualizedAssetCatalogHeader, VirtualizedAssetRow} from './VirtualizedAssetRow';
+import {buildRepoAddress} from './buildRepoAddress';
 
 type Row =
   | {type: 'asset'; path: string[]; displayKey: string; asset: AssetTableFragment}
-  | {type: 'folder'; path: string[]; displayKey: string; assets: AssetTableFragment[]}
-  | {type: 'shimmer'};
+  | {type: 'folder'; path: string[]; displayKey: string; assets: AssetTableFragment[]};
 
 interface Props {
   headerCheckbox: React.ReactNode;
@@ -23,43 +19,27 @@ interface Props {
   groups: {[displayKey: string]: AssetTableFragment[]};
   checkedDisplayKeys: Set<string>;
   onToggleFactory: (path: string) => (values: {checked: boolean; shiftKey: boolean}) => void;
-  onRefresh: () => void;
+  onWipe: (assets: AssetKeyInput[]) => void;
   showRepoColumn: boolean;
   view?: AssetViewType;
-  isLoading?: boolean;
-  onChangeAssetSelection?: (selection: string) => void;
 }
 
-export const VirtualizedAssetTable = (props: Props) => {
+export const VirtualizedAssetTable: React.FC<Props> = (props) => {
   const {
     headerCheckbox,
     prefixPath,
     groups,
     checkedDisplayKeys,
     onToggleFactory,
-    onRefresh,
+    onWipe,
     showRepoColumn,
     view = 'flat',
-    isLoading,
-    onChangeAssetSelection,
   } = props;
   const parentRef = React.useRef<HTMLDivElement | null>(null);
-
-  const rows: Row[] = React.useMemo(() => {
-    if (isLoading && !Object.keys(groups).length) {
-      return new Array(5).fill({type: 'shimmer'});
-    }
-    return Object.entries(groups).map(([displayKey, assets]) => {
-      const path = [...prefixPath, ...JSON.parse(displayKey)];
-      const isFolder = assets.length > 1 || path.join('/') !== assets[0]!.key.path.join('/');
-      return isFolder
-        ? {type: 'folder', path, displayKey, assets}
-        : {type: 'asset', path, displayKey, asset: assets[0]!};
-    });
-  }, [prefixPath, groups, isLoading]);
+  const count = Object.keys(groups).length;
 
   const rowVirtualizer = useVirtualizer({
-    count: rows.length,
+    count,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 64,
     overscan: 5,
@@ -68,25 +48,23 @@ export const VirtualizedAssetTable = (props: Props) => {
   const totalHeight = rowVirtualizer.getTotalSize();
   const items = rowVirtualizer.getVirtualItems();
 
+  const rows: Row[] = React.useMemo(() => {
+    return Object.entries(groups).map(([displayKey, assets]) => {
+      const path = [...prefixPath, ...JSON.parse(displayKey)];
+      const isFolder = assets.length > 1 || path.join('/') !== assets[0]!.key.path.join('/');
+      return isFolder
+        ? {type: 'folder', path, displayKey, assets}
+        : {type: 'asset', path, displayKey, asset: assets[0]!};
+    });
+  }, [prefixPath, groups]);
+
   return (
     <div style={{overflow: 'hidden'}}>
-      <IndeterminateLoadingBar $loading={isLoading} />
       <Container ref={parentRef}>
         <VirtualizedAssetCatalogHeader headerCheckbox={headerCheckbox} view={view} />
         <Inner $totalHeight={totalHeight}>
           {items.map(({index, key, size, start}) => {
             const row: Row = rows[index]!;
-            if (row.type === 'shimmer') {
-              return (
-                <ShimmerRow
-                  key={index}
-                  $height={size}
-                  $start={start}
-                  $showRepoColumn={showRepoColumn}
-                />
-              );
-            }
-
             const rowType = () => {
               if (row.type === 'folder') {
                 return 'folder';
@@ -102,6 +80,8 @@ export const VirtualizedAssetTable = (props: Props) => {
               return buildRepoAddress(repository.name, repository.location.name);
             };
 
+            const wipeableAssets = row.type === 'folder' ? row.assets : [row.asset];
+
             return (
               <VirtualizedAssetRow
                 key={key}
@@ -116,8 +96,7 @@ export const VirtualizedAssetTable = (props: Props) => {
                 start={start}
                 checked={checkedDisplayKeys.has(row.displayKey)}
                 onToggleChecked={onToggleFactory(row.displayKey)}
-                onRefresh={onRefresh}
-                onChangeAssetSelection={onChangeAssetSelection}
+                onWipe={() => onWipe(wipeableAssets.map((a) => a.key))}
               />
             );
           })}

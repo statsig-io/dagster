@@ -1,12 +1,13 @@
-import {useMemo} from 'react';
+import {gql, useQuery} from '@apollo/client';
+import * as React from 'react';
+
+import {FIFTEEN_SECONDS, useQueryRefreshAtInterval} from '../app/QueryRefresh';
+import {InstigationStatus} from '../graphql/types';
+import {useRepositoryOptions} from '../workspace/WorkspaceContext';
 
 import {StatusAndMessage} from './DeploymentStatusType';
 import {INSTANCE_HEALTH_FRAGMENT} from './InstanceHealthFragment';
-import {gql, useQuery} from '../apollo-client';
 import {InstanceWarningQuery, InstanceWarningQueryVariables} from './types/useDaemonStatus.types';
-import {FIFTEEN_SECONDS, useQueryRefreshAtInterval} from '../app/QueryRefresh';
-import {InstigationStatus} from '../graphql/types';
-import {useRepositoryOptions} from '../workspace/WorkspaceContext/util';
 
 export const useDaemonStatus = (skip = false): StatusAndMessage | null => {
   const {options} = useRepositoryOptions();
@@ -15,15 +16,14 @@ export const useDaemonStatus = (skip = false): StatusAndMessage | null => {
     {
       notifyOnNetworkStatusChange: true,
       skip,
-      blocking: false,
     },
   );
 
-  useQueryRefreshAtInterval(queryResult, FIFTEEN_SECONDS, !skip);
+  useQueryRefreshAtInterval(queryResult, FIFTEEN_SECONDS);
 
   const {data: healthData} = queryResult;
 
-  const {anySchedules, anySensors} = useMemo(() => {
+  const {anySchedules, anySensors} = React.useMemo(() => {
     let anySchedules = false;
     let anySensors = false;
 
@@ -46,7 +46,7 @@ export const useDaemonStatus = (skip = false): StatusAndMessage | null => {
     return {anySchedules, anySensors};
   }, [options]);
 
-  const visibleErrorCount = useMemo(() => {
+  const visibleErrorCount = React.useMemo(() => {
     const allDaemons = healthData?.instance.daemonHealth.allDaemonStatuses;
     if (!allDaemons) {
       return 0;

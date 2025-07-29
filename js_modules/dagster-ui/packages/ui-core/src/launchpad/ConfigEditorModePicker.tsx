@@ -1,5 +1,5 @@
 import {Button, Icon, MenuItem, Select} from '@dagster-io/ui-components';
-import {useEffect} from 'react';
+import * as React from 'react';
 
 import {ModeNotFoundError} from './ModeNotFoundError';
 
@@ -16,12 +16,12 @@ interface ConfigEditorModePickerProps {
 
 const MODE_PICKER_HINT_TEXT = `To add a mode, add a ModeDefinition to the pipeline.`;
 
-export const ConfigEditorModePicker = (props: ConfigEditorModePickerProps) => {
+export const ConfigEditorModePicker: React.FC<ConfigEditorModePickerProps> = (props) => {
   const resolvedMode = props.modeName
     ? props.modes.find((m) => m.name === props.modeName)
     : props.modes[0];
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (resolvedMode && resolvedMode.name !== props.modeName) {
       props.onModeChange?.(resolvedMode.name);
     }

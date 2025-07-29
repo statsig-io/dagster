@@ -1,7 +1,7 @@
 import {Box, Colors} from '@dagster-io/ui-components';
 import {Meta} from '@storybook/react';
 import faker from 'faker';
-import {useCallback, useState} from 'react';
+import * as React from 'react';
 
 import {RepoAddress} from '../../workspace/types';
 import {RepoSelector, RepoSelectorOption} from '../RepoSelector';
@@ -122,9 +122,9 @@ const OPTIONS: RepoSelectorOption[] = [
   },
 ];
 export const ManyRepos = () => {
-  const [selected, setSelected] = useState<RepoSelectorOption[]>([]);
+  const [selected, setSelected] = React.useState<RepoSelectorOption[]>([]);
 
-  const onToggle = useCallback(
+  const onToggle = React.useCallback(
     (addresses: RepoAddress[]) => {
       addresses.forEach((address) => {
         const option = OPTIONS.find(
@@ -145,7 +145,7 @@ export const ManyRepos = () => {
   );
 
   return (
-    <Box background={Colors.accentPrimary()} padding={16}>
+    <Box background={Colors.Gray800} padding={16}>
       <RepoSelector options={OPTIONS} onBrowse={() => {}} onToggle={onToggle} selected={selected} />
     </Box>
   );

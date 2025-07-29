@@ -4,7 +4,7 @@ import * as Types from '../../graphql/types';
 
 export type AssetPartitionDetailQueryVariables = Types.Exact<{
   assetKey: Types.AssetKeyInput;
-  partitionKey: Types.Scalars['String']['input'];
+  partitionKey: Types.Scalars['String'];
 }>;
 
 export type AssetPartitionDetailQuery = {
@@ -14,6 +14,14 @@ export type AssetPartitionDetailQuery = {
         __typename: 'AssetNode';
         id: string;
         opNames: Array<string>;
+        staleStatus: Types.StaleStatus | null;
+        staleCauses: Array<{
+          __typename: 'StaleCause';
+          reason: string;
+          category: Types.StaleCauseCategory;
+          key: {__typename: 'AssetKey'; path: Array<string>};
+          dependency: {__typename: 'AssetKey'; path: Array<string>} | null;
+        }>;
         latestRunForPartition: {
           __typename: 'Run';
           id: string;
@@ -60,20 +68,6 @@ export type AssetPartitionDetailQuery = {
                 description: string | null;
               }
             | {
-                __typename: 'CodeReferencesMetadataEntry';
-                label: string;
-                description: string | null;
-                codeReferences: Array<
-                  | {
-                      __typename: 'LocalFileCodeReference';
-                      filePath: string;
-                      lineNumber: number | null;
-                      label: string | null;
-                    }
-                  | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-                >;
-              }
-            | {
                 __typename: 'FloatMetadataEntry';
                 floatValue: number | null;
                 label: string;
@@ -83,14 +77,6 @@ export type AssetPartitionDetailQuery = {
                 __typename: 'IntMetadataEntry';
                 intValue: number | null;
                 intRepr: string;
-                label: string;
-                description: string | null;
-              }
-            | {
-                __typename: 'JobMetadataEntry';
-                jobName: string;
-                repositoryName: string | null;
-                locationName: string;
                 label: string;
                 description: string | null;
               }
@@ -126,31 +112,11 @@ export type AssetPartitionDetailQuery = {
                 description: string | null;
               }
             | {
-                __typename: 'PoolMetadataEntry';
-                pool: string;
-                label: string;
-                description: string | null;
-              }
-            | {
                 __typename: 'PythonArtifactMetadataEntry';
                 module: string;
                 name: string;
                 label: string;
                 description: string | null;
-              }
-            | {
-                __typename: 'TableColumnLineageMetadataEntry';
-                label: string;
-                description: string | null;
-                lineage: Array<{
-                  __typename: 'TableColumnLineageEntry';
-                  columnName: string;
-                  columnDeps: Array<{
-                    __typename: 'TableColumnDep';
-                    columnName: string;
-                    assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                  }>;
-                }>;
               }
             | {
                 __typename: 'TableMetadataEntry';
@@ -166,7 +132,6 @@ export type AssetPartitionDetailQuery = {
                       name: string;
                       description: string | null;
                       type: string;
-                      tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                       constraints: {
                         __typename: 'TableColumnConstraints';
                         nullable: boolean;
@@ -189,7 +154,6 @@ export type AssetPartitionDetailQuery = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -203,12 +167,6 @@ export type AssetPartitionDetailQuery = {
             | {
                 __typename: 'TextMetadataEntry';
                 text: string;
-                label: string;
-                description: string | null;
-              }
-            | {
-                __typename: 'TimestampMetadataEntry';
-                timestamp: number;
                 label: string;
                 description: string | null;
               }
@@ -265,20 +223,6 @@ export type AssetPartitionDetailQuery = {
                 description: string | null;
               }
             | {
-                __typename: 'CodeReferencesMetadataEntry';
-                label: string;
-                description: string | null;
-                codeReferences: Array<
-                  | {
-                      __typename: 'LocalFileCodeReference';
-                      filePath: string;
-                      lineNumber: number | null;
-                      label: string | null;
-                    }
-                  | {__typename: 'UrlCodeReference'; url: string; label: string | null}
-                >;
-              }
-            | {
                 __typename: 'FloatMetadataEntry';
                 floatValue: number | null;
                 label: string;
@@ -288,14 +232,6 @@ export type AssetPartitionDetailQuery = {
                 __typename: 'IntMetadataEntry';
                 intValue: number | null;
                 intRepr: string;
-                label: string;
-                description: string | null;
-              }
-            | {
-                __typename: 'JobMetadataEntry';
-                jobName: string;
-                repositoryName: string | null;
-                locationName: string;
                 label: string;
                 description: string | null;
               }
@@ -331,31 +267,11 @@ export type AssetPartitionDetailQuery = {
                 description: string | null;
               }
             | {
-                __typename: 'PoolMetadataEntry';
-                pool: string;
-                label: string;
-                description: string | null;
-              }
-            | {
                 __typename: 'PythonArtifactMetadataEntry';
                 module: string;
                 name: string;
                 label: string;
                 description: string | null;
-              }
-            | {
-                __typename: 'TableColumnLineageMetadataEntry';
-                label: string;
-                description: string | null;
-                lineage: Array<{
-                  __typename: 'TableColumnLineageEntry';
-                  columnName: string;
-                  columnDeps: Array<{
-                    __typename: 'TableColumnDep';
-                    columnName: string;
-                    assetKey: {__typename: 'AssetKey'; path: Array<string>};
-                  }>;
-                }>;
               }
             | {
                 __typename: 'TableMetadataEntry';
@@ -371,7 +287,6 @@ export type AssetPartitionDetailQuery = {
                       name: string;
                       description: string | null;
                       type: string;
-                      tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                       constraints: {
                         __typename: 'TableColumnConstraints';
                         nullable: boolean;
@@ -394,7 +309,6 @@ export type AssetPartitionDetailQuery = {
                     name: string;
                     description: string | null;
                     type: string;
-                    tags: Array<{__typename: 'DefinitionTag'; key: string; value: string}>;
                     constraints: {
                       __typename: 'TableColumnConstraints';
                       nullable: boolean;
@@ -408,12 +322,6 @@ export type AssetPartitionDetailQuery = {
             | {
                 __typename: 'TextMetadataEntry';
                 text: string;
-                label: string;
-                description: string | null;
-              }
-            | {
-                __typename: 'TimestampMetadataEntry';
-                timestamp: number;
                 label: string;
                 description: string | null;
               }
@@ -435,30 +343,3 @@ export type AssetPartitionLatestRunFragment = {
   status: Types.RunStatus;
   endTime: number | null;
 };
-
-export type AssetPartitionStaleQueryVariables = Types.Exact<{
-  assetKey: Types.AssetKeyInput;
-  partitionKey: Types.Scalars['String']['input'];
-}>;
-
-export type AssetPartitionStaleQuery = {
-  __typename: 'Query';
-  assetNodeOrError:
-    | {
-        __typename: 'AssetNode';
-        id: string;
-        staleStatus: Types.StaleStatus | null;
-        staleCauses: Array<{
-          __typename: 'StaleCause';
-          reason: string;
-          category: Types.StaleCauseCategory;
-          key: {__typename: 'AssetKey'; path: Array<string>};
-          dependency: {__typename: 'AssetKey'; path: Array<string>} | null;
-        }>;
-      }
-    | {__typename: 'AssetNotFoundError'};
-};
-
-export const AssetPartitionDetailQueryVersion = 'a5a3c782894d7365cbf791c57bdec279cbccd809cd2d0dc5fd31df1e6237b927';
-
-export const AssetPartitionStaleQueryVersion = '4215f4014e9d7592142e1775c4b07377703e913389396f9ca14dc6bb779ce764';

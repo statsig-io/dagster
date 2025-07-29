@@ -35,7 +35,8 @@ export const sensorMinnesotaCurrentlyRunning = {
   repoAddress,
   sensorName: 'minnesota',
   sensorState: buildInstigationState({
-    id: 'minnesota-id',
+    id: 'minnesota-state-id',
+    selectorId: 'minnesota-selector',
     status: InstigationStatus.RUNNING,
   }),
 };
@@ -44,7 +45,8 @@ export const sensorOregonCurrentlyRunning = {
   repoAddress,
   sensorName: 'oregon',
   sensorState: buildInstigationState({
-    id: 'oregon-id',
+    id: 'oregon-state-id',
+    selectorId: 'oregon-selector',
     status: InstigationStatus.RUNNING,
   }),
 };
@@ -130,7 +132,8 @@ export const buildStopMinnesotaSuccess = (delay = 0): MockedResponse<StopRunning
     request: {
       query: STOP_SENSOR_MUTATION,
       variables: {
-        id: 'minnesota-id',
+        jobOriginId: 'minnesota-state-id',
+        jobSelectorId: 'minnesota-selector',
       },
     },
     result: {
@@ -152,7 +155,8 @@ export const buildStopOregonSuccess = (delay = 0): MockedResponse<StopRunningSen
     request: {
       query: STOP_SENSOR_MUTATION,
       variables: {
-        id: 'oregon-id',
+        jobOriginId: 'oregon-state-id',
+        jobSelectorId: 'oregon-selector',
       },
     },
     result: {
@@ -174,7 +178,8 @@ export const buildStopOregonError = (delay = 0): MockedResponse<StopRunningSenso
     request: {
       query: STOP_SENSOR_MUTATION,
       variables: {
-        id: 'oregon-id',
+        jobOriginId: 'oregon-state-id',
+        jobSelectorId: 'oregon-selector',
       },
     },
     result: {

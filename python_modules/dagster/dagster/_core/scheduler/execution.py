@@ -1,5 +1,4 @@
-from collections.abc import Sequence
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, Sequence
 
 import dagster._check as check
 from dagster._serdes import whitelist_for_serdes
@@ -26,7 +25,7 @@ class ScheduledExecutionFailed(
     ScheduledExecutionResult,
 ):
     def __new__(cls, run_id: Optional[str], errors: Sequence[SerializableErrorInfo]):
-        return super().__new__(
+        return super(ScheduledExecutionFailed, cls).__new__(
             cls,
             run_id=check.opt_str_param(run_id, "run_id"),
             errors=check.sequence_param(errors, "errors", of_type=SerializableErrorInfo),
@@ -38,4 +37,6 @@ class ScheduledExecutionSuccess(
     NamedTuple("_ScheduledExecutionSuccess", [("run_id", str)]), ScheduledExecutionResult
 ):
     def __new__(cls, run_id: str):
-        return super().__new__(cls, run_id=check.str_param(run_id, "run_id"))
+        return super(ScheduledExecutionSuccess, cls).__new__(
+            cls, run_id=check.str_param(run_id, "run_id")
+        )

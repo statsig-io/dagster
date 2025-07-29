@@ -1,15 +1,17 @@
 import {Colors, FontFamily} from '@dagster-io/ui-components';
+import * as React from 'react';
 import styled from 'styled-components';
+
+import {DEFAULT_RESULT_NAME, titleOfIO} from '../app/titleOfIO';
 
 import {Edge, isHighlighted, position} from './common';
 import {OpLayoutIO} from './layout';
 import {
-  OpNodeDefinitionFragment,
   OpNodeInputDefinitionFragment,
-  OpNodeInvocationFragment,
   OpNodeOutputDefinitionFragment,
+  OpNodeDefinitionFragment,
+  OpNodeInvocationFragment,
 } from './types/OpNode.types';
-import {DEFAULT_RESULT_NAME, titleOfIO} from '../app/titleOfIO';
 
 export const PARENT_IN = 'PARENT_IN';
 export const PARENT_OUT = 'PARENT_OUT';
@@ -32,7 +34,7 @@ interface OpIOBoxProps extends OpIORenderMetadata {
   onHighlightEdges: (edges: Edge[]) => void;
 }
 
-export const OpIOBox = ({
+export const OpIOBox: React.FC<OpIOBoxProps> = ({
   minified,
   title,
   jumpTargetOp,
@@ -43,7 +45,7 @@ export const OpIOBox = ({
   layoutInfo,
   onDoubleClick,
   onHighlightEdges,
-}: OpIOBoxProps) => {
+}) => {
   if (!layoutInfo) {
     return null;
   }
@@ -57,9 +59,7 @@ export const OpIOBox = ({
       onMouseEnter={() => onHighlightEdges(edges)}
       onMouseLeave={() => onHighlightEdges([])}
       onClick={(e) => {
-        if (jumpTargetOp) {
-          onDoubleClick(jumpTargetOp);
-        }
+        jumpTargetOp && onDoubleClick(jumpTargetOp);
         e.stopPropagation();
       }}
       onDoubleClick={(e) => e.stopPropagation()}
@@ -89,12 +89,9 @@ const OpIOContainer = styled.div<{$colorKey: string; $highlighted: boolean}>`
   align-items: center;
   border-top-right-radius: 8px;
   border-bottom-right-radius: 8px;
-  background: ${(p) => (p.$highlighted ? Colors.backgroundDefault() : Colors.backgroundDefault())};
+  background: ${(p) => (p.$highlighted ? 'rgba(255, 255, 255, 1)' : 'rgba(255, 255, 255, 0.75)')};
   font-size: 12px;
 
-  &:first-child {
-    border-top-left-radius: 8px;
-  }
   &:last-child {
     border-bottom-left-radius: 8px;
   }
@@ -103,7 +100,7 @@ const OpIOContainer = styled.div<{$colorKey: string; $highlighted: boolean}>`
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: ${(p) => (p.$highlighted ? Colors.accentBlue() : Colors.accentGray())};
+    background: ${(p) => (p.$highlighted ? Colors.Blue500 : Colors.Gray500)};
     display: inline-block;
     margin: 6px;
   }
@@ -117,15 +114,15 @@ const OpIOContainer = styled.div<{$colorKey: string; $highlighted: boolean}>`
   }
   .type {
     padding: 1px 6px;
-    background: ${Colors.backgroundBlue()};
+    background: #e7e6f0;
     margin-right: 4px;
-    color: ${Colors.textBlue()};
+    color: ${Colors.Blue500};
     font-family: ${FontFamily.monospace};
     font-weight: 700;
     border-radius: 4px;
   }
   .collapsedCount {
-    color: ${(p) => (p.$highlighted ? Colors.textBlue() : Colors.textLight())};
+    color: ${(p) => (p.$highlighted ? Colors.Blue500 : Colors.Gray500)};
     font-weight: 600;
     margin-left: -3px;
     padding-right: 4px;

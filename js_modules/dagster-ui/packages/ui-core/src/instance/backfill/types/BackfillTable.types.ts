@@ -8,27 +8,27 @@ export type BackfillTableFragment = {
   status: Types.BulkActionStatus;
   isAssetBackfill: boolean;
   isValidSerialization: boolean;
+  partitionNames: Array<string> | null;
   numPartitions: number | null;
   timestamp: number;
   partitionSetName: string | null;
   hasCancelPermission: boolean;
   hasResumePermission: boolean;
-  partitionNames: Array<string> | null;
+  numCancelable: number;
   partitionSet: {
     __typename: 'PartitionSet';
     id: string;
-    mode: string;
     name: string;
     pipelineName: string;
+    mode: string;
     repositoryOrigin: {
       __typename: 'RepositoryOrigin';
-      id: string;
       repositoryName: string;
       repositoryLocationName: string;
+      id: string;
     };
   } | null;
   assetSelection: Array<{__typename: 'AssetKey'; path: Array<string>}> | null;
-  tags: Array<{__typename: 'PipelineTag'; key: string; value: string}>;
   error: {
     __typename: 'PythonError';
     message: string;
@@ -39,4 +39,18 @@ export type BackfillTableFragment = {
       error: {__typename: 'PythonError'; message: string; stack: Array<string>};
     }>;
   } | null;
+};
+
+export type PartitionSetForBackfillTableFragment = {
+  __typename: 'PartitionSet';
+  id: string;
+  name: string;
+  mode: string;
+  pipelineName: string;
+  repositoryOrigin: {
+    __typename: 'RepositoryOrigin';
+    id: string;
+    repositoryName: string;
+    repositoryLocationName: string;
+  };
 };

@@ -1,7 +1,6 @@
-from collections.abc import Mapping
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
-from dagster_managed_elements.types import ManagedElementDiff
+from .types import ManagedElementDiff
 
 UNSET = object()
 

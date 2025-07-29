@@ -1,4 +1,4 @@
-import {DagsterRepoOption} from '../workspace/WorkspaceContext/util';
+import {DagsterRepoOption} from '../workspace/WorkspaceContext';
 import {buildRepoAddress} from '../workspace/buildRepoAddress';
 import {repoAddressAsHumanString} from '../workspace/repoAddressAsString';
 

@@ -5,9 +5,8 @@ from dagster import (
     _check as check,
     op,
 )
-from dagster._core.storage.tags import COMPUTE_KIND_TAG
 
-from dagster_spark.configs import define_spark_config
+from .configs import define_spark_config
 
 
 def create_spark_op(
@@ -24,7 +23,7 @@ def create_spark_op(
         config_schema=define_spark_config(),
         ins={"start": In(Nothing)},
         out=Out(Nothing),
-        tags={COMPUTE_KIND_TAG: "spark", "main_class": main_class},
+        tags={"kind": "spark", "main_class": main_class},
         required_resource_keys=required_resource_keys,
     )
     def spark_op(context):

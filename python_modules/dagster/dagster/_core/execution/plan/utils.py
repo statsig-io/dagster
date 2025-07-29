@@ -1,13 +1,11 @@
 import sys
-from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable
-
-from dagster_shared.error import DagsterError
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Type
 
 import dagster._check as check
 from dagster._core.definitions.events import Failure, RetryRequested
 from dagster._core.errors import (
+    DagsterError,
     DagsterExecutionInterruptedError,
     DagsterUserCodeExecutionError,
     raise_execution_interrupts,
@@ -33,7 +31,7 @@ class RetryRequestedFromPolicy(RetryRequested):
 
 @contextmanager
 def op_execution_error_boundary(
-    error_cls: type[DagsterUserCodeExecutionError],
+    error_cls: Type[DagsterUserCodeExecutionError],
     msg_fn: Callable[[], str],
     step_context: "StepExecutionContext",
     **kwargs: Any,
@@ -43,13 +41,12 @@ def op_execution_error_boundary(
     as respecting the RetryPolicy if present.
     """
     from dagster._core.execution.context.system import StepExecutionContext
-    from dagster._utils.error import redact_user_stacktrace_if_enabled
 
     check.callable_param(msg_fn, "msg_fn")
     check.class_param(error_cls, "error_cls", superclass=DagsterUserCodeExecutionError)
     check.inst_param(step_context, "step_context", StepExecutionContext)
 
-    with redact_user_stacktrace_if_enabled(), raise_execution_interrupts():
+    with raise_execution_interrupts():
         step_context.log.begin_python_log_capture()
         retry_policy = step_context.op_retry_policy
 

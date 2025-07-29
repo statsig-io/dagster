@@ -1,12 +1,12 @@
-from typing import Optional
+from typing import List, Optional
 
 import click
 import dagster._check as check
 
-from automation.docker.dagster_docker import DagsterDockerImage
-from automation.docker.ecr import ensure_ecr_login
-from automation.docker.image_defs import get_image, list_images
-from automation.docker.utils import current_time_str, execute_docker_push, execute_docker_tag
+from .dagster_docker import DagsterDockerImage
+from .ecr import ensure_ecr_login
+from .image_defs import get_image, list_images
+from .utils import current_time_str, execute_docker_push, execute_docker_tag
 
 CLI_HELP = """This CLI is used for building the various Dagster images we use in test
 """
@@ -35,7 +35,6 @@ opt_build_dagster_version = click.option(
 opt_build_platform = click.option(
     "--platform",
     required=False,
-    default="linux/amd64",
     help="Target platform name to pass to `docker build`",
 )
 opt_build_timestamp = click.option(
@@ -106,7 +105,7 @@ def push_all(name: str):
         image.push(python_version)
 
 
-def push_to_registry(name: str, tags: list[str]) -> None:
+def push_to_registry(name: str, tags: List[str]) -> None:
     check.str_param(name, "name")
     check.list_param(tags, "tags", of_type=str)
 

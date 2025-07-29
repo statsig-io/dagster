@@ -1,6 +1,5 @@
 import Fuse from 'fuse.js';
 import memoize from 'lodash/memoize';
-import {Worker} from 'shared/workers/Worker.oss';
 
 import {ResultResponse, SearchResult} from './types';
 
@@ -13,7 +12,7 @@ type QueryListener = {
   listener: (response: QueryResponse) => void;
 };
 
-export type QueryResponse = {queryString: string; results: Fuse.FuseResult<SearchResult>[]};
+type QueryResponse = {queryString: string; results: Fuse.FuseResult<SearchResult>[]};
 
 export type WorkerSearchResult = {
   update: (results: SearchResult[]) => void;
@@ -34,7 +33,7 @@ export const createSearchWorker = (
   const searchWorker = spawnSearchWorker(key);
   const listeners: Set<QueryListener> = new Set();
 
-  searchWorker.onMessage((event) => {
+  searchWorker.addEventListener('message', (event) => {
     const {data} = event;
     if (data.type === 'results') {
       const {queryString, results} = data as ResultResponse;
