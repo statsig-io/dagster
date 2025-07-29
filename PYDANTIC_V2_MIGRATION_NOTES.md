@@ -40,13 +40,29 @@ This document tracks the migration from pydantic v1 to v2.
   - Changed `@validator` to `@field_validator`
   - Updated `pre=True` to `mode='before'`
 
+## Additional Fixes Applied
+
+### Pendulum Compatibility
+- Fixed pendulum v3.x compatibility in `dagster/_seven/compat/pendulum.py`
+- Added support for pendulum v3+ which uses `DateTime` instead of `Pendulum` class  
+- Updated timezone mocking and datetime creation for v3 compatibility
+
+### Pydantic v2 ModelMetaclass
+- Fixed `typing_utils.py` to use `pydantic.BaseModel.__class__` instead of removed `pydantic.main.ModelMetaclass`
+
 ## Still Needs Work
 
-### Complex Field Access Patterns
+### Complex Type Subscription Issues
+The following areas still need more work:
+
+1. **Resource type subscriptions**: `type[ConfigurableResourceFactory[~TResValue]]` patterns need updating for pydantic v2
+2. **Generic class ordering**: Pydantic v2 requires `BaseModel` to be inherited before `Generic[T]`
+
+### Complex Field Access Patterns  
 The following areas in `conversion_utils.py` still need more work:
 
 1. **Field shape handling**: Pydantic v2 changed how field shapes are represented and accessed
-2. **Key field access**: `pydantic_field.key_field` may not exist in v2
+2. **Key field access**: `pydantic_field.key_field` may not exist in v2  
 3. **Discriminator handling**: `pydantic_field.field_info.discriminator` has changed
 4. **Allow none detection**: `pydantic_field.allow_none` needs new approach
 5. **Default value handling**: Default value access patterns have changed
