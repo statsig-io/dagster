@@ -280,10 +280,10 @@ class ConfigurableResourceFactoryState(NamedTuple):
 
 
 class ConfigurableResourceFactory(
-    Generic[TResValue],
     Config,
     TypecheckAllowPartialResourceInitParams,
     AllowDelayedDependencies,
+    Generic[TResValue],
     ABC,
     metaclass=BaseResourceMeta,
 ):
@@ -712,7 +712,7 @@ class PartialResourceState(NamedTuple):
     nested_resources: Dict[str, Any]
 
 
-class PartialResource(Generic[TResValue], AllowDelayedDependencies, MakeConfigCacheable):
+class PartialResource(MakeConfigCacheable, AllowDelayedDependencies, Generic[TResValue]):
     data: Dict[str, Any]
     resource_cls: Type[ConfigurableResourceFactory[TResValue]]
 
