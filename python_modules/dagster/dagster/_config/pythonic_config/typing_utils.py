@@ -51,7 +51,7 @@ class LateBoundTypesForResourceTypeChecking:
 
 
 @dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
-class BaseConfigMeta(pydantic.main.ModelMetaclass):
+class BaseConfigMeta(pydantic.BaseModel.__class__):
     def __new__(cls, name, bases, namespaces, **kwargs) -> Any:
         annotations = namespaces.get("__annotations__", {})
 
