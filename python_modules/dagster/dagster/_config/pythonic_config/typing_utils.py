@@ -12,6 +12,28 @@ if TYPE_CHECKING:
     from dagster._config.pythonic_config import PartialResource
 
 
+def _annotations_from_class_namespace(namespaces: dict) -> dict:
+    """Return evaluated annotations for a class namespace.
+
+    Python 3.14 (PEP 649) defers annotations into ``__annotate_func__`` instead of putting an
+    ``__annotations__`` dict in the class namespace. ``BaseResourceMeta`` previously did
+    ``namespaces.get("__annotations__", {})`` and then wrote that empty dict back, which wiped the
+    deferred annotations and broke pydantic field inference on 3.14.
+    """
+    annotations = namespaces.get("__annotations__")
+    if annotations is not None:
+        return dict(annotations)
+    try:
+        import annotationlib
+
+        annotate = annotationlib.get_annotate_from_class_namespace(namespaces)
+        if annotate is None:
+            return {}
+        return annotationlib.call_annotate_function(annotate, annotationlib.Format.VALUE)
+    except Exception:
+        return {}
+
+
 # Since a metaclass is invoked by Resource before Resource or PartialResource is defined, we need to
 # define a temporary class to use as a placeholder for use in the initial metaclass invocation.
 #
@@ -53,7 +75,9 @@ class LateBoundTypesForResourceTypeChecking:
 @dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class BaseConfigMeta(pydantic.main.ModelMetaclass):
     def __new__(cls, name, bases, namespaces, **kwargs) -> Any:
-        annotations = namespaces.get("__annotations__", {})
+        annotations = _annotations_from_class_namespace(namespaces)
+        if annotations:
+            namespaces["__annotations__"] = annotations
 
         # Need try/catch because DagsterType may not be loaded when some of the base Config classes are
         # being created
@@ -96,8 +120,8 @@ class BaseResourceMeta(BaseConfigMeta):
     """
 
     def __new__(cls, name, bases, namespaces, **kwargs) -> Any:
-        # Gather all type annotations from the class and its base classes
-        annotations = namespaces.get("__annotations__", {})
+        # Gather all type annotations from the class namespace (PEP 649-aware on 3.14+).
+        annotations = _annotations_from_class_namespace(namespaces)
         for field in annotations:
             if not field.startswith("__"):
                 # Check if the annotation is a ResourceDependency
