@@ -18,7 +18,7 @@ _IS_PENDULUM_3 = (
 def mock_pendulum_timezone(override_timezone):
     # Pendulum 2 and 3 share test_local_timezone / timezone APIs.
     if _IS_PENDULUM_2 or _IS_PENDULUM_3:
-        with pendulum.tz.test_local_timezone(pendulum.tz.timezone(override_timezone)):
+        with pendulum.tz.test_local_timezone(pendulum.timezone(override_timezone)):
             yield
     else:
         with pendulum.tz.LocalTimezone.test(pendulum.Timezone.load(override_timezone)):

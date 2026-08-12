@@ -122,7 +122,7 @@ class FreshnessPolicy(
             )
             try:
                 # Verify that the timezone can be loaded
-                pendulum.tz.timezone(cron_schedule_timezone)  # type: ignore
+                pendulum.timezone(cron_schedule_timezone)  # type: ignore
             except Exception as e:
                 raise DagsterInvalidDefinitionError(
                     "Invalid cron schedule timezone '{cron_schedule_timezone}'.   "

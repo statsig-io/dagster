@@ -685,7 +685,7 @@ class ScheduleDefinition(IHasInternalInit):
         if self._execution_timezone:
             try:
                 # Verify that the timezone can be loaded
-                pendulum.tz.timezone(self._execution_timezone)  # type: ignore
+                pendulum.timezone(self._execution_timezone)  # type: ignore
             except Exception as e:
                 raise DagsterInvalidDefinitionError(
                     f"Invalid execution timezone {self._execution_timezone} for {name}"
