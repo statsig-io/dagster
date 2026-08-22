@@ -10,7 +10,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import mlflow
-import pandas as pd
 import pytest
 from dagster import op
 from dagster._core.definitions.decorators.job_decorator import job
@@ -234,34 +233,34 @@ def test_set_all_tags(mock_mlflow_set_tags, context):
     mock_mlflow_set_tags.assert_called_once_with(tags)
 
 
-@pytest.mark.parametrize("run_df", [pd.DataFrame(), pd.DataFrame(data={"run_id": ["100"]})])
+@pytest.mark.parametrize("runs", [[], [MagicMock(info=MagicMock(run_id="100"))]])
 @pytest.mark.parametrize(
     "experiment", [None, MagicMock(experiment_id="1"), MagicMock(experiment_id="lol")]
 )
-def test_get_current_run_id(context, experiment, run_df):
+def test_get_current_run_id(context, experiment, runs):
     with patch.object(MlFlow, "_setup"):
         # Given: an initialization of the mlflow object
         mlf = MlFlow(context)
 
-    with patch("mlflow.search_runs", return_value=run_df):
+    with patch("mlflow.search_runs", return_value=runs):
         # when: _get_current_run_id is called
         run_id = mlf._get_current_run_id(experiment=experiment)  # noqa: SLF001
     # Then: the run_id id provided is the same as what was provided
-    if not run_df.empty:
-        assert run_id == run_df.run_id.values[0]
+    if runs:
+        assert run_id == runs[0].info.run_id
     else:
         assert run_id is None
 
 
 def test_get_current_run_id_with_one_mlflow_error(context):
     experiment = MagicMock(experiment_id="1")
-    run_df = pd.DataFrame(data={"run_id": ["100"]})
+    runs = [MagicMock(info=MagicMock(run_id="100"))]
 
     with patch.object(MlFlow, "_setup"):
         # Given: an initialization of the mlflow object
         mlf = MlFlow(context)
 
-    # Simulate MlflowException being raised once, then return the run_df
+    # Simulate MlflowException being raised once, then return the runs
     with patch(
         "mlflow.search_runs",
         side_effect=[
@@ -269,14 +268,14 @@ def test_get_current_run_id_with_one_mlflow_error(context):
                 "Max retries exceeded with url: /api/2.0/mlflow/runs/search (Caused by ResponseError('too many 429 error "
                 "responses')"
             ),
-            run_df,
+            runs,
         ],
     ):
         # when: _get_current_run_id is called
         run_id = mlf._get_current_run_id(experiment=experiment)  # noqa: SLF001
 
     # Then: the run_id id provided is the same as what was provided
-    assert run_id == run_df.run_id.values[0]
+    assert run_id == runs[0].info.run_id
 
 
 @patch("atexit.unregister")
@@ -420,11 +419,15 @@ def test_execute_op_with_mlflow_resource():
     @op(required_resource_keys={"mlflow"})
     def op1(_):
         mlflow.log_params(params)
-        run_id_holder["op1_run_id"] = mlflow.active_run().info.run_id
+        active_run = mlflow.active_run()
+        assert active_run is not None
+        run_id_holder["op1_run_id"] = active_run.info.run_id
 
     @op(required_resource_keys={"mlflow"})
     def op2(_, _arg1):
-        run_id_holder["op2_run_id"] = mlflow.active_run().info.run_id
+        active_run = mlflow.active_run()
+        assert active_run is not None
+        run_id_holder["op2_run_id"] = active_run.info.run_id
 
     @job(resource_defs={"mlflow": mlflow_tracking})
     def mlf_job():
