@@ -46,7 +46,7 @@ concurrency:
 jobs:
   deploy:
     if: github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     # Deploy to Vercel Previews on pull request, push to master branch
     steps:
       - name: Get branch preview subdomain
