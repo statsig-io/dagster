@@ -10,7 +10,7 @@ on:
       - js_modules/dagster-ui/packages/ui-core/**
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Get branch preview subdomain
         if: github.event_name == 'pull_request'
