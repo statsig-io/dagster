@@ -46,7 +46,7 @@ def main() -> None:
             text=True,
             capture_output=True,
             check=False,
-            timeout=min(120.0, remaining) if not cleanup else 30,
+            timeout=min(240.0, remaining) if not cleanup else 30,
         )
         with (args.output / "output.log").open("a", encoding="utf-8") as output:
             output.write(result.stdout + result.stderr)
@@ -180,6 +180,7 @@ def main() -> None:
                 "/daemon/tests/test_cli.py",
                 "/daemon/tests/test_scheduler.py",
                 "/daemon/tests/test_webserver.py",
+                "/daemon/tests/test_recovery.py",
             ]
         )
         passed = True

@@ -76,13 +76,18 @@ def test_actual_workspace_serialization_retry_and_permanent_error() -> None:
         DagsterInstance.local_temp() as instance,
         WorkspaceProcessContext(instance, None) as workspace,
     ):
-        for error, attempts in ((unavailable, 2), (ValueError("bad definitions"), 1)):
+        for error, attempts, cls_name in (
+            (unavailable, 2, DagsterUserCodeUnreachableError.__name__),
+            (ValueError("bad definitions"), 1, "ValueError"),
+        ):
             with patch.object(
                 GrpcServerCodeLocationOrigin, "create_location", side_effect=error
             ) as create:
                 with retries.workspace_retries(sleep), pytest.warns(UserWarning):
                     entry = workspace._load_location(origin, reload=False)
                 assert entry.load_error is not None
+                assert entry.code_location is None
+                assert entry.load_error.cls_name == cls_name
                 assert create.call_count == attempts
 
 
