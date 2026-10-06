@@ -1145,7 +1145,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "dagster", editable = "../../dagster" },
-    { name = "mlflow" },
+    { name = "mlflow", specifier = ">=3.15.0" },
     { name = "pandas", specifier = "<3.0.0" },
     { name = "protobuf", specifier = "!=5.29.0" },
 ]
