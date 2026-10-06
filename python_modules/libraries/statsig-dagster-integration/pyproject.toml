@@ -1,0 +1,30 @@
+[project]
+name = "statsig-dagster-integration"
+version = "1.13.25.1"
+description = "Explicit Statsig integration for the pinned Dagster 1.13.25 SDK"
+requires-python = ">=3.10,<3.11"
+readme = "README.md"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+    "dagster==1.13.25",
+    "dagster-webserver==1.13.25",
+    "dagster-postgres==0.29.25",
+    "google-cloud-profiler>=4.1.0,<5",
+]
+
+[build-system]
+requires = ["poetry-core==2.2.1"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "statsig_dagster_integration" }]
+
+[tool.ruff]
+extend = "../../../pyproject.toml"
+
+[tool.ruff.lint.extend-per-file-ignores]
+# Pinned SDK bridges and boundary tests intentionally inspect private methods.
+"statsig_dagster_integration/retries.py" = ["SLF001"]
+"tests/test_cli.py" = ["SLF001"]
+"tests/test_postgres.py" = ["SLF001"]
+"tests/test_runtime.py" = ["SLF001"]
