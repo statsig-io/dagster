@@ -4,12 +4,16 @@ import re
 from collections.abc import Iterable, Mapping
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Final, Optional
+from typing import Any, Final, cast
 
+import dagster_shared.check as check
 from dagster_shared.record import record
 from dagster_shared.serdes.serdes import whitelist_for_serdes
 from dagster_shared.seven import resolve_module_pattern
+from dagster_shared.utils import find_uv_workspace_root
 from dagster_shared.utils.config import get_canonical_defs_module_name
+from dagster_shared.yaml_utils import safe_load_yaml
+from dotenv import dotenv_values
 from packaging.version import Version
 from typing_extensions import Self
 
@@ -19,12 +23,10 @@ from dagster_dg_core.config import (
     DgRawBuildConfig,
     DgRawCliConfig,
     DgWorkspaceProjectSpec,
-    discover_config_file,
-    has_dg_user_file_config,
-    load_dg_root_file_config,
-    load_dg_user_file_config,
-    load_dg_workspace_file_config,
+    discover_and_validate_config_files,
+    is_workspace_file_config,
     modify_dg_toml_config,
+    raise_file_config_validation_error,
 )
 from dagster_dg_core.error import DgError
 from dagster_dg_core.utils import (
@@ -34,7 +36,6 @@ from dagster_dg_core.utils import (
     NOT_WORKSPACE_OR_PROJECT_ERROR_MESSAGE,
     exit_with_error,
     generate_project_and_activated_venv_mismatch_warning,
-    generate_tool_dg_cli_in_project_in_workspace_error_message,
     get_activated_venv,
     get_logger,
     get_toml_node,
@@ -49,6 +50,7 @@ from dagster_dg_core.utils.warnings import emit_warning
 _DEFAULT_PROJECT_CODE_LOCATION_TARGET_MODULE: Final = "definitions"
 _DEFAULT_PROJECT_PLUGIN_MODULE: Final = "components"
 _DEFAULT_PROJECT_PLUGIN_MODULE_REGISTRY_FILE: Final = "plugin_modules.json"
+_ALTERNATIVE_DEFS_SUBMODULE: Final = "definitions"
 _EXCLUDED_COMPONENT_DIRECTORIES: Final = {"__pycache__"}
 DG_PLUGIN_ENTRY_POINT_GROUP: Final = "dagster_dg_cli.registry_modules"
 # Remove in future, in place for backcompat
@@ -57,6 +59,7 @@ OLD_DG_PLUGIN_ENTRY_POINT_GROUPS = [
     "dagster_dg.plugin",
     "dagster_dg_cli.plugin",
 ]
+DG_PROJECT_PYTHON_EXECUTABLE_ENV_VAR: Final = "DG_PROJECT_PYTHON_EXECUTABLE"
 
 
 def _should_capture_components_cli_stderr() -> bool:
@@ -67,8 +70,8 @@ def _should_capture_components_cli_stderr() -> bool:
 class DgContext:
     root_path: Path
     config: DgConfig
-    cli_opts: Optional[DgRawCliConfig] = None
-    _workspace_root_path: Optional[Path]
+    cli_opts: DgRawCliConfig | None = None
+    _workspace_root_path: Path | None
 
     # We need to preserve CLI options for the context to be able to derive new contexts, because
     # cli_options override everything else. If we didn't maintain them we wouldn't be able to tell
@@ -77,8 +80,8 @@ class DgContext:
         self,
         config: DgConfig,
         root_path: Path,
-        workspace_root_path: Optional[Path] = None,
-        cli_opts: Optional[DgRawCliConfig] = None,
+        workspace_root_path: Path | None = None,
+        cli_opts: DgRawCliConfig | None = None,
     ):
         self.config = config
         self.root_path = root_path
@@ -119,7 +122,6 @@ class DgContext:
                 )
             exit_with_error(NOT_PROJECT_ERROR_MESSAGE)
         _validate_project_venv_activated(context)
-        _validate_autoload_defs(context)
         return context
 
     @classmethod
@@ -187,63 +189,41 @@ class DgContext:
         cls,
         path: Path,
         command_line_config: DgRawCliConfig,
+        *,
+        emit_log: bool = False,
     ) -> Self:
-        root_config_path = discover_config_file(path)
-        workspace_config_path = discover_config_file(
-            path, lambda x: bool(x.get("directory_type") == "workspace")
-        )
+        result = discover_and_validate_config_files(path)
 
-        cli_config_warning: Optional[str] = None
-        if root_config_path:
-            root_path = root_config_path.parent
-            root_file_config = load_dg_root_file_config(root_config_path)
-            if workspace_config_path is None:
-                workspace_root_path = None
-                container_workspace_file_config = None
-
-            # Only load the workspace config if the workspace root is different from the first
-            # detected root.
-            elif workspace_config_path == root_config_path:
-                workspace_root_path = workspace_config_path.parent
-                container_workspace_file_config = None
-            else:
-                workspace_root_path = workspace_config_path.parent
-                container_workspace_file_config = load_dg_workspace_file_config(
-                    workspace_config_path
+        if result.has_root_file and result.root_result.has_errors:
+            raise_file_config_validation_error(result.root_result.message, path)
+        elif result.has_container_workspace_file:
+            if result.container_workspace_result.has_errors:
+                raise_file_config_validation_error(
+                    result.container_workspace_result.message,
+                    check.not_none(result.container_workspace_file_path),
                 )
-                if "cli" in root_file_config:
-                    del root_file_config["cli"]
-                    # We have to emit this _after_ we merge all configs to ensure we have the right
-                    # suppression list.
-                    cli_config_warning = generate_tool_dg_cli_in_project_in_workspace_error_message(
-                        root_path, workspace_root_path
-                    )
-        else:
-            root_path = Path.cwd()
-            workspace_root_path = None
-            root_file_config = None
-            container_workspace_file_config = None
+            elif not is_workspace_file_config(result.container_workspace_result.config):
+                raise_file_config_validation_error("Expected a workspace configuration.", path)
 
-        user_config = load_dg_user_file_config() if has_dg_user_file_config() else None
         config = DgConfig.from_partial_configs(
-            root_file_config=root_file_config,
-            container_workspace_file_config=container_workspace_file_config,
+            root_file_config=result.root_config,
+            container_workspace_file_config=result.container_workspace_config,
             command_line_config=command_line_config,
-            user_config=user_config,
+            user_config=result.user_config,
         )
-        if cli_config_warning:
+        if result.cli_config_warning:
             emit_warning(
-                "cli_config_in_workspace_project", cli_config_warning, config.cli.suppress_warnings
+                "cli_config_in_workspace_project",
+                result.cli_config_warning,
+                config.cli.suppress_warnings,
             )
 
-        context = cls(
+        return cls(
             config=config,
-            root_path=root_path,
-            workspace_root_path=workspace_root_path,
+            root_path=result.root_path,
+            workspace_root_path=result.workspace_root_path,
             cli_opts=command_line_config,
         )
-
-        return context
 
     @classmethod
     def default(cls) -> Self:
@@ -254,7 +234,7 @@ class DgContext:
         if not ((root_path / "pyproject.toml").exists() or (root_path / "dg.toml").exists()):
             raise DgError(f"Cannot find `pyproject.toml` at {root_path}")
         return self.__class__.from_file_discovery_and_command_line_config(
-            root_path, self.cli_opts or {}
+            root_path, self.cli_opts or cast("DgRawCliConfig", {})
         )
 
     def component_registry_paths(self) -> list[Path]:
@@ -325,12 +305,61 @@ class DgContext:
             raise DgError("`project_name` is only available in a Dagster project context")
         return self.root_path.name
 
+    @cached_property
+    def package_name(self) -> str:
+        """Returns the package name from [project].name in pyproject.toml.
+
+        This is the name used by uv/pip and may differ from the directory name.
+        """
+        if not self.is_project:
+            raise DgError("`package_name` is only available in a Dagster project context")
+
+        import tomlkit
+
+        if self.pyproject_toml_path.exists():
+            toml = tomlkit.parse(self.pyproject_toml_path.read_text())
+            if has_toml_node(toml, ("project", "name")):
+                return get_toml_node(toml, ("project", "name"), str)
+
+        raise DgError(f"Cannot find [project].name in {self.pyproject_toml_path}")
+
+    @cached_property
+    def uv_workspace_root(self) -> Path | None:
+        """Walk up directories to find a uv workspace root.
+
+        Returns the workspace root path or None if not found.
+        A uv workspace is identified by [tool.uv.workspace] in pyproject.toml.
+        """
+        result = find_uv_workspace_root(self.root_path)
+        return result[0] if result else None
+
     @property
+    def build_root_path(self) -> Path:
+        """Returns the root path for build operations.
+
+        If in a uv workspace, returns the workspace root.
+        Otherwise, returns the project/workspace root_path.
+        """
+        return self.uv_workspace_root or self.root_path
+
+    @cached_property
     def project_python_executable(self) -> Path:
         if not self.is_project:
             raise DgError(
                 "`project_python_executable` is only available in a Dagster project context"
             )
+
+        # Temporary "backdoor" for users with non-standard virtual environment layouts (uv
+        # workspaces, etc.). If a `.env` file in the project root sets
+        # `DG_PROJECT_PYTHON_EXECUTABLE`, that value is used as the python executable path
+        # (relative paths are resolved against the project root). Otherwise we fall back to
+        # the default `.venv` adjacent to the project root.
+        env_path = self.root_path / ".env"
+        if env_path.exists():
+            value = dotenv_values(env_path).get(DG_PROJECT_PYTHON_EXECUTABLE_ENV_VAR)
+            if value:
+                return self.root_path / value
+
         return self.root_path / get_venv_executable(Path(".venv"))
 
     @cached_property
@@ -338,16 +367,15 @@ class DgContext:
         return self.root_path / "build.yaml"
 
     @cached_property
-    def build_config(self) -> Optional[DgRawBuildConfig]:
-        import yaml
+    def build_config(self) -> DgRawBuildConfig | None:
 
         build_yaml_path = self.build_config_path
 
         if not build_yaml_path.resolve().exists():
             return None
 
-        with open(build_yaml_path) as f:
-            build_config_dict = yaml.safe_load(f)
+        with open(build_yaml_path, encoding="utf-8") as f:
+            build_config_dict = safe_load_yaml(f)
             build_directory = build_config_dict.get("directory")
             if build_directory:
                 build_directory_path = Path(build_directory)
@@ -362,24 +390,34 @@ class DgContext:
         return self.root_path / "container_context.yaml"
 
     @cached_property
-    def container_context_config(self) -> Optional[Mapping[str, Any]]:
-        import yaml
+    def container_context_config(self) -> Mapping[str, Any] | None:
 
         container_context_yaml_path = self.container_context_config_path
 
         if not container_context_yaml_path.resolve().exists():
             return None
 
-        with open(container_context_yaml_path) as f:
-            return yaml.safe_load(f)
+        with open(container_context_yaml_path, encoding="utf-8") as f:
+            return safe_load_yaml(f)
 
     @cached_property
     def defs_module_name(self) -> str:
         if not self.config.project:
             raise DgError("`defs_module_name` is only available in a Dagster project context")
-        return get_canonical_defs_module_name(
+        canonical = get_canonical_defs_module_name(
             self.config.project.defs_module, self.root_module_name
         )
+        # If the user explicitly configured a defs_module, use it as-is
+        if self.config.project.defs_module:
+            return canonical
+        # Auto-detect: if the default "defs" path doesn't exist, try "definitions"
+        default_path = self.get_path_for_local_module(canonical, require_exists=False)
+        if not default_path.exists() and not default_path.with_suffix(".py").exists():
+            alt_module = f"{self.root_module_name}.{_ALTERNATIVE_DEFS_SUBMODULE}"
+            alt_path = self.get_path_for_local_module(alt_module, require_exists=False)
+            if alt_path.exists() or alt_path.with_suffix(".py").exists():
+                return alt_module
+        return canonical
 
     @cached_property
     def _defs_path(self) -> Path:
@@ -415,9 +453,6 @@ class DgContext:
     def target_args(self) -> Mapping[str, str]:
         if not self.config.project:
             raise DgError("`target_args` are only available in a Dagster project context")
-
-        if self.config.project.autoload_defs:
-            return {"autoload_defs_module_name": self.defs_module_name}
 
         return {"module_name": self.code_location_target_module_name}
 
@@ -676,33 +711,6 @@ def _validate_plugin_entry_point(context: DgContext) -> None:
                 """,
                 context.config.cli.suppress_warnings,
             )
-
-
-def _validate_autoload_defs(context: DgContext) -> None:
-    """If the project has autoload_defs enabled, warn on the presence of a sibling definitions.py."""
-    if not context.config.project:
-        raise DgError("`_validate_autoload_defs` is only available in a Dagster project context")
-
-    # We only issue this warning for the default code location target module setting, since we catch
-    # a non-default setting during config validation.
-    if (
-        context.config.project.autoload_defs
-        and (
-            context.root_module_path / f"{_DEFAULT_PROJECT_CODE_LOCATION_TARGET_MODULE}.py"
-        ).exists()
-    ):
-        emit_warning(
-            "autoload_defs_with_definitions_py",
-            f"""
-            `project.autoload_defs` is enabled, but a code location load target module was also found at:
-
-                {context.code_location_target_path}
-
-            When `project.autoload_defs` is enabled, the code location load target module is not
-            automatically loaded. Consider removing the module at the above path to avoid confusion.
-        """,
-            context.config.cli.suppress_warnings,
-        )
 
 
 DG_UPDATE_CHECK_INTERVAL = datetime.timedelta(hours=1)

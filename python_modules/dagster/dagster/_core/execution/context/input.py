@@ -9,7 +9,11 @@ from dagster._core.definitions.metadata import ArbitraryMetadataMapping, Metadat
 from dagster._core.definitions.partitions.context import partition_loading_context
 from dagster._core.definitions.partitions.partition_key_range import PartitionKeyRange
 from dagster._core.definitions.partitions.subset import PartitionsSubset
-from dagster._core.definitions.partitions.utils import TimeWindow
+from dagster._core.definitions.partitions.utils import (
+    TimeWindow,
+    has_one_dimension_time_window_partitioning,
+    time_window_for_partition_key_range,
+)
 from dagster._core.errors import DagsterInvariantViolationError
 from dagster._core.instance import DagsterInstance
 from dagster._utils.warnings import normalize_renamed_param
@@ -30,6 +34,7 @@ if TYPE_CHECKING:
     breaking_version="2.0",
     additional_warn_text="Use `definition_metadata` instead.",
 )
+@public
 class InputContext:
     """The ``context`` object available to the load_input method of :py:class:`InputManager`.
 
@@ -50,24 +55,24 @@ class InputContext:
     def __init__(
         self,
         *,
-        name: Optional[str] = None,
-        job_name: Optional[str] = None,
+        name: str | None = None,
+        job_name: str | None = None,
         op_def: Optional["OpDefinition"] = None,
-        config: Optional[Any] = None,
-        definition_metadata: Optional[ArbitraryMetadataMapping] = None,
+        config: Any | None = None,
+        definition_metadata: ArbitraryMetadataMapping | None = None,
         upstream_output: Optional["OutputContext"] = None,
         dagster_type: Optional["DagsterType"] = None,
         log_manager: Optional["DagsterLogManager"] = None,
-        resource_config: Optional[Mapping[str, Any]] = None,
-        resources: Optional[Union["Resources", Mapping[str, Any]]] = None,
+        resource_config: Mapping[str, Any] | None = None,
+        resources: Union["Resources", Mapping[str, Any]] | None = None,
         step_context: Optional["StepExecutionContext"] = None,
-        asset_key: Optional[AssetKey] = None,
-        partition_key: Optional[str] = None,
-        asset_partitions_subset: Optional[PartitionsSubset] = None,
+        asset_key: AssetKey | None = None,
+        partition_key: str | None = None,
+        asset_partitions_subset: PartitionsSubset | None = None,
         asset_partitions_def: Optional["PartitionsDefinition"] = None,
-        instance: Optional[DagsterInstance] = None,
+        instance: DagsterInstance | None = None,
         # deprecated
-        metadata: Optional[ArbitraryMetadataMapping] = None,
+        metadata: ArbitraryMetadataMapping | None = None,
     ):
         from dagster._core.definitions.resource_definition import IContainsGenerator, Resources
         from dagster._core.execution.build_resources import build_resources
@@ -89,10 +94,7 @@ class InputContext:
         self._resource_config = resource_config
         self._step_context = step_context
         self._asset_key = asset_key
-        if self._step_context and self._step_context.has_partition_key:
-            self._partition_key: Optional[str] = self._step_context.partition_key
-        else:
-            self._partition_key = partition_key
+        self._partition_key = partition_key
 
         self._asset_partitions_subset = asset_partitions_subset
         self._asset_partitions_def = asset_partitions_def
@@ -184,7 +186,7 @@ class InputContext:
     @deprecated(breaking_version="2.0.0", additional_warn_text="Use definition_metadata instead")
     @public
     @property
-    def metadata(self) -> Optional[ArbitraryMetadataMapping]:
+    def metadata(self) -> ArbitraryMetadataMapping | None:
         """Deprecated: Use definitiion_metadata instead."""
         return self._definition_metadata
 
@@ -236,7 +238,7 @@ class InputContext:
 
     @public
     @property
-    def resource_config(self) -> Optional[Mapping[str, Any]]:
+    def resource_config(self) -> Mapping[str, Any] | None:
         """The config associated with the resource that initializes the InputManager."""
         return self._resource_config
 
@@ -347,14 +349,14 @@ class InputContext:
         if subset is None:
             check.failed("The input does not correspond to a partitioned asset.")
 
-        partition_keys = list(subset.get_partition_keys())
-        if len(partition_keys) == 1:
-            return partition_keys[0]
-        else:
-            check.failed(
-                f"Tried to access partition key for asset '{self.asset_key}', "
-                f"but the number of input partitions != 1: '{subset}'."
-            )
+        keys_iter = iter(subset.get_partition_keys())
+        first = next(keys_iter, None)
+        if first is not None and next(keys_iter, None) is None:
+            return first
+        check.failed(
+            f"Tried to access partition key for asset '{self.asset_key}', "
+            f"but the number of input partitions != 1: '{subset}'."
+        )
 
     @public
     @property
@@ -370,7 +372,10 @@ class InputContext:
                 "Tried to access asset_partition_key_range, but the asset is not partitioned.",
             )
 
-        partition_key_ranges = subset.get_partition_key_ranges(self.asset_partitions_def)
+        with partition_loading_context(dynamic_partitions_store=self._instance):
+            partition_key_ranges = subset.get_partition_key_ranges(
+                self._asset_partitions_def  # ty: ignore[invalid-argument-type]
+            )
         if len(partition_key_ranges) != 1:
             check.failed(
                 "Tried to access asset_partition_key_range, but there are "
@@ -410,7 +415,20 @@ class InputContext:
                 "Tried to access asset_partitions_time_window, but the asset is not partitioned.",
             )
 
-        return self.step_context.asset_partitions_time_window_for_input(self.name)
+        partitions_def = self._asset_partitions_def
+        if partitions_def is None:
+            raise DagsterInvariantViolationError(
+                "Tried to get asset partitions time window for an input that does not"
+                " have a partitions definition."
+            )
+
+        if not has_one_dimension_time_window_partitioning(partitions_def):
+            raise DagsterInvariantViolationError(
+                "Tried to get asset partitions time window for an input that corresponds"
+                " to a partitioned asset that is not time-partitioned."
+            )
+
+        return time_window_for_partition_key_range(partitions_def, self.asset_partition_key_range)
 
     @public
     def get_identifier(self) -> Sequence[str]:
@@ -466,7 +484,7 @@ class InputContext:
     def add_input_metadata(
         self,
         metadata: Mapping[str, Any],
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> None:
         """Accepts a dictionary of metadata. Metadata entries will appear on the LOADED_INPUT event.
         If the input is an asset, metadata will be attached to an asset observation.
@@ -534,28 +552,29 @@ class InputContext:
         return result
 
 
+@public
 @deprecated_param(
     param="metadata",
     breaking_version="2.0",
     additional_warn_text="Use `definition_metadata` instead.",
 )
 def build_input_context(
-    name: Optional[str] = None,
-    config: Optional[Any] = None,
-    definition_metadata: Optional[ArbitraryMetadataMapping] = None,
+    name: str | None = None,
+    config: Any | None = None,
+    definition_metadata: ArbitraryMetadataMapping | None = None,
     upstream_output: Optional["OutputContext"] = None,
     dagster_type: Optional["DagsterType"] = None,
-    resource_config: Optional[Mapping[str, Any]] = None,
-    resources: Optional[Mapping[str, Any]] = None,
+    resource_config: Mapping[str, Any] | None = None,
+    resources: Mapping[str, Any] | None = None,
     op_def: Optional["OpDefinition"] = None,
     step_context: Optional["StepExecutionContext"] = None,
-    asset_key: Optional[CoercibleToAssetKey] = None,
-    partition_key: Optional[str] = None,
-    asset_partition_key_range: Optional[PartitionKeyRange] = None,
+    asset_key: CoercibleToAssetKey | None = None,
+    partition_key: str | None = None,
+    asset_partition_key_range: PartitionKeyRange | None = None,
     asset_partitions_def: Optional["PartitionsDefinition"] = None,
-    instance: Optional[DagsterInstance] = None,
+    instance: DagsterInstance | None = None,
     # deprecated
-    metadata: Optional[ArbitraryMetadataMapping] = None,
+    metadata: ArbitraryMetadataMapping | None = None,
 ) -> "InputContext":
     """Builds input context from provided parameters.
 
@@ -623,6 +642,8 @@ def build_input_context(
     asset_partitions_def = check.opt_inst_param(
         asset_partitions_def, "asset_partitions_def", PartitionsDefinition
     )
+    if partition_key and asset_key and asset_partition_key_range is None:
+        asset_partition_key_range = PartitionKeyRange(partition_key, partition_key)
     if asset_partitions_def and asset_partition_key_range:
         with partition_loading_context(dynamic_partitions_store=instance):
             asset_partitions_subset = asset_partitions_def.empty_subset().with_partition_key_range(
@@ -664,9 +685,9 @@ class KeyRangeNoPartitionsDefPartitionsSubset(PartitionsSubset):
     ) -> Iterable[str]:
         raise NotImplementedError()
 
-    def get_partition_keys(self, current_time: Optional[datetime] = None) -> Iterable[str]:
+    def get_partition_keys(self, current_time: datetime | None = None) -> Iterable[str]:
         if self._key_range.start == self._key_range.end:
-            return self._key_range.start
+            return [self._key_range.start]
         else:
             raise NotImplementedError()
 
@@ -678,7 +699,7 @@ class KeyRangeNoPartitionsDefPartitionsSubset(PartitionsSubset):
     def with_partition_keys(self, partition_keys: Iterable[str]) -> "PartitionsSubset":
         raise NotImplementedError()
 
-    def with_partition_key_range(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def with_partition_key_range(  # ty: ignore[invalid-method-override]
         self, partition_key_range: PartitionKeyRange
     ) -> "PartitionsSubset":
         raise NotImplementedError()
@@ -707,8 +728,8 @@ class KeyRangeNoPartitionsDefPartitionsSubset(PartitionsSubset):
         cls,
         partitions_def: "PartitionsDefinition",
         serialized: str,
-        serialized_partitions_def_unique_id: Optional[str],
-        serialized_partitions_def_class_name: Optional[str],
+        serialized_partitions_def_unique_id: str | None,
+        serialized_partitions_def_class_name: str | None,
     ) -> bool:
         raise NotImplementedError()
 

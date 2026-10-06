@@ -1,14 +1,15 @@
 import json
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from inspect import isfunction
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import dagster._check as check
 from dagster._config.pythonic_config import (
     ConfigurableIOManagerFactoryResourceDefinition,
     ConfigurableResourceFactoryResourceDefinition,
 )
+from dagster._core.definitions.asset_key import AssetJobKey
 from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
 from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
 from dagster._core.definitions.assets.graph.base_asset_graph import BaseAssetGraph
@@ -50,7 +51,7 @@ from dagster._core.errors import DagsterInvalidDefinitionError
 if TYPE_CHECKING:
     from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
     from dagster._core.definitions.events import AssetKey
-    from dagster.components.core.tree import ComponentTree
+    from dagster.components.core.component_tree import ComponentTree
 
 # We throw an error if the user attaches an instance of a custom `PartitionsDefinition` subclass to
 # a definition-- we can't support custom PartitionsDefinition subclasses due to us needing to load
@@ -118,25 +119,48 @@ def _env_vars_from_resource_defaults(resource_def: ResourceDefinition) -> set[st
 def _resolve_unresolved_job_def_lambda(
     unresolved_job_def: UnresolvedAssetJobDefinition,
     asset_graph: AssetGraph,
-    default_executor_def: Optional[ExecutorDefinition],
-    top_level_resources: Optional[Mapping[str, ResourceDefinition]],
-    default_logger_defs: Optional[Mapping[str, LoggerDefinition]],
+    default_executor_def: ExecutorDefinition | None,
+    top_level_resources: Mapping[str, ResourceDefinition] | None,
+    default_logger_defs: Mapping[str, LoggerDefinition] | None,
 ) -> Callable[[], JobDefinition]:
     def resolve_unresolved_job_def() -> JobDefinition:
-        job_def = unresolved_job_def.resolve(
-            asset_graph=asset_graph,
-            default_executor_def=default_executor_def,
-            resource_defs=top_level_resources,
-        )
-        return _process_resolved_job(job_def, default_executor_def, default_logger_defs)
+        try:
+            job_def = unresolved_job_def.resolve(
+                asset_graph=asset_graph,
+                default_executor_def=default_executor_def,
+                resource_defs=top_level_resources,
+            )
+            return _process_resolved_job(job_def, default_executor_def, default_logger_defs)
+        except Exception as e:
+            raise DagsterInvalidDefinitionError(
+                f"Failed to resolve asset job {unresolved_job_def.name}"
+            ) from e
 
     return resolve_unresolved_job_def
 
 
+def _conditioned_asset_job_keys_by_name(
+    unresolved_jobs: dict[str, UnresolvedAssetJobDefinition],
+    jobs: dict[str, JobDefinition | Callable[[], JobDefinition]],
+) -> dict[str, AssetJobKey]:
+    """Names of jobs defined with an automation condition, mapped to their AssetJobKey.
+
+    Conditioned jobs can arrive either unresolved (from ``define_asset_job``) or already
+    resolved (e.g. ``graph.to_job(automation_condition=...)`` passed directly).
+    """
+    names = {name for name, uj in unresolved_jobs.items() if uj.automation_condition is not None}
+    names |= {
+        name
+        for name, job in jobs.items()
+        if isinstance(job, JobDefinition) and job.automation_condition is not None
+    }
+    return {name: AssetJobKey(name) for name in names}
+
+
 def _process_resolved_job(
     job_def: JobDefinition,
-    default_executor_def: Optional[ExecutorDefinition],
-    default_logger_defs: Optional[Mapping[str, LoggerDefinition]],
+    default_executor_def: ExecutorDefinition | None,
+    default_logger_defs: Mapping[str, LoggerDefinition] | None,
 ) -> JobDefinition:
     job_def.validate_resource_requirements_satisfied()
 
@@ -151,10 +175,10 @@ def _process_resolved_job(
 
 def build_caching_repository_data_from_list(
     repository_definitions: Sequence[RepositoryElementDefinition],
-    default_executor_def: Optional[ExecutorDefinition] = None,
-    default_logger_defs: Optional[Mapping[str, LoggerDefinition]] = None,
-    top_level_resources: Optional[Mapping[str, ResourceDefinition]] = None,
-    resource_key_mapping: Optional[Mapping[int, str]] = None,
+    default_executor_def: ExecutorDefinition | None = None,
+    default_logger_defs: Mapping[str, LoggerDefinition] | None = None,
+    top_level_resources: Mapping[str, ResourceDefinition] | None = None,
+    resource_key_mapping: Mapping[int, str] | None = None,
     component_tree: Optional["ComponentTree"] = None,
 ) -> CachingRepositoryData:
     from dagster._core.definitions import AssetsDefinition
@@ -163,7 +187,7 @@ def build_caching_repository_data_from_list(
     )
 
     schedule_and_sensor_names: set[str] = set()
-    jobs: dict[str, Union[JobDefinition, Callable[[], JobDefinition]]] = {}
+    jobs: dict[str, JobDefinition | Callable[[], JobDefinition]] = {}
     coerced_graphs: dict[str, JobDefinition] = {}
     unresolved_jobs: dict[str, UnresolvedAssetJobDefinition] = {}
     schedules: dict[str, ScheduleDefinition] = {}
@@ -318,9 +342,14 @@ def build_caching_repository_data_from_list(
             *source_assets_by_key.values(),  # only ever one key per source asset so no need to dedupe
         ]
     )
+    # record the names of jobs that carry an automation condition
+    automation_asset_jobs = _conditioned_asset_job_keys_by_name(unresolved_jobs, jobs)
+
     # add a default automation condition sensor if necessary
     default_automation_condition_sensor = get_default_automation_condition_sensor(
-        list(sensors.values()), asset_graph
+        list(sensors.values()),
+        asset_graph,
+        additional_automatable_asset_job_keys=set(automation_asset_jobs.values()),
     )
     if default_automation_condition_sensor:
         sensors[default_automation_condition_sensor.name] = default_automation_condition_sensor
@@ -379,6 +408,7 @@ def build_caching_repository_data_from_list(
         utilized_env_vars=utilized_env_vars,
         unresolved_partitioned_asset_schedules=unresolved_partitioned_asset_schedules,
         component_tree=component_tree,
+        automation_asset_job_names=set(automation_asset_jobs),
     )
 
 
@@ -440,18 +470,19 @@ def build_caching_repository_data_from_dict(
         asset_checks_defs_by_key={},
         top_level_resources={},
         utilized_env_vars={},
+        automation_asset_job_names=None,
         unresolved_partitioned_asset_schedules={},
         component_tree=None,
     )
 
 
 def _process_and_validate_target_job(
-    instigator_def: Union[
-        SensorDefinition, ScheduleDefinition, UnresolvedPartitionedAssetScheduleDefinition
-    ],
+    instigator_def: SensorDefinition
+    | ScheduleDefinition
+    | UnresolvedPartitionedAssetScheduleDefinition,
     unresolved_jobs: dict[str, UnresolvedAssetJobDefinition],
-    jobs: dict[str, Union[JobDefinition, Callable[[], JobDefinition]]],
-    job_def: Union[JobDefinition, UnresolvedAssetJobDefinition],
+    jobs: dict[str, JobDefinition | Callable[[], JobDefinition]],
+    job_def: JobDefinition | UnresolvedAssetJobDefinition,
 ):
     """This function modifies the state of unresolved_jobs, and jobs."""
     targeter = (
@@ -477,7 +508,7 @@ def _process_and_validate_target_job(
             )
         unresolved_jobs[job_def.name] = job_def
     else:
-        if job_def.name in jobs and jobs[job_def.name].graph != job_def.graph:  # pyright: ignore[reportFunctionMemberAccess]
+        if job_def.name in jobs and jobs[job_def.name].graph != job_def.graph:  # ty: ignore[unresolved-attribute]
             dupe_target_type = "unresolved asset job" if job_def.name in unresolved_jobs else "job"
             raise DagsterInvalidDefinitionError(
                 _get_error_msg_for_target_conflict(targeter, "job", job_def.name, dupe_target_type)
@@ -486,12 +517,12 @@ def _process_and_validate_target_job(
 
 
 def _process_and_validate_target_assets(
-    instigator_def: Union[
-        SensorDefinition, ScheduleDefinition, UnresolvedPartitionedAssetScheduleDefinition
-    ],
+    instigator_def: SensorDefinition
+    | ScheduleDefinition
+    | UnresolvedPartitionedAssetScheduleDefinition,
     assets_defs_by_key: dict["AssetKey", AssetsDefinition],
     source_assets_by_key: dict["AssetKey", SourceAsset],
-    target_assets_defs: Sequence[Union[AssetsDefinition, SourceAsset]],
+    target_assets_defs: Sequence[AssetsDefinition | SourceAsset],
 ) -> None:
     for ad in target_assets_defs:
         keys = ad.keys if isinstance(ad, AssetsDefinition) else [ad.key]
@@ -551,9 +582,9 @@ def _validate_partitions_definition(partitions_def: PartitionsDefinition) -> Non
 
 
 def _get_instigator_str(
-    instigator_def: Union[
-        SensorDefinition, ScheduleDefinition, UnresolvedPartitionedAssetScheduleDefinition
-    ],
+    instigator_def: SensorDefinition
+    | ScheduleDefinition
+    | UnresolvedPartitionedAssetScheduleDefinition,
 ) -> str:
     return (
         f"schedule '{instigator_def.name}'"

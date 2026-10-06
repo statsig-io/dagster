@@ -2,6 +2,7 @@
 title: 'Managing multiple projects and teams with Dagster+ Hybrid'
 description: Manage multiple projects with Dagster+ Hybrid deployments.
 sidebar_position: 8000
+tags: [dagster-plus-feature]
 ---
 
 In this guide, we'll cover some strategies for managing multiple projects/code bases and teams in a Dagster+ account.
@@ -30,35 +31,24 @@ Refer to the following table for more information, including the pros and cons o
 
 ### Deployment configuration
 
-Whether you use a single repository or multiple, you can use a [`dagster_cloud.yaml` file](/deployment/code-locations/dagster-cloud-yaml) to define the code locations to deploy. For each repository, follow the [steps appropriate to your CI/CD provider](/deployment/dagster-plus/ci-cd/ci-cd-in-hybrid) and include only the code locations that are relevant to the repository in your CI/CD workflow.
+Whether you use a single repository or multiple, you can use [deployment configuration files](/deployment/dagster-plus/management/build-yaml) (`build.yaml`, `container_context.yaml`, and `pyproject.toml`) to define your code locations. For each repository, follow the [steps appropriate to your CI/CD provider](/deployment/dagster-plus/deploying-code/configuring-ci-cd) and include only the code locations that are relevant to the repository in your CI/CD workflow.
 
 #### Example with GitHub CI/CD on Hybrid deployment
 
 1. **For each repository**, use the CI/CD workflow provided in [Dagster+ Hybrid quickstart repository](https://github.com/dagster-io/dagster-cloud-hybrid-quickstart/blob/main/.github/workflows/dagster-cloud-deploy.yml).
 
-2. **For each project in the repository**, configure a code location in the [`dagster_cloud.yaml` file](/deployment/code-locations/dagster-cloud-yaml):
+2. **For each project in the repository**, configure a `build.yaml` with the Docker registry and a `pyproject.toml` with the project settings:
 
    ```yaml
-   # dagster_cloud.yml
-
-   locations:
-     - location_name: project_a
-       code_source:
-         package_name: project_a
-       build:
-         # ...
-     - location_name: project_b
-       code_source:
-         package_name: project_b
-       build:
-         # ...
+   # build.yaml
+   registry: my-registry.example.com/my-image
+   directory: ./
    ```
 
 3. In the repository's `dagster-cloud-deploy.yml` file, modify the CI/CD workflow to deploy all code locations for the repository:
 
    ```yaml
    # .github/workflows/dagster-cloud-deploy.yml
-
    jobs:
      dagster-cloud-deploy:
        # ...

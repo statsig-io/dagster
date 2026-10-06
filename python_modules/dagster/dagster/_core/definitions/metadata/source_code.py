@@ -1,13 +1,12 @@
 import inspect
 import os
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, Union
 
 from dagster_shared.dagster_model import DagsterModel
-from typing_extensions import TypeAlias
 
 import dagster._check as check
 from dagster._annotations import beta, public
@@ -29,6 +28,7 @@ if TYPE_CHECKING:
     )
 
 DEFAULT_SOURCE_FILE_KEY = "asset_definition"
+Platform = Literal["github", "gitlab"]
 
 
 @beta
@@ -37,8 +37,8 @@ class LocalFileCodeReference(DagsterModel):
     """Represents a local file source location."""
 
     file_path: str
-    line_number: Optional[int] = None
-    label: Optional[str] = None
+    line_number: int | None = None
+    label: str | None = None
 
     @property
     def source(self) -> str:
@@ -53,19 +53,20 @@ class UrlCodeReference(DagsterModel):
     """
 
     url: str
-    label: Optional[str] = None
+    label: str | None = None
 
     @property
     def source(self) -> str:
         return self.url
 
 
-CodeReference: TypeAlias = Union[LocalFileCodeReference, UrlCodeReference]
+CodeReference: TypeAlias = LocalFileCodeReference | UrlCodeReference
 
 
+@public
 @beta
 @whitelist_for_serdes
-class CodeReferencesMetadataValue(DagsterModel, MetadataValue["CodeReferencesMetadataValue"]):  # pyright: ignore[reportIncompatibleMethodOverride]
+class CodeReferencesMetadataValue(DagsterModel, MetadataValue["CodeReferencesMetadataValue"]):  # ty: ignore[invalid-method-override]
     """Metadata value type which represents source locations (locally or otherwise)
     of the asset in question. For example, the file path and line number where the
     asset is defined.
@@ -83,7 +84,7 @@ class CodeReferencesMetadataValue(DagsterModel, MetadataValue["CodeReferencesMet
         return self
 
 
-def local_source_path_from_fn(fn: Callable[..., Any]) -> Optional[LocalFileCodeReference]:
+def local_source_path_from_fn(fn: Callable[..., Any]) -> LocalFileCodeReference | None:
     cwd = os.getcwd()
 
     origin_file = os.path.abspath(os.path.join(cwd, inspect.getsourcefile(fn)))  # type: ignore
@@ -124,7 +125,7 @@ class CodeReferencesMetadataSet(NamespacedMetadataSet):
     source code for the asset can be found.
     """
 
-    code_references: Optional[CodeReferencesMetadataValue] = None
+    code_references: CodeReferencesMetadataValue | None = None
 
     @classmethod
     def namespace(cls) -> str:
@@ -177,7 +178,7 @@ def _with_code_source_single_definition(
                 if existing_source_code_metadata.code_references
                 else []
             )
-            sources_for_asset: list[Union[LocalFileCodeReference, UrlCodeReference]] = [
+            sources_for_asset: list[LocalFileCodeReference | UrlCodeReference] = [
                 *existing_code_references,
                 *sources,
             ]
@@ -195,6 +196,7 @@ def _with_code_source_single_definition(
 
 
 @beta
+@public
 class FilePathMapping(ABC):
     """Base class which defines a file path mapping function. These functions are used to map local file paths
     to their corresponding paths in a source control repository.
@@ -218,6 +220,7 @@ class FilePathMapping(ABC):
         """
 
 
+@public
 @beta
 @dataclass
 class AnchorBasedFilePathMapping(FilePathMapping):
@@ -306,7 +309,7 @@ def _convert_local_path_to_git_path_single_definition(
         if not existing_source_code_metadata.code_references:
             continue
 
-        sources_for_asset: list[Union[LocalFileCodeReference, UrlCodeReference]] = [
+        sources_for_asset: list[LocalFileCodeReference | UrlCodeReference] = [
             convert_local_path_to_git_path(
                 base_git_url,
                 file_path_mapping,
@@ -329,12 +332,27 @@ def _convert_local_path_to_git_path_single_definition(
     )
 
 
-def _build_github_url(url: str, branch: str) -> str:
-    return f"{url}/tree/{branch}"
+def base_git_url(url: str, branch: str, platform: Platform | None) -> str:
+    if platform is None:
+        if "gitlab" in url:
+            platform = "gitlab"
+        elif "github" in url:
+            platform = "github"
+        else:
+            raise ValueError(
+                "Invalid `git_url`."
+                " Unable to infer the source control platform from the `git_url`. Please supply a `platform`."
+            )
 
+    if platform == "gitlab":
+        return f"{url}/-/tree/{branch}"
+    if platform == "github":
+        return f"{url}/tree/{branch}"
 
-def _build_gitlab_url(url: str, branch: str) -> str:
-    return f"{url}/-/tree/{branch}"
+    raise ValueError(
+        "Invalid `platform`."
+        " Only gitlab and github are supported for linking to source control at this time."
+    )
 
 
 @beta
@@ -345,6 +363,7 @@ def link_code_references_to_git(
     git_url: str,
     git_branch: str,
     file_path_mapping: FilePathMapping,
+    platform: Platform | None = None,
 ) -> Sequence[Union["AssetsDefinition", "SourceAsset", "CacheableAssetsDefinition", "AssetSpec"]]:
     """Wrapper function which converts local file path code references to source control URLs
     based on the provided source control URL and branch.
@@ -357,6 +376,8 @@ def link_code_references_to_git(
         git_url (str): The base URL for the source control system. For example,
             "https://github.com/dagster-io/dagster".
         git_branch (str): The branch in the source control system, such as "master".
+        platform (str): The hosting platform for the source control system, "github" or "gitlab". If None, it will
+            be inferred based on `git_url`.
         file_path_mapping (FilePathMapping):
             Specifies the mapping between local file paths and their corresponding paths in a source control repository.
             Simple usage is to provide a `AnchorBasedFilePathMapping` instance, which specifies an anchor file in the
@@ -372,6 +393,7 @@ def link_code_references_to_git(
                         with_source_code_references([my_dbt_assets]),
                         git_url="https://github.com/dagster-io/dagster",
                         git_branch="master",
+                        platform="github",
                         file_path_mapping=AnchorBasedFilePathMapping(
                             local_file_anchor=Path(__file__),
                             file_anchor_path_in_repository="python_modules/my_module/my-module/__init__.py",
@@ -379,19 +401,10 @@ def link_code_references_to_git(
                     )
                 )
     """
-    if "gitlab" in git_url:
-        git_url = _build_gitlab_url(git_url, git_branch)
-    elif "github.com" in git_url:
-        git_url = _build_github_url(git_url, git_branch)
-    else:
-        raise ValueError(
-            "Invalid `git_url`."
-            " Only GitHub and GitLab are supported for linking to source control at this time."
-        )
-
+    base_git_url_ = base_git_url(git_url, git_branch, platform)
     return [
         _convert_local_path_to_git_path_single_definition(
-            base_git_url=git_url,
+            base_git_url=base_git_url_,
             file_path_mapping=file_path_mapping,
             assets_def=assets_def,
         )

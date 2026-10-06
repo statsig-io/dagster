@@ -1,13 +1,14 @@
 import json
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 from dagster_shared.yaml_utils import dump_run_config_yaml
 
+from dagster._config.config_type import ConfigTypeKind
 from dagster._config.snap import ConfigSchemaSnapshot, ConfigTypeSnap
 
 
-def _safe_json_loads(json_str: Optional[str]) -> object:
+def _safe_json_loads(json_str: str | None) -> object:
     try:
         return json.loads(json_str) if json_str else None
     except json.JSONDecodeError:
@@ -16,20 +17,41 @@ def _safe_json_loads(json_str: Optional[str]) -> object:
 
 PRIORITY_CONFIG_KEYS = ("ops", "resources")
 
+_DICT_LIKE_KINDS = frozenset(
+    {ConfigTypeKind.PERMISSIVE_SHAPE, ConfigTypeKind.MAP, ConfigTypeKind.NONEABLE}
+)
 
-def _filter_empty_dicts(to_filter: Any) -> Any:
+
+def _filter_empty_dicts(
+    to_filter: Any,
+    type_snap: ConfigTypeSnap | None = None,
+    snapshot: ConfigSchemaSnapshot | None = None,
+) -> Any:
+    """Remove empty dicts that are just structural scaffolding, while preserving
+    empty dicts that represent real config values (Permissive, Map, Noneable).
+    """
     if not isinstance(to_filter, Mapping):
         return to_filter
-    else:
-        filtered_dict = {k: _filter_empty_dicts(v) for k, v in to_filter.items()}
-        return {k: v for k, v in filtered_dict.items() if v is not None and v != {}}
 
-
-def _cleanup_run_config_dict(run_config_dict: Any) -> Any:
-    """Performs cleanup of the run config dict to remove empty dicts and strip the default executor
-    config if it has not been overridden, to make the output more readable.
-    """
-    return _filter_empty_dicts(run_config_dict)
+    filtered_dict = {}
+    for k, v in to_filter.items():
+        field = (
+            type_snap.get_field(k)
+            if type_snap and type_snap.fields is not None and k in type_snap.field_names
+            else None
+        )
+        field_snap = (
+            snapshot.get_config_snap(field.type_key)
+            if field and snapshot and snapshot.has_config_snap(field.type_key)
+            else None
+        )
+        filtered_v = _filter_empty_dicts(v, field_snap, snapshot)
+        if filtered_v is None:
+            continue
+        if filtered_v == {} and not (field_snap and field_snap.kind in _DICT_LIKE_KINDS):
+            continue
+        filtered_dict[k] = filtered_v
+    return filtered_dict
 
 
 def default_values_yaml_from_type_snap(
@@ -37,7 +59,9 @@ def default_values_yaml_from_type_snap(
     type_snap: ConfigTypeSnap,
 ) -> str:
     """Returns a YAML representation of the default values for the given type snap."""
-    run_config_dict = _cleanup_run_config_dict(default_values_from_type_snap(type_snap, snapshot))
+    run_config_dict = _filter_empty_dicts(
+        default_values_from_type_snap(type_snap, snapshot), type_snap, snapshot
+    )
 
     # Sort the keys so that the output begins with the most useful keys (ops, resources)
     # We use a dict rather than an OrderedDict because in Py3.7+ the order of keys in a dict
@@ -54,7 +78,7 @@ def default_values_yaml_from_type_snap(
 def default_values_from_type_snap(type_snap: ConfigTypeSnap, snapshot: ConfigSchemaSnapshot) -> Any:
     """Given a type snap and a snapshot, returns a dictionary of default values for the type
     snap, recursively assembling a default if the type snap does not have a default value
-    explicitly set.
+    explicitly set. Secret fields are masked with ********.
     """
     if not type_snap.fields:
         return {}
@@ -73,10 +97,54 @@ def default_values_from_type_snap(type_snap: ConfigTypeSnap, snapshot: ConfigSch
         # First, we try to get the default value from the field itself
         # this is usually only set for primitive field types with user-supplied defaults
         if default_value_as_json:
-            defaults_by_field[field_name] = _safe_json_loads(default_value_as_json)
+            # Mask secret fields with asterisks
+            if field.is_secret is True:
+                defaults_by_field[field_name] = "********"
+            else:
+                parsed_default = _safe_json_loads(default_value_as_json)
+                # If this is a composite field, recursively mask any nested secrets
+                if field_snap and field_snap.fields:
+                    defaults_by_field[field_name] = _mask_secrets_in_dict(
+                        parsed_default, field_snap, snapshot
+                    )
+                else:
+                    defaults_by_field[field_name] = parsed_default
         # If there is no default value on the field, if the field has child fields, we recurse
         # to assemble the default values for the child fields
         elif field_snap and field_snap.fields:
             defaults_by_field[field_name] = default_values_from_type_snap(field_snap, snapshot)
 
     return defaults_by_field
+
+
+def _mask_secrets_in_dict(
+    value: Any, type_snap: ConfigTypeSnap, snapshot: ConfigSchemaSnapshot
+) -> Any:
+    """Recursively walks through a config dict and masks secret field values."""
+    if not isinstance(value, Mapping) or not type_snap.fields:
+        return value
+
+    result = {}
+    for key, val in value.items():
+        # Find the field definition for this key
+        field = type_snap.get_field(key) if key in type_snap.field_names else None
+
+        if field:
+            # If this field is marked as secret, mask it
+            if field.is_secret is True:
+                result[key] = "********"
+            else:
+                # Otherwise, recursively process nested structures
+                field_snap = (
+                    snapshot.get_config_snap(field.type_key)
+                    if snapshot.has_config_snap(field.type_key)
+                    else None
+                )
+                if field_snap and field_snap.fields:
+                    result[key] = _mask_secrets_in_dict(val, field_snap, snapshot)
+                else:
+                    result[key] = val
+        else:
+            result[key] = val
+
+    return result

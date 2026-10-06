@@ -1,13 +1,12 @@
 ---
 title: Quickstart
 description: Dagster supports saving and loading Iceberg tables as assets using I/O managers.
-sidebar_position: 100
+sidebar_position: 2
 ---
 
 <p>{frontMatter.description}</p>
 
-<details>
-  <summary>Prerequisites</summary>
+## Prerequisites
 
 To follow the steps in this guide, you'll need to:
 
@@ -18,8 +17,6 @@ To follow the steps in this guide, you'll need to:
   ```python
   catalog.create_namespace("default")
   ```
-
-</details>
 
 ## Defining the I/O manager
 

@@ -1,7 +1,9 @@
+import logging
+import os
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, NamedTuple, Optional, Union
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from dagster import _check as check
 from dagster._core.definitions import AssetKey
@@ -19,11 +21,12 @@ from dagster._core.execution.asset_backfill import (
 )
 from dagster._core.execution.bulk_actions import BulkActionType
 from dagster._core.instance import DynamicPartitionsStore
+from dagster._core.remote_origin import RemotePartitionSetOrigin
 from dagster._core.remote_representation.external_data import job_name_for_partition_set_snap_name
-from dagster._core.remote_representation.origin import RemotePartitionSetOrigin
 from dagster._core.storage.dagster_run import (
     CANCELABLE_RUN_STATUSES,
     NOT_FINISHED_STATUSES,
+    DagsterRunStatus,
     RunsFilter,
 )
 from dagster._core.storage.tags import BACKFILL_ID_TAG, USER_TAG
@@ -35,7 +38,7 @@ from dagster._utils.error import SerializableErrorInfo
 if TYPE_CHECKING:
     from dagster._core.instance import DagsterInstance
 
-MAX_RUNS_CANCELED_PER_ITERATION = 50
+CANCELABLE_RUNS_BATCH_SIZE = int(os.getenv("DAGSTER_BACKFILL_CANCEL_RUNS_BATCH_SIZE", "500"))
 
 
 @whitelist_for_serdes
@@ -47,6 +50,7 @@ class BulkActionStatus(Enum):
     CANCELED = "CANCELED"
     COMPLETED_SUCCESS = "COMPLETED_SUCCESS"
     COMPLETED_FAILED = "COMPLETED_FAILED"  # denotes that the backfill daemon completed successfully, but some runs failed
+    FAILING = "FAILING"  # denotes that there is a daemon failure, or some other issue processing the backfill, launched runs will be canceled and then the backfill marked FAILED
 
     @staticmethod
     def from_graphql_input(graphql_str):
@@ -82,14 +86,18 @@ class BulkActionsFilter:
             here must be present for a given bulk action to pass the filter.
         job_name (Optional[str]): Name of the job to query for. If blank, all job_names will be accepted.
         backfill_ids (Optional[Sequence[str]]): A list of backfill_ids to filter by. If blank, all backfill_ids will be included
+        selector_id (Optional[str]): A partition set selector id (a hash of the code location, repository,
+            and partition set name) to filter by. Matches the selector_id stored for each job backfill.
+            If blank, backfills for all partition sets will be included.
     """
 
-    statuses: Optional[Sequence[BulkActionStatus]] = None
-    created_before: Optional[datetime] = None
-    created_after: Optional[datetime] = None
-    tags: Optional[Mapping[str, Union[str, Sequence[str]]]] = None
-    job_name: Optional[str] = None
-    backfill_ids: Optional[Sequence[str]] = None
+    statuses: Sequence[BulkActionStatus] | None = None
+    created_before: datetime | None = None
+    created_after: datetime | None = None
+    tags: Mapping[str, str | Sequence[str]] | None = None
+    job_name: str | None = None
+    backfill_ids: Sequence[str] | None = None
+    selector_id: str | None = None
 
 
 @whitelist_for_serdes
@@ -102,22 +110,23 @@ class PartitionBackfill(
             ("from_failure", bool),
             ("tags", Mapping[str, str]),
             ("backfill_timestamp", float),
-            ("error", Optional[SerializableErrorInfo]),
-            ("asset_selection", Optional[Sequence[AssetKey]]),
-            ("title", Optional[str]),
-            ("description", Optional[str]),
+            ("error", SerializableErrorInfo | None),
+            ("asset_selection", Sequence[AssetKey] | None),
+            ("title", str | None),
+            ("description", str | None),
+            ("run_config", Mapping[str, Any] | None),
             # fields that are only used by job backfills
-            ("partition_set_origin", Optional[RemotePartitionSetOrigin]),
-            ("partition_names", Optional[Sequence[str]]),
-            ("last_submitted_partition_name", Optional[str]),
-            ("reexecution_steps", Optional[Sequence[str]]),
+            ("partition_set_origin", RemotePartitionSetOrigin | None),
+            ("partition_names", Sequence[str] | None),
+            ("last_submitted_partition_name", str | None),
+            ("reexecution_steps", Sequence[str] | None),
             # only used by asset backfills
-            ("serialized_asset_backfill_data", Optional[str]),
-            ("asset_backfill_data", Optional[AssetBackfillData]),
+            ("serialized_asset_backfill_data", str | None),
+            ("asset_backfill_data", AssetBackfillData | None),
             ("failure_count", int),
             ("submitting_run_requests", Sequence[RunRequest]),
             ("reserved_run_ids", Sequence[str]),
-            ("backfill_end_timestamp", Optional[float]),
+            ("backfill_end_timestamp", float | None),
         ],
     ),
 ):
@@ -126,22 +135,23 @@ class PartitionBackfill(
         backfill_id: str,
         status: BulkActionStatus,
         from_failure: bool,
-        tags: Optional[Mapping[str, str]],
+        tags: Mapping[str, str] | None,
         backfill_timestamp: float,
-        error: Optional[SerializableErrorInfo] = None,
-        asset_selection: Optional[Sequence[AssetKey]] = None,
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        partition_set_origin: Optional[RemotePartitionSetOrigin] = None,
-        partition_names: Optional[Sequence[str]] = None,
-        last_submitted_partition_name: Optional[str] = None,
-        reexecution_steps: Optional[Sequence[str]] = None,
-        serialized_asset_backfill_data: Optional[str] = None,
-        asset_backfill_data: Optional[AssetBackfillData] = None,
-        failure_count: Optional[int] = None,
-        submitting_run_requests: Optional[Sequence[RunRequest]] = None,
-        reserved_run_ids: Optional[Sequence[str]] = None,
-        backfill_end_timestamp: Optional[float] = None,
+        error: SerializableErrorInfo | None = None,
+        asset_selection: Sequence[AssetKey] | None = None,
+        title: str | None = None,
+        description: str | None = None,
+        run_config: Mapping[str, Any] | None = None,
+        partition_set_origin: RemotePartitionSetOrigin | None = None,
+        partition_names: Sequence[str] | None = None,
+        last_submitted_partition_name: str | None = None,
+        reexecution_steps: Sequence[str] | None = None,
+        serialized_asset_backfill_data: str | None = None,
+        asset_backfill_data: AssetBackfillData | None = None,
+        failure_count: int | None = None,
+        submitting_run_requests: Sequence[RunRequest] | None = None,
+        reserved_run_ids: Sequence[str] | None = None,
+        backfill_end_timestamp: float | None = None,
     ):
         check.invariant(
             not (asset_selection and reexecution_steps),
@@ -167,6 +177,7 @@ class PartitionBackfill(
             ),
             title=check_valid_title(title),
             description=check.opt_str_param(description, "description"),
+            run_config=check.opt_mapping_param(run_config, "run_config", key_type=str),
             partition_set_origin=check.opt_inst_param(
                 partition_set_origin, "partition_set_origin", RemotePartitionSetOrigin
             ),
@@ -227,14 +238,14 @@ class PartitionBackfill(
             return BulkActionType.PARTITION_BACKFILL
 
     @property
-    def partition_set_name(self) -> Optional[str]:
+    def partition_set_name(self) -> str | None:
         if self.partition_set_origin is None:
             return None
 
         return self.partition_set_origin.partition_set_name
 
     @property
-    def job_name(self) -> Optional[str]:
+    def job_name(self) -> str | None:
         if self.is_asset_backfill:
             return None
         return (
@@ -248,7 +259,7 @@ class PartitionBackfill(
         return ["backfill", self.backfill_id]
 
     @property
-    def user(self) -> Optional[str]:
+    def user(self) -> str | None:
         if self.tags:
             return self.tags.get(USER_TAG)
         return None
@@ -267,7 +278,7 @@ class PartitionBackfill(
 
     def get_backfill_status_per_asset_key(
         self, workspace: BaseWorkspaceRequestContext
-    ) -> Sequence[Union[PartitionedAssetBackfillStatus, UnpartitionedAssetBackfillStatus]]:
+    ) -> Sequence[PartitionedAssetBackfillStatus | UnpartitionedAssetBackfillStatus]:
         """Returns a sequence of backfill statuses for each targeted asset key in the asset graph,
         in topological order.
         """
@@ -287,7 +298,7 @@ class PartitionBackfill(
 
     def get_target_partitions_subset(
         self, workspace: BaseWorkspaceRequestContext, asset_key: AssetKey
-    ) -> Optional[PartitionsSubset]:
+    ) -> PartitionsSubset | None:
         if not self.is_valid_serialization(workspace):
             return None
 
@@ -304,7 +315,7 @@ class PartitionBackfill(
 
     def get_target_root_partitions_subset(
         self, workspace: BaseWorkspaceRequestContext
-    ) -> Optional[PartitionsSubset]:
+    ) -> PartitionsSubset | None:
         if not self.is_valid_serialization(workspace):
             return None
 
@@ -319,7 +330,7 @@ class PartitionBackfill(
         else:
             return None
 
-    def get_num_partitions(self, workspace: BaseWorkspaceRequestContext) -> Optional[int]:
+    def get_num_partitions(self, workspace: BaseWorkspaceRequestContext) -> int | None:
         if not self.is_valid_serialization(workspace):
             return 0
 
@@ -337,9 +348,7 @@ class PartitionBackfill(
 
             return len(self.partition_names)
 
-    def get_partition_names(
-        self, workspace: BaseWorkspaceRequestContext
-    ) -> Optional[Sequence[str]]:
+    def get_partition_names(self, workspace: BaseWorkspaceRequestContext) -> Sequence[str] | None:
         if not self.is_valid_serialization(workspace):
             return []
 
@@ -431,14 +440,15 @@ class PartitionBackfill(
         cls,
         backfill_id: str,
         asset_graph: BaseAssetGraph,
-        partition_names: Optional[Sequence[str]],
+        partition_names: Sequence[str] | None,
         asset_selection: Sequence[AssetKey],
         backfill_timestamp: float,
         tags: Mapping[str, str],
         dynamic_partitions_store: DynamicPartitionsStore,
         all_partitions: bool,
-        title: Optional[str],
-        description: Optional[str],
+        title: str | None,
+        description: str | None,
+        run_config: Mapping[str, Any] | None,
     ) -> "PartitionBackfill":
         """If all the selected assets that have PartitionsDefinitions have the same partitioning, then
         the backfill will target the provided partition_names for all those assets.
@@ -467,6 +477,7 @@ class PartitionBackfill(
             asset_backfill_data=asset_backfill_data,
             title=title,
             description=description,
+            run_config=run_config,
         )
 
     @classmethod
@@ -478,8 +489,9 @@ class PartitionBackfill(
         tags: Mapping[str, str],
         dynamic_partitions_store: DynamicPartitionsStore,
         partitions_by_assets: Sequence[PartitionsByAssetSelector],
-        title: Optional[str],
-        description: Optional[str],
+        title: str | None,
+        description: str | None,
+        run_config: Mapping[str, Any] | None,
     ):
         asset_backfill_data = AssetBackfillData.from_partitions_by_assets(
             asset_graph=asset_graph,
@@ -498,6 +510,7 @@ class PartitionBackfill(
             asset_selection=[selector.asset_key for selector in partitions_by_assets],
             title=title,
             description=description,
+            run_config=run_config,
         )
 
     @classmethod
@@ -508,8 +521,9 @@ class PartitionBackfill(
         tags: Mapping[str, str],
         dynamic_partitions_store: DynamicPartitionsStore,
         asset_graph_subset: AssetGraphSubset,
-        title: Optional[str],
-        description: Optional[str],
+        title: str | None,
+        description: str | None,
+        run_config: Mapping[str, Any] | None,
     ):
         asset_backfill_data = AssetBackfillData.from_asset_graph_subset(
             asset_graph_subset=asset_graph_subset,
@@ -527,48 +541,84 @@ class PartitionBackfill(
             asset_selection=list(asset_graph_subset.asset_keys),
             title=title,
             description=description,
+            run_config=run_config,
         )
 
 
 def cancel_backfill_runs_and_cancellation_complete(
-    instance: "DagsterInstance", backfill_id: str
+    instance: "DagsterInstance", backfill_id: str, logger: logging.Logger
 ) -> bool:
-    """Cancels MAX_RUNS_CANCELED_PER_ITERATION runs associated with the backfill_id. Ensures that
-    all runs for the backfill are in a terminal state before indicating that the backfill can be marked
-    CANCELED.
-    Yields a boolean indicating the backfill can be considered canceled (ie all runs are canceled).
+    """Cancels all cancelable runs associated with the backfill_id. Ensures that
+    all runs for the backfill are in a terminal state before indicating that the backfill can be
+    marked CANCELED. Yields a boolean indicating the backfill can be considered canceled
+    (ie all runs are canceled).
     """
     if not instance.run_coordinator:
         check.failed("The instance must have a run coordinator in order to cancel runs")
 
-    # Query for cancelable runs, enforcing a limit on the number of runs to cancel in an iteration
-    # as canceling runs incurs cost
-    runs_to_cancel_in_iteration = instance.run_storage.get_run_ids(
-        filters=RunsFilter(
-            statuses=CANCELABLE_RUN_STATUSES,
-            tags={
-                BACKFILL_ID_TAG: backfill_id,
-            },
-        ),
-        limit=MAX_RUNS_CANCELED_PER_ITERATION,
-    )
+    canceled_any_runs = False
 
-    if runs_to_cancel_in_iteration:
+    while True:
+        # Cancel all cancelable runs for the backfill in batches
+
+        # start with the queued runs since those will be faster to cancel
+        runs_to_cancel_in_iteration = instance.run_storage.get_runs(
+            filters=RunsFilter(
+                statuses=[DagsterRunStatus.QUEUED],
+                tags={
+                    BACKFILL_ID_TAG: backfill_id,
+                },
+            ),
+            limit=CANCELABLE_RUNS_BATCH_SIZE,
+            ascending=True,
+        )
+
+        if not runs_to_cancel_in_iteration:
+            # once all queued runs are canceled, cancel all other cancelable runs
+            runs_to_cancel_in_iteration = instance.run_storage.get_runs(
+                filters=RunsFilter(
+                    statuses=CANCELABLE_RUN_STATUSES,
+                    tags={
+                        BACKFILL_ID_TAG: backfill_id,
+                    },
+                ),
+                limit=CANCELABLE_RUNS_BATCH_SIZE,
+                ascending=True,
+            )
+            if not runs_to_cancel_in_iteration:
+                break
+
+        canceled_any_runs = True
+        for run in runs_to_cancel_in_iteration:
+            run_id = run.run_id
+            logger.info(f"Terminating submitted run {run_id}")
+
+            # in both cases this will synchonrously set its status to CANCELING or CANCELED,
+            # ensuring that it will not be returned in the next loop
+
+            if run.status == DagsterRunStatus.QUEUED:
+                instance.report_run_canceling(
+                    run,
+                    message="Canceling run from the queue.",
+                )
+                instance.report_run_canceled(run)
+            else:
+                instance.run_launcher.terminate(run_id)
+
+    if canceled_any_runs:
         # since we are canceling some runs in this iteration, we know that there is more work to do.
         # Either cancelling more runs, or waiting for the canceled runs to get to a terminal state
-        work_done = False
-        for run_id in runs_to_cancel_in_iteration:
-            instance.run_coordinator.cancel_run(run_id)
-    else:
-        # If there are no runs to cancel, check if there are any runs still in progress. If there are,
-        # then we want to wait for them to reach a terminal state before the backfill is marked CANCELED.
-        run_waiting_to_cancel = instance.get_run_ids(
-            RunsFilter(
-                tags={BACKFILL_ID_TAG: backfill_id},
-                statuses=NOT_FINISHED_STATUSES,
-            ),
-            limit=1,
-        )
-        work_done = len(run_waiting_to_cancel) == 0
+        return False
+
+    # If there are no runs to cancel, check if there are any runs still in progress. If there are,
+    # then we want to wait for them to reach a terminal state before the backfill is marked CANCELED.
+    run_waiting_to_cancel = instance.get_run_ids(
+        RunsFilter(
+            tags={BACKFILL_ID_TAG: backfill_id},
+            statuses=NOT_FINISHED_STATUSES,
+        ),
+        limit=1,
+    )
+    work_done = len(run_waiting_to_cancel) == 0
 
     return work_done

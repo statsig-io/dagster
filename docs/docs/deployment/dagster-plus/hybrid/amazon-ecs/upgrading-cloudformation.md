@@ -3,15 +3,22 @@ description: Upgrade your Amazon ECS CloudFormation template to use the newest i
 sidebar_label: Upgrading CloudFormation
 sidebar_position: 3500
 title: Upgrading CloudFormation for an Amazon ECS agent
+tags: [dagster-plus-feature]
 ---
 
 :::note
+
 This guide is applicable to Dagster+.
+
 :::
 
 In this guide, we'll show you how to upgrade an existing [Amazon Elastic Container Services (ECS) agent](/deployment/dagster-plus/hybrid/amazon-ecs/new-vpc)'s CloudFormation template.
 
-**Note**: To complete the steps in this guide, you'll need [permissions in Amazon Web Services (AWS) that allow you to manage ECS agents](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/security-iam-awsmanpol.html).
+:::note
+
+To complete the steps in this guide, you'll need [permissions in Amazon Web Services (AWS) that allow you to manage ECS agents](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/security-iam-awsmanpol.html).
+
+:::
 
 1. Sign in to your AWS console.
 

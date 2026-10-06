@@ -4,7 +4,6 @@ import time
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import uuid4
 
 import dagster as dg
@@ -14,7 +13,7 @@ from dagster._core.events import DagsterEvent, DagsterEventType, JobFailureData,
 from dagster._core.execution.backfill import BulkActionsFilter, BulkActionStatus, PartitionBackfill
 from dagster._core.instance import InstanceType
 from dagster._core.launcher.sync_in_memory_run_launcher import SyncInMemoryRunLauncher
-from dagster._core.remote_representation import (
+from dagster._core.remote_origin import (
     ManagedGrpcPythonEnvCodeLocationOrigin,
     RemoteRepositoryOrigin,
 )
@@ -48,7 +47,7 @@ from dagster_test.utils.data_factory import dagster_run as create_dagster_run
 win_py36 = seven.IS_WINDOWS and sys.version_info[0] == 3 and sys.version_info[1] == 6
 
 
-def _get_run_by_id(storage, run_id) -> Optional[dg.DagsterRun]:
+def _get_run_by_id(storage, run_id) -> dg.DagsterRun | None:
     records = storage.get_run_records(dg.RunsFilter(run_ids=[run_id]))
     if not records:
         return None
@@ -97,7 +96,7 @@ class TestRunStorage:
             yield s
 
     @pytest.fixture(name="instance")
-    def instance(self, request) -> Optional[dg.DagsterInstance]:
+    def instance(self, request) -> dg.DagsterInstance | None:
         return None
 
     # Override for storages that are not allowed to delete runs
@@ -105,23 +104,23 @@ class TestRunStorage:
         return True
 
     # Override for storages that support filtering backfills by tag
-    def supports_backfill_tags_filtering_queries(self):
+    def supports_backfill_tags_filtering_queries(self) -> bool:
         return False
 
     # Override for storages that support filtering backfills by job name
-    def supports_backfill_job_name_filtering_queries(self):
+    def supports_backfill_job_name_filtering_queries(self) -> bool:
         return False
 
     # Override for storages that support filtering backfills by backfill id
-    def supports_backfill_id_filtering_queries(self):
+    def supports_backfill_id_filtering_queries(self) -> bool:
         return False
 
     # Override for storages that support getting backfill counts
-    def supports_backfills_count(self):
+    def supports_backfills_count(self) -> bool:
         return False
 
     # Override for storages that support adding a historical run
-    def supports_add_historical_run(self):
+    def supports_add_historical_run(self) -> bool:
         return False
 
     def get_backfills_and_assert_expected_count(self, storage, filters, expected_count):
@@ -168,8 +167,8 @@ class TestRunStorage:
         assert run.tags.get("foo") == "bar"
         assert storage.has_run(run_id)
         fetched_run = _get_run_by_id(storage, run_id)
-        assert fetched_run.run_id == run_id  # pyright: ignore[reportOptionalMemberAccess]
-        assert fetched_run.job_name == "some_pipeline"  # pyright: ignore[reportOptionalMemberAccess]
+        assert fetched_run.run_id == run_id  # ty: ignore[unresolved-attribute]
+        assert fetched_run.job_name == "some_pipeline"  # ty: ignore[unresolved-attribute]
 
     def test_clear(self, storage):
         if not self.can_delete_runs():
@@ -779,7 +778,7 @@ class TestRunStorage:
         )
 
         run = _get_run_by_id(storage, one)
-        assert run.tags[RUN_FAILURE_REASON_TAG] == RunFailureReason.RUN_EXCEPTION.value  # pyright: ignore[reportOptionalMemberAccess]
+        assert run.tags[RUN_FAILURE_REASON_TAG] == RunFailureReason.RUN_EXCEPTION.value  # ty: ignore[unresolved-attribute]
 
     def _get_run_event_entry(self, dagster_event: DagsterEvent, run_id: str):
         return dg.EventLogEntry(
@@ -1208,16 +1207,16 @@ class TestRunStorage:
         #          |
         #         [c]
 
-        for _ in range(3):
-            runs.append(
-                create_dagster_run(
-                    run_id=make_new_run_id(),
-                    job_name="foo_job",
-                    root_run_id=root_run.run_id,
-                    parent_run_id=root_run.run_id,
-                    tags={PARENT_RUN_ID_TAG: root_run.run_id, ROOT_RUN_ID_TAG: root_run.run_id},
-                )
+        runs.extend(
+            create_dagster_run(
+                run_id=make_new_run_id(),
+                job_name="foo_job",
+                root_run_id=root_run.run_id,
+                parent_run_id=root_run.run_id,
+                tags={PARENT_RUN_ID_TAG: root_run.run_id, ROOT_RUN_ID_TAG: root_run.run_id},
             )
+            for _ in range(3)
+        )
         for _ in range(3):
             # get root run id from the previous run if exists, otherwise use previous run's id
             root_run_id = runs[-1].root_run_id if runs[-1].root_run_id else runs[-1].run_id
@@ -1486,6 +1485,40 @@ class TestRunStorage:
         )
         storage.add_backfill(two)
         self.get_backfills_and_assert_expected_count(storage, multi_filters, 2)
+
+    def test_backfill_selector_id_filtering(self, storage: RunStorage):
+        origin = self.fake_partition_set_origin("fake_partition_set")
+        other_origin = self.fake_partition_set_origin("other_partition_set")
+        assert origin.get_selector_id() != other_origin.get_selector_id()
+
+        one = PartitionBackfill(
+            "one",
+            partition_set_origin=origin,
+            status=BulkActionStatus.REQUESTED,
+            partition_names=["a", "b", "c"],
+            from_failure=False,
+            tags={},
+            backfill_timestamp=time.time(),
+        )
+        two = PartitionBackfill(
+            "two",
+            partition_set_origin=other_origin,
+            status=BulkActionStatus.REQUESTED,
+            partition_names=["a", "b", "c"],
+            from_failure=False,
+            tags={},
+            backfill_timestamp=time.time(),
+        )
+        storage.add_backfill(one)
+        storage.add_backfill(two)
+
+        one_filter = BulkActionsFilter(selector_id=origin.get_selector_id())
+        matching = self.get_backfills_and_assert_expected_count(storage, one_filter, 1)
+        assert matching[0].backfill_id == "one"
+
+        other_filter = BulkActionsFilter(selector_id=other_origin.get_selector_id())
+        matching = self.get_backfills_and_assert_expected_count(storage, other_filter, 1)
+        assert matching[0].backfill_id == "two"
 
     def test_backfill_created_time_filtering(self, storage: RunStorage):
         origin = self.fake_partition_set_origin("fake_partition_set")
@@ -1765,7 +1798,7 @@ class TestRunStorage:
 
         instance.handle_new_event(self._get_run_event_entry(dagster_job_start_event, run_id))
 
-        assert _get_run_by_id(storage, run_id).status == DagsterRunStatus.STARTED  # pyright: ignore[reportOptionalMemberAccess]
+        assert _get_run_by_id(storage, run_id).status == DagsterRunStatus.STARTED  # ty: ignore[unresolved-attribute]
 
         instance.handle_new_event(
             self._get_run_event_entry(
@@ -1782,7 +1815,7 @@ class TestRunStorage:
             )
         )
 
-        assert _get_run_by_id(storage, run_id).status == DagsterRunStatus.STARTED  # pyright: ignore[reportOptionalMemberAccess]
+        assert _get_run_by_id(storage, run_id).status == DagsterRunStatus.STARTED  # ty: ignore[unresolved-attribute]
 
         instance.handle_new_event(
             self._get_run_event_entry(
@@ -1799,7 +1832,7 @@ class TestRunStorage:
             )
         )
 
-        assert _get_run_by_id(storage, run_id).status == DagsterRunStatus.SUCCESS  # pyright: ignore[reportOptionalMemberAccess]
+        assert _get_run_by_id(storage, run_id).status == DagsterRunStatus.SUCCESS  # ty: ignore[unresolved-attribute]
 
     def test_run_record_stats(self, storage, instance):
         assert storage

@@ -1,6 +1,6 @@
 import dagster as dg
 from dagster._core.instance import DagsterInstance, InstanceRef
-from dagster._core.remote_representation import RemoteExecutionPlan
+from dagster._core.remote_representation.external import RemoteExecutionPlan
 from dagster._core.snap import create_execution_plan_snapshot_id
 from dagster._utils.test import copy_directory
 
@@ -41,7 +41,7 @@ def test_run_created_in_0_7_9_snapshot_id_change():
 # from dagster import solid, DagsterInstance, execute_pipeline
 # from dagster._core.snap.utils import create_snapshot_id
 #
-# from dagster.serdes import serialize_pp
+# from dagster._serdes import serialize_pp
 #
 # @solid
 # def noop_solid(_):

@@ -1,6 +1,6 @@
 import re
 from collections.abc import Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from dagster import (
     AssetMaterialization,
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from dagster_sling.resources import SlingResource
 
 
-SlingEventType = Union[AssetMaterialization, MaterializeResult]
+SlingEventType: TypeAlias = AssetMaterialization | MaterializeResult
 
 # We define SlingEventIterator as a generic type for the sake of type hinting.
 # This is so that users who inspect the type of the return value of `SlingResource.replicate()`
@@ -56,7 +56,7 @@ def _strip_quotes_target_table_name(target_table_name: str) -> str:
 INSERT_REGEX = re.compile(r".*inserted (\d+) rows into (.*) in.*")
 
 
-def _get_target_table_name(stream_name: str, sling_cli: "SlingResource") -> Optional[str]:
+def _get_target_table_name(stream_name: str, sling_cli: "SlingResource") -> str | None:
     """Extracts the target table name from the logs for a specific stream."""
     corresponding_logs = _get_logs_for_stream(stream_name, sling_cli)
     insert_log = next((log for log in corresponding_logs if re.match(INSERT_REGEX, log)), None)
@@ -77,7 +77,7 @@ def fetch_row_count_metadata(
     materialization: SlingEventType,
     sling_cli: "SlingResource",
     replication_config: dict[str, Any],
-    context: Union[OpExecutionContext, AssetExecutionContext],
+    context: OpExecutionContext | AssetExecutionContext,
 ) -> dict[str, Any]:
     target_name = replication_config["target"]
     if not materialization.metadata:
@@ -89,7 +89,7 @@ def fetch_row_count_metadata(
     if target_table_name:
         try:
             row_count = sling_cli.get_row_count_for_table(target_name, target_table_name)
-            return dict(TableMetadataSet(row_count=row_count))
+            return dict(TableMetadataSet(row_count=row_count, storage_kind=target_name))
         except Exception as e:
             context.log.warning(
                 f"Failed to fetch row count for stream %s\nException: {e}",
@@ -104,7 +104,7 @@ def fetch_column_metadata(
     materialization: SlingEventType,
     sling_cli: "SlingResource",
     replication_config: dict[str, Any],
-    context: Union[OpExecutionContext, AssetExecutionContext],
+    context: OpExecutionContext | AssetExecutionContext,
 ) -> dict[str, Any]:
     target_name = replication_config["target"]
 
@@ -156,6 +156,7 @@ def fetch_column_metadata(
                         ]
                     ),
                     column_lineage=column_lineage,
+                    storage_kind=target_name,
                 )
             )
         except Exception as e:
@@ -178,7 +179,7 @@ class SlingEventIterator(Iterator[T]):
         events: Iterator[T],
         sling_cli: "SlingResource",
         replication_config: dict[str, Any],
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
     ) -> None:
         self._inner_iterator = events
         self._sling_cli = sling_cli
@@ -207,7 +208,7 @@ class SlingEventIterator(Iterator[T]):
                     event, self._sling_cli, self._replication_config, self._context
                 )
                 if event.metadata:
-                    yield event._replace(metadata={**col_metadata, **event.metadata})
+                    yield event._replace(metadata={**col_metadata, **event.metadata})  # ty: ignore[invalid-argument-type, invalid-yield]
 
         return SlingEventIterator[T](
             _fetch_column_metadata(), self._sling_cli, self._replication_config, self._context
@@ -229,7 +230,7 @@ class SlingEventIterator(Iterator[T]):
                     event, self._sling_cli, self._replication_config, self._context
                 )
                 if event.metadata:
-                    yield event._replace(metadata={**row_count_metadata, **event.metadata})
+                    yield event._replace(metadata={**row_count_metadata, **event.metadata})  # ty: ignore[invalid-argument-type, invalid-yield]
 
         return SlingEventIterator[T](
             _fetch_row_count(), self._sling_cli, self._replication_config, self._context

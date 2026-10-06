@@ -1,19 +1,19 @@
 from collections.abc import Mapping, Sequence
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
-from dagster._annotations import beta
+from dagster import Failure, MetadataValue
 from dagster._record import record
 from dagster._serdes import whitelist_for_serdes
+from dagster_shared.record import as_dict
 
 
-@beta
 @record
 class DbtCloudAccount:
     """Represents a dbt Cloud Account, based on data as returned from the API."""
 
     id: int
-    name: Optional[str]
+    name: str | None
 
     @classmethod
     def from_account_details(cls, account_details: Mapping[str, Any]) -> "DbtCloudAccount":
@@ -23,13 +23,12 @@ class DbtCloudAccount:
         )
 
 
-@beta
 @record
 class DbtCloudProject:
     """Represents a dbt Cloud Project, based on data as returned from the API."""
 
     id: int
-    name: Optional[str]
+    name: str | None
 
     @classmethod
     def from_project_details(cls, project_details: Mapping[str, Any]) -> "DbtCloudProject":
@@ -39,13 +38,12 @@ class DbtCloudProject:
         )
 
 
-@beta
 @record
 class DbtCloudEnvironment:
     """Represents a dbt Cloud Environment, based on data as returned from the API."""
 
     id: int
-    name: Optional[str]
+    name: str | None
 
     @classmethod
     def from_environment_details(
@@ -57,16 +55,15 @@ class DbtCloudEnvironment:
         )
 
 
-@beta
 @record
 class DbtCloudJob:
     """Represents a dbt Cloud job, based on data as returned from the API."""
 
     id: int
-    account_id: Optional[int]
-    project_id: Optional[int]
-    environment_id: Optional[int]
-    name: Optional[str]
+    account_id: int | None
+    project_id: int | None
+    environment_id: int | None
+    name: str | None
 
     @classmethod
     def from_job_details(cls, job_details: Mapping[str, Any]) -> "DbtCloudJob":
@@ -90,19 +87,18 @@ class DbtCloudJobRunStatusType(int, Enum):
     CANCELLED = 30
 
 
-@beta
 @record
 class DbtCloudRun:
     """Represents a dbt Cloud run, based on data as returned from the API."""
 
     id: int
-    trigger_id: Optional[int]
-    account_id: Optional[int]
-    project_id: Optional[int]
-    environment_id: Optional[int]
-    job_definition_id: Optional[int]
-    status: Optional[DbtCloudJobRunStatusType]
-    url: Optional[str]
+    trigger_id: int | None
+    account_id: int | None
+    project_id: int | None
+    environment_id: int | None
+    job_definition_id: int | None
+    status: DbtCloudJobRunStatusType | None
+    url: str | None
 
     @classmethod
     def from_run_details(cls, run_details: Mapping[str, Any]) -> "DbtCloudRun":
@@ -119,8 +115,19 @@ class DbtCloudRun:
             url=run_details.get("href"),
         )
 
+    def raise_for_status(self) -> None:
+        if self.status in {
+            DbtCloudJobRunStatusType.ERROR,
+            DbtCloudJobRunStatusType.CANCELLED,
+        }:
+            raise Failure(
+                f"dbt Cloud run '{self.id}' failed!",
+                metadata={
+                    "run_details": MetadataValue.json(as_dict(self)),
+                },
+            )
 
-@beta
+
 @whitelist_for_serdes
 @record
 class DbtCloudWorkspaceData:
@@ -128,9 +135,11 @@ class DbtCloudWorkspaceData:
 
     project_id: int
     environment_id: int
-    # The ID of the ad hoc dbt Cloud job created by Dagster.
-    # This job is used to parse the dbt Cloud project.
-    # This job is also used to kick off cli invocation if no job ID is specified by users.
-    adhoc_job_id: int
+    # The IDs of the ad hoc dbt Cloud jobs created by Dagster.
+    # The first job is used to parse the dbt Cloud project.
+    # Jobs from this pool are used to kick off cli invocations; multiple
+    # jobs let Dagster run concurrent invocations against dbt Cloud, which
+    # limits each job to one in-flight run at a time.
+    adhoc_job_ids: Sequence[int]
     manifest: Mapping[str, Any]
     jobs: Sequence[Mapping[str, Any]]

@@ -1,7 +1,8 @@
-from collections.abc import Mapping, Sequence
+import json
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, NamedTuple, Optional
+from typing import Any, NamedTuple, TypeAlias
 
 from dagster import Failure
 from dagster._core.definitions.asset_key import AssetKey
@@ -12,7 +13,6 @@ from dagster._utils.cached_method import cached_method
 from dagster._utils.names import clean_name_lower
 from dagster._vendored.dateutil import parser
 from dagster_shared.serdes import whitelist_for_serdes
-from typing_extensions import TypeAlias
 
 from dagster_fivetran.utils import get_fivetran_connector_table_name, metadata_for_table
 
@@ -26,10 +26,16 @@ class FivetranConnectorTableProps(NamedTuple):
     connector_id: str
     connector_name: str
     connector_url: str
-    destination_id: Optional[str]
+    destination_id: str | None
     schema_config: "FivetranSchemaConfig"
-    database: Optional[str]
-    service: Optional[str]
+    database: str | None
+    service: str | None
+    # Scheduling metadata
+    sync_frequency: int | None = None  # Sync frequency in minutes
+    schedule_type: str | None = None  # "auto" or "manual"
+    daily_sync_time: str | None = None  # Time of day for daily syncs
+    # Connector config for detecting custom reports and other settings
+    connector_config: Mapping[str, Any] | None = None
 
     @property
     def name(self) -> str:
@@ -63,12 +69,21 @@ class FivetranConnector:
     setup_state: str
     sync_state: str
     paused: bool
-    succeeded_at: Optional[str]
-    failed_at: Optional[str]
+    succeeded_at: str | None
+    failed_at: str | None
+    # Scheduling fields
+    sync_frequency: int | None = None  # Sync frequency in minutes
+    schedule_type: str | None = None  # "auto" or "manual"
+    daily_sync_time: str | None = None  # Time of day for daily syncs (HH:MM format)
+    # Connector config - contains custom report definitions and other settings
+    config: Mapping[str, Any] | None = None
+    # Quota / reschedule fields from the connector status
+    rescheduled_for: str | None = None
+    update_state: str | None = None
 
     @property
     def url(self) -> str:
-        return f"https://fivetran.com/dashboard/connectors/{self.id}"
+        return f"https://fivetran.com/dashboard/connections/{self.id}"
 
     @property
     def destination_id(self) -> str:
@@ -93,7 +108,7 @@ class FivetranConnector:
         succeeded_at = parser.parse(self.succeeded_at or MIN_TIME_STR)
         failed_at = parser.parse(self.failed_at or MIN_TIME_STR)
 
-        return max(succeeded_at, failed_at)  # pyright: ignore[reportReturnType]
+        return max(succeeded_at, failed_at)
 
     @property
     def is_last_sync_successful(self) -> bool:
@@ -106,7 +121,17 @@ class FivetranConnector:
         succeeded_at = parser.parse(self.succeeded_at or MIN_TIME_STR)
         failed_at = parser.parse(self.failed_at or MIN_TIME_STR)
 
-        return succeeded_at > failed_at  # pyright: ignore[reportOperatorIssue]
+        return succeeded_at > failed_at
+
+    @property
+    def is_rescheduled(self) -> bool:
+        """Returns True if the connector has been rescheduled by Fivetran (e.g. due to quota
+        limits) and the rescheduled time is after the last sync completion.
+        """
+        if not self.rescheduled_for:
+            return False
+        rescheduled_at = parser.parse(self.rescheduled_for)
+        return rescheduled_at > self.last_sync_completed_at
 
     def validate_syncable(self) -> bool:
         """Confirms that the connector can be sync. Will raise a Failure in the event that
@@ -133,6 +158,12 @@ class FivetranConnector:
             paused=connector_details["paused"],
             succeeded_at=connector_details.get("succeeded_at"),
             failed_at=connector_details.get("failed_at"),
+            sync_frequency=connector_details.get("sync_frequency"),
+            schedule_type=connector_details.get("schedule_type"),
+            daily_sync_time=connector_details.get("daily_sync_time"),
+            config=connector_details.get("config"),
+            rescheduled_for=connector_details.get("status", {}).get("rescheduled_for"),
+            update_state=connector_details.get("status", {}).get("update_state"),
         )
 
 
@@ -142,7 +173,7 @@ class FivetranDestination:
     """Represents a Fivetran destination, based on data as returned from the API."""
 
     id: str
-    database: Optional[str]
+    database: str | None
     service: str
 
     @classmethod
@@ -164,7 +195,7 @@ class FivetranTable:
     enabled: bool
     name_in_destination: str
     # We keep the raw data for columns to add it as `column_info` in the metadata.
-    columns: Optional[Mapping[str, Any]]
+    columns: Mapping[str, Any] | None
 
     @classmethod
     def from_table_details(cls, table_details: Mapping[str, Any]) -> "FivetranTable":
@@ -243,29 +274,33 @@ class FivetranWorkspaceData:
 
             for schema in schema_config.schemas.values():
                 if schema.enabled:
-                    for table in schema.tables.values():
-                        if table.enabled:
-                            data.append(
-                                FivetranConnectorTableProps(
-                                    table=get_fivetran_connector_table_name(
-                                        schema_name=schema.name_in_destination,
-                                        table_name=table.name_in_destination,
-                                    ),
-                                    connector_id=connector.id,
-                                    connector_name=connector.name,
-                                    connector_url=connector.url,
-                                    destination_id=connector.destination_id,
-                                    schema_config=schema_config,
-                                    database=destination.database,
-                                    service=destination.service,
-                                )
-                            )
+                    data.extend(
+                        FivetranConnectorTableProps(
+                            table=get_fivetran_connector_table_name(
+                                schema_name=schema.name_in_destination,
+                                table_name=table.name_in_destination,
+                            ),
+                            connector_id=connector.id,
+                            connector_name=connector.name,
+                            connector_url=connector.url,
+                            destination_id=connector.destination_id,
+                            schema_config=schema_config,
+                            database=destination.database,
+                            service=destination.service,
+                            sync_frequency=connector.sync_frequency,
+                            schedule_type=connector.schedule_type,
+                            daily_sync_time=connector.daily_sync_time,
+                            connector_config=connector.config,
+                        )
+                        for table in schema.tables.values()
+                        if table.enabled
+                    )
         return data
 
     # Cache workspace data selection for a specific connector_selector_fn
     @cached_method
     def to_workspace_data_selection(
-        self, connector_selector_fn: Optional[ConnectorSelectorFn]
+        self, connector_selector_fn: ConnectorSelectorFn | None
     ) -> "FivetranWorkspaceData":
         if not connector_selector_fn:
             return self
@@ -295,11 +330,22 @@ class FivetranWorkspaceData:
 
 
 class FivetranMetadataSet(NamespacedMetadataSet):
-    connector_id: Optional[str] = None
-    connector_name: Optional[str] = None
-    destination_id: Optional[str] = None
-    destination_schema_name: Optional[str] = None
-    destination_table_name: Optional[str] = None
+    connector_id: str | None = None
+    connector_name: str | None = None
+    destination_id: str | None = None
+    destination_schema_name: str | None = None
+    destination_table_name: str | None = None
+    # Sync schedule metadata
+    sync_frequency_minutes: int | None = None
+    schedule_type: str | None = None  # "auto" or "manual"
+    daily_sync_time: str | None = None
+    # Sync completion timestamp (epoch seconds) - used for deduplication between
+    # the polling sensor and Dagster-triggered (orchestration) syncs.
+    sync_completed_at: float | None = None
+    # Custom report indicator - True if this table is from a custom report
+    is_custom_report: bool | None = None
+    # Custom report config (if applicable) - JSON-serialized report definition
+    custom_report_config: str | None = None
 
     @classmethod
     def namespace(cls) -> str:
@@ -331,6 +377,12 @@ class DagsterFivetranTranslator:
             database=props.database,
             schema=schema_name,
             table=table_name,
+            service=props.service,
+        )
+
+        # Detect if this table is from a custom report
+        is_custom_report, custom_report_config = self._detect_custom_report(
+            table_name, props.connector_config
         )
 
         augmented_metadata = {
@@ -341,6 +393,13 @@ class DagsterFivetranTranslator:
                 destination_id=props.destination_id,
                 destination_schema_name=schema_name,
                 destination_table_name=table_name,
+                sync_frequency_minutes=props.sync_frequency,
+                schedule_type=props.schedule_type,
+                daily_sync_time=props.daily_sync_time,
+                is_custom_report=is_custom_report if is_custom_report else None,
+                custom_report_config=json.dumps(custom_report_config)
+                if custom_report_config
+                else None,
             ),
         }
 
@@ -350,3 +409,39 @@ class DagsterFivetranTranslator:
             kinds={"fivetran", *({props.service} if props.service else set())},
             group_name=clean_name_lower(props.name),
         )
+
+    def _detect_custom_report(
+        self, table_name: str, connector_config: Mapping[str, Any] | None
+    ) -> tuple[bool, Mapping[str, Any] | None]:
+        """Detect if a table is from a custom report definition in the connector config.
+
+        Custom reports in Fivetran (e.g., for Google Ads, Facebook Ads) are defined in
+        the connector's config under keys like 'custom_reports', 'reports', or
+        service-specific keys. Each report typically has a 'table_name' or 'table'
+        field that matches the destination table name.
+
+        Returns:
+            A tuple of (is_custom_report, custom_report_config) where custom_report_config
+            contains the report definition if found.
+        """
+        if not connector_config:
+            return False, None
+
+        # Common keys where custom reports are defined in Fivetran connector configs
+        report_keys = ["custom_reports", "reports", "custom_tables", "report_configurations"]
+
+        for key in report_keys:
+            reports = connector_config.get(key)
+            if not reports:
+                continue
+
+            # Reports can be a list of report definitions
+            if isinstance(reports, list):
+                for report in reports:
+                    if isinstance(report, dict):
+                        # Check common table name fields
+                        report_table = report.get("table_name") or report.get("table")
+                        if report_table and report_table.lower() == table_name.lower():
+                            return True, report
+
+        return False, None

@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 import pyarrow as pa
@@ -9,9 +9,7 @@ from dagster_deltalake.io_manager import DeltaLakeIOManager
 
 
 class DeltaLakePandasTypeHandler(DeltalakeBaseArrowTypeHandler[pd.DataFrame]):
-    def from_arrow(
-        self, obj: pa.RecordBatchReader, target_type: type[pd.DataFrame]
-    ) -> pd.DataFrame:
+    def from_arrow(self, obj: pa.RecordBatchReader, target_type: type) -> pd.DataFrame:
         return obj.read_pandas()
 
     def to_arrow(self, obj: pd.DataFrame) -> tuple[pa.RecordBatchReader, dict[str, Any]]:
@@ -28,5 +26,5 @@ class DeltaLakePandasIOManager(DeltaLakeIOManager):
         return [DeltaLakePandasTypeHandler(), DeltaLakePyArrowTypeHandler()]
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         return pd.DataFrame

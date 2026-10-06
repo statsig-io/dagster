@@ -3,7 +3,6 @@ import io
 import os
 import time
 import uuid
-from typing import Optional
 from urllib.parse import urlparse
 
 import boto3
@@ -82,7 +81,7 @@ class AthenaClient:
             raise AthenaTimeout()
 
         if state != "SUCCEEDED":
-            raise AthenaError(execution["Status"]["StateChangeReason"])  # pyright: ignore[reportPossiblyUnboundVariable]
+            raise AthenaError(execution["Status"]["StateChangeReason"])
 
     def _results(self, execution_id):
         execution = self.client.get_query_execution(QueryExecutionId=execution_id)["QueryExecution"]
@@ -91,12 +90,10 @@ class AthenaClient:
         bucket = urlparse(output_location).netloc
         prefix = urlparse(output_location).path.lstrip("/")
 
-        results = []
         rows = s3.Bucket(bucket).Object(prefix).get()["Body"].read().decode("utf-8").splitlines()
         reader = csv.reader(rows)
         next(reader)  # Skip the CSV's header row
-        for row in reader:
-            results.append(tuple(row))
+        results = [tuple(row) for row in reader]
 
         return results
 
@@ -233,10 +230,10 @@ class ResourceWithAthenaConfig(ConfigurableResource):
             " seconds). Must be greater than 0."
         ),
     )
-    aws_access_key_id: Optional[str] = Field(
+    aws_access_key_id: str | None = Field(
         default=None, description="AWS access key ID for authentication purposes."
     )
-    aws_secret_access_key: Optional[str] = Field(
+    aws_secret_access_key: str | None = Field(
         default=None, description="AWS secret access key for authentication purposes."
     )
 

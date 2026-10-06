@@ -4,7 +4,7 @@ import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import closing, contextmanager
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any, Union, cast
 
 import dagster._check as check
 from cryptography.hazmat.backends import default_backend
@@ -19,7 +19,16 @@ from dagster._annotations import public
 from dagster._core.definitions.resource_definition import dagster_maintained_resource
 from dagster._core.storage.event_log.sql_event_log import SqlDbConnection
 from dagster._utils.cached_method import cached_method
-from pydantic import Field, model_validator, validator
+from dagster.components.lib.sql_component.sql_client import SQLClient
+from pydantic import Field, field_validator, model_validator
+from snowflake import snowpark
+from snowflake.core import Root
+from snowflake.core.database import Database
+from snowflake.core.pipe import Pipe
+from snowflake.core.schema import Schema
+from snowflake.core.stage import Stage
+from snowflake.core.table import Table
+from snowflake.core.view import View
 
 from dagster_snowflake.constants import (
     SNOWFLAKE_PARTNER_CONNECTION_IDENTIFIER,
@@ -40,7 +49,7 @@ except ImportError:
     raise
 
 
-class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext):
+class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext, SQLClient):
     """A resource for connecting to the Snowflake data warehouse.
 
     If connector configuration is not set, SnowflakeResource.get_connection() will return a
@@ -72,7 +81,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
                     'snowflake_resource': SnowflakeResource(
                         account=EnvVar("SNOWFLAKE_ACCOUNT"),
                         user=EnvVar("SNOWFLAKE_USER"),
-                        password=EnvVar("SNOWFLAKE_PASSWORD")
+                        private_key=EnvVar("SNOWFLAKE_PRIVATE_KEY"),
                         database="MY_DATABASE",
                         schema="MY_SCHEMA",
                         warehouse="MY_WAREHOUSE"
@@ -81,7 +90,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             )
     """
 
-    account: Optional[str] = Field(
+    account: str | None = Field(
         default=None,
         description=(
             "Your Snowflake account name. For more details, see the `Snowflake documentation."
@@ -91,9 +100,9 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
 
     user: str = Field(description="User login name.")
 
-    password: Optional[str] = Field(default=None, description="User password.")
+    password: str | None = Field(default=None, description="User password.")
 
-    database: Optional[str] = Field(
+    database: str | None = Field(
         default=None,
         description=(
             "Name of the default database to use. After login, you can use ``USE DATABASE`` "
@@ -101,7 +110,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    schema_: Optional[str] = Field(
+    schema_: str | None = Field(
         default=None,
         description=(
             "Name of the default schema to use. After login, you can use ``USE SCHEMA`` to "
@@ -110,7 +119,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         alias="schema",
     )  # schema is a reserved word for pydantic
 
-    role: Optional[str] = Field(
+    role: str | None = Field(
         default=None,
         description=(
             "Name of the default role to use. After login, you can use ``USE ROLE`` to change "
@@ -118,7 +127,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    warehouse: Optional[str] = Field(
+    warehouse: str | None = Field(
         default=None,
         description=(
             "Name of the default warehouse to use. After login, you can use ``USE WAREHOUSE`` "
@@ -126,7 +135,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    private_key: Optional[str] = Field(
+    private_key: str | None = Field(
         default=None,
         description=(
             "Raw private key to use. See the `Snowflake documentation"
@@ -137,7 +146,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    private_key_password: Optional[str] = Field(
+    private_key_password: str | None = Field(
         default=None,
         description=(
             "Raw private key password to use. See the `Snowflake documentation"
@@ -147,7 +156,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    private_key_path: Optional[str] = Field(
+    private_key_path: str | None = Field(
         default=None,
         description=(
             "Raw private key path to use. See the `Snowflake documentation"
@@ -156,7 +165,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    autocommit: Optional[bool] = Field(
+    autocommit: bool | None = Field(
         default=None,
         description=(
             "None by default, which honors the Snowflake parameter AUTOCOMMIT. Set to True "
@@ -164,7 +173,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    client_prefetch_threads: Optional[int] = Field(
+    client_prefetch_threads: int | None = Field(
         default=None,
         description=(
             "Number of threads used to download the results sets (4 by default). "
@@ -172,7 +181,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    client_session_keep_alive: Optional[bool] = Field(
+    client_session_keep_alive: bool | None = Field(
         default=None,
         description=(
             "False by default. Set this to True to keep the session active indefinitely, "
@@ -181,7 +190,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    login_timeout: Optional[int] = Field(
+    login_timeout: int | None = Field(
         default=None,
         description=(
             "Timeout in seconds for login. By default, 60 seconds. The login request gives "
@@ -189,7 +198,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    network_timeout: Optional[int] = Field(
+    network_timeout: int | None = Field(
         default=None,
         description=(
             "Timeout in seconds for all other operations. By default, none/infinite. A general"
@@ -197,7 +206,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    ocsp_response_cache_filename: Optional[str] = Field(
+    ocsp_response_cache_filename: str | None = Field(
         default=None,
         description=(
             "URI for the OCSP response cache file.  By default, the OCSP response cache "
@@ -205,7 +214,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    validate_default_parameters: Optional[bool] = Field(
+    validate_default_parameters: bool | None = Field(
         default=None,
         description=(
             "If True, raise an exception if the warehouse, database, or schema doesn't exist."
@@ -213,7 +222,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    paramstyle: Optional[str] = Field(
+    paramstyle: str | None = Field(
         default=None,
         description=(
             "pyformat by default for client side binding. Specify qmark or numeric to "
@@ -221,7 +230,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    timezone: Optional[str] = Field(
+    timezone: str | None = Field(
         default=None,
         description=(
             "None by default, which honors the Snowflake parameter TIMEZONE. Set to a "
@@ -229,16 +238,16 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    connector: Optional[str] = Field(
+    connector: str | None = Field(
         default=None,
         description=(
             "Indicate alternative database connection engine. Permissible option is "
             "'sqlalchemy' otherwise defaults to use the Snowflake Connector for Python."
         ),
-        is_required=False,  # type: ignore
+        is_required=False,
     )
 
-    cache_column_metadata: Optional[str] = Field(
+    cache_column_metadata: str | None = Field(
         default=None,
         description=(
             "Optional parameter when connector is set to sqlalchemy. Snowflake SQLAlchemy takes a"
@@ -247,7 +256,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    numpy: Optional[bool] = Field(
+    numpy: bool | None = Field(
         default=None,
         description=(
             "Optional parameter when connector is set to sqlalchemy. To enable fetching "
@@ -255,11 +264,11 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    authenticator: Optional[str] = Field(
+    authenticator: str | None = Field(
         default=None,
         description="Optional parameter to specify the authentication mechanism to use.",
     )
-    additional_snowflake_connection_args: Optional[dict[str, Any]] = Field(
+    additional_snowflake_connection_args: dict[str, Any] | None = Field(
         default=None,
         description=(
             "Additional keyword arguments to pass to the snowflake.connector.connect function. For a full list of"
@@ -269,8 +278,9 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
         ),
     )
 
-    @validator("paramstyle")
-    def validate_paramstyle(cls, v: Optional[str]) -> Optional[str]:
+    @field_validator("paramstyle")
+    @classmethod
+    def validate_paramstyle(cls, v: str | None) -> str | None:
         valid_config = ["pyformat", "qmark", "numeric"]
         if v is not None and v not in valid_config:
             raise ValueError(
@@ -279,8 +289,9 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             )
         return v
 
-    @validator("connector")
-    def validate_connector(cls, v: Optional[str]) -> Optional[str]:
+    @field_validator("connector")
+    @classmethod
+    def validate_connector(cls, v: str | None) -> str | None:
         if v is not None and v not in ["sqlalchemy", "adbc"]:
             raise ValueError(
                 "Snowflake Resource: 'connector' configuration value must be None, sqlalchemy or adbc."
@@ -511,8 +522,10 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
     @public
     @contextmanager
     def get_connection(
-        self, raw_conn: bool = True
-    ) -> Iterator[Union[SqlDbConnection, snowflake.connector.SnowflakeConnection]]:
+        self,
+        raw_conn: bool = True,
+        # Union is required because SqlDbConnection's metaclass doesn't support `|` at runtime.
+    ) -> Iterator[Union[SqlDbConnection, snowflake.connector.SnowflakeConnection]]:  # noqa: UP007
         """Gets a connection to Snowflake as a context manager.
 
         If connector configuration is not set, SnowflakeResource.get_connection() will return a
@@ -555,7 +568,7 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             import adbc_driver_snowflake.dbapi
 
             conn = adbc_driver_snowflake.dbapi.connect(
-                db_kwargs=self._adbc_connection_args,  # pyright: ignore[reportArgumentType]
+                db_kwargs=self._adbc_connection_args,  # ty: ignore[invalid-argument-type]
             )
 
             yield conn
@@ -577,6 +590,281 @@ class SnowflakeResource(ConfigurableResource, IAttachDifferentObjectToOpContext)
             snowflake_connection_resource=self,
         )
 
+    def connect_and_execute(self, sql: str) -> None:
+        with self.get_connection() as conn:
+            conn.cursor().execute(sql)
+
+    @contextmanager
+    def create_snowpark_session(self) -> Iterator[snowpark.Session]:
+        """Create a Snowpark session as a context manager.
+
+        This method creates a Snowpark session using the connection parameters configured
+        in the SnowflakeResource. The session is automatically closed when exiting the
+        context manager.
+
+        Yields:
+            snowpark.Session: A Snowpark session object that can be used to interact with
+                Snowflake using the Snowpark API.
+
+        Examples:
+            .. code-block:: python
+
+                @op
+                def process_data(snowflake: SnowflakeResource):
+                    with snowflake.create_snowpark_session() as session:
+                        df = session.table("my_table")
+                        result = df.filter(df["amount"] > 100).collect()
+                        return result
+        """
+        session = snowpark.Session.builder.configs(cast("dict", self._connection_args)).create()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    def get_databases(self, database_like: str) -> list[Database]:
+        """Get a list of databases in Snowflake that match the specified pattern.
+
+        Retrieves Database objects from Snowflake that match the provided LIKE pattern.
+        Uses SQL wildcard characters (% and _) for pattern matching.
+
+        Args:
+            database_like (str): A LIKE pattern to filter database names. Use '%' for any
+                sequence of characters and '_' for any single character. Case-insensitive.
+
+        Returns:
+            list[Database]: List of Database objects that match the pattern.
+
+        Examples:
+            .. code-block:: python
+
+                @op
+                def list_test_databases(snowflake: SnowflakeResource):
+                    # Get all databases starting with 'TEST'
+                    databases = snowflake.get_databases("TEST%")
+
+                    for db in databases:
+                        print(f"Found database: {db.name}")
+
+                    return [db.name for db in databases]
+        """
+        with self.create_snowpark_session() as session:
+            dbs = Root(session).databases
+            result: list[Database] = []
+
+            for db in dbs.iter(like=database_like):
+                result.append(db)
+
+            return result
+
+    def get_schemas(
+        self,
+        database_like: str,
+        schema_like: str,
+    ) -> list[Schema]:
+        """Get a list of schemas in Snowflake databases that match the specified patterns.
+
+        Retrieves Schema objects from Snowflake databases that match the provided LIKE patterns.
+        Searches across all matching databases and returns all matching schemas.
+
+        Args:
+            database_like (str): A LIKE pattern to filter database names.
+            schema_like (str): A LIKE pattern to filter schema names within matching databases.
+
+        Returns:
+            list[Schema]: List of Schema objects that match the patterns.
+
+        Examples:
+            .. code-block:: python
+
+                @op
+                def list_public_schemas(snowflake: SnowflakeResource):
+                    # Get all PUBLIC schemas in databases starting with 'PROD'
+                    schemas = snowflake.get_schemas("PROD%", "PUBLIC")
+
+                    for schema in schemas:
+                        print(f"Found schema: {schema.name}")
+
+                    return [schema.name for schema in schemas]
+        """
+        with self.create_snowpark_session() as session:
+            dbs = Root(session).databases
+            result: list[Schema] = []
+
+            for db in dbs.iter(like=database_like):
+                schemas = dbs[db.name].schemas
+                for schema in schemas.iter(like=schema_like):
+                    result.append(schema)
+
+            return result
+
+    def get_tables(
+        self,
+        database_like: str,
+        schema_like: str,
+        name_like: str,
+    ) -> list[Table]:
+        """Get a list of tables in Snowflake that match the specified patterns.
+
+        Retrieves Table objects from Snowflake that match the provided LIKE patterns.
+        Searches across all matching databases and schemas.
+
+        Args:
+            database_like (str): A LIKE pattern to filter database names.
+            schema_like (str): A LIKE pattern to filter schema names.
+            name_like (str): A LIKE pattern to filter table names.
+
+        Returns:
+            list[Table]: List of Table objects that match the patterns.
+
+        Examples:
+            .. code-block:: python
+
+                @op
+                def find_customer_tables(snowflake: SnowflakeResource):
+                    # Get all tables with 'CUSTOMER' in the name
+                    tables = snowflake.get_tables("PROD%", "%", "%CUSTOMER%")
+
+                    for table in tables:
+                        print(f"Found table: {table.name}")
+
+                    return [table.name for table in tables]
+        """
+        with self.create_snowpark_session() as session:
+            dbs = Root(session).databases
+            result: list[Table] = []
+
+            for db in dbs.iter(like=database_like):
+                schemas = dbs[db.name].schemas
+                for schema in schemas.iter(like=schema_like):
+                    tables = schemas[schema.name].tables
+                    for table in tables.iter(like=name_like):
+                        result.append(table)
+
+            return result
+
+    def get_views(self, database_like: str, schema_like: str, name_like: str) -> list[View]:
+        """Get a list of views in Snowflake that match the specified patterns.
+
+        Retrieves View objects from Snowflake that match the provided LIKE patterns.
+        Searches across all matching databases and schemas.
+
+        Args:
+            database_like (str): A LIKE pattern to filter database names.
+            schema_like (str): A LIKE pattern to filter schema names.
+            name_like (str): A LIKE pattern to filter view names.
+
+        Returns:
+            list[View]: List of View objects that match the patterns.
+
+        Examples:
+            .. code-block:: python
+
+                @op
+                def find_reporting_views(snowflake: SnowflakeResource):
+                    # Get all views with 'REPORT' in the name
+                    views = snowflake.get_views("DW%", "REPORTING", "%REPORT%")
+
+                    for view in views:
+                        print(f"Found view: {view.name}")
+
+                    return [view.name for view in views]
+        """
+        with self.create_snowpark_session() as session:
+            dbs = Root(session).databases
+            result: list[View] = []
+
+            for db in dbs.iter(like=database_like):
+                schemas = dbs[db.name].schemas
+                for schema in schemas.iter(like=schema_like):
+                    views = schemas[schema.name].views
+                    for view in views.iter(like=name_like):
+                        result.append(view)
+
+            return result
+
+    def get_pipes(self, database_like: str, schema_like: str, name_like: str) -> list[Pipe]:
+        """Get a list of pipes in Snowflake that match the specified patterns.
+
+        Retrieves Pipe objects from Snowflake that match the provided LIKE patterns.
+        Pipes are used for continuous data loading from external stages.
+        Searches across all matching databases and schemas.
+
+        Args:
+            database_like (str): A LIKE pattern to filter database names.
+            schema_like (str): A LIKE pattern to filter schema names.
+            name_like (str): A LIKE pattern to filter pipe names.
+
+        Returns:
+            list[Pipe]: List of Pipe objects that match the patterns.
+
+        Examples:
+            .. code-block:: python
+
+                @op
+                def find_data_pipes(snowflake: SnowflakeResource):
+                    # Get all pipes used for S3 data loading
+                    pipes = snowflake.get_pipes("PROD%", "ETL", "%S3%")
+
+                    for pipe in pipes:
+                        print(f"Found pipe: {pipe.name}")
+
+                    return [pipe.name for pipe in pipes]
+        """
+        with self.create_snowpark_session() as session:
+            dbs = Root(session).databases
+            result: list[Pipe] = []
+
+            for db in dbs.iter(like=database_like):
+                schemas = dbs[db.name].schemas
+                for schema in schemas.iter(like=schema_like):
+                    pipes = schemas[schema.name].pipes
+                    for pipe in pipes.iter(like=name_like):
+                        result.append(pipe)
+
+            return result
+
+    def get_stages(self, database_like: str, schema_like: str, name_like: str) -> list[Stage]:
+        """Get a list of stages in Snowflake that match the specified patterns.
+
+        Retrieves Stage objects from Snowflake that match the provided LIKE patterns.
+        Stages are used for storing data files for loading and unloading operations.
+        Searches across all matching databases and schemas.
+
+        Args:
+            database_like (str): A LIKE pattern to filter database names.
+            schema_like (str): A LIKE pattern to filter schema names.
+            name_like (str): A LIKE pattern to filter stage names.
+
+        Returns:
+            list[Stage]: List of Stage objects that match the patterns.
+
+        Examples:
+            .. code-block:: python
+
+                @op
+                def find_loading_stages(snowflake: SnowflakeResource):
+                    # Get all stages used for data loading
+                    stages = snowflake.get_stages("DW%", "STAGING", "%LOAD%")
+
+                    for stage in stages:
+                        print(f"Found stage: {stage.name}")
+
+                    return [stage.name for stage in stages]
+        """
+        with self.create_snowpark_session() as session:
+            dbs = Root(session).databases
+            result: list[Stage] = []
+
+            for db in dbs.iter(like=database_like):
+                schemas = dbs[db.name].schemas
+                for schema in schemas.iter(like=schema_like):
+                    stages = schemas[schema.name].stages
+                    for stage in stages.iter(like=name_like):
+                        result.append(stage)
+
+            return result
+
 
 class SnowflakeConnection:
     """A connection to Snowflake that can execute queries. In general this class should not be
@@ -596,8 +884,10 @@ class SnowflakeConnection:
     @public
     @contextmanager
     def get_connection(
-        self, raw_conn: bool = True
-    ) -> Iterator[Union[SqlDbConnection, snowflake.connector.SnowflakeConnection]]:
+        self,
+        raw_conn: bool = True,
+        # Union is required because SqlDbConnection's metaclass doesn't support `|` at runtime.
+    ) -> Iterator[Union[SqlDbConnection, snowflake.connector.SnowflakeConnection]]:  # noqa: UP007
         """Gets a connection to Snowflake as a context manager.
 
         If using the execute_query, execute_queries, or load_table_from_local_parquet methods,
@@ -628,7 +918,7 @@ class SnowflakeConnection:
     def execute_query(
         self,
         sql: str,
-        parameters: Optional[Union[Sequence[Any], Mapping[Any, Any]]] = None,
+        parameters: Sequence[Any] | Mapping[Any, Any] | None = None,
         fetch_results: bool = False,
         use_pandas_result: bool = False,
     ):
@@ -677,10 +967,10 @@ class SnowflakeConnection:
     def execute_queries(
         self,
         sql_queries: Sequence[str],
-        parameters: Optional[Union[Sequence[Any], Mapping[Any, Any]]] = None,
+        parameters: Sequence[Any] | Mapping[Any, Any] | None = None,
         fetch_results: bool = False,
         use_pandas_result: bool = False,
-    ) -> Optional[Sequence[Any]]:
+    ) -> Sequence[Any] | None:
         """Execute multiple queries in Snowflake.
 
         Args:
@@ -802,7 +1092,7 @@ def snowflake_resource(context) -> SnowflakeConnection:
                             'config': {
                                 'account': {'env': 'SNOWFLAKE_ACCOUNT'},
                                 'user': {'env': 'SNOWFLAKE_USER'},
-                                'password': {'env': 'SNOWFLAKE_PASSWORD'},
+                                'private_key': {'env': 'SNOWFLAKE_PRIVATE_KEY'},
                                 'database': {'env': 'SNOWFLAKE_DATABASE'},
                                 'schema': {'env': 'SNOWFLAKE_SCHEMA'},
                                 'warehouse': {'env': 'SNOWFLAKE_WAREHOUSE'},
@@ -820,11 +1110,12 @@ def snowflake_resource(context) -> SnowflakeConnection:
 
 def fetch_last_updated_timestamps(
     *,
-    snowflake_connection: Union[SqlDbConnection, snowflake.connector.SnowflakeConnection],
+    # Union is required because SqlDbConnection's metaclass doesn't support `|` at runtime.
+    snowflake_connection: Union[SqlDbConnection, snowflake.connector.SnowflakeConnection],  # noqa: UP007
     schema: str,
     tables: Sequence[str],
-    database: Optional[str] = None,
-    ignore_missing_tables: Optional[bool] = False,
+    database: str | None = None,
+    ignore_missing_tables: bool | None = False,
 ) -> Mapping[str, datetime]:
     """Fetch the last updated times of a list of tables in Snowflake.
 

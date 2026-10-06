@@ -6,14 +6,18 @@ import threading
 from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 from dagster_shared.error import DagsterError
 
 import dagster._check as check
 from dagster._core.definitions.instigation_logger import InstigationLogger
 from dagster._core.definitions.partitions.context import partition_loading_context
-from dagster._core.errors import DagsterCodeLocationLoadError, DagsterUserCodeUnreachableError
+from dagster._core.errors import (
+    DagsterCodeLocationLoadError,
+    DagsterRunAlreadyExists,
+    DagsterUserCodeUnreachableError,
+)
 from dagster._core.execution.asset_backfill import execute_asset_backfill_iteration
 from dagster._core.execution.backfill import (
     BULK_ACTION_TERMINAL_STATUSES,
@@ -55,17 +59,21 @@ def _get_instigation_logger_if_log_storage_enabled(
         yield default_logger
 
 
-def _get_max_asset_backfill_retries():
-    return int(os.getenv("DAGSTER_MAX_ASSET_BACKFILL_RETRIES", "5"))
+def _get_max_backfill_retries():
+    return int(
+        os.getenv(
+            "DAGSTER_MAX_BACKFILL_RETRIES", os.getenv("DAGSTER_MAX_ASSET_BACKFILL_RETRIES", "5")
+        )
+    )
 
 
 def execute_backfill_iteration_loop(
     workspace_process_context: IWorkspaceProcessContext,
     logger: logging.Logger,
     shutdown_event: threading.Event,
-    until: Optional[float] = None,
-    threadpool_executor: Optional[ThreadPoolExecutor] = None,
-    submit_threadpool_executor: Optional[ThreadPoolExecutor] = None,
+    until: float | None = None,
+    threadpool_executor: ThreadPoolExecutor | None = None,
+    submit_threadpool_executor: ThreadPoolExecutor | None = None,
 ) -> "DaemonIterator":
     from dagster._daemon.controller import DEFAULT_DAEMON_INTERVAL_SECONDS
     from dagster._daemon.daemon import SpanMarker
@@ -108,11 +116,11 @@ def execute_backfill_iteration_loop(
 def execute_backfill_iteration(
     workspace_process_context: IWorkspaceProcessContext,
     logger: logging.Logger,
-    threadpool_executor: Optional[ThreadPoolExecutor] = None,
-    submit_threadpool_executor: Optional[ThreadPoolExecutor] = None,
-    backfill_futures: Optional[dict[str, Future]] = None,
-    debug_crash_flags: Optional[Mapping[str, int]] = None,
-) -> Iterable[Optional[SerializableErrorInfo]]:
+    threadpool_executor: ThreadPoolExecutor | None = None,
+    submit_threadpool_executor: ThreadPoolExecutor | None = None,
+    backfill_futures: dict[str, Future] | None = None,
+    debug_crash_flags: Mapping[str, int] | None = None,
+) -> Iterable[SerializableErrorInfo | None]:
     instance = workspace_process_context.instance
 
     in_progress_backfills = instance.get_backfills(
@@ -121,13 +129,16 @@ def execute_backfill_iteration(
     canceling_backfills = instance.get_backfills(
         filters=BulkActionsFilter(statuses=[BulkActionStatus.CANCELING])
     )
+    failing_backfills = instance.get_backfills(
+        filters=BulkActionsFilter(statuses=[BulkActionStatus.FAILING])
+    )
 
-    if not in_progress_backfills and not canceling_backfills:
-        logger.debug("No backfill jobs in progress or canceling.")
+    if not in_progress_backfills and not canceling_backfills and not failing_backfills:
+        logger.debug("No backfill jobs in progress, canceling, or failing.")
         yield None
         return
 
-    backfill_jobs = [*in_progress_backfills, *canceling_backfills]
+    backfill_jobs = [*in_progress_backfills, *canceling_backfills, *failing_backfills]
     backfill_jobs = sorted(backfill_jobs, key=lambda x: x.backfill_timestamp)
 
     yield from execute_backfill_jobs(
@@ -141,9 +152,11 @@ def execute_backfill_iteration(
     )
 
 
-def _is_retryable_asset_backfill_error(e: Exception):
-    # Retry on issues reaching or loading user code
-    if isinstance(e, (DagsterUserCodeUnreachableError, DagsterCodeLocationLoadError)):
+def _is_retryable_backfill_error(e: Exception):
+    # Retry on issues reaching or loading user code, or transient race conditions submitting runs.
+    if isinstance(
+        e, (DagsterUserCodeUnreachableError, DagsterCodeLocationLoadError, DagsterRunAlreadyExists)
+    ):
         return True
 
     # Framework errors and check errors are assumed to be invariants that are not
@@ -156,9 +169,9 @@ def execute_backfill_iteration_with_instigation_logger(
     logger: logging.Logger,
     workspace_process_context: IWorkspaceProcessContext,
     instance: "DagsterInstance",
-    submit_threadpool_executor: Optional[ThreadPoolExecutor] = None,
-    debug_crash_flags: Optional[Mapping[str, int]] = None,
-) -> Iterable[Optional[SerializableErrorInfo]]:
+    submit_threadpool_executor: ThreadPoolExecutor | None = None,
+    debug_crash_flags: Mapping[str, int] | None = None,
+) -> Iterable[SerializableErrorInfo | None]:
     with _get_instigation_logger_if_log_storage_enabled(instance, backfill, logger) as _logger:
         # create a logger that will always include the backfill_id as an `extra`
         backfill_logger = cast(
@@ -191,10 +204,9 @@ def execute_backfill_iteration_with_instigation_logger(
         except Exception as e:
             backfill = check.not_none(instance.get_backfill(backfill.backfill_id))
             if (
-                backfill.is_asset_backfill
-                and backfill.status == BulkActionStatus.REQUESTED
-                and backfill.failure_count < _get_max_asset_backfill_retries()
-                and _is_retryable_asset_backfill_error(e)
+                backfill.status == BulkActionStatus.REQUESTED
+                and backfill.failure_count < _get_max_backfill_retries()
+                and _is_retryable_backfill_error(e)
             ):
                 if isinstance(e, (DagsterUserCodeUnreachableError, DagsterCodeLocationLoadError)):
                     try:
@@ -207,7 +219,6 @@ def execute_backfill_iteration_with_instigation_logger(
                             logger=backfill_logger,
                             log_message=f"Backfill failed for {backfill.backfill_id} due to unreachable code server and will retry",
                         )
-                        instance.update_backfill(backfill.with_error(error_info))
                 else:
                     error_info = DaemonErrorCapture.process_exception(
                         sys.exc_info(),
@@ -215,9 +226,7 @@ def execute_backfill_iteration_with_instigation_logger(
                         log_message=f"Backfill failed for {backfill.backfill_id} and will retry.",
                     )
                     instance.update_backfill(
-                        backfill.with_error(error_info).with_failure_count(
-                            backfill.failure_count + 1
-                        )
+                        backfill.with_failure_count(backfill.failure_count + 1)
                     )
             else:
                 error_info = DaemonErrorCapture.process_exception(
@@ -226,10 +235,9 @@ def execute_backfill_iteration_with_instigation_logger(
                     log_message=f"Backfill failed for {backfill.backfill_id}",
                 )
                 instance.update_backfill(
-                    backfill.with_status(BulkActionStatus.FAILED)
+                    backfill.with_status(BulkActionStatus.FAILING)
                     .with_error(error_info)
                     .with_failure_count(backfill.failure_count + 1)
-                    .with_end_timestamp(get_current_timestamp())
                 )
             yield error_info
 
@@ -238,11 +246,11 @@ def execute_backfill_jobs(
     workspace_process_context: IWorkspaceProcessContext,
     logger: logging.Logger,
     backfill_jobs: Sequence[PartitionBackfill],
-    threadpool_executor: Optional[ThreadPoolExecutor] = None,
-    submit_threadpool_executor: Optional[ThreadPoolExecutor] = None,
-    backfill_futures: Optional[dict[str, Future]] = None,
-    debug_crash_flags: Optional[Mapping[str, int]] = None,
-) -> Iterable[Optional[SerializableErrorInfo]]:
+    threadpool_executor: ThreadPoolExecutor | None = None,
+    submit_threadpool_executor: ThreadPoolExecutor | None = None,
+    backfill_futures: dict[str, Future] | None = None,
+    debug_crash_flags: Mapping[str, int] | None = None,
+) -> Iterable[SerializableErrorInfo | None]:
     instance = workspace_process_context.instance
 
     for backfill_job in backfill_jobs:

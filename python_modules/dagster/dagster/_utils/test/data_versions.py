@@ -1,7 +1,5 @@
 from collections.abc import Mapping, Sequence
-from typing import Any, Optional, Union, cast, overload
-
-from typing_extensions import Literal
+from typing import Any, Literal, overload
 
 from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView, TemporalContext
 from dagster._core.definitions.asset_selection import CoercibleToAssetSelection
@@ -28,7 +26,7 @@ class MaterializationTable:
     def __init__(self, materializations: Mapping[AssetKey, AssetMaterialization]):
         self.materializations = materializations
 
-    def __getitem__(self, key: Union[str, AssetKey]) -> AssetMaterialization:
+    def __getitem__(self, key: str | AssetKey) -> AssetMaterialization:
         asset_key = AssetKey([key]) if isinstance(key, str) else key
         return self.materializations[asset_key]
 
@@ -50,17 +48,18 @@ def mock_io_manager():
 def get_mat_from_result(result: ExecuteInProcessResult, node_str: str) -> AssetMaterialization:
     mats = result.asset_materializations_for_node(node_str)
     assert all(isinstance(m, AssetMaterialization) for m in mats)
-    return cast("AssetMaterialization", mats[0])
+    return mats[0]
 
 
 def get_mats_from_result(
-    result: ExecuteInProcessResult, assets: Sequence[AssetsDefinition]
+    result: ExecuteInProcessResult,
+    assets: Sequence[AssetsDefinition | SourceAsset],
 ) -> MaterializationTable:
     mats: dict[AssetKey, AssetMaterialization] = {}
     for asset_def in assets:
         node_str = asset_def.node_def.name if asset_def.node_def else asset_def.key.path[-1]
         for mat in result.asset_materializations_for_node(node_str):
-            mats[mat.asset_key] = cast("AssetMaterialization", mat)
+            mats[mat.asset_key] = mat
     return MaterializationTable(mats)
 
 
@@ -76,7 +75,7 @@ def get_version_from_mat(mat: AssetMaterialization) -> str:
     return mat.tags[DATA_VERSION_TAG]
 
 
-def assert_data_version(mat: AssetMaterialization, version: Union[str, DataVersion]) -> None:
+def assert_data_version(mat: AssetMaterialization, version: str | DataVersion) -> None:
     value = version.value if isinstance(version, DataVersion) else version
     assert mat.tags
     assert mat.tags[DATA_VERSION_TAG] == value
@@ -123,42 +122,42 @@ def assert_provenance_no_match(
 
 @overload
 def materialize_asset(
-    all_assets: Sequence[Union[AssetsDefinition, SourceAsset]],
+    all_assets: Sequence[AssetsDefinition | SourceAsset],
     asset_to_materialize: AssetsDefinition,
     instance: DagsterInstance,
     *,
     is_multi: Literal[True],
-    partition_key: Optional[str] = ...,
-    run_config: Optional[Union[RunConfig, Mapping[str, Any]]] = ...,
-    tags: Optional[Mapping[str, str]] = ...,
+    partition_key: str | None = ...,
+    run_config: RunConfig | Mapping[str, Any] | None = ...,
+    tags: Mapping[str, str] | None = ...,
 ) -> MaterializationTable: ...
 
 
 @overload
 def materialize_asset(
-    all_assets: Sequence[Union[AssetsDefinition, SourceAsset]],
+    all_assets: Sequence[AssetsDefinition | SourceAsset],
     asset_to_materialize: AssetsDefinition,
     instance: DagsterInstance,
     *,
     is_multi: Literal[False] = ...,
-    partition_key: Optional[str] = ...,
-    run_config: Optional[Union[RunConfig, Mapping[str, Any]]] = ...,
-    tags: Optional[Mapping[str, str]] = ...,
+    partition_key: str | None = ...,
+    run_config: RunConfig | Mapping[str, Any] | None = ...,
+    tags: Mapping[str, str] | None = ...,
 ) -> AssetMaterialization: ...
 
 
 # Use only for AssetsDefinition with one asset
 def materialize_asset(
-    all_assets: Sequence[Union[AssetsDefinition, SourceAsset]],
+    all_assets: Sequence[AssetsDefinition | SourceAsset],
     asset_to_materialize: AssetsDefinition,
     instance: DagsterInstance,
     *,
     is_multi: bool = False,
-    partition_key: Optional[str] = None,
-    run_config: Optional[Union[RunConfig, Mapping[str, Any]]] = None,
-    tags: Optional[Mapping[str, str]] = None,
-) -> Union[AssetMaterialization, MaterializationTable]:
-    assets: list[Union[AssetsDefinition, SourceAsset]] = []
+    partition_key: str | None = None,
+    run_config: RunConfig | Mapping[str, Any] | None = None,
+    tags: Mapping[str, str] | None = None,
+) -> AssetMaterialization | MaterializationTable:
+    assets: list[AssetsDefinition | SourceAsset] = []
     for asset_def in all_assets:
         if isinstance(asset_def, SourceAsset):
             assets.append(asset_def)
@@ -185,12 +184,12 @@ def materialize_asset(
 
 
 def materialize_assets(
-    assets: Sequence[AssetsDefinition],
+    assets: Sequence[AssetsDefinition | SourceAsset],
     instance: DagsterInstance,
-    partition_key: Optional[str] = None,
-    run_config: Optional[Mapping[str, Any]] = None,
-    tags: Optional[Mapping[str, str]] = None,
-    selection: Optional[CoercibleToAssetSelection] = None,
+    partition_key: str | None = None,
+    run_config: Mapping[str, Any] | None = None,
+    tags: Mapping[str, str] | None = None,
+    selection: CoercibleToAssetSelection | None = None,
 ) -> MaterializationTable:
     result = materialize(
         assets,
@@ -205,7 +204,7 @@ def materialize_assets(
 
 
 def materialize_twice(
-    all_assets: Sequence[Union[AssetsDefinition, SourceAsset]],
+    all_assets: Sequence[AssetsDefinition | SourceAsset],
     asset_to_materialize: AssetsDefinition,
     instance: DagsterInstance,
 ) -> tuple[AssetMaterialization, AssetMaterialization]:
@@ -216,7 +215,7 @@ def materialize_twice(
 
 def get_stale_status_resolver(
     instance: DagsterInstance,
-    assets: Sequence[Union[AssetsDefinition, SourceAsset]],
+    assets: Sequence[AssetsDefinition | SourceAsset],
 ) -> CachingStaleStatusResolver:
     asset_graph = AssetGraph.from_assets(assets)
     asset_graph_view = AssetGraphView(

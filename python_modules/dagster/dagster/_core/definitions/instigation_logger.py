@@ -5,16 +5,16 @@ import threading
 import traceback
 from collections.abc import Mapping, Sequence
 from contextlib import ExitStack
-from typing import IO, Any, Optional
+from typing import IO, TYPE_CHECKING, Any, Optional
 
-from dagster_shared import seven
-
-from dagster._core.instance import DagsterInstance
 from dagster._core.log_manager import LOG_RECORD_METADATA_ATTR
 from dagster._core.storage.compute_log_manager import ComputeIOType, ComputeLogManager
 from dagster._core.utils import coerce_valid_log_level
 from dagster._utils.error import serializable_error_info_from_exc_info
 from dagster._utils.log import create_console_logger
+
+if TYPE_CHECKING:
+    from dagster._core.instance import DagsterInstance
 
 
 class DispatchingLogHandler(logging.Handler):
@@ -71,10 +71,12 @@ class CapturedLogHandler(logging.Handler):
             record_dict["exc_info"] = "".join(traceback.format_exception(*exc_info))
 
         try:
-            self._write_stream.write(seven.json.dumps(record_dict) + "\n")
+            self._write_stream.write(json.dumps(record_dict, default=str, sort_keys=True) + "\n")
         except Exception:
             sys.stderr.write(
-                f"Exception writing to logger event stream: {serializable_error_info_from_exc_info(sys.exc_info())}\n"
+                f"Exception writing to logger event stream: {serializable_error_info_from_exc_info(sys.exc_info())}."
+                f" The originating log call was made at: {record.pathname}:{record.funcName} (line {record.lineno})."
+                "\n"
             )
 
 
@@ -91,13 +93,13 @@ class InstigationLogger(logging.Logger):
 
     def __init__(
         self,
-        log_key: Optional[Sequence[str]] = None,
-        instance: Optional[DagsterInstance] = None,
-        repository_name: Optional[str] = None,
-        instigator_name: Optional[str] = None,
+        log_key: Sequence[str] | None = None,
+        instance: Optional["DagsterInstance"] = None,
+        repository_name: str | None = None,
+        instigator_name: str | None = None,
         level: int = logging.NOTSET,
         logger_name: str = "dagster",
-        console_logger: Optional[logging.Logger] = None,
+        console_logger: logging.Logger | None = None,
     ):
         super().__init__(name=logger_name, level=coerce_valid_log_level(level))
         self._log_key = log_key
@@ -157,7 +159,7 @@ class InstigationLogger(logging.Logger):
             record.args = tuple()
         return record
 
-    def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func, extra, sinfo):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def makeRecord(self, name, level, fn, lno, msg, args, exc_info, func, extra, sinfo):  # ty: ignore[invalid-method-override]
         record = super().makeRecord(name, level, fn, lno, msg, args, exc_info, func, extra, sinfo)
         return self._annotate_record(record)
 
@@ -166,7 +168,7 @@ class InstigationLogger(logging.Logger):
 
 
 def get_instigation_log_records(
-    instance: DagsterInstance, log_key: Sequence[str]
+    instance: "DagsterInstance", log_key: Sequence[str]
 ) -> Sequence[Mapping[str, Any]]:
     log_data = instance.compute_log_manager.get_log_data(log_key)
     raw_logs = log_data.stderr.decode("utf-8") if log_data.stderr else ""
@@ -177,7 +179,7 @@ def get_instigation_log_records(
             continue
 
         try:
-            records.append(seven.json.loads(line))
+            records.append(json.loads(line, strict=False))
         except json.JSONDecodeError:
             continue
     return records

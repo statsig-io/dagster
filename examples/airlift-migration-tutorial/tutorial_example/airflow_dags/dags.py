@@ -2,7 +2,6 @@
 import os
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional
 
 from airflow import DAG
 from airflow.models.operator import BaseOperator
@@ -55,7 +54,7 @@ class ExportDuckDBToCSV(BaseOperator):
         duckdb_path: Path,
         duckdb_database_name: str,
         *args,
-        duckdb_schema: Optional[str] = None,
+        duckdb_schema: str | None = None,
         **kwargs,
     ):
         self._table_name = table_name
@@ -121,7 +120,7 @@ export_customers = ExportDuckDBToCSV(
     csv_path=Path(os.environ["TUTORIAL_EXAMPLE_DIR"]) / "customers.csv",
 )
 
-load_raw_customers >> run_dbt_model >> export_customers  # type: ignore
+load_raw_customers >> run_dbt_model >> export_customers
 
 # Set this to True to begin the proxying process
 PROXYING = False

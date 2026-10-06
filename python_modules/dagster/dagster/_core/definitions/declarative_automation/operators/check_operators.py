@@ -1,11 +1,11 @@
 import asyncio
 from abc import abstractmethod
-from typing import TYPE_CHECKING, AbstractSet, Any, Optional, Sequence  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Any  # noqa: UP035
 
 from dagster_shared.serdes import whitelist_for_serdes
 
 import dagster._check as check
-from dagster._core.definitions.asset_key import AssetCheckKey, AssetKey
+from dagster._core.definitions.asset_key import AssetCheckKey, AssetKey, EntityKey
 from dagster._core.definitions.assets.graph.base_asset_graph import BaseAssetGraph, BaseAssetNode
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
@@ -30,8 +30,8 @@ class ChecksAutomationCondition(BuiltinAutomationCondition[AssetKey]):
 
     blocking_only: bool = False
     # Should be AssetSelection, but this causes circular reference issues
-    allow_selection: Optional[Any] = None
-    ignore_selection: Optional[Any] = None
+    allow_selection: Any | None = None
+    ignore_selection: Any | None = None
 
     @property
     @abstractmethod
@@ -56,16 +56,16 @@ class ChecksAutomationCondition(BuiltinAutomationCondition[AssetKey]):
     def requires_cursor(self) -> bool:
         return False
 
-    def get_node_unique_id(self, *, parent_unique_id: Optional[str], index: Optional[int]) -> str:
+    def get_node_unique_id(
+        self,
+        *,
+        parent_unique_id: str | None,
+        index: int | None,
+        target_key: EntityKey | None,
+    ) -> str:
         """Ignore allow_selection / ignore_selection for the cursor hash."""
         parts = [str(parent_unique_id), str(index), self.base_name]
         return non_secure_md5_hash_str("".join(parts).encode())
-
-    def get_backcompat_node_unique_ids(
-        self, *, parent_unique_id: Optional[str] = None, index: Optional[int] = None
-    ) -> Sequence[str]:
-        # backcompat for previous cursors where the allow/ignore selection influenced the hash
-        return [super().get_node_unique_id(parent_unique_id=parent_unique_id, index=index)]
 
     def allow(self, selection: "AssetSelection") -> "ChecksAutomationCondition":
         """Returns a copy of this condition that will only consider dependencies within the provided
@@ -116,7 +116,7 @@ class AnyChecksCondition(ChecksAutomationCondition):
     def operator_type(self) -> OperatorType:
         return "or"
 
-    async def evaluate(self, context: AutomationContext[AssetKey]) -> AutomationResult[AssetKey]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def evaluate(self, context: AutomationContext[AssetKey]) -> AutomationResult[AssetKey]:  # ty: ignore[invalid-method-override]
         true_subset = context.get_empty_subset()
 
         coroutines = [
@@ -152,7 +152,7 @@ class AllChecksCondition(ChecksAutomationCondition):
     def operator_type(self) -> OperatorType:
         return "and"
 
-    async def evaluate(self, context: AutomationContext[AssetKey]) -> AutomationResult[AssetKey]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def evaluate(self, context: AutomationContext[AssetKey]) -> AutomationResult[AssetKey]:  # ty: ignore[invalid-method-override]
         check_results = []
         true_subset = context.candidate_subset
 

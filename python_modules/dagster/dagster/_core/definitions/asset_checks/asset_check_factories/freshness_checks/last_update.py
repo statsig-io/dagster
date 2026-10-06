@@ -1,9 +1,8 @@
 import datetime
 from collections.abc import Iterable, Sequence
-from typing import Any, Optional, Union, cast
+from typing import Any
 
 from dagster import _check as check
-from dagster._annotations import beta
 from dagster._core.definitions.asset_checks.asset_check_factories.utils import (
     DEADLINE_CRON_PARAM_KEY,
     DEFAULT_FRESHNESS_SEVERITY,
@@ -36,6 +35,7 @@ from dagster._core.definitions.metadata import (
     TimestampMetadataValue,
 )
 from dagster._core.execution.context.compute import AssetCheckExecutionContext
+from dagster._symbol_annotations.lifecycle import superseded
 from dagster._time import get_current_timestamp, get_timezone
 from dagster._utils.schedules import (
     get_latest_completed_cron_tick,
@@ -44,12 +44,12 @@ from dagster._utils.schedules import (
 )
 
 
-@beta
+@superseded(additional_warn_text="Attach `FreshnessPolicy` objects to your assets instead.")
 def build_last_update_freshness_checks(
     *,
-    assets: Sequence[Union[CoercibleToAssetKey, AssetsDefinition, SourceAsset]],
+    assets: Sequence[CoercibleToAssetKey | AssetsDefinition | SourceAsset],
     lower_bound_delta: datetime.timedelta,
-    deadline_cron: Optional[str] = None,
+    deadline_cron: str | None = None,
     timezone: str = DEFAULT_FRESHNESS_TIMEZONE,
     severity: AssetCheckSeverity = DEFAULT_FRESHNESS_SEVERITY,
     blocking: bool = False,
@@ -155,7 +155,7 @@ def build_last_update_freshness_checks(
 
 def _build_freshness_multi_check(
     asset_keys: Sequence[AssetKey],
-    deadline_cron: Optional[str],
+    deadline_cron: str | None,
     timezone: str,
     severity: AssetCheckSeverity,
     lower_bound_delta: datetime.timedelta,
@@ -192,7 +192,7 @@ def _build_freshness_multi_check(
                 datetime.datetime,
             )
 
-            last_update_time_lower_bound = cast("datetime.datetime", deadline - lower_bound_delta)
+            last_update_time_lower_bound = deadline - lower_bound_delta
 
             latest_record = retrieve_last_update_record(
                 instance=context.instance, asset_key=asset_key, partition_key=None
@@ -251,9 +251,9 @@ def _build_freshness_multi_check(
 
 def construct_description(
     passed: bool,
-    last_update_time_lower_bound: Optional[float],
+    last_update_time_lower_bound: float | None,
     current_timestamp: float,
-    update_timestamp: Optional[float],
+    update_timestamp: float | None,
 ) -> str:
     check.invariant(
         (passed and update_timestamp is not None) or not passed,

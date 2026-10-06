@@ -2,6 +2,7 @@
 description: Retrieve secrets and credentials from Azure Key Vault in an Azure Kubernetes Service (AKS) cluster.
 sidebar_position: 5400
 title: Retrieve secrets and credentials from Azure Key Vault in AKS
+tags: [dagster-plus-feature]
 ---
 
 :::note
@@ -53,7 +54,7 @@ Add yourself with the role to manage the keys in the secret vault:
 az role assignment create --role 'Key Vault Administrator' --assignee '<your identity>' --scope '/subscriptions/<subscription_id>/resourceGroups/<resource_group>'
 ```
 
-## Step 3: Store the Dagster Cloud Agent Token in the Key Vault
+## Step 3: Store the Dagster+ agent token in the Key Vault
 
 Grant the AKS cluster access to the Key Vault:
 
@@ -65,9 +66,9 @@ az role assignment create --role "Key Vault Secrets User" --assignee $CLIENT_ID 
 
 See the [Azure built-in roles for Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/rbac-guide?tabs=azure-cli#azure-built-in-roles-for-key-vault-data-plane-operations).
 
-## Step 4: Create and access the Dagster Cloud Agent Token from your Key Vault
+## Step 4: Create and access the Dagster+ agent token from your Key Vault
 
-Create a secret in the Azure Key Vault to store the Dagster Cloud Agent Token:
+Create a secret in the Azure Key Vault to store the Dagster+ agent token:
 
 ```bash
 az keyvault secret set --name dagsterAgentToken --vault-name <vault-name> --value <dagster-token>
@@ -173,24 +174,26 @@ kubectl delete pod test-akv-secret-mount
 
 ## Step 5: Modify your AKS deployment to use the Dagster+ token from the Key Vault
 
-Modify the following sections of your values.yaml file.
+Modify the following sections of your `values.yaml` file.
 
-a) update the `dagsterCloud` section:
+1. Update the `dagsterCloud` section:
 
 This will ensure the agent token is provided and expected as the environment variable `dagsterAgentToken`.
 
 ```yaml
+# values.yaml
 dagsterCloud:
   agentTokenSecretName: dagster
   agentTokenEnvVarName: dagsterAgentToken
   # ...
 ```
 
-b) add these entries to the `dagsterCloudAgent` section:
+2. Add these entries to the `dagsterCloudAgent` section:
 
 Required for the csi driver to mount the secret into the agent pod.
 
 ```yaml
+# values.yaml
 dagsterCloudAgent:
   volumeMounts:
     - name: dagster-token
@@ -205,11 +208,12 @@ dagsterCloudAgent:
           secretProviderClass: 'azure-kv-dagster-agent-token'
 ```
 
-c) add these entries to the `workspace`:
+3. Add these entries to the `workspace`:
 
 This ensures the secret is also made available to the pods the agent will create to run your code.
 
 ```yaml
+# values.yaml
 envSecrets:
   - name: dagster
     optional: false
@@ -226,9 +230,10 @@ volumes:
         secretProviderClass: 'azure-kv-dagster-agent-token'
 ```
 
-d) optionally, you could manage the secret provider within your helm values file by providing it as an extra manifest, instead of provisioning it separately:
+4. Optionally, you could manage the secret provider within your helm values file by providing it as an extra manifest, instead of provisioning it separately:
 
 ```yaml
+# values.yaml
 extraManifests:
   # This is a SecretProviderClass example using workload identity to access your key vault
   - apiVersion: secrets-store.csi.x-k8s.io/v1
@@ -266,7 +271,7 @@ helm upgrade -n <dagster-namespace> user-cloud dagster-cloud/dagster-cloud-agent
 
 You can verify that the agent is running by looking at its status in the Dagster+ UI at this address:
 
-`https://<org_name>.dagster.plus/<deployment>/deployment/health`
+`https://<org_name>.eu.dagster.cloud/<deployment>/deployment/health`
 
 :::tip
 

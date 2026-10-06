@@ -1,19 +1,20 @@
 import logging
 import sys
 from collections.abc import Iterator, Sequence
-from typing import Optional, cast
 
 import dagster._check as check
 from dagster._core.definitions.metadata import MetadataValue
 from dagster._core.definitions.selector import JobSubsetSelector
 from dagster._core.errors import DagsterRunNotFoundError
 from dagster._core.events import EngineEventData, RunFailureReason
+from dagster._core.execution.backfill import BULK_ACTION_TERMINAL_STATUSES
 from dagster._core.execution.plan.resume_retry import ReexecutionStrategy
 from dagster._core.execution.retries import auto_reexecution_should_retry_run
 from dagster._core.instance import DagsterInstance
 from dagster._core.storage.dagster_run import DagsterRun, DagsterRunStatus, RunRecord
 from dagster._core.storage.tags import (
     AUTO_RETRY_RUN_ID_TAG,
+    BACKFILL_ID_TAG,
     RETRY_NUMBER_TAG,
     RETRY_ON_ASSET_OR_OP_FAILURE_TAG,
     RETRY_STRATEGY_TAG,
@@ -53,6 +54,25 @@ def should_retry(run: DagsterRun, instance: DagsterInstance) -> bool:
         should_retry_run = get_boolean_tag_value(will_retry_tag_value, default_value=False)
 
     if should_retry_run:
+        # If the run is part of a backfill that has reached a terminal state (canceled,
+        # failed, completed) or has been deleted, do not auto-retry. Manual retries are
+        # unaffected since they bypass this function entirely.
+        backfill_id = run.tags.get(BACKFILL_ID_TAG)
+        if backfill_id is not None:
+            backfill = instance.get_backfill(backfill_id)
+            if backfill is None:
+                instance.report_engine_event(
+                    "Not retrying run since it is part of a backfill that no longer exists.",
+                    run,
+                )
+                return False
+            if backfill.status in BULK_ACTION_TERMINAL_STATUSES:
+                instance.report_engine_event(
+                    "Not retrying run since it is part of a backfill that is in a terminal"
+                    f" state ({backfill.status.value}).",
+                    run,
+                )
+                return False
         return should_retry_run
     else:
         # one of the reasons we may not retry a run is if it is a step failure and system is
@@ -82,7 +102,7 @@ def filter_runs_to_should_retry(
 
 def get_automatically_retried_run_if_exists(
     instance: DagsterInstance, run: DagsterRun, run_group: Sequence[DagsterRun]
-) -> Optional[DagsterRun]:
+) -> DagsterRun | None:
     if run.tags.get(AUTO_RETRY_RUN_ID_TAG) is not None:
         return instance.get_run_by_id(run.tags[AUTO_RETRY_RUN_ID_TAG])
     child_run = next(
@@ -112,7 +132,7 @@ def run_was_successfully_retried(run: DagsterRun, instance: DagsterInstance) -> 
 
 def get_reexecution_strategy(
     run: DagsterRun, instance: DagsterInstance
-) -> Optional[ReexecutionStrategy]:
+) -> ReexecutionStrategy | None:
     raw_strategy_tag = run.tags.get(RETRY_STRATEGY_TAG)
     if raw_strategy_tag is None:
         return None
@@ -171,6 +191,11 @@ def retry_run(
             asset_selection=(
                 None if failed_run.asset_selection is None else list(failed_run.asset_selection)
             ),
+            asset_check_selection=(
+                None
+                if failed_run.asset_check_selection is None
+                else list(failed_run.asset_check_selection)
+            ),
         )
     )
 
@@ -208,6 +233,7 @@ def retry_run(
     tags = {RETRY_NUMBER_TAG: str(len(run_group_list))}
     new_run = instance.create_reexecuted_run(
         parent_run=failed_run,
+        request_context=workspace,
         code_location=code_location,
         remote_job=remote_job,
         strategy=strategy,
@@ -244,7 +270,7 @@ def consume_new_runs_for_automatic_reexecution(
     retry the run again.
     """
     for run in filter_runs_to_should_retry(
-        [cast("DagsterRun", run_record.dagster_run) for run_record in run_records],
+        [run_record.dagster_run for run_record in run_records],
         workspace_process_context.instance,
     ):
         yield

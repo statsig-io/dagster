@@ -1,99 +1,117 @@
 ---
-description: How to test components.
+description: Best practices for testing components you have created.
 sidebar_position: 500
-title: Testing your component
+title: Testing custom components
 ---
-
-## Testing custom components
 
 After you [create a new component](/guides/build/components/creating-new-components/creating-and-registering-a-component), we recommend testing scaffolding and runtime execution with the Dagster framework utilities outlined below.
 
-### The core workhorse: `scaffold_defs_sandbox`
+## Setting up a sandbox
 
-The function at the core of our testing workflows is `scaffold_defs_sandbox`.
+The function at the core of our testing workflows is <PyObject section="components" module="dagster" object="components.testing.create_defs_folder_sandbox" />. This context manager allows you to construct a temporary `defs` folder, which can be populated with components and loaded into Component objects, or built into dagster <PyObject section="definitions" module="dagster" object="Definitions" /> just like in a real Dagster project. 
 
-The function signature is the following:
+The `create_defs_folder_sandbox` method yields a <PyObject section="components" module="dagster" object="components.testing.DefsFolderSandbox" /> object that provides a number of useful utilities for scaffolding and loading components:
 
-```python
-@contextmanager
-def scaffold_defs_sandbox(
-    *,
-    component_cls: type,
-    scaffold_params: Optional[dict[str, Any]] = None,
-    component_path: Optional[Union[Path, str]] = None,
-    scaffold_format: ScaffoldFormatOptions = "yaml",
-    project_name: Optional[str] = None,
-) -> Iterator[DefsPathSandbox]: ...
-```
+* <PyObject section="components" module="dagster" object="components.testing.DefsFolderSandbox.scaffold_component" displayText="scaffold_component" /> scaffolds a component into the `defs` folder.
+* <PyObject section="components" module="dagster" object="components.testing.DefsFolderSandbox.load_component_and_build_defs" displayText="load_component_and_build_defs" /> tests instantiation of a component, and validates the definitions it produces.
 
-For the purposes of this guide, we will only concern ourselves with `component_cls` and `scaffold_params`. Users are highly unlikely to require the other parameters.
+## Scaffolding a component
 
-`scaffold_defs_sandbox` creates a lightweight sandbox to scaffold and instantiate a component in three steps:
-1. Creates an empty folder structure (with an auto-generated project name and component path by default) that mimics the `defs/` folder portion of a real Dagster project. Practically speaking, this means a single folder at `src/<<project_name>>/defs/<<component_path>>` and which contains the scaffolded files within that leaf directory.
-2. It then invokes the scaffolder on the component class in the context of that folder.
-3. `scaffold_defs_sandbox` yields a `DefsPathSandbox` object, which you can program against.
+The <PyObject section="components" module="dagster" object="components.testing.DefsFolderSandbox.scaffold_component" displayText="DefsFolderSandbox.scaffold_component" /> method enables you to verify the behavior of a custom scaffolder. This method allows you to scaffold a component into the `defs` folder, just as a user would with the `dg scaffold defs <COMPONENT_NAME>` CLI command.
 
-Within the `with` block, you are free to assert facts about the scaffolded files.
+The only required parameter is `component_cls`, which is the class of the component to scaffold. Without providing any other parameters, this will scaffold a YAML component with a random name and default contents. Other parameters allow you to simulate passing parameters to the scaffolding CLI command, or specify a specific path for the newly created component.
 
-For example, in our test of our Sling component (which scaffolds a `replication.yaml` file):
+Here is an example of use in our test of our [Sling component](/integrations/libraries/sling) (which scaffolds a `replication.yaml` file):
 
 ```python
+import dagster as dg
+import dagster_sling
+
+...
+
+
 def test_scaffold_sling():
-    with scaffold_defs_sandbox(component_cls=SlingReplicationCollectionComponent) as defs_sandbox:
-        assert (defs_sandbox.defs_folder_path / "defs.yaml").exists()
-        assert (defs_sandbox.defs_folder_path / "replication.yaml").exists()
+    with dg.components.testing.create_defs_folder_sandbox() as sandbox:
+        defs_path = sandbox.scaffold_component(
+            component_cls=dagster_sling.SlingReplicationCollectionComponent
+        )
+        assert (defs_path / "defs.yaml").exists()
+        assert (defs_path / "replication.yaml").exists()
 ```
 
-### DefsPathSandbox object
+For ease of use, the `defs_yaml_contents` argument can be used to replace the contents of the `defs.yaml` file after the component has been scaffolded.
 
-`scaffold_defs_sandbox` yields an object of type `DefsPathSandbox` as a context manager. You can use the object to load the component instance and the definitions it produces.
+### Loading and building definitions
 
-For example, the following is code from our tests of our [dlt component](/guides/build/components/integrations/dlt-component-tutorial) on already-created `DefsPathSandbox`. In this case, we ensure that the definitions have loaded, and that the correct asset keys have been created:
+To test instantiation of a component, and to validate the definitions it produces, you can use the <PyObject section="components" module="dagster" object="components.testing.DefsFolderSandbox.load_component_and_build_defs" displayText="DefsFolderSandbox.load_component_and_build_defs" /> method, which loads an already-scaffolded component and builds the corresponding Definitions.
 
-```python
-with defs_sandbox.load() as (component, defs):
-    assert isinstance(component, DltLoadCollectionComponent)
-    assert len(component.loads) == 1
-    assert defs.resolve_asset_graph().get_all_asset_keys() == {
-        AssetKey(["example", "hello_world"]),
-        AssetKey(["my_source_hello_world"]),
-    }
-```
-
-However, that is just using the default `defs.yaml` file. Usually, you will want to customize the body of `defs.yaml`. For that, there is the `component_body` argument to `load`, demonstrated in the code that tests our `PythonScriptComponent`:
+For example, the following is code from our [dlt component](/integrations/libraries/dlt) tests. In this case, we ensure that the definitions have loaded, and that the correct asset keys have been created:
 
 ```python
+import dagster as dg
+import dagster_dlt
 
-def test_pipes_subprocess_script_hello_world() -> None:
-    with scaffold_defs_sandbox(component_cls=PythonScriptComponent) as sandbox:
-        # Create the script we will execute
-        execute_path = sandbox.defs_folder_path / "script.py"
-        execute_path.write_text("print('hello world')")
+...
 
-        # This will create a defs.yaml file in the sandboxed folder
-        with sandbox.load(
-            component_body={
-                "type": "dagster.components.lib.executable_component.python_script_component.PythonScriptComponent",
-                "attributes": {
-                    "execution": {
-                        "name": "op_name",
-                        "path": "script.py",
-                    },
-                    "assets": [
-                        {
-                            "key": "asset",
-                        }
-                    ],
-                },
+
+def test_dlt_component():
+    with dg.components.testing.create_defs_folder_sandbox() as sandbox:
+        defs_path = sandbox.scaffold_component(component_cls=dagster_dlt.DltLoadCollectionComponent)
+        with sandbox.load_component_and_build_defs(defs_path=defs_path) as (
+            component,
+            defs,
+        ):
+            assert isinstance(component, DltLoadCollectionComponent)
+            assert len(component.loads) == 1
+            assert defs.resolve_asset_graph().get_all_asset_keys() == {
+                AssetKey(["example", "hello_world"]),
+                AssetKey(["my_source_hello_world"]),
             }
-        ) as (component, defs):
-            assert isinstance(component, PythonScriptComponent)
-            assert isinstance(component.execution, ScriptSpec)
+```
 
-            # You can operate on definitions as normal
-            assets_def = defs.get_assets_def("asset")
-            result = materialize([assets_def])
-            assert result.success
-            mats = result.asset_materializations_for_node("op_name")
-            assert len(mats) == 1
+## Testing multiple components
+
+These utilities are also useful for testing multiple components in a single test. For example, testing the <PyObject section="components" module="dagster" object="TemplatedSqlComponent" /> with a Snowflake connection:
+
+```python
+import dagster as dg
+import dagster_snowflake
+
+...
+
+
+def test_snowflake_component():
+    with dg.components.testing.create_defs_folder_sandbox() as sandbox:
+        sandbox.scaffold_component(
+            component_cls=dg.TemplatedSqlComponent,
+            defs_path="sql_execution_component",
+            defs_yaml_contents={
+                "type": "dagster.TemplatedSqlComponent",
+                "attributes": {
+                    "sql_template": "SELECT * FROM MY_TABLE;",
+                    "assets": [{"key": "TESTDB/TESTSCHEMA/TEST_TABLE"}],
+                    "connection": "{{ context.load_component('sql_connection_component') }}",
+                },
+            },
+        )
+
+        sandbox.scaffold_component(
+            component_cls=dagster_snowflake.SnowflakeConnectionComponent,
+            defs_path="sql_connection_component",
+            defs_yaml_contents={
+                "type": "dagster_snowflake.SnowflakeConnectionComponent",
+                "attributes": {
+                    "account": "test_account",
+                    "user": "test_user",
+                    "password": "test_password",
+                    "database": "TESTDB",
+                    "schema": "TESTSCHEMA",
+                },
+            },
+        )
+
+        with sandbox.build_all_defs() as defs:
+            assert defs.resolve_asset_graph().get_all_asset_keys() == {
+                AssetKey(["TESTDB", "TESTSCHEMA", "TEST_TABLE"])
+            }
 ```

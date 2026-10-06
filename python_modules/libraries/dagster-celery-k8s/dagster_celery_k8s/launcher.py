@@ -1,5 +1,5 @@
 import sys
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 import kubernetes
 from dagster import (
@@ -67,12 +67,13 @@ class CeleryK8sRunLauncher(RunLauncher, ConfigurableClass):
         postgres_password_secret,
         load_incluster_config=True,
         kubeconfig_file=None,
+        k8s_api_ssl_ca_cert_file=None,
         broker=None,
         backend=None,
         include=None,
         config_source=None,
         retries=None,
-        inst_data: Optional[ConfigurableClassData] = None,
+        inst_data: ConfigurableClassData | None = None,
         k8s_client_batch_api=None,
         env_config_maps=None,
         env_secrets=None,
@@ -96,6 +97,11 @@ class CeleryK8sRunLauncher(RunLauncher, ConfigurableClass):
         else:
             check.opt_str_param(kubeconfig_file, "kubeconfig_file")
             kubernetes.config.load_kube_config(kubeconfig_file)
+
+        if k8s_api_ssl_ca_cert_file:
+            config = kubernetes.client.Configuration.get_default_copy()
+            config.ssl_ca_cert = k8s_api_ssl_ca_cert_file
+            kubernetes.client.Configuration.set_default(config)
 
         self._api_client = DagsterKubernetesClient.production_client(
             batch_api_override=k8s_client_batch_api
@@ -160,7 +166,7 @@ class CeleryK8sRunLauncher(RunLauncher, ConfigurableClass):
         pod_name = job_name
         exc_config = _get_validated_celery_k8s_executor_config(run.run_config)
 
-        job_image_from_executor_config = exc_config.get("job_image")  # pyright: ignore[reportOptionalMemberAccess]
+        job_image_from_executor_config = exc_config.get("job_image")
 
         job_origin = cast("JobPythonOrigin", context.job_code_origin)
         repository_origin = job_origin.repository_origin
@@ -229,7 +235,7 @@ class CeleryK8sRunLauncher(RunLauncher, ConfigurableClass):
             {DOCKER_IMAGE_TAG: job.spec.template.spec.containers[0].image},
         )
 
-        job_namespace = exc_config.get("job_namespace", self.job_namespace)  # pyright: ignore[reportOptionalMemberAccess]
+        job_namespace = exc_config.get("job_namespace", self.job_namespace)
 
         self._instance.report_engine_event(
             "Creating Kubernetes run worker job",
@@ -274,7 +280,7 @@ class CeleryK8sRunLauncher(RunLauncher, ConfigurableClass):
             labels=merge_dicts(self._labels, exc_config.get("labels", {})),
         )
 
-    def terminate(self, run_id):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def terminate(self, run_id):
         check.str_param(run_id, "run_id")
 
         run = self._instance.get_run_by_id(run_id)
@@ -322,16 +328,16 @@ class CeleryK8sRunLauncher(RunLauncher, ConfigurableClass):
         check.str_param(run_id, "run_id")
 
         dagster_run = self._instance.get_run_by_id(run_id)
-        run_config = dagster_run.run_config  # pyright: ignore[reportOptionalMemberAccess]
+        run_config = dagster_run.run_config  # ty: ignore[unresolved-attribute]
         executor_config = _get_validated_celery_k8s_executor_config(run_config)
-        return executor_config.get("job_namespace", self.job_namespace)  # pyright: ignore[reportOptionalMemberAccess]
+        return executor_config.get("job_namespace", self.job_namespace)
 
     @property
     def supports_check_run_worker_health(self):
         return True
 
     def check_run_worker_health(self, run: DagsterRun):
-        job_namespace = _get_validated_celery_k8s_executor_config(run.run_config).get(  # pyright: ignore[reportOptionalMemberAccess]
+        job_namespace = _get_validated_celery_k8s_executor_config(run.run_config).get(
             "job_namespace", self.job_namespace
         )
         job_name = get_job_name_from_run_id(run.run_id)

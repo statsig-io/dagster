@@ -43,7 +43,7 @@ def test_jobs_attr():
     schedule = dg.ScheduleDefinition(job_name="my_pipeline", cron_schedule="0 0 * * *")
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
-        match="No job was provided to ScheduleDefinition.",
+        match=r"No job was provided to ScheduleDefinition.",
     ):
         schedule.job  # noqa: B018
 
@@ -157,13 +157,13 @@ def test_tag_transfer_to_run_request():
 
     # If no defined execution function, tags should be transferred to the run request (backcompat)
     assert (
-        tags_and_no_exec_fn_schedule.evaluate_tick(context_with_time).run_requests[0].tags["foo"]  # pyright: ignore[reportOptionalSubscript]
+        tags_and_no_exec_fn_schedule.evaluate_tick(context_with_time).run_requests[0].tags["foo"]  # ty: ignore[not-subscriptable]
         == "bar"
     )
 
     # If an execution function is defined, tags should not be transferred to the run request
     assert (
-        "foo" not in tags_and_exec_fn_schedule.evaluate_tick(context_with_time).run_requests[0].tags  # pyright: ignore[reportOptionalSubscript]
+        "foo" not in tags_and_exec_fn_schedule.evaluate_tick(context_with_time).run_requests[0].tags  # ty: ignore[not-subscriptable]
     )
 
 
@@ -238,3 +238,37 @@ def test_unresolved_metadata():
     schedule = defs.resolve_schedule_def("my_schedule")
     assert schedule.metadata["foo"] == dg.TextMetadataValue("baz")
     assert schedule.metadata["four"] == dg.IntMetadataValue(4)
+
+
+def test_owners():
+    @dg.schedule(
+        cron_schedule="@daily",
+        job_name="test_job",
+        owners=[
+            "user@example.com",
+            "team:Data Engineering",
+        ],
+    )
+    def schedule_with_owners(): ...
+
+    assert schedule_with_owners.owners == ["user@example.com", "team:Data Engineering"]
+
+
+def test_owners_validation():
+    # Test empty team name
+    with pytest.raises(
+        dg.DagsterInvalidDefinitionError,
+        match="Team name cannot be empty after 'team:' prefix",
+    ):
+
+        @dg.schedule(cron_schedule="@daily", job_name="test_job", owners=["team:"])
+        def schedule_with_empty_team(): ...
+
+    # Test invalid owner format
+    with pytest.raises(
+        dg.DagsterInvalidDefinitionError,
+        match="Owner must be an email address or a team name prefixed with 'team:'",
+    ):
+
+        @dg.schedule(cron_schedule="@daily", job_name="test_job", owners=["not-an-email-or-team"])
+        def schedule_with_invalid_owner(): ...

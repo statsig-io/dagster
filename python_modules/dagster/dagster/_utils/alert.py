@@ -1,10 +1,10 @@
 import datetime
 import smtplib
 import ssl
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Callable, Optional, Union
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Union
 
-from dagster._annotations import deprecated_param
+from dagster._annotations import deprecated_param, public
 from dagster._core.definitions.sensor_definition import DefaultSensorStatus, SensorDefinition
 from dagster._core.errors import DagsterInvalidDefinitionError
 
@@ -79,6 +79,7 @@ def send_email_via_starttls(
         server.sendmail(email_from, email_to, message)
 
 
+@public
 @deprecated_param(
     param="job_selection",
     breaking_version="2.0",
@@ -97,32 +98,30 @@ def make_email_on_run_failure_sensor(
     email_subject_fn: Callable[["RunFailureSensorContext"], str] = _default_failure_email_subject,
     smtp_host: str = "smtp.gmail.com",
     smtp_type: str = "SSL",
-    smtp_port: Optional[int] = None,
-    smtp_user: Optional[str] = None,
-    name: Optional[str] = None,
-    webserver_base_url: Optional[str] = None,
-    monitored_jobs: Optional[
-        Sequence[
-            Union[
-                "JobDefinition",
-                "GraphDefinition",
-                "UnresolvedAssetJobDefinition",
-                "RepositorySelector",
-                "JobSelector",
-            ]
+    smtp_port: int | None = None,
+    smtp_user: str | None = None,
+    name: str | None = None,
+    webserver_base_url: str | None = None,
+    monitored_jobs: Sequence[
+        Union[
+            "JobDefinition",
+            "GraphDefinition",
+            "UnresolvedAssetJobDefinition",
+            "RepositorySelector",
+            "JobSelector",
         ]
-    ] = None,
-    job_selection: Optional[
-        Sequence[
-            Union[
-                "JobDefinition",
-                "GraphDefinition",
-                "UnresolvedAssetJobDefinition",
-                "RepositorySelector",
-                "JobSelector",
-            ]
+    ]
+    | None = None,
+    job_selection: Sequence[
+        Union[
+            "JobDefinition",
+            "GraphDefinition",
+            "UnresolvedAssetJobDefinition",
+            "RepositorySelector",
+            "JobSelector",
         ]
-    ] = None,
+    ]
+    | None = None,
     monitor_all_code_locations: bool = False,
     default_status: DefaultSensorStatus = DefaultSensorStatus.STOPPED,
     monitor_all_repositories: bool = False,

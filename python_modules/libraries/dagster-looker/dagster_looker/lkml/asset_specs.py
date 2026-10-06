@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional
 
 from dagster import AssetSpec
 from dagster._annotations import beta
@@ -17,7 +16,7 @@ from dagster_looker.lkml.dagster_looker_lkml_translator import DagsterLookerLkml
 def build_looker_asset_specs(
     *,
     project_dir: Path,
-    dagster_looker_translator: Optional[DagsterLookerLkmlTranslator] = None,
+    dagster_looker_translator: DagsterLookerLkmlTranslator | None = None,
 ) -> Sequence[AssetSpec]:
     """Build a list of asset specs from a set of Looker structures defined in a Looker project.
 
@@ -31,12 +30,12 @@ def build_looker_asset_specs(
 
             from pathlib import Path
 
-            from dagster import external_assets_from_specs
+            from dagster import Definitions
             from dagster_looker import build_looker_asset_specs
 
 
             looker_specs = build_looker_asset_specs(project_dir=Path("my_looker_project"))
-            looker_assets = external_assets_from_specs(looker_specs)
+            defs = Definitions(assets=looker_specs)
     """
     dagster_looker_translator = dagster_looker_translator or DagsterLookerLkmlTranslator()
 

@@ -16,12 +16,14 @@ def temp_dir() -> Generator[str, Any, None]:
 @contextmanager
 def create_template_file(tmpdir: str, filename: str, text: str) -> Generator[str, Any, None]:
     file_path = os.path.join(tmpdir, filename)
-    with open(file_path, "w") as f:
+    with open(file_path, "w", encoding="utf-8") as f:
         f.write(text)
     yield file_path
 
 
 @pytest.fixture
 def empty_config(monkeypatch):
-    # ensure no defaults are read from the local config
     monkeypatch.setenv("DAGSTER_CLOUD_CLI_CONFIG", "/tmp/nosuchpath")
+    monkeypatch.delenv("DAGSTER_CLOUD_ORGANIZATION", raising=False)
+    monkeypatch.delenv("DAGSTER_CLOUD_API_TOKEN", raising=False)
+    monkeypatch.delenv("DAGSTER_CLOUD_DEPLOYMENT", raising=False)

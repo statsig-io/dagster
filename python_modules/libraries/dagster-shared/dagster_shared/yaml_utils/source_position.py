@@ -1,10 +1,10 @@
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, NamedTuple, Optional, Union, cast
+from typing import Any, NamedTuple, TypeAlias
 
 import dagster_shared.check as check
 
-KeyPathSegment = Union[str, int]
+KeyPathSegment: TypeAlias = str | int
 KeyPath = Sequence[KeyPathSegment]
 
 
@@ -42,7 +42,7 @@ class SourcePositionTree(NamedTuple):
     def __hash__(self) -> int:
         return hash((self.position, tuple(sorted(self.children.items()))))
 
-    def lookup(self, key_path: KeyPath) -> Optional[SourcePosition]:
+    def lookup(self, key_path: KeyPath) -> SourcePosition | None:
         """Returns the source position of the descendant at the given path."""
         if len(key_path) == 0:
             return self.position
@@ -52,7 +52,7 @@ class SourcePositionTree(NamedTuple):
         return self.children[head].lookup(tail)
 
     def lookup_closest_and_path(
-        self, key_path: KeyPath, trace: Optional[Sequence[SourcePosition]]
+        self, key_path: KeyPath, trace: Sequence[SourcePosition] | None
     ) -> tuple[SourcePosition, Sequence[SourcePosition]]:
         """Returns the source position of the descendant at the given path. If the path does not
         exist, returns the source position of the nearest ancestor.
@@ -92,7 +92,7 @@ class SourcePositionTree(NamedTuple):
         if source_position.filename == "<string>":
             code_snippet = ""
         else:
-            with open(source_position.filename) as f:
+            with open(source_position.filename, encoding="utf-8") as f:
                 lines = f.readlines()
             lines_with_line_numbers = list(zip(range(1, len(lines) + 1), lines))
 
@@ -155,7 +155,7 @@ def _format_indented_error_msg(
 
 
 def _prepend_lines_with_line_numbers(
-    lines_with_numbers: Sequence[tuple[Optional[int], str]],
+    lines_with_numbers: Sequence[tuple[int | None, str]],
 ) -> Sequence[str]:
     """Prepend each line with a line number, right-justified to the maximum line number length.
 
@@ -192,11 +192,11 @@ class SourcePositionAndKeyPath(NamedTuple):
     """
 
     key_path: KeyPath
-    source_position: Optional[SourcePosition]
+    source_position: SourcePosition | None
 
 
 class HasSourcePositionAndKeyPath:
-    _source_position_and_key_path: Optional[SourcePositionAndKeyPath] = None
+    _source_position_and_key_path: SourcePositionAndKeyPath | None = None
 
     @property
     def source_position(self) -> SourcePosition:
@@ -221,7 +221,7 @@ class HasSourcePositionAndKeyPath:
 
 def populate_source_position_and_key_paths(
     obj: Any,
-    source_position_tree: Optional[SourcePositionTree],
+    source_position_tree: SourcePositionTree | None,
     key_path: KeyPath = [],
 ) -> None:
     """Populate the SourcePositionAndKeyPath for the given object and its children.
@@ -256,7 +256,7 @@ def populate_source_position_and_key_paths(
 
     for child_key_segment, child_tree in source_position_tree.children.items():
         try:
-            child_obj = cast("Any", obj)[child_key_segment]
+            child_obj = obj[child_key_segment]
         except TypeError:
             if not isinstance(child_key_segment, str):
                 raise

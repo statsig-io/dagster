@@ -8,7 +8,6 @@ from dagster_shared.scaffold import should_skip_scaffolded_file
 
 # Examples aren't that can't be downloaded from the dagster project CLI
 EXAMPLES_TO_IGNORE = [
-    "components_yaml_checks_dsl",
     "deploy_k8s_beta",
     "docs_beta_snippets",
     "docs_projects",
@@ -30,23 +29,21 @@ AVAILABLE_EXAMPLES = [
     "assets_pandas_pyspark",
     "assets_pandas_type_metadata",
     "assets_smoke_test",
+    "data-quality-patterns",
     "deploy_docker",
     "deploy_ecs",
     "deploy_k8s",
     "development_to_production",
     "feature_graph_backed_assets",
-    "getting_started_etl_tutorial",
     "google_drive_factory",
+    "ingestion-patterns",
+    "project_databricks_and_snowflake",
     "oss-metadata-to-plus",
     "project_analytics",
-    "project_dagster_university_start",
-    "project_du_dbt_starter",
     "project_fully_featured",
-    "quickstart_aws",
+    "project_multi_tenant",
     "quickstart_etl",
-    "quickstart_gcp",
-    "quickstart_snowflake",
-    "tutorial",
+    "snowflake_cortex",
     "tutorial_notebook_assets",
     "with_great_expectations",
     "with_openai",
@@ -90,6 +87,9 @@ def download_example_from_github(path: str, example: str, version: str):
     click.echo(f"Downloading example '{example}'. This may take a while.")
 
     response = requests.get(_get_url_for_version(version), stream=True)
+    # Without this an HTTP error body is handed to tarfile, which reports the misleading
+    # "not a gzip file" — GitHub rate-limits this endpoint, so a 429 is a realistic outcome.
+    response.raise_for_status()
     with tarfile.open(fileobj=BytesIO(response.raw.read()), mode="r:gz") as tar_file:
         # Extract the selected example folder to destination
         subdir_and_files = [

@@ -5,7 +5,7 @@ from unittest import mock
 
 import pytest
 from dagster import file_relative_path
-from dagster._core.remote_representation import ManagedGrpcPythonEnvCodeLocationOrigin
+from dagster._core.remote_origin import ManagedGrpcPythonEnvCodeLocationOrigin
 from dagster._core.remote_representation.feature_flags import CodeLocationFeatureFlags
 from dagster._core.test_utils import environ
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
@@ -25,6 +25,7 @@ fragment locationEntryFragment on WorkspaceLocationEntry {
   __typename
   id
   name
+  definitionsSource
   locationOrLoadError {
     __typename
     ... on RepositoryLocation {
@@ -146,7 +147,7 @@ class TestLoadWorkspace(BaseTestSuite):
         with mock.patch(
             "dagster._core.workspace.load_target.location_origins_from_yaml_paths",
         ) as origins_mock:
-            original_origins.append(  # pyright: ignore[reportAttributeAccessIssue]
+            original_origins.append(  # ty: ignore[unresolved-attribute]
                 ManagedGrpcPythonEnvCodeLocationOrigin(
                     location_name="error_location",
                     loadable_target_origin=LoadableTargetOrigin(
@@ -175,6 +176,7 @@ class TestLoadWorkspace(BaseTestSuite):
             assert all([node["__typename"] == "WorkspaceLocationEntry" for node in nodes]), str(
                 nodes
             )
+            assert all([node["definitionsSource"] == "CODE_SERVER" for node in nodes]), str(nodes)
 
             success_nodes = [
                 node["locationOrLoadError"]
@@ -230,7 +232,7 @@ class TestLoadWorkspace(BaseTestSuite):
             "dagster._core.workspace.load_target.location_origins_from_yaml_paths",
         ) as origins_mock:
             # Add an error origin
-            original_origins.append(  # pyright: ignore[reportAttributeAccessIssue]
+            original_origins.append(  # ty: ignore[unresolved-attribute]
                 ManagedGrpcPythonEnvCodeLocationOrigin(
                     location_name="error_location",
                     loadable_target_origin=LoadableTargetOrigin(
@@ -275,7 +277,7 @@ class TestLoadWorkspace(BaseTestSuite):
         with mock.patch(
             "dagster._core.workspace.load_target.location_origins_from_yaml_paths",
         ) as origins_mock:
-            original_origins.append(  # pyright: ignore[reportAttributeAccessIssue]
+            original_origins.append(  # ty: ignore[unresolved-attribute]
                 ManagedGrpcPythonEnvCodeLocationOrigin(
                     location_name="error_location",
                     loadable_target_origin=LoadableTargetOrigin(
@@ -357,7 +359,9 @@ class TestLoadWorkspace(BaseTestSuite):
             mock_fetch.side_effect = Exception("boom")
 
             result = execute_dagster_graphql(
-                graphql_context, LOCATION_ENTRY_QUERY, {"name": main_repo_location_name()}
+                graphql_context,
+                LOCATION_ENTRY_QUERY,
+                {"name": main_repo_location_name()},
             )
             assert result
             assert result.data["workspaceLocationEntryOrError"]

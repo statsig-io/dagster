@@ -2,6 +2,7 @@
 description: Deploy a Dagster+ Amazon ECS agent in an existing VPC using CloudFormation.
 sidebar_position: 3200
 title: Existing VPC setup
+tags: [dagster-plus-feature]
 ---
 
 :::note
@@ -47,7 +48,11 @@ Click the **Launch Stack** button to install the CloudFormation stack in your AW
 
 [<img src="https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png"/>](https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?templateURL=https://s3.amazonaws.com/dagster.cloud/cloudformation/ecs-agent.yaml)
 
-**Note**: Creating the CloudFormation stack may take a few minutes. Refresh the [AWS console **Stacks** page](https://console.aws.amazon.com/cloudformation/home#/stacks) to check the status.
+:::note
+
+Creating the CloudFormation stack may take a few minutes. Refresh the [AWS console **Stacks** page](https://console.aws.amazon.com/cloudformation/home#/stacks) to check the status.
+
+:::
 
 ## Step 3: Configure the agent
 
@@ -55,12 +60,14 @@ After the stack is installed, you'll be prompted to configure it. In the ECS wiz
 
 - **Dagster+ Organization**: Enter the name of your Dagster+ organization.
 - **Dagster+ Deployment**: Enter the name of the Dagster+ deployment you want to use. Leave this field empty if the agent will only serve Branch deployments.
-- **Enable Branch Deployments**: Whether to have this agent serve your ephemeral [Branch deployments](/deployment/dagster-plus/ci-cd/branch-deployments). Only a single agent should have this setting enabled.
+- **Enable Branch Deployments**: Whether to have this agent serve your ephemeral [Branch deployments](/deployment/dagster-plus/deploying-code/branch-deployments). Only a single agent should have this setting enabled.
 - **Agent Token**: Paste the agent token you generated in [Step 1](#step-1-generate-a-dagster-agent-token).
 - **Deploy VPC**: The existing VPC to deploy the agent into.
 - **Deploy VPC Subnet**: A public subnet of the existing VPC to deploy the agent into.
 - **Existing ECS Cluster**: Optionally, the name of an existing ECS cluster to deploy the agent in. Leave blank to create a new cluster
 - **Task Launch Type**: Optionally, the launch type to use for new tasks created by the agent (FARGATE or EC2). Defaults to FARGATE.
+- **AgentCPU**: The amount of AWS CPU to allocate to the agent. Defaults to 256 CPU units.
+- **AgentMemory**: The amount of memory to allocate to the agent. Defaults to 1024 MiB.
 
 The page should look similar to the following image. In this example, our organization name is `hooli` and our deployment is `prod`:
 
@@ -72,10 +79,6 @@ After you've finished configuring the stack in AWS, you can view the agent in Da
 
 ## Next steps
 
-Now that you've got your agent running, what's next?
+Now that you've got your agent running, you can follow the steps in [Creating Dagster projects](/guides/build/projects/creating-projects) to create and deploy a project to Dagster+.
 
-- **If you're getting Dagster+ set up**, the next step is to [add a code location](/deployment/code-locations) using the agent.
-
-- **If you're ready to load your Dagster code**, refer to the [Adding Code to Dagster+](/deployment/code-locations) guide for more info.
-
-If you need to upgrade your ECS agent's CloudFormation template, refer to the [upgrade guide](/deployment/dagster-plus/hybrid/amazon-ecs/upgrading-cloudformation) for more info.
+If you need to upgrade your ECS agent's CloudFormation template, see [Upgrading CloudFormation for an Amazon ECS agent](/deployment/dagster-plus/hybrid/amazon-ecs/upgrading-cloudformation).

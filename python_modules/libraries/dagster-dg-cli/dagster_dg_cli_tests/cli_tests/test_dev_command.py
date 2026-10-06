@@ -1,19 +1,14 @@
+import shutil
 import tempfile
 import textwrap
 from pathlib import Path
 
 import pytest
-from dagster_dg_core.utils import (
-    activate_venv,
-    discover_git_root,
-    ensure_dagster_dg_tests_import,
-    is_windows,
-    pushd,
-)
-
-ensure_dagster_dg_tests_import()
-
-from dagster_dg_core_tests.utils import (
+from dagster_dg_core.context import DG_PROJECT_PYTHON_EXECUTABLE_ENV_VAR
+from dagster_dg_core.utils import activate_venv, discover_repo_root, is_windows, pushd
+from dagster_shared.utils import environ
+from dagster_test.components.test_utils.test_cases import BASIC_INVALID_VALUE, BASIC_MISSING_VALUE
+from dagster_test.dg_utils.utils import (
     ProxyRunner,
     assert_projects_loaded_and_exit,
     assert_runner_result,
@@ -24,25 +19,32 @@ from dagster_dg_core_tests.utils import (
     isolated_example_workspace,
     launch_dev_command,
 )
-from dagster_test.components.test_utils.test_cases import BASIC_INVALID_VALUE, BASIC_MISSING_VALUE
+
+# Tests that call `launch_dev_command` are marked `serial` and run in their own tox env
+# (see tox.ini). They are not a thread-safety problem: each test uses its own tempdir and a
+# `find_free_port()`-allocated port. The issue is resource contention — each test does one or more
+# `uv sync`s and then spawns `dg dev`, which must boot `dagster-webserver` and answer a request
+# within a 90s handshake window (`_ping_webserver` in dagster_test.dg_utils.utils). Running four of
+# these in parallel under xdist starved webserver startup enough to blow past that deadline on CI.
 
 
+@pytest.mark.serial
 @pytest.mark.skipif(is_windows(), reason="Temporarily skipping (signal issues in CLI)..")
 def test_dev_workspace_context_success(monkeypatch):
     # The command will use `uv tool run dagster dev` to start the webserver if it
     # cannot find a venv with `dagster` and `dagster-webserver` installed. `uv tool run` will
     # pull the `dagster` package from PyPI. To avoid this, we ensure the workspace directory has a
     # venv with `dagster` and `dagster-webserver` installed.
-    dagster_git_repo_dir = str(discover_git_root(Path(__file__)))
+    dagster_git_repo_dir = str(discover_repo_root(Path(__file__)))
     with (
         ProxyRunner.test() as runner,
         isolated_example_workspace(runner, create_venv=True) as workspace_path,
+        environ({"DAGSTER_GIT_REPO_DIR": dagster_git_repo_dir}),
     ):
         with activate_venv(workspace_path / ".venv"):
             result = runner.invoke_create_dagster(
                 "project",
                 "--use-editable-dagster",
-                dagster_git_repo_dir,
                 "project-1",
                 "--uv-sync",
             )
@@ -50,7 +52,6 @@ def test_dev_workspace_context_success(monkeypatch):
             result = runner.invoke_create_dagster(
                 "project",
                 "--use-editable-dagster",
-                dagster_git_repo_dir,
                 "project-2",
                 "--uv-sync",
             )
@@ -65,20 +66,75 @@ def test_dev_workspace_context_success(monkeypatch):
             assert_projects_loaded_and_exit(projects, port, dev_process)
 
 
+@pytest.mark.serial
 @pytest.mark.skipif(is_windows(), reason="Temporarily skipping (signal issues in CLI)..")
-def test_dev_workspace_load_env_files(monkeypatch):
+def test_dev_workspace_context_set_python_executable_from_env_file():
     """Test that the dg dev command properly loads env files from the workspace and projects."""
-    dagster_git_repo_dir = str(discover_git_root(Path(__file__)))
+    dagster_git_repo_dir = str(discover_repo_root(Path(__file__)))
     with (
         ProxyRunner.test() as runner,
         isolated_example_workspace(runner, create_venv=True) as workspace_path,
+        environ({"DAGSTER_GIT_REPO_DIR": dagster_git_repo_dir}),
     ):
         with activate_venv(workspace_path / ".venv"):
-            Path(".env").write_text("WORKSPACE_ENV_VAR=1\nOVERWRITTEN_ENV_VAR=3")
             result = runner.invoke_create_dagster(
                 "project",
                 "--use-editable-dagster",
-                dagster_git_repo_dir,
+                "project-1",
+                "--uv-sync",
+            )
+            assert_runner_result(result)
+
+            # Now we move the venv to a different location to test
+            # DG_PROJECT_PYTHON_EXECUTABLE_ENV_VAR is used.
+            Path("project-1/.env").write_text(
+                f"{DG_PROJECT_PYTHON_EXECUTABLE_ENV_VAR}=../._venv/bin/python\n", encoding="utf-8"
+            )
+            shutil.move("project-1/.venv", "._venv")
+
+            result = runner.invoke_create_dagster(
+                "project",
+                "--use-editable-dagster",
+                "project-2",
+                "--uv-sync",
+            )
+            assert_runner_result(result)
+
+            # test with quoted value
+            Path("project-2/.env").write_text(
+                f"{DG_PROJECT_PYTHON_EXECUTABLE_ENV_VAR}=._venv/bin/python\n", encoding="utf-8"
+            )
+            shutil.move("project-2/.venv", "project-2/._venv")
+
+            port = find_free_port()
+            with (
+                tempfile.NamedTemporaryFile() as stdout_file,
+                open(stdout_file.name, "w", encoding="utf-8") as stdout,
+            ):
+                dev_process = launch_dev_command(["--port", str(port)], stdout=stdout)
+                projects = {"project-1", "project-2"}
+                assert_projects_loaded_and_exit(projects, port, dev_process)
+
+                assert ("Environment variables will not be injected") not in Path(
+                    stdout_file.name
+                ).read_text(encoding="utf-8")
+
+
+@pytest.mark.serial
+@pytest.mark.skipif(is_windows(), reason="Temporarily skipping (signal issues in CLI)..")
+def test_dev_workspace_load_env_files(monkeypatch):
+    """Test that the dg dev command properly loads env files from the workspace and projects."""
+    dagster_git_repo_dir = str(discover_repo_root(Path(__file__)))
+    with (
+        ProxyRunner.test() as runner,
+        isolated_example_workspace(runner, create_venv=True) as workspace_path,
+        environ({"DAGSTER_GIT_REPO_DIR": dagster_git_repo_dir}),
+    ):
+        with activate_venv(workspace_path / ".venv"):
+            Path(".env").write_text("WORKSPACE_ENV_VAR=1\nOVERWRITTEN_ENV_VAR=3", encoding="utf-8")
+            result = runner.invoke_create_dagster(
+                "project",
+                "--use-editable-dagster",
                 "project-1",
                 "--uv-sync",
             )
@@ -86,7 +142,6 @@ def test_dev_workspace_load_env_files(monkeypatch):
             result = runner.invoke_create_dagster(
                 "project",
                 "--use-editable-dagster",
-                dagster_git_repo_dir,
                 "project-2",
                 "--uv-sync",
             )
@@ -106,7 +161,7 @@ def test_dev_workspace_load_env_files(monkeypatch):
             port = find_free_port()
             with (
                 tempfile.NamedTemporaryFile() as stdout_file,
-                open(stdout_file.name, "w") as stdout,
+                open(stdout_file.name, "w", encoding="utf-8") as stdout,
             ):
                 dev_process = launch_dev_command(["--port", str(port)], stdout=stdout)
                 projects = {"project-1", "project-2"}
@@ -114,9 +169,10 @@ def test_dev_workspace_load_env_files(monkeypatch):
 
                 assert ("Environment variables will not be injected") not in Path(
                     stdout_file.name
-                ).read_text()
+                ).read_text(encoding="utf-8")
 
 
+@pytest.mark.serial
 @pytest.mark.skipif(is_windows(), reason="Temporarily skipping (signal issues in CLI)..")
 def test_dev_project_context_success():
     with (
@@ -137,7 +193,7 @@ def test_dev_project_context_success():
 )
 def test_dev_has_options_of_dagster_dev():
     from dagster._cli.dev import dev_command as dagster_dev_command
-    from dagster_dg_cli.cli import dev_command as dev_command
+    from dagster_dg_cli.cli.dev import dev_command as dev_command
 
     exclude_dagster_dev_params = {
         # Exclude options that are used to set the target. `dg dev` does not use.
@@ -178,11 +234,11 @@ def test_implicit_yaml_check_from_dg_dev() -> None:
     ):
         with pushd(str(tmpdir)):
             result = runner.invoke("dev")
-            assert result.exit_code != 0, str(result.stdout)
+            assert result.exit_code != 0, str(result.output)
 
             assert BASIC_INVALID_VALUE.check_error_msg and BASIC_MISSING_VALUE.check_error_msg
-            BASIC_INVALID_VALUE.check_error_msg(str(result.stdout))
-            BASIC_MISSING_VALUE.check_error_msg(str(result.stdout))
+            BASIC_INVALID_VALUE.check_error_msg(str(result.output))
+            BASIC_MISSING_VALUE.check_error_msg(str(result.output))
 
 
 def test_implicit_yaml_check_from_dg_dev_in_workspace_context() -> None:
@@ -198,17 +254,61 @@ def test_implicit_yaml_check_from_dg_dev_in_workspace_context() -> None:
     ):
         with pushd(Path(tmpdir).parent):
             result = runner.invoke("dev", "--check-yaml")
-            assert result.exit_code != 0, str(result.stdout)
+            assert result.exit_code != 0, str(result.output)
 
             assert "--check-yaml is not currently supported in a workspace context" in str(
-                result.stdout
+                result.output
             )
 
         # It is supported and is the default in a project context within a workspace
         with pushd(tmpdir):
             result = runner.invoke("dev", "--check-yaml")
-            assert result.exit_code != 0, str(result.stdout)
+            assert result.exit_code != 0, str(result.output)
 
             assert BASIC_INVALID_VALUE.check_error_msg and BASIC_MISSING_VALUE.check_error_msg
-            BASIC_INVALID_VALUE.check_error_msg(str(result.stdout))
-            BASIC_MISSING_VALUE.check_error_msg(str(result.stdout))
+            BASIC_INVALID_VALUE.check_error_msg(str(result.output))
+            BASIC_MISSING_VALUE.check_error_msg(str(result.output))
+
+
+@pytest.mark.serial
+@pytest.mark.skipif(is_windows(), reason="Temporarily skipping (signal issues in CLI)..")
+def test_dev_uses_active_venv_when_flag_set():
+    """Test that dev command logs the active venv Python when --use-active-venv is set."""
+    dagster_git_repo_dir = str(discover_repo_root(Path(__file__)))
+    with (
+        ProxyRunner.test() as runner,
+        isolated_example_workspace(runner, create_venv=True) as workspace_path,
+        environ({"DAGSTER_GIT_REPO_DIR": dagster_git_repo_dir}),
+    ):
+        venv_path = workspace_path / ".venv"
+        install_editable_dg_dev_packages_to_venv(venv_path)
+
+        with activate_venv(venv_path):
+            # Create a project
+            result = runner.invoke_create_dagster(
+                "project", "--use-editable-dagster", "test-project", "--uv-sync"
+            )
+            assert_runner_result(result)
+
+            # Start dev server with --use-active-venv flag and capture output
+            port = find_free_port()
+            with (
+                tempfile.NamedTemporaryFile() as stdout_file,
+                tempfile.NamedTemporaryFile() as stderr_file,
+                open(stdout_file.name, "w", encoding="utf-8") as stdout,
+                open(stderr_file.name, "w", encoding="utf-8") as stderr,
+            ):
+                dev_process = launch_dev_command(
+                    ["--port", str(port), "--use-active-venv"], stdout=stdout, stderr=stderr
+                )
+                # The "Using active Python environment:" line is emitted before
+                # the webserver boots, so webserver readiness implies the echo
+                # has already happened.
+                assert_projects_loaded_and_exit({"test-project"}, port, dev_process)
+
+                combined_output = Path(stdout_file.name).read_text(encoding="utf-8") + Path(
+                    stderr_file.name
+                ).read_text(encoding="utf-8")
+                assert "Using active Python environment:" in combined_output, (
+                    f"Expected log message about using active Python environment, but got:\n{combined_output}"
+                )

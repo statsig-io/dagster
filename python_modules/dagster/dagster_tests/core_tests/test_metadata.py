@@ -1,3 +1,5 @@
+from enum import Enum
+
 import dagster as dg
 import pytest
 from dagster import MetadataValue, TableSchema
@@ -8,6 +10,7 @@ from dagster._core.definitions.metadata.metadata_value import (
 )
 from dagster_shared.check import CheckError
 from dagster_shared.record import copy
+from dagster_shared.serdes.utils import create_snapshot_id
 
 
 def test_op_instance_tags():
@@ -109,7 +112,7 @@ def test_code_location_reconstruction_metadata_value():
     assert CodeLocationReconstructionMetadataValue("foo").value == "foo"
 
     with pytest.raises(CheckError, match="not a str"):
-        CodeLocationReconstructionMetadataValue({"foo": "bar"})  # pyright: ignore[reportArgumentType]
+        CodeLocationReconstructionMetadataValue({"foo": "bar"})  # ty: ignore[invalid-argument-type]
 
 
 def test_serdes_json_metadata():
@@ -144,9 +147,44 @@ def test_instance_metadata_value():
     assert v3.class_name == "Foo"
     assert v3.instance is None  # instance lost in serialization
 
+    assert create_snapshot_id(v2) == create_snapshot_id(v3)
+
 
 def test_serialized_time_entry():
     assert dg.deserialize_value(
         '{"__class__": "TimestampMetadataValue", "value": 1752171695.0141509}',
         TimestampMetadataValue,
     )
+
+
+def test_json_metadata_value_with_enum_without_whitelist():
+    """Test that JsonMetadataValue properly handles enum values without whitelist_for_serdes."""
+
+    class MyEnum(int, Enum):
+        """An int enum without whitelist_for_serdes set."""
+
+        OPTION_A = 1
+        OPTION_B = 2
+
+    # This should work - the enum gets transformed to its int value
+    metadata_value = dg.JsonMetadataValue({"status": MyEnum.OPTION_A})
+
+    # The data should be stored as the int value, not the enum object
+    assert metadata_value.data == {"status": 1}
+    assert metadata_value.value == {"status": 1}
+
+    # Should be able to serialize and deserialize without error
+    serialized = dg.serialize_value(metadata_value)
+    deserialized = dg.deserialize_value(serialized, dg.JsonMetadataValue)
+    assert deserialized.data == {"status": 1}
+
+    # Test with nested enum in list
+    metadata_with_list = dg.JsonMetadataValue(
+        {"statuses": [MyEnum.OPTION_A, MyEnum.OPTION_B], "default": MyEnum.OPTION_A}
+    )
+    assert metadata_with_list.data == {"statuses": [1, 2], "default": 1}
+
+    # Verify serialization works for nested case too
+    serialized_nested = dg.serialize_value(metadata_with_list)
+    deserialized_nested = dg.deserialize_value(serialized_nested, dg.JsonMetadataValue)
+    assert deserialized_nested.data == {"statuses": [1, 2], "default": 1}

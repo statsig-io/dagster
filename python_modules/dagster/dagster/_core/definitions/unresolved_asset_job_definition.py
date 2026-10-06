@@ -2,12 +2,13 @@ import warnings
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from itertools import groupby
-from typing import TYPE_CHECKING, AbstractSet, Any, Optional, Union  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Annotated, Any, Optional, Union  # noqa: UP035
 
 from dagster_shared.record import IHaveNew, record_custom, replace
+from dagster_shared.utils.warnings import preview_warning
 
 import dagster._check as check
-from dagster._annotations import deprecated, deprecated_param
+from dagster._annotations import deprecated, deprecated_param, public
 from dagster._core.definitions import AssetKey
 from dagster._core.definitions.asset_selection import AssetSelection
 from dagster._core.definitions.assets.job.asset_job import build_asset_job, get_asset_graph_for_job
@@ -25,14 +26,20 @@ from dagster._core.definitions.partitions.partitioned_config import PartitionedC
 from dagster._core.definitions.policy import RetryPolicy
 from dagster._core.definitions.resource_definition import ResourceDefinition
 from dagster._core.definitions.run_request import RunRequest
+from dagster._core.definitions.utils import validate_definition_owner
 from dagster._core.errors import DagsterInvalidDefinitionError
 from dagster._core.instance import DynamicPartitionsStore
+from dagster._record import ImportFrom
 from dagster._utils.tags import normalize_tags
 
 if TYPE_CHECKING:
     from dagster._core.definitions import JobDefinition
+    from dagster._core.definitions.asset_key import AssetJobKey
     from dagster._core.definitions.asset_selection import CoercibleToAssetSelection
     from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
+    from dagster._core.definitions.declarative_automation.automation_condition import (
+        AutomationCondition,
+    )
     from dagster._core.definitions.run_config import RunConfig
 
 
@@ -40,33 +47,46 @@ if TYPE_CHECKING:
 class UnresolvedAssetJobDefinition(IHaveNew):
     name: str
     selection: AssetSelection
-    config: Optional[Union[ConfigMapping, Mapping[str, Any], "PartitionedConfig"]]
-    description: Optional[str]
-    tags: Optional[Mapping[str, str]]
-    run_tags: Optional[Mapping[str, str]]
-    metadata: Optional[Mapping[str, Any]]
-    partitions_def: Optional[PartitionsDefinition]
-    executor_def: Optional[ExecutorDefinition]
-    hooks: Optional[AbstractSet[HookDefinition]]
-    op_retry_policy: Optional[RetryPolicy]
+    config: Union[ConfigMapping, Mapping[str, Any], "PartitionedConfig"] | None
+    description: str | None
+    tags: Mapping[str, str] | None
+    run_tags: Mapping[str, str] | None
+    metadata: Mapping[str, Any] | None
+    partitions_def: PartitionsDefinition | None
+    executor_def: ExecutorDefinition | None
+    hooks: AbstractSet[HookDefinition] | None
+    op_retry_policy: RetryPolicy | None
+    owners: Sequence[str] | None
+    automation_condition: (
+        Annotated[
+            "AutomationCondition",
+            ImportFrom("dagster._core.definitions.declarative_automation.automation_condition"),
+        ]
+        | None
+    )
 
     def __new__(
         cls,
         name: str,
         selection: AssetSelection,
-        config: Optional[
-            Union[ConfigMapping, Mapping[str, Any], "PartitionedConfig", "RunConfig"]
-        ] = None,
-        description: Optional[str] = None,
-        tags: Optional[Mapping[str, str]] = None,
-        run_tags: Optional[Mapping[str, str]] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-        partitions_def: Optional[PartitionsDefinition] = None,
-        executor_def: Optional[ExecutorDefinition] = None,
-        hooks: Optional[AbstractSet[HookDefinition]] = None,
-        op_retry_policy: Optional[RetryPolicy] = None,
+        config: Union[ConfigMapping, Mapping[str, Any], "PartitionedConfig", "RunConfig"]
+        | None = None,
+        description: str | None = None,
+        tags: Mapping[str, str] | None = None,
+        run_tags: Mapping[str, str] | None = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
+        partitions_def: PartitionsDefinition | None = None,
+        executor_def: ExecutorDefinition | None = None,
+        hooks: AbstractSet[HookDefinition] | None = None,
+        op_retry_policy: RetryPolicy | None = None,
+        owners: Sequence[str] | None = None,
+        automation_condition: Optional["AutomationCondition[AssetJobKey]"] = None,
     ):
         from dagster._core.definitions.run_config import convert_config_input
+
+        if owners:
+            for owner in owners:
+                validate_definition_owner(owner, "job", name)
 
         return super().__new__(
             cls,
@@ -84,6 +104,8 @@ class UnresolvedAssetJobDefinition(IHaveNew):
             executor_def=executor_def,
             hooks=hooks,
             op_retry_policy=op_retry_policy,
+            owners=owners,
+            automation_condition=automation_condition,
         )
 
     @deprecated(
@@ -93,12 +115,12 @@ class UnresolvedAssetJobDefinition(IHaveNew):
     def run_request_for_partition(
         self,
         partition_key: str,
-        run_key: Optional[str] = None,
-        tags: Optional[Mapping[str, str]] = None,
-        asset_selection: Optional[Sequence[AssetKey]] = None,
-        run_config: Optional[Mapping[str, Any]] = None,
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        run_key: str | None = None,
+        tags: Mapping[str, str] | None = None,
+        asset_selection: Sequence[AssetKey] | None = None,
+        run_config: Mapping[str, Any] | None = None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: DynamicPartitionsStore | None = None,
     ) -> RunRequest:
         """Creates a RunRequest object for a run that processes the given partition.
 
@@ -169,8 +191,8 @@ class UnresolvedAssetJobDefinition(IHaveNew):
     def resolve(
         self,
         asset_graph: "AssetGraph",
-        default_executor_def: Optional[ExecutorDefinition] = None,
-        resource_defs: Optional[Mapping[str, ResourceDefinition]] = None,
+        default_executor_def: ExecutorDefinition | None = None,
+        resource_defs: Mapping[str, ResourceDefinition] | None = None,
     ) -> "JobDefinition":
         """Resolve this UnresolvedAssetJobDefinition into a JobDefinition."""
         try:
@@ -225,6 +247,8 @@ class UnresolvedAssetJobDefinition(IHaveNew):
             op_retry_policy=self.op_retry_policy,
             resource_defs=resource_defs,
             allow_different_partitions_defs=False,
+            owners=self.owners,
+            automation_condition=self.automation_condition,
         )
 
     def with_metadata(
@@ -238,20 +262,21 @@ class UnresolvedAssetJobDefinition(IHaveNew):
     breaking_version="2.0.0",
     additional_warn_text="Partitioning is inferred from the selected assets, so setting this is redundant.",
 )
+@public
 def define_asset_job(
     name: str,
     selection: Optional["CoercibleToAssetSelection"] = None,
-    config: Optional[
-        Union[ConfigMapping, Mapping[str, Any], "PartitionedConfig", "RunConfig"]
-    ] = None,
-    description: Optional[str] = None,
-    tags: Optional[Mapping[str, object]] = None,
-    run_tags: Optional[Mapping[str, object]] = None,
-    metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-    partitions_def: Optional[PartitionsDefinition] = None,
-    executor_def: Optional[ExecutorDefinition] = None,
-    hooks: Optional[AbstractSet[HookDefinition]] = None,
+    config: Union[ConfigMapping, Mapping[str, Any], "PartitionedConfig", "RunConfig"] | None = None,
+    description: str | None = None,
+    tags: Mapping[str, object] | None = None,
+    run_tags: Mapping[str, object] | None = None,
+    metadata: Mapping[str, RawMetadataValue] | None = None,
+    partitions_def: PartitionsDefinition | None = None,
+    executor_def: ExecutorDefinition | None = None,
+    hooks: AbstractSet[HookDefinition] | None = None,
     op_retry_policy: Optional["RetryPolicy"] = None,
+    owners: Sequence[str] | None = None,
+    automation_condition: Optional["AutomationCondition[AssetJobKey]"] = None,
 ) -> UnresolvedAssetJobDefinition:
     """Creates a definition of a job which will either materialize a selection of assets or observe
     a selection of source assets. This will only be resolved to a JobDefinition once placed in a
@@ -317,7 +342,12 @@ def define_asset_job(
         partitions_def (Optional[PartitionsDefinition]): (Deprecated)
             Defines the set of partitions for this job. Deprecated because partitioning is inferred
             from the selected assets, so setting this is redundant.
-
+        owners (Optional[Sequence[str]]): A list of strings representing owners of the job. Each
+            string can be a user's email address, or a team name prefixed with `team:`,
+            e.g. `team:finops`.
+        automation_condition (Optional[AutomationCondition[AssetJobKey]]): (Preview) A
+            job-scoped automation condition. When the condition becomes true, the job is
+            launched by the automation condition sensor/daemon.
 
     Returns:
         UnresolvedAssetJobDefinition: The job, which can be placed inside a project.
@@ -375,6 +405,12 @@ def define_asset_job(
     """
     from dagster._core.definitions import AssetSelection
 
+    if automation_condition is not None:
+        preview_warning(
+            "Parameter `automation_condition` of function `define_asset_job`",
+            stacklevel=4,  # stacklevel 4 to attribute the warning to the caller of `define_asset_job`
+        )
+
     # convert string-based selections to AssetSelection objects
     if selection is None:
         resolved_selection = AssetSelection.all()
@@ -394,4 +430,6 @@ def define_asset_job(
         executor_def=executor_def,
         hooks=hooks,
         op_retry_policy=op_retry_policy,
+        owners=owners,
+        automation_condition=automation_condition,
     )

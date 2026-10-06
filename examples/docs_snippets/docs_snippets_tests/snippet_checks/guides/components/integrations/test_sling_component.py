@@ -3,8 +3,9 @@ import textwrap
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
+import pytest
 from dagster_dg_core.utils import activate_venv
 
 from dagster._utils.env import environ
@@ -72,6 +73,9 @@ def test_components_docs_sling_workspace(
             cmd="dg scaffold defs dagster_sling.SlingReplicationCollectionComponent sling_ingest",
             snippet_path=SNIPPETS_DIR
             / f"{context.get_next_snip_number()}-scaffold-sling-component.txt",
+            snippet_replace_regex=[
+                (r"Downloading sling binary.*\n", ""),
+            ],
         )
 
         # Tree the project

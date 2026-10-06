@@ -2,7 +2,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 from dagster_shared.merger import deep_merge_dicts
 from dagster_shared.utils.config import get_dg_config_path, load_config, write_config
@@ -21,7 +21,7 @@ class DagsterPlusConfigInfo(NamedTuple):
 DAGSTER_CLOUD_BASE_URL = "https://dagster.cloud"
 
 
-def _get_dagster_plus_config_path_and_raw_config() -> Optional[DagsterPlusConfigInfo]:
+def _get_dagster_plus_config_path_and_raw_config() -> DagsterPlusConfigInfo | None:
     cloud_config_path = get_dagster_cloud_cli_config_path()
     dg_config_path = get_dg_config_path()
 
@@ -46,11 +46,11 @@ def _get_dagster_plus_config_path_and_raw_config() -> Optional[DagsterPlusConfig
 
 @dataclass()
 class DagsterPlusCliConfig:
-    url: Optional[str] = None
-    organization: Optional[str] = None
-    default_deployment: Optional[str] = None
-    user_token: Optional[str] = None
-    agent_timeout: Optional[int] = None
+    url: str | None = None
+    organization: str | None = None
+    default_deployment: str | None = None
+    user_token: str | None = None
+    agent_timeout: int | None = None
 
     def has_any_configuration(self) -> bool:
         return any(self.__dict__.values())
@@ -66,6 +66,64 @@ class DagsterPlusCliConfig:
             raise Exception("No Dagster Plus config found")
         _, _, raw_plus_config, _ = result
         return cls(**raw_plus_config)
+
+    @classmethod
+    def create_for_deployment(
+        cls,
+        deployment: str | None,
+        organization: str | None = None,
+        user_token: str | None = None,
+    ) -> "DagsterPlusCliConfig":
+        """Create a DagsterPlusCliConfig instance for deployment-scoped operations.
+
+        Args:
+            deployment: The deployment name to target
+            organization: Organization name (if None, will try to load from existing config)
+            user_token: User token (if None, will try to load from existing config)
+        """
+        # Try to get base config if it exists, but don't require it
+        base_config = {}
+        if cls.exists():
+            try:
+                base_config = cls.get().__dict__
+            except Exception:
+                # If config exists but is invalid, start with empty base
+                pass
+
+        return cls(
+            url=base_config.get("url"),
+            organization=organization or base_config.get("organization"),
+            default_deployment=deployment,  # Override with specific deployment
+            user_token=user_token or base_config.get("user_token"),
+            agent_timeout=base_config.get("agent_timeout"),
+        )
+
+    @classmethod
+    def create_for_organization(
+        cls, organization: str | None = None, user_token: str | None = None
+    ) -> "DagsterPlusCliConfig":
+        """Create a DagsterPlusCliConfig instance for organization-scoped operations.
+
+        Args:
+            organization: Organization name (if None, will try to load from existing config)
+            user_token: User token (if None, will try to load from existing config)
+        """
+        # Try to get base config if it exists, but don't require it
+        base_config = {}
+        if cls.exists():
+            try:
+                base_config = cls.get().__dict__
+            except Exception:
+                # If config exists but is invalid, start with empty base
+                pass
+
+        return cls(
+            url=base_config.get("url"),
+            organization=organization or base_config.get("organization"),
+            default_deployment=None,  # No deployment for organization-scoped operations
+            user_token=user_token or base_config.get("user_token"),
+            agent_timeout=base_config.get("agent_timeout"),
+        )
 
     def write(self):
         existing_config = _get_dagster_plus_config_path_and_raw_config()

@@ -1,6 +1,6 @@
 import json
 import subprocess
-from typing import Any, Optional, Union
+from typing import Any
 
 import pytest
 from dagster_k8s.models import k8s_model_from_dict, k8s_snake_case_dict
@@ -404,6 +404,111 @@ def test_user_deployment_checksum_changes(template: HelmTemplate):
         assert pre_upgrade_checksum != post_upgrade_checksum
 
 
+def _fixed_server_id_arg(deployment: models.V1Deployment) -> str:
+    args = deployment.spec.template.spec.containers[0].args
+    assert "--fixed-server-id" in args
+    return args[args.index("--fixed-server-id") + 1]
+
+
+def test_grpc_fixed_server_id_matches_checksum(template: HelmTemplate):
+    # The gRPC server id is the deployment checksum, so every replica shares one
+    # id that changes only when the deployment is redeployed.
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[
+                create_simple_user_deployment("deployment-one"),
+                create_complex_user_deployment("deployment-two"),
+            ],
+        )
+    )
+    for deployment in template.render(helm_values):
+        assert (
+            _fixed_server_id_arg(deployment)
+            == deployment.spec.template.metadata.annotations["checksum/dagster-user-deployment"]
+        )
+
+
+def test_grpc_fixed_server_id_unchanged_across_identical_renders(template: HelmTemplate):
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[create_simple_user_deployment("deployment-one")],
+        )
+    )
+    pre_upgrade_templates = template.render(helm_values)
+    post_upgrade_templates = template.render(helm_values)
+
+    for pre_upgrade_deployment, post_upgrade_deployment in zip(
+        pre_upgrade_templates, post_upgrade_templates
+    ):
+        assert _fixed_server_id_arg(pre_upgrade_deployment) == _fixed_server_id_arg(
+            post_upgrade_deployment
+        )
+
+
+def test_grpc_fixed_server_id_changes_when_config_changes(template: HelmTemplate):
+    pre_upgrade_helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[create_simple_user_deployment("deployment-one")],
+        )
+    )
+    post_upgrade_helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[create_complex_user_deployment("deployment-one")],
+        )
+    )
+
+    [pre_upgrade_deployment] = template.render(pre_upgrade_helm_values)
+    [post_upgrade_deployment] = template.render(post_upgrade_helm_values)
+
+    assert _fixed_server_id_arg(pre_upgrade_deployment) != _fixed_server_id_arg(
+        post_upgrade_deployment
+    )
+
+
+def test_code_server_has_no_fixed_server_id(template: HelmTemplate):
+    # Code servers reload in place by changing their own server id; pinning one
+    # would suppress that signal, so the flag is only injected for `api grpc`.
+    deployment = UserDeployment.construct(
+        name="foo",
+        image=kubernetes.Image(repository="repo/foo", tag="tag1", pullPolicy="Always"),
+        codeServerArgs=["-m", "foo"],
+        port=3030,
+    )
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
+    )
+
+    [dagster_user_deployment] = template.render(helm_values)
+    assert "--fixed-server-id" not in dagster_user_deployment.spec.template.spec.containers[0].args
+
+
+def test_code_server_rejects_multiple_replicas(template: HelmTemplate, capfd):
+    deployment = UserDeployment.construct(
+        name="foo",
+        image=kubernetes.Image(repository="repo/foo", tag="tag1", pullPolicy="Always"),
+        codeServerArgs=["-m", "foo"],
+        port=3030,
+        replicaCount=2,
+    )
+    with pytest.raises(subprocess.CalledProcessError):
+        template.render(
+            DagsterHelmValues.construct(
+                dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
+            )
+        )
+
+    _, err = capfd.readouterr()
+    assert "codeServerArgs cannot be used with replicaCount > 1" in err
+
+
 @pytest.mark.parametrize("enabled", [True, False])
 def test_startup_probe_enabled(template: HelmTemplate, enabled: bool):
     deployment = create_simple_user_deployment("foo")
@@ -469,7 +574,7 @@ def test_readiness_probe_can_be_disabled(template: HelmTemplate):
 
 def test_readiness_probe_can_be_customized(template: HelmTemplate):
     deployment = create_simple_user_deployment("foo")
-    deployment.readinessProbe = ReadinessProbeWithEnabled.construct(timeoutSeconds=42)
+    deployment.readinessProbe = ReadinessProbeWithEnabled.construct(enabled=True, timeoutSeconds=42)
     helm_values = DagsterHelmValues.construct(
         dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
     )
@@ -560,6 +665,50 @@ def test_startup_probe_default_exec(template: HelmTemplate):
     ]
 
 
+def test_readiness_probe_exec(template: HelmTemplate):
+    deployment = create_simple_user_deployment("foo")
+    deployment.readinessProbe = ReadinessProbeWithEnabled.construct(
+        enabled=True, exec=dict(command=["my", "command"])
+    )
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
+    )
+
+    dagster_user_deployment = template.render(helm_values)
+    assert len(dagster_user_deployment) == 1
+    dagster_user_deployment = dagster_user_deployment[0]
+
+    assert len(dagster_user_deployment.spec.template.spec.containers) == 1
+    container = dagster_user_deployment.spec.template.spec.containers[0]
+
+    assert container.readiness_probe._exec.command == [  # noqa: SLF001
+        "my",
+        "command",
+    ]
+
+
+def test_liveness_probe_exec(template: HelmTemplate):
+    deployment = create_simple_user_deployment("foo")
+    deployment.livenessProbe = kubernetes.LivenessProbe.construct(
+        exec=dict(command=["my", "command"])
+    )
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
+    )
+
+    dagster_user_deployment = template.render(helm_values)
+    assert len(dagster_user_deployment) == 1
+    dagster_user_deployment = dagster_user_deployment[0]
+
+    assert len(dagster_user_deployment.spec.template.spec.containers) == 1
+    container = dagster_user_deployment.spec.template.spec.containers[0]
+
+    assert container.liveness_probe._exec.command == [  # noqa: SLF001
+        "my",
+        "command",
+    ]
+
+
 @pytest.mark.parametrize("chart_version", ["0.11.0", "0.11.1"])
 def test_user_deployment_default_image_tag_is_chart_version(
     template: HelmTemplate, chart_version: str
@@ -577,7 +726,7 @@ def test_user_deployment_default_image_tag_is_chart_version(
 
 
 @pytest.mark.parametrize("tag", [5176135, "abc1234", "20220531.1", "1234"])
-def test_user_deployment_tag_can_be_numeric(template: HelmTemplate, tag: Union[str, int]):
+def test_user_deployment_tag_can_be_numeric(template: HelmTemplate, tag: str | int):
     deployment = create_simple_user_deployment("foo")
     deployment.image.tag = tag
 
@@ -599,6 +748,209 @@ def test_user_deployment_tag_can_be_numeric(template: HelmTemplate, tag: Union[s
     assert image_tag == str(tag)
 
 
+def test_user_deployment_digest_takes_precedence_over_tag(template: HelmTemplate):
+    """Test that when both digest and tag are provided, digest takes precedence."""
+    deployment = create_simple_user_deployment("foo")
+    deployment.image.tag = "v1.2.3"
+    deployment.image.digest = "sha256:abc123def456789"
+
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[deployment],
+        )
+    )
+
+    user_deployments = template.render(helm_values)
+
+    assert len(user_deployments) == 1
+
+    image = user_deployments[0].spec.template.spec.containers[0].image
+    # Should use digest format: repository@digest
+    assert image == "repo/foo@sha256:abc123def456789"
+
+
+def test_user_deployment_digest_only(template: HelmTemplate):
+    """Test that digest works without tag."""
+    deployment = create_simple_user_deployment("foo")
+    deployment.image.digest = "sha256:abc123def456789"
+
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[deployment],
+        )
+    )
+
+    user_deployments = template.render(helm_values)
+
+    assert len(user_deployments) == 1
+
+    image = user_deployments[0].spec.template.spec.containers[0].image
+    # Should use digest format: repository@digest
+    assert image == "repo/foo@sha256:abc123def456789"
+
+
+def test_init_container_with_string_image(template: HelmTemplate):
+    """Test that init containers with legacy string image format still work."""
+    deployment = create_simple_user_deployment("foo")
+    deployment.initContainers = [
+        kubernetes.Container.construct(
+            None,
+            name="init-test",
+            image="busybox:latest",
+            command=["sh", "-c", "echo hello"],
+        )
+    ]
+
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[deployment],
+        )
+    )
+
+    user_deployments = template.render(helm_values)
+
+    assert len(user_deployments) == 1
+    init_containers = user_deployments[0].spec.template.spec.init_containers
+    assert len(init_containers) == 1
+    assert init_containers[0].name == "init-test"
+    assert init_containers[0].image == "busybox:latest"
+    assert init_containers[0].command == ["sh", "-c", "echo hello"]
+
+
+def test_init_container_with_structured_image_tag(template: HelmTemplate):
+    """Test init container with structured image format using tag."""
+    deployment = create_simple_user_deployment("foo")
+    deployment.initContainers = [
+        kubernetes.InitContainerWithStructuredImage.construct(
+            name="init-test",
+            image=kubernetes.InitContainerImage(
+                repository="busybox",
+                tag="1.36",
+            ),
+            command=["sh", "-c", "echo hello"],
+        )
+    ]
+
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[deployment],
+        )
+    )
+
+    user_deployments = template.render(helm_values)
+
+    assert len(user_deployments) == 1
+    init_containers = user_deployments[0].spec.template.spec.init_containers
+    assert len(init_containers) == 1
+    assert init_containers[0].name == "init-test"
+    assert init_containers[0].image == "busybox:1.36"
+
+
+def test_init_container_with_structured_image_digest(template: HelmTemplate):
+    """Test init container with structured image format using digest."""
+    deployment = create_simple_user_deployment("foo")
+    deployment.initContainers = [
+        kubernetes.InitContainerWithStructuredImage.construct(
+            name="init-test",
+            image=kubernetes.InitContainerImage(
+                repository="busybox",
+                digest="sha256:abc123def456",
+            ),
+            command=["sh", "-c", "echo hello"],
+        )
+    ]
+
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[deployment],
+        )
+    )
+
+    user_deployments = template.render(helm_values)
+
+    assert len(user_deployments) == 1
+    init_containers = user_deployments[0].spec.template.spec.init_containers
+    assert len(init_containers) == 1
+    assert init_containers[0].name == "init-test"
+    assert init_containers[0].image == "busybox@sha256:abc123def456"
+
+
+def test_init_container_digest_takes_precedence_over_tag(template: HelmTemplate):
+    """Test that digest takes precedence over tag for init container images."""
+    deployment = create_simple_user_deployment("foo")
+    deployment.initContainers = [
+        kubernetes.InitContainerWithStructuredImage.construct(
+            name="init-test",
+            image=kubernetes.InitContainerImage(
+                repository="busybox",
+                tag="1.36",
+                digest="sha256:abc123def456",
+            ),
+            command=["sh", "-c", "echo hello"],
+        )
+    ]
+
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[deployment],
+        )
+    )
+
+    user_deployments = template.render(helm_values)
+
+    assert len(user_deployments) == 1
+    init_containers = user_deployments[0].spec.template.spec.init_containers
+    assert len(init_containers) == 1
+    assert init_containers[0].name == "init-test"
+    # Digest should take precedence over tag
+    assert init_containers[0].image == "busybox@sha256:abc123def456"
+
+
+def test_init_container_with_pull_policy(template: HelmTemplate):
+    """Test that pullPolicy is properly set for init containers with structured images."""
+    deployment = create_simple_user_deployment("foo")
+    deployment.initContainers = [
+        kubernetes.InitContainerWithStructuredImage.construct(
+            name="init-test",
+            image=kubernetes.InitContainerImage(
+                repository="busybox",
+                tag="1.36",
+                pullPolicy="IfNotPresent",
+            ),
+            command=["sh", "-c", "echo hello"],
+        )
+    ]
+
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(
+            enabled=True,
+            enableSubchart=True,
+            deployments=[deployment],
+        )
+    )
+
+    user_deployments = template.render(helm_values)
+
+    assert len(user_deployments) == 1
+    init_containers = user_deployments[0].spec.template.spec.init_containers
+    assert len(init_containers) == 1
+    assert init_containers[0].name == "init-test"
+    assert init_containers[0].image == "busybox:1.36"
+    assert init_containers[0].image_pull_policy == "IfNotPresent"
+
+
 def _assert_no_container_context(user_deployment):
     # No container context set by default
     env_names = [env.name for env in user_deployment.spec.template.spec.containers[0].env]
@@ -608,6 +960,41 @@ def _assert_no_container_context(user_deployment):
 def _assert_has_container_context(user_deployment):
     env_names = [env.name for env in user_deployment.spec.template.spec.containers[0].env]
     assert "DAGSTER_CLI_API_GRPC_CONTAINER_CONTEXT" in env_names
+
+
+def test_user_deployment_replica_count_default_is_one(template: HelmTemplate):
+    deployment = create_simple_user_deployment("foo")
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
+    )
+
+    user_deployments = template.render(helm_values)
+    assert len(user_deployments) == 1
+    assert user_deployments[0].spec.replicas == 1
+
+
+@pytest.mark.parametrize("replica_count", [1, 2])
+def test_user_deployment_replica_count(template: HelmTemplate, replica_count: int):
+    deployment = create_simple_user_deployment("foo")
+    deployment.replicaCount = replica_count
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
+    )
+
+    user_deployments = template.render(helm_values)
+    assert len(user_deployments) == 1
+    assert user_deployments[0].spec.replicas == replica_count
+
+
+def test_user_deployment_replica_count_rejects_zero():
+    with pytest.raises(Exception):
+        UserDeployment(
+            name="foo",
+            image=kubernetes.Image(repository="repo/foo", tag="tag1", pullPolicy="Always"),
+            dagsterApiGrpcArgs=["-m", "foo"],
+            port=3030,
+            replicaCount=0,
+        )
 
 
 def test_user_deployment_image(template: HelmTemplate):
@@ -691,7 +1078,7 @@ def test_user_deployment_volumes(template: HelmTemplate, include_config_in_launc
             "name": "test-volume",
             "mountPath": "/opt/dagster/test_mount_path/volume_mounted_file.yaml",
             "subPath": "volume_mounted_file.yaml",
-        }
+        },
     ]
 
     deployment = UserDeployment.construct(
@@ -1028,7 +1415,7 @@ def test_user_deployment_sidecar(template: HelmTemplate, include_config_in_launc
     assert len(user_deployments) == 1
 
     image = user_deployments[0].spec.template.spec.containers[0].image
-    image_name, image_tag = image.split(":")
+    _image_name, _image_tag = image.split(":")
 
     deployed_sidecars = user_deployments[0].spec.template.spec.containers[1:]
     assert deployed_sidecars == [
@@ -1171,7 +1558,7 @@ def test_subchart_default_postgres_password(subchart_template: HelmTemplate):
 
 
 @pytest.mark.parametrize("tag", [5176135, "abc1234"])
-def test_subchart_tag_can_be_numeric(subchart_template: HelmTemplate, tag: Union[str, int]):
+def test_subchart_tag_can_be_numeric(subchart_template: HelmTemplate, tag: str | int):
     deployment_values = DagsterUserDeploymentsHelmValues.construct(
         deployments=[
             UserDeployment.construct(
@@ -1373,6 +1760,101 @@ def test_env_container_context(template: HelmTemplate, user_deployment_configmap
     }
 
 
+def test_code_server_cli_with_scheduling_fields(
+    template: HelmTemplate, user_deployment_configmap_template
+):
+    deployment = UserDeployment.construct(
+        name="foo",
+        image=kubernetes.Image(repository="repo/foo", tag="tag1", pullPolicy="Always"),
+        codeServerArgs=["-m", "foo"],
+        port=3030,
+        includeConfigInLaunchedRuns=UserDeploymentIncludeConfigInLaunchedRuns(enabled=True),
+        nodeSelector=kubernetes.NodeSelector.parse_obj({"disktype": "ssd"}),
+        tolerations=kubernetes.Tolerations.parse_obj(
+            [{"key": "key1", "operator": "Exists", "effect": "NoSchedule"}]
+        ),
+        podSecurityContext=kubernetes.PodSecurityContext.parse_obj(
+            {"runAsUser": 1000, "runAsGroup": 3000}
+        ),
+    )
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
+    )
+
+    [dagster_user_deployment] = template.render(helm_values)
+    assert len(dagster_user_deployment.spec.template.spec.containers[0].env) == 3
+
+    container_context = dagster_user_deployment.spec.template.spec.containers[0].env[2]
+    assert container_context.name == "DAGSTER_CONTAINER_CONTEXT"
+    parsed = json.loads(container_context.value)
+    assert parsed == {
+        "k8s": {
+            "image_pull_policy": "Always",
+            "env_config_maps": ["release-name-dagster-user-deployments-foo-user-env"],
+            "namespace": "default",
+            "service_account_name": "release-name-dagster-user-deployments-user-deployments",
+            "run_k8s_config": {
+                "pod_spec_config": {
+                    "automount_service_account_token": True,
+                    "node_selector": {"disktype": "ssd"},
+                    "tolerations": [{"key": "key1", "operator": "Exists", "effect": "NoSchedule"}],
+                    "security_context": {"runAsUser": 1000, "runAsGroup": 3000},
+                },
+            },
+        }
+    }
+
+
+def test_container_context_with_pod_scheduling_fields(
+    template: HelmTemplate, user_deployment_configmap_template
+):
+    deployment = UserDeployment.construct(
+        name="foo",
+        image=kubernetes.Image(repository="repo/foo", tag="tag1", pullPolicy="Always"),
+        dagsterApiGrpcArgs=["-m", "foo"],
+        port=3030,
+        includeConfigInLaunchedRuns=UserDeploymentIncludeConfigInLaunchedRuns(enabled=True),
+        nodeSelector=kubernetes.NodeSelector.parse_obj({"disktype": "ssd", "region": "us-east-1"}),
+        tolerations=kubernetes.Tolerations.parse_obj(
+            [
+                {
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "dagster",
+                    "effect": "NoSchedule",
+                },
+            ]
+        ),
+        podSecurityContext=kubernetes.PodSecurityContext.parse_obj(
+            {"runAsUser": 1000, "runAsGroup": 3000, "fsGroup": 2000}
+        ),
+    )
+    helm_values = DagsterHelmValues.construct(
+        dagsterUserDeployments=UserDeployments.construct(deployments=[deployment])
+    )
+
+    [dagster_user_deployment] = template.render(helm_values)
+    container_context = dagster_user_deployment.spec.template.spec.containers[0].env[2]
+    assert container_context.name == "DAGSTER_CLI_API_GRPC_CONTAINER_CONTEXT"
+    parsed = json.loads(container_context.value)
+
+    pod_spec_config = parsed["k8s"]["run_k8s_config"]["pod_spec_config"]
+    assert pod_spec_config["node_selector"] == {"disktype": "ssd", "region": "us-east-1"}
+    assert pod_spec_config["tolerations"] == [
+        {
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "dagster",
+            "effect": "NoSchedule",
+        },
+    ]
+    assert pod_spec_config["security_context"] == {
+        "runAsUser": 1000,
+        "runAsGroup": 3000,
+        "fsGroup": 2000,
+    }
+
+
 def test_old_env(template: HelmTemplate, user_deployment_configmap_template):
     # old style env: dict. Gets written to configmap
     deployment = UserDeployment.construct(
@@ -1417,8 +1899,8 @@ def test_old_env(template: HelmTemplate, user_deployment_configmap_template):
 )
 def test_deployment_strategy(
     template: HelmTemplate,
-    strategy: Optional[dict[str, Any]],
-    expected: Optional[dict[str, Any]],
+    strategy: dict[str, Any] | None,
+    expected: dict[str, Any] | None,
 ):
     deployment = create_simple_user_deployment("foo")
     if strategy:
@@ -1430,3 +1912,50 @@ def test_deployment_strategy(
     dagster_user_deployment = template.render(helm_values)
     assert len(dagster_user_deployment) == 1
     assert dagster_user_deployment[0].to_dict()["spec"]["strategy"] == expected
+
+
+@pytest.mark.parametrize("include_instance", [False, True])
+def test_include_instance(subchart_template: HelmTemplate, include_instance: bool):
+    deployment_values = DagsterUserDeploymentsHelmValues.construct(
+        includeInstance=include_instance,
+        deployments=[create_simple_user_deployment("foo")],
+        global_=Global.construct(
+            dagsterInstanceConfigMap="release-name-dagster-instance",
+        ),
+    )
+
+    deployment_templates = subchart_template.render(deployment_values)
+
+    assert len(deployment_templates) == 1
+
+    deployment_template = deployment_templates[0]
+    pod_spec = deployment_template.spec.template.spec
+    container = pod_spec.containers[0]
+
+    # Check volume mounts in pod spec
+    volume_mount_names = [vm.name for vm in container.volume_mounts or []]
+    if include_instance:
+        assert "dagster-instance" in volume_mount_names
+        # Find the dagster-instance volume mount
+        instance_volume_mount = next(
+            vm for vm in container.volume_mounts if vm.name == "dagster-instance"
+        )
+        assert instance_volume_mount.mount_path == "/opt/dagster/dagster_home/dagster.yaml"
+        assert instance_volume_mount.sub_path == "dagster.yaml"
+    else:
+        assert "dagster-instance" not in volume_mount_names
+
+    # Check volumes in pod spec
+    volume_names = [v.name for v in pod_spec.volumes or []]
+    if include_instance:
+        assert "dagster-instance" in volume_names
+        # Find the dagster-instance volume
+        instance_volume = next(v for v in pod_spec.volumes if v.name == "dagster-instance")
+        assert instance_volume.config_map.name == "release-name-dagster-instance"
+        # When using subchart_template, optional should not be set (no cross-namespace scenario)
+        assert (
+            not hasattr(instance_volume.config_map, "optional")
+            or instance_volume.config_map.optional is None
+        )
+    else:
+        assert "dagster-instance" not in volume_names

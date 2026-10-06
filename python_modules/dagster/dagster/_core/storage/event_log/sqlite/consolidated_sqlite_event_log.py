@@ -4,7 +4,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from contextlib import contextmanager
 from functools import cached_property
-from typing import Any, Optional
+from typing import Any
 
 import sqlalchemy as db
 from sqlalchemy.pool import NullPool
@@ -13,6 +13,7 @@ from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers import Observer
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._config import StringSource
 from dagster._core.storage.dagster_run import DagsterRunStatus
 from dagster._core.storage.event_log.base import EventLogCursor
@@ -25,13 +26,14 @@ from dagster._core.storage.sql import (
     run_alembic_upgrade,
     stamp_alembic_rev,
 )
-from dagster._core.storage.sqlite import create_db_conn_string
+from dagster._core.storage.sqlite import SQLITE_BUSY_TIMEOUT_SECONDS, create_db_conn_string
 from dagster._serdes import ConfigurableClass, ConfigurableClassData
 from dagster._utils import mkdir_p
 
 SQLITE_EVENT_LOG_FILENAME = "event_log"
 
 
+@public
 class ConsolidatedSqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     """SQLite-backed consolidated event log storage intended for test cases only.
 
@@ -53,7 +55,7 @@ class ConsolidatedSqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     The ``base_dir`` param tells the event log storage where on disk to store the database.
     """
 
-    def __init__(self, base_dir, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, base_dir, inst_data: ConfigurableClassData | None = None):
         self._base_dir = check.str_param(base_dir, "base_dir")
         self._conn_string = create_db_conn_string(base_dir, SQLITE_EVENT_LOG_FILENAME)
         self._secondary_index_cache = {}
@@ -82,7 +84,11 @@ class ConsolidatedSqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
 
     def _init_db(self):
         mkdir_p(self._base_dir)
-        engine = create_engine(self._conn_string, poolclass=NullPool)
+        engine = create_engine(
+            self._conn_string,
+            poolclass=NullPool,
+            connect_args={"timeout": SQLITE_BUSY_TIMEOUT_SECONDS},
+        )
         alembic_config = get_alembic_config(__file__)
 
         should_mark_indexes = False
@@ -101,19 +107,27 @@ class ConsolidatedSqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
 
     @contextmanager
     def _connect(self):
-        engine = create_engine(self._conn_string, poolclass=NullPool)
+        engine = create_engine(
+            self._conn_string,
+            poolclass=NullPool,
+            connect_args={"timeout": SQLITE_BUSY_TIMEOUT_SECONDS},
+        )
         with engine.connect() as conn:
             with conn.begin():
                 yield conn
 
-    def run_connection(self, run_id: Optional[str]) -> SqlDbConnection:
+    def run_connection(self, run_id: str | None) -> SqlDbConnection:
         return self._connect()
 
     def index_connection(self):
         return self._connect()
 
     def has_table(self, table_name: str) -> bool:
-        engine = create_engine(self._conn_string, poolclass=NullPool)
+        engine = create_engine(
+            self._conn_string,
+            poolclass=NullPool,
+            connect_args={"timeout": SQLITE_BUSY_TIMEOUT_SECONDS},
+        )
         with engine.connect() as conn:
             has_table = bool(engine.dialect.has_table(conn, table_name))
         return has_table
@@ -154,7 +168,7 @@ class ConsolidatedSqliteEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         keys = [
             (run_id, callback)
             for run_id, callback_dict in self._watchers.items()
-            for callback, _ in callback_dict.items()
+            for callback in callback_dict.keys()
         ]
         for run_id, callback in keys:
             cursor = self._watchers[run_id][callback]

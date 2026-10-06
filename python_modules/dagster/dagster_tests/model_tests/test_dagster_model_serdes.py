@@ -44,7 +44,7 @@ def test_pydantic_alias_generator():
         class Config:
             alias_generator = lambda field_name: f"{field_name}_alias"
 
-    o = SomeDagsterModel(id_alias=5, name_alias="fdsk")  # pyright: ignore[reportCallIssue]
+    o = SomeDagsterModel(id_alias=5, name_alias="fdsk")  # ty: ignore[unknown-argument, missing-argument]
     packed_o = pack_value(o, whitelist_map=test_env)
     assert packed_o == {"__class__": "SomeDagsterModel", "id_alias": 5, "name_alias": "fdsk"}
     assert unpack_value(packed_o, whitelist_map=test_env, as_type=SomeDagsterModel) == o
@@ -64,13 +64,13 @@ def test_pydantic_serialization_alias():
     o = SomeDagsterModel(unaliased_id=5, name="fdsk")
     with pytest.raises(
         SerializationError,
-        match="Can't serialize pydantic models with serialization or validation aliases.",
+        match=r"Can't serialize pydantic models with serialization or validation aliases.",
     ):
         dg.serialize_value(o, whitelist_map=test_env)
 
     with pytest.raises(
         SerializationError,
-        match="Can't serialize pydantic models with serialization or validation aliases.",
+        match=r"Can't serialize pydantic models with serialization or validation aliases.",
     ):
         pack_value(o, whitelist_map=test_env)
 
@@ -83,15 +83,15 @@ def test_pydantic_validation_alias():
         unaliased_id: int = Field(..., validation_alias="id_alias")
         name: str
 
-    o = SomeDagsterModel(id_alias=5, name="fdsk")  # pyright: ignore[reportCallIssue]
+    o = SomeDagsterModel(id_alias=5, name="fdsk")  # ty: ignore[unknown-argument]
     with pytest.raises(
         SerializationError,
-        match="Can't serialize pydantic models with serialization or validation aliases.",
+        match=r"Can't serialize pydantic models with serialization or validation aliases.",
     ):
         dg.serialize_value(o, whitelist_map=test_env)
 
     with pytest.raises(
         SerializationError,
-        match="Can't serialize pydantic models with serialization or validation aliases.",
+        match=r"Can't serialize pydantic models with serialization or validation aliases.",
     ):
         pack_value(o, whitelist_map=test_env)

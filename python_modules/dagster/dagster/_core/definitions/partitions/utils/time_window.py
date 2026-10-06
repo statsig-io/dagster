@@ -68,6 +68,8 @@ class PartitionTimeWindowStatus:
             and self.status == other.status
         )
 
+    __hash__ = None
+
 
 @whitelist_for_serdes(
     storage_name="TimeWindow",  # For back-compat with existing serdes
@@ -97,11 +99,19 @@ class PersistedTimeWindow(
         return self._asdict()["start"].timestamp
 
     @property
+    def start_timestamp_with_timezone(self) -> TimestampWithTimezone:
+        return self._asdict()["start"]
+
+    @property
+    def end_timestamp_with_timezone(self) -> TimestampWithTimezone:
+        return self._asdict()["end"]
+
+    @property
     def end_timestamp(self) -> float:
         return self._asdict()["end"].timestamp
 
     @cached_property
-    def start(self) -> datetime:  # pyright: ignore[reportIncompatibleVariableOverride]
+    def start(self) -> datetime:  # ty: ignore[invalid-named-tuple-override]
         start_timestamp_with_timezone = self._asdict()["start"]
         return datetime.fromtimestamp(
             start_timestamp_with_timezone.timestamp,
@@ -109,7 +119,7 @@ class PersistedTimeWindow(
         )
 
     @cached_property
-    def end(self) -> datetime:  # pyright: ignore[reportIncompatibleVariableOverride]
+    def end(self) -> datetime:  # ty: ignore[invalid-named-tuple-override]
         end_timestamp_with_timezone = self._asdict()["end"]
         return datetime.fromtimestamp(
             end_timestamp_with_timezone.timestamp,

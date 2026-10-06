@@ -1,6 +1,5 @@
 import os
 import time
-from typing import Optional
 from unittest import mock
 
 import dagster as dg
@@ -17,7 +16,7 @@ from dagster._grpc.client import ephemeral_grpc_api_client
 from dagster._grpc.types import ExternalScheduleExecutionArgs
 from dagster._time import get_current_datetime
 
-from dagster_tests.api_tests.utils import get_bar_repo_handle
+from dagster_tests.api_tests.utils import get_bar_repo_handle, with_invalid_origin
 
 
 def test_external_schedule_execution_data_api_grpc():
@@ -31,20 +30,20 @@ def test_external_schedule_execution_data_api_grpc():
                 None,
             )
             assert isinstance(execution_data, ScheduleExecutionData)
-            assert len(execution_data.run_requests) == 1  # pyright: ignore[reportArgumentType]
-            to_launch = execution_data.run_requests[0]  # pyright: ignore[reportOptionalSubscript]
+            assert len(execution_data.run_requests) == 1  # ty: ignore[invalid-argument-type]
+            to_launch = execution_data.run_requests[0]  # ty: ignore[not-subscriptable]
             assert to_launch.run_config == {"fizz": "buzz"}
             assert to_launch.tags == {"dagster/schedule_name": "foo_schedule"}
 
 
 @pytest.mark.parametrize("env_var_default_val", [200, None], ids=["env-var-set", "env-var-not-set"])
-def test_external_schedule_client_timeout(instance, env_var_default_val: Optional[int]):
+def test_external_schedule_client_timeout(instance, env_var_default_val: int | None):
     if env_var_default_val:
         os.environ["DAGSTER_SCHEDULE_GRPC_TIMEOUT_SECONDS"] = str(env_var_default_val)
     with get_bar_repo_handle(instance) as repository_handle:
         with pytest.raises(
             DagsterUserCodeUnreachableError,
-            match="User code server request timed out due to taking longer than 1 seconds to complete.",
+            match=r"User code server request timed out due to taking longer than 1 seconds to complete.",
         ):
             sync_get_external_schedule_execution_data_ephemeral_grpc(
                 instance, repository_handle, "schedule_times_out", None, None, timeout=1
@@ -75,8 +74,8 @@ def test_external_schedule_execution_data_api_grpc_fallback_to_streaming():
                             None,
                         )
                         assert isinstance(execution_data, ScheduleExecutionData)
-                        assert len(execution_data.run_requests) == 1  # pyright: ignore[reportArgumentType]
-                        to_launch = execution_data.run_requests[0]  # pyright: ignore[reportOptionalSubscript]
+                        assert len(execution_data.run_requests) == 1  # ty: ignore[invalid-argument-type]
+                        to_launch = execution_data.run_requests[0]  # ty: ignore[not-subscriptable]
                         assert to_launch.run_config == {"fizz": "buzz"}
                         assert to_launch.tags == {"dagster/schedule_name": "foo_schedule"}
 
@@ -92,7 +91,7 @@ def test_external_schedule_execution_data_api_never_execute_grpc():
                 None,
             )
             assert isinstance(execution_data, ScheduleExecutionData)
-            assert len(execution_data.run_requests) == 0  # pyright: ignore[reportArgumentType]
+            assert len(execution_data.run_requests) == 0  # ty: ignore[invalid-argument-type]
 
 
 def test_external_schedule_execution_deserialize_error():
@@ -104,12 +103,14 @@ def test_external_schedule_execution_deserialize_error():
             ) as api_client:
                 result = dg.deserialize_value(
                     api_client.external_schedule_execution(
-                        external_schedule_execution_args=ExternalScheduleExecutionArgs(
-                            repository_origin=origin,
-                            instance_ref=instance.get_ref(),
-                            schedule_name="foobar",
-                            scheduled_execution_timestamp=None,
-                        )._replace(repository_origin="INVALID")
+                        external_schedule_execution_args=with_invalid_origin(
+                            ExternalScheduleExecutionArgs(
+                                repository_origin=origin,
+                                instance_ref=instance.get_ref(),
+                                schedule_name="foobar",
+                                scheduled_execution_timestamp=None,
+                            )
+                        )
                     )
                 )
                 assert isinstance(result, ScheduleExecutionErrorSnap)
@@ -129,8 +130,8 @@ def test_include_execution_time_grpc():
             )
 
             assert isinstance(execution_data, ScheduleExecutionData)
-            assert len(execution_data.run_requests) == 1  # pyright: ignore[reportArgumentType]
-            to_launch = execution_data.run_requests[0]  # pyright: ignore[reportOptionalSubscript]
+            assert len(execution_data.run_requests) == 1  # ty: ignore[invalid-argument-type]
+            to_launch = execution_data.run_requests[0]  # ty: ignore[not-subscriptable]
             assert to_launch.run_config == {"passed_in_time": execution_time.isoformat()}
             assert to_launch.tags == {"dagster/schedule_name": "foo_schedule_echo_time"}
 
@@ -147,7 +148,7 @@ def test_run_request_partition_key_schedule_grpc():
             )
 
             assert isinstance(execution_data, ScheduleExecutionData)
-            assert len(execution_data.run_requests) == 1  # pyright: ignore[reportArgumentType]
-            to_launch = execution_data.run_requests[0]  # pyright: ignore[reportOptionalSubscript]
+            assert len(execution_data.run_requests) == 1  # ty: ignore[invalid-argument-type]
+            to_launch = execution_data.run_requests[0]  # ty: ignore[not-subscriptable]
             assert to_launch.tags["dagster/schedule_name"] == "partitioned_run_request_schedule"
             assert to_launch.tags["dagster/partition"] == "a"

@@ -32,9 +32,9 @@ from typing import (  # noqa: UP035
     Set,  # noqa: F401
     TextIO,
     Type,  # noqa: F401
+    TypeAlias,
     TypedDict,
     TypeVar,
-    Union,
     cast,
     final,
     get_args,
@@ -70,7 +70,7 @@ Method = Literal[
 ]
 
 
-def _make_message(method: Method, params: Optional[Mapping[str, Any]]) -> "PipesMessage":
+def _make_message(method: Method, params: Mapping[str, Any] | None) -> "PipesMessage":
     return {
         PIPES_PROTOCOL_VERSION_FIELD: PIPES_PROTOCOL_VERSION,
         "method": method,
@@ -95,7 +95,7 @@ class PipesMessage(TypedDict):
 
     __dagster_pipes_version: str
     method: str
-    params: Optional[Mapping[str, Any]]
+    params: Mapping[str, Any] | None
 
 
 ###### PIPES CONTEXT
@@ -106,14 +106,14 @@ class PipesContextData(TypedDict):
     wrapped in a :py:class:`PipesContext`.
     """
 
-    asset_keys: Optional[Sequence[str]]
-    code_version_by_asset_key: Optional[Mapping[str, Optional[str]]]
-    provenance_by_asset_key: Optional[Mapping[str, Optional["PipesDataProvenance"]]]
-    partition_key: Optional[str]
+    asset_keys: Sequence[str] | None
+    code_version_by_asset_key: Mapping[str, str | None] | None
+    provenance_by_asset_key: Mapping[str, Optional["PipesDataProvenance"]] | None
+    partition_key: str | None
     partition_key_range: Optional["PipesPartitionKeyRange"]
     partition_time_window: Optional["PipesTimeWindow"]
     run_id: str
-    job_name: Optional[str]
+    job_name: str | None
     retry_number: int
     extras: Mapping[str, Any]
 
@@ -142,7 +142,9 @@ class PipesDataProvenance(TypedDict):
 
 PipesAssetCheckSeverity = Literal["WARN", "ERROR"]
 
-PipesMetadataRawValue = Union[int, float, str, Mapping[str, Any], Sequence[Any], bool, None]
+PipesMetadataRawValue: TypeAlias = (
+    int | float | str | Mapping[str, Any] | Sequence[Any] | bool | None
+)
 
 
 class PipesMetadataValue(TypedDict):
@@ -178,7 +180,7 @@ class PipesException(TypedDict):
     message: str
     stack: Sequence[str]
     # class name of Exception object in python, left as optional for flexibility
-    name: Optional[str]
+    name: str | None
     # https://docs.python.org/3/library/exceptions.html#exception-context
     # exception that explicitly led to this exception
     cause: Optional["PipesException"]
@@ -193,20 +195,10 @@ class PipesException(TypedDict):
 ESCAPE_CHARACTER = "\\"
 
 
-def de_escape_asset_key(asset_key: str) -> str:
-    r"""Removes the backward slashes escape characters from the asset key.
+def to_asset_key_path(asset_key: str) -> list[str]:
+    r"""Converts an escaped user string into an asset key's parts.
 
-    Example: "foo\/bar" -> "foo/bar"
-    """
-    # make sure to keep any standalone backslashes since they may be
-    # coming from the original (non-escaped) key
-    return asset_key.replace(ESCAPE_CHARACTER + "/", "/")
-
-
-def to_assey_key_path(asset_key: str) -> list[str]:
-    """Converts an asset key to a collection of key parts.
-
-    Forward slash (except escaped) is used as separator. De-escapes the key.
+    Forward slashes (except escaped ones) separate parts; ``\X`` de-escapes to ``X``.
     """
     parts = []
     current_part = []
@@ -214,8 +206,7 @@ def to_assey_key_path(asset_key: str) -> list[str]:
 
     for char in asset_key:
         if escape_next:
-            # Include escaped character (including backslash itself) in the current part
-            current_part.append(ESCAPE_CHARACTER + char)
+            current_part.append(char)
             escape_next = False
         elif char == ESCAPE_CHARACTER:
             escape_next = True
@@ -225,12 +216,10 @@ def to_assey_key_path(asset_key: str) -> list[str]:
         else:
             current_part.append(char)
 
-    # Add the final part to parts
     if current_part:
         parts.append("".join(current_part))
 
-    # De-escape each part, ensuring standalone backslashes remain intact
-    return [de_escape_asset_key(part) for part in parts]
+    return parts
 
 
 _T = TypeVar("_T")
@@ -244,13 +233,13 @@ class DagsterPipesWarning(Warning):
     pass
 
 
-def _assert_not_none(value: Optional[_T], desc: Optional[str] = None) -> _T:
+def _assert_not_none(value: _T | None, desc: str | None = None) -> _T:
     if value is None:
         raise DagsterPipesError(f"Missing required property: {desc}")
     return value
 
 
-def _assert_defined_asset_property(value: Optional[_T], key: str) -> _T:
+def _assert_defined_asset_property(value: _T | None, key: str) -> _T:
     return _assert_not_none(value, f"`{key}` is undefined. Current step does not target an asset.")
 
 
@@ -264,7 +253,7 @@ def _assert_single_asset(data: PipesContextData, key: str) -> None:
 
 def _resolve_optionally_passed_asset_key(
     data: PipesContextData,
-    asset_key: Optional[str],
+    asset_key: str | None,
     method: str,
 ) -> str:
     asset_key = _assert_opt_param_type(asset_key, str, method, "asset_key")
@@ -292,7 +281,7 @@ def _resolve_optionally_passed_asset_key(
     return asset_key
 
 
-def _assert_defined_partition_property(value: Optional[_T], key: str) -> _T:
+def _assert_defined_partition_property(value: _T | None, key: str) -> _T:
     return _assert_not_none(
         value, f"`{key}` is undefined. Current step does not target any partitions."
     )
@@ -344,7 +333,7 @@ def _assert_env_param_type(
 
 def _assert_opt_env_param_type(
     env_params: PipesParams, key: str, expected_type: type[_T], cls: type
-) -> Optional[_T]:
+) -> _T | None:
     value = env_params.get(key)
     if value is not None and not isinstance(value, expected_type):
         raise DagsterPipesError(
@@ -390,10 +379,10 @@ _METADATA_TYPES = frozenset(get_args(PipesMetadataType))
 
 
 def _normalize_param_metadata(
-    metadata: Mapping[str, Union[PipesMetadataRawValue, PipesMetadataValue]],
+    metadata: Mapping[str, PipesMetadataRawValue | PipesMetadataValue],
     method: str,
     param: str,
-) -> Mapping[str, Union[PipesMetadataRawValue, PipesMetadataValue]]:
+) -> Mapping[str, PipesMetadataRawValue | PipesMetadataValue]:
     _assert_param_type(metadata, dict, method, param)
     new_metadata: dict[str, PipesMetadataValue] = {}
     for key, value in metadata.items():
@@ -409,8 +398,9 @@ def _normalize_param_metadata(
                     " string keys and values that are either raw metadata values or dictionaries"
                     f" with schema `{{raw_value: ..., type: ...}}`. Got a value `{value}`."
                 )
-            _assert_param_value(value["type"], _METADATA_TYPES, method, f"{param}.{key}.type")
-            new_metadata[key] = cast("PipesMetadataValue", value)
+            typed_value = cast("PipesMetadataValue", value)
+            _assert_param_value(typed_value["type"], _METADATA_TYPES, method, f"{param}.{key}.type")
+            new_metadata[key] = typed_value
         else:
             new_metadata[key] = {"raw_value": value, "type": PIPES_METADATA_TYPE_INFER}
     return new_metadata
@@ -732,7 +722,7 @@ class PipesBufferedFilesystemMessageWriterChannel(PipesBlobStoreMessageWriterCha
 
     def upload_messages_chunk(self, payload: IO, index: int) -> None:
         message_path = os.path.join(self._path, f"{index}.json")
-        with open(message_path, "w") as f:
+        with open(message_path, "w", encoding="utf-8") as f:
             f.write(payload.read())
 
 
@@ -757,7 +747,7 @@ class PipesDefaultContextLoader(PipesContextLoader):
     def load_context(self, params: PipesParams) -> Iterator[PipesContextData]:
         if self.FILE_PATH_KEY in params:
             path = _assert_env_param_type(params, self.FILE_PATH_KEY, str, self.__class__)
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
                 yield data
         elif self.DIRECT_KEY in params:
@@ -801,7 +791,7 @@ class PipesStdioLogWriter(PipesLogWriter[T_LogChannel]):
         pass
 
     @contextmanager
-    def open(self, params: PipesParams) -> Iterator[None]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def open(self, params: PipesParams) -> Iterator[None]:
         with ExitStack() as stack:
             stdout_channel = self.make_channel(params, stream="stdout")
             stderr_channel = self.make_channel(params, stream="stderr")
@@ -894,7 +884,7 @@ class PipesStdioLogWriterChannel(PipesLogWriterChannel):
         capturing_started: Event,
         capturing_should_stop: Event,
     ):
-        with open(path) as input_file:
+        with open(path, encoding="utf-8") as input_file:
             received_stop_event_at = None
 
             while not (
@@ -984,7 +974,8 @@ class PipesDefaultMessageWriter(PipesMessageWriter):
         else:
             raise DagsterPipesError(
                 f'Invalid params for {self.__class__.__name__}, expected key "path" or "std",'
-                f" received {params}"
+                f" received {params}. The orchestration side's message reader may expect a"
+                " different message writer: pass it as `message_writer` to `open_dagster_pipes`."
             )
 
 
@@ -995,7 +986,7 @@ class PipesFileMessageWriterChannel(PipesMessageWriterChannel):
         self._path = path
 
     def write_message(self, message: PipesMessage) -> None:
-        with open(self._path, "a") as f:
+        with open(self._path, "a", encoding="utf-8") as f:
             f.write(json.dumps(message) + "\n")
 
 
@@ -1156,7 +1147,7 @@ class PipesStdioFileLogWriterChannel(PipesStdioLogWriterChannel):
 
     def write_chunk(self, chunk: str) -> None:
         # write the chunk to a file
-        with open(self.output_path, "a") as file:
+        with open(self.output_path, "a", encoding="utf-8") as file:
             file.write(chunk)
 
 
@@ -1249,9 +1240,7 @@ class PipesS3MessageWriterChannel(PipesBlobStoreMessageWriterChannel):
     """
 
     # client is a boto3.client("s3") object
-    def __init__(
-        self, client: Any, bucket: str, key_prefix: Optional[str], *, interval: float = 10
-    ):
+    def __init__(self, client: Any, bucket: str, key_prefix: str | None, *, interval: float = 10):
         super().__init__(interval=interval)
         self._client = client
         self._bucket = bucket
@@ -1326,7 +1315,7 @@ class PipesGCSMessageWriterChannel(PipesBlobStoreMessageWriterChannel):
     """
 
     def __init__(
-        self, client: "GCSClient", bucket: str, key_prefix: Optional[str], *, interval: float = 10
+        self, client: "GCSClient", bucket: str, key_prefix: str | None, *, interval: float = 10
     ):
         super().__init__(interval=interval)
         self._client = client
@@ -1341,6 +1330,80 @@ class PipesGCSMessageWriterChannel(PipesBlobStoreMessageWriterChannel):
 
 
 # ########################
+# ##### IO - AzureBlobStorage
+# ########################
+
+
+class PipesAzureBlobStorageContextLoader(PipesContextLoader):
+    """Context loader that reads context from a JSON file on AzureBlobStorage.
+
+    Args:
+        client (Any): An azure.storage.blob.BlobServiceClient object.
+    """
+
+    def __init__(self, client: Any):
+        self._client = client
+
+    @contextmanager
+    def load_context(self, params: PipesParams) -> Iterator[PipesContextData]:
+        bucket = _assert_env_param_type(params, "bucket", str, self.__class__)
+        key = _assert_env_param_type(params, "key", str, self.__class__)
+        with self._client.get_blob_client(bucket, key) as blob_client:
+            obj = blob_client.download_blob().readall()
+        yield json.loads(obj.decode("utf-8"))
+
+
+class PipesAzureBlobStorageMessageWriter(PipesBlobStoreMessageWriter):
+    """Message writer that writes messages by periodically writing message chunks to an
+        AzureBlobStorage container.
+
+    Args:
+        client (Any): An azure.storage.blob.BlobServiceClient object.
+        interval (float): interval in seconds between upload chunk uploads.
+    """
+
+    def __init__(self, client: Any, *, interval: float = 10):
+        super().__init__(interval=interval)
+        self._client = client
+
+    def make_channel(
+        self,
+        params: PipesParams,
+    ) -> "PipesAzureBlobStorageMessageWriterChannel":
+        bucket = _assert_env_param_type(params, "bucket", str, self.__class__)
+        key_prefix = _assert_opt_env_param_type(params, "key_prefix", str, self.__class__)
+        return PipesAzureBlobStorageMessageWriterChannel(
+            client=self._client,
+            bucket=bucket,
+            key_prefix=key_prefix,
+            interval=self.interval,
+        )
+
+
+class PipesAzureBlobStorageMessageWriterChannel(PipesBlobStoreMessageWriterChannel):
+    """Message writer channel for writing messages by periodically writing message chunks to an
+        AzureBlobStorage container.
+
+    Args:
+        client (Any): An azure.storage.blob.BlobServiceClient object.
+        bucket (str): The name of the AzureBlobStorage container to write to.
+        key_prefix (Optional[str]): An optional prefix to use for the keys of written blobs.
+        interval (float): interval in seconds between upload chunk uploads
+    """
+
+    def __init__(self, client: Any, bucket: str, key_prefix: str | None, *, interval: float = 10):
+        super().__init__(interval=interval)
+        self._client = client
+        self._bucket = bucket
+        self._key_prefix = key_prefix
+
+    def upload_messages_chunk(self, payload: IO, index: int) -> None:
+        key = f"{self._key_prefix}/{index}.json" if self._key_prefix else f"{index}.json"
+        with self._client.get_blob_client(self._bucket, key) as blob_client:
+            blob_client.upload_blob(payload.read())
+
+
+# ########################
 # ##### IO - DBFS
 # ########################
 
@@ -1352,7 +1415,7 @@ class PipesDbfsContextLoader(PipesContextLoader):
     def load_context(self, params: PipesParams) -> Iterator[PipesContextData]:
         unmounted_path = _assert_env_param_type(params, "path", str, self.__class__)
         path = os.path.join("/dbfs", unmounted_path.lstrip("/"))
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             yield json.load(f)
 
 
@@ -1412,6 +1475,132 @@ class PipesDbfsMessageWriter(PipesBlobStoreMessageWriter):
             return {}
 
 
+# #########################################
+# ##### IO - Databricks Serverless
+# #########################################
+
+
+class PipesUnityCatalogVolumesContextLoader(PipesContextLoader):
+    """Context loader that reads context from a JSON file on Unity Catalog Volumes."""
+
+    @contextmanager
+    def load_context(self, params: PipesParams) -> Iterator[PipesContextData]:
+        path = _assert_env_param_type(params, "path", str, self.__class__)
+        with open(path, encoding="utf-8") as f:
+            yield json.load(f)
+
+
+class PipesUnityCatalogVolumesMessageWriter(PipesBlobStoreMessageWriter):
+    """Message writer that writes messages by periodically writing message chunks
+    to a directory on Unity Catalog Volumes.
+    """
+
+    def make_channel(
+        self,
+        params: PipesParams,
+    ) -> "PipesBufferedFilesystemMessageWriterChannel":
+        path = _assert_env_param_type(params, "path", str, self.__class__)
+        return PipesBufferedFilesystemMessageWriterChannel(
+            path=path,
+            interval=self.interval,
+        )
+
+
+DAGSTER_PIPES_CONTEXT_WIDGET_KEY = DAGSTER_PIPES_CONTEXT_ENV_VAR
+DAGSTER_PIPES_MESSAGES_WIDGET_KEY = DAGSTER_PIPES_MESSAGES_ENV_VAR
+
+
+class PipesDatabricksNotebookWidgetsParamsLoader(PipesParamsLoader):
+    """Params loader that extracts params from widgets (base params) in a Databricks Notebook."""
+
+    def __init__(self, widgets: Any):
+        self.widgets = widgets
+
+    def is_dagster_pipes_process(self) -> bool:
+        # use the presence of the pipes context to discern if we are in a pipes process
+        return self.widgets.get(DAGSTER_PIPES_CONTEXT_WIDGET_KEY) is not None
+
+    def load_context_params(self) -> PipesParams:
+        return decode_param(self.widgets.get(DAGSTER_PIPES_CONTEXT_WIDGET_KEY))
+
+    def load_messages_params(self) -> PipesParams:
+        return decode_param(self.widgets.get(DAGSTER_PIPES_MESSAGES_WIDGET_KEY))
+
+
+# ########################
+# ##### IO - Prefect
+# ########################
+
+
+class PipesPrefectLogsMessageWriter(PipesMessageWriter["PipesPrefectLogsMessageWriterChannel"]):
+    """Message writer that sends messages through the logs of the current Prefect flow or task run.
+
+    Must run inside a Prefect run: Prefect's API log handler takes the flow or task run id from the
+    active run context, so this needs no Prefect import.
+    """
+
+    PREFECT_LOGS_KEY = "prefect_logs"
+    MAX_MESSAGE_BYTES_KEY = "max_message_bytes"
+    # A child of Prefect's run logger, so records reach its API handler without hitting the
+    # console formatter that expects the fields `get_run_logger` adds for that exact name.
+    LOGGER_NAME = "prefect.flow_runs.dagster_pipes"
+    # Prefect's own per-log limit is 1 MB, which includes its fields around the message.
+    DEFAULT_MAX_MESSAGE_BYTES = 900_000
+
+    @contextmanager
+    def open(self, params: PipesParams) -> Iterator["PipesPrefectLogsMessageWriterChannel"]:
+        _assert_env_param_type(params, self.PREFECT_LOGS_KEY, bool, self.__class__)
+        max_message_bytes = _assert_opt_env_param_type(
+            params, self.MAX_MESSAGE_BYTES_KEY, int, self.__class__
+        )
+        yield PipesPrefectLogsMessageWriterChannel(
+            logger=logging.getLogger(self.LOGGER_NAME),
+            max_message_bytes=max_message_bytes or self.DEFAULT_MAX_MESSAGE_BYTES,
+        )
+
+
+class PipesPrefectLogsMessageWriterChannel(PipesMessageWriterChannel):
+    """Message writer channel that writes each message as one INFO record to a logger.
+
+    Prefect truncates oversize logs, which would leave unparseable JSON, so an oversize message is
+    replaced by a short error instead.
+    """
+
+    def __init__(self, logger: logging.Logger, max_message_bytes: int):
+        self._logger = logger
+        self._max_message_bytes = max_message_bytes
+
+    def write_message(self, message: PipesMessage) -> None:
+        line = json.dumps(message)
+        size = len(line.encode("utf-8"))
+        if size > self._max_message_bytes:
+            line = json.dumps(self._oversize_replacement(message, size))
+        self._logger.info(line)
+
+    def _oversize_replacement(self, message: PipesMessage, size: int) -> PipesMessage:
+        error = (
+            f"Dropped a `{message['method']}` Pipes message of {size} bytes, over the"
+            f" {self._max_message_bytes}-byte limit for Prefect logs. Use a blob store message"
+            " writer for large payloads."
+        )
+        if message["method"] == "closed":
+            # Keep the close itself so the orchestration side still sees the run end.
+            exc = (message["params"] or {}).get("exception") or {}
+            return _make_message(
+                "closed",
+                {
+                    "exception": {
+                        "message": error,
+                        "stack": [],
+                        "name": exc.get("name"),
+                        "cause": None,
+                        "context": None,
+                    }
+                },
+            )
+        return _make_message("log", {"message": error, "level": "ERROR"})
+
+
 # ########################
 # ##### CONTEXT
 # ########################
@@ -1419,9 +1608,9 @@ class PipesDbfsMessageWriter(PipesBlobStoreMessageWriter):
 
 def open_dagster_pipes(
     *,
-    context_loader: Optional[PipesContextLoader] = None,
-    message_writer: Optional[PipesMessageWriter] = None,
-    params_loader: Optional[PipesParamsLoader] = None,
+    context_loader: PipesContextLoader | None = None,
+    message_writer: PipesMessageWriter | None = None,
+    params_loader: PipesParamsLoader | None = None,
 ) -> "PipesContext":
     """Initialize the Dagster Pipes context.
 
@@ -1525,7 +1714,7 @@ class PipesContext:
 
     def close(
         self,
-        exc: Optional[PipesException] = None,
+        exc: PipesException | None = None,
     ) -> None:
         """Close the pipes connection. This will flush all buffered messages to the orchestration
         process and cause any further attempt to write a message to raise an error. This method is
@@ -1542,7 +1731,7 @@ class PipesContext:
         """bool: Whether the context has been closed."""
         return self._closed
 
-    def _write_message(self, method: Method, params: Optional[Mapping[str, Any]] = None) -> None:
+    def _write_message(self, method: Method, params: Mapping[str, Any] | None = None) -> None:
         if self._closed:
             raise DagsterPipesError("Cannot send message after pipes context is closed.")
         message = _make_message(method, params)
@@ -1575,7 +1764,7 @@ class PipesContext:
         return asset_keys
 
     @property
-    def provenance(self) -> Optional[PipesDataProvenance]:
+    def provenance(self) -> PipesDataProvenance | None:
         """Optional[PipesDataProvenance]: The provenance for the currently scoped asset. Raises an
         error if 0 or multiple assets are in scope.
         """
@@ -1586,7 +1775,7 @@ class PipesContext:
         return next(iter(provenance_by_asset_key.values()))
 
     @property
-    def provenance_by_asset_key(self) -> Mapping[str, Optional[PipesDataProvenance]]:
+    def provenance_by_asset_key(self) -> Mapping[str, PipesDataProvenance | None]:
         """Mapping[str, Optional[PipesDataProvenance]]: Mapping of asset key to provenance for the
         currently scoped assets. Raises an error if no assets are in scope.
         """
@@ -1596,7 +1785,7 @@ class PipesContext:
         return provenance_by_asset_key
 
     @property
-    def code_version(self) -> Optional[str]:
+    def code_version(self) -> str | None:
         """Optional[str]: The code version for the currently scoped asset. Raises an error if 0 or
         multiple assets are in scope.
         """
@@ -1607,7 +1796,7 @@ class PipesContext:
         return next(iter(code_version_by_asset_key.values()))
 
     @property
-    def code_version_by_asset_key(self) -> Mapping[str, Optional[str]]:
+    def code_version_by_asset_key(self) -> Mapping[str, str | None]:
         """Mapping[str, Optional[str]]: Mapping of asset key to code version for the currently
         scoped assets. Raises an error if no assets are in scope.
         """
@@ -1660,7 +1849,7 @@ class PipesContext:
         return self._data["run_id"]
 
     @property
-    def job_name(self) -> Optional[str]:
+    def job_name(self) -> str | None:
         """Optional[str]: The job name for the currently executing run. Returns None if the run is
         not derived from a job.
         """
@@ -1691,9 +1880,9 @@ class PipesContext:
 
     def report_asset_materialization(
         self,
-        metadata: Optional[Mapping[str, Union[PipesMetadataRawValue, PipesMetadataValue]]] = None,
-        data_version: Optional[str] = None,
-        asset_key: Optional[str] = None,
+        metadata: Mapping[str, PipesMetadataRawValue | PipesMetadataValue] | None = None,
+        data_version: str | None = None,
+        asset_key: str | None = None,
     ) -> None:
         """Report to Dagster that an asset has been materialized. Streams a payload containing
         materialization information back to Dagster. If no assets are in scope, raises an error.
@@ -1735,8 +1924,8 @@ class PipesContext:
         check_name: str,
         passed: bool,
         severity: PipesAssetCheckSeverity = "ERROR",
-        metadata: Optional[Mapping[str, Union[PipesMetadataRawValue, PipesMetadataValue]]] = None,
-        asset_key: Optional[str] = None,
+        metadata: Mapping[str, PipesMetadataRawValue | PipesMetadataValue] | None = None,
+        asset_key: str | None = None,
     ) -> None:
         """Report to Dagster that an asset check has been performed. Streams a payload containing
         check result information back to Dagster. If no assets or associated checks are in scope, raises an error.
@@ -1781,7 +1970,7 @@ class PipesContext:
         """
         self._write_message("report_custom_message", {"payload": payload})
 
-    def log_external_stream(self, stream: str, text: str, extras: Optional[PipesExtras] = None):
+    def log_external_stream(self, stream: str, text: str, extras: PipesExtras | None = None):
         self._write_message(
             "log_external_stream", {"stream": stream, "text": text, "extras": extras or {}}
         )

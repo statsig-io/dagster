@@ -7,7 +7,7 @@ import traceback
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import dagster._check as check
 import docker
@@ -23,7 +23,9 @@ from dagster._utils import (
 from dagster_graphql import DagsterGraphQLClient
 
 DAGSTER_CURRENT_BRANCH = "current_branch"
-MAX_TIMEOUT_SECONDS = 20
+# Cold-start cost of the earliest-tested-release user-code container under Buildkite
+# resource pressure has been seen to exceed 30s; bump comfortably above that.
+MAX_TIMEOUT_SECONDS = 120
 IS_BUILDKITE = os.getenv("BUILDKITE") is not None
 EARLIEST_TESTED_RELEASE = os.getenv("EARLIEST_TESTED_RELEASE")
 MOST_RECENT_RELEASE_PLACEHOLDER = "most_recent"
@@ -167,8 +169,8 @@ def docker_service(
 ) -> Iterator[None]:
     # Make sure the service is not already running.
     try:
-        subprocess.check_output(["docker-compose", "-f", docker_compose_file, "stop"])
-        subprocess.check_output(["docker-compose", "-f", docker_compose_file, "rm", "-f"])
+        subprocess.check_output(["docker", "compose", "-f", docker_compose_file, "stop"])
+        subprocess.check_output(["docker", "compose", "-f", docker_compose_file, "rm", "-f"])
     except subprocess.CalledProcessError:
         pass
 
@@ -199,13 +201,13 @@ def docker_service(
         **os.environ,
     }
     up_process = subprocess.Popen(
-        ["docker-compose", "-f", docker_compose_file, "up", "--no-start"], env=env
+        ["docker", "compose", "-f", docker_compose_file, "up", "--no-start"], env=env
     )
     up_process.wait()
     assert up_process.returncode == 0
 
     # Start the docker service
-    start_process = subprocess.Popen(["docker-compose", "-f", docker_compose_file, "start"])
+    start_process = subprocess.Popen(["docker", "compose", "-f", docker_compose_file, "start"])
     start_process.wait()
     assert start_process.returncode == 0
 
@@ -217,8 +219,8 @@ def docker_service(
         raise e
     finally:
         # Stop and clean up the service.
-        subprocess.check_output(["docker-compose", "-f", docker_compose_file, "stop"])
-        subprocess.check_output(["docker-compose", "-f", docker_compose_file, "rm", "-f"])
+        subprocess.check_output(["docker", "compose", "-f", docker_compose_file, "stop"])
+        subprocess.check_output(["docker", "compose", "-f", docker_compose_file, "rm", "-f"])
 
 
 @pytest.fixture(scope="session")
@@ -384,7 +386,7 @@ def _get_asset(repo_content: Mapping[str, Any], asset_key: AssetKey) -> Mapping[
 
 
 def assert_runs_and_exists(
-    client: DagsterGraphQLClient, name: str, subset_selection: Optional[Sequence[str]] = None
+    client: DagsterGraphQLClient, name: str, subset_selection: Sequence[str] | None = None
 ):
     run_id = client.submit_job_execution(
         job_name=name,

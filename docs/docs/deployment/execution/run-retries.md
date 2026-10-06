@@ -10,7 +10,7 @@ If you configure run retries, a new run will be kicked off whenever a run fails 
 
 How to configure run retries depends on whether you're using Dagster+ or Dagster Open Source:
 
-- **Dagster+**: Use the [Dagster+ UI or the dagster-cloud CLI](/deployment/dagster-plus/full-deployments/deployment-settings-reference) to set a default maximum number of retries. Run retries do not need to be explicitly enabled.
+- **Dagster+**: Use the [Dagster+ UI or the dagster-cloud CLI](/deployment/dagster-plus/deploying-code/full-deployments/full-deployment-settings-reference) to set a default maximum number of retries. Run retries do not need to be explicitly enabled.
 - **Dagster Open Source**: Use your instance's `dagster.yaml` to enable run retries.
 
 For example, the following will set a default maximum number of retries of `3` for all runs:
@@ -23,13 +23,16 @@ run_retries:
 
 In both Dagster+ and Dagster Open Source, you can also configure retries using tags either on Job definitions or in the Dagster UI [Launchpad](/guides/operate/webserver).
 
-<CodeExample path="docs_snippets/docs_snippets/deploying/job_retries.py" />
+<CodeExample path="docs_snippets/docs_snippets/deployment/execution/job_retries.py" title="src/my_project/assets.py" />
 
 :::note
 
 For asset jobs, you can use [op retries](/guides/build/ops/op-retries) by setting the `op_retry_policy` attribute of `define_asset_job()` to a <PyObject section="ops" module="dagster" object="RetryPolicy"  />.
 
-<CodeExample path="docs_snippets/docs_snippets/deploying/asset_job_retries.py" />
+<CodeExample
+  path="docs_snippets/docs_snippets/deployment/execution/asset_job_retries.py"
+  title="src/my_project/assets.py"
+/>
 
 :::warning
 
@@ -37,7 +40,7 @@ The maximum retry limit in this case applies to each individual asset in the job
 
 :::
 
-### Retry Strategy
+### Retry strategy
 
 The `dagster/retry_strategy` tag controls which ops the retry will run.
 
@@ -45,7 +48,7 @@ By default, retries will re-execute from failure (tag value `FROM_FAILURE`). Thi
 
 :::note
 
-`FROM_FAILURE` requires an I/O manager that can access outputs from other runs. For example, on Kubernetes the <PyObject section="libraries" object="s3.s3_pickle_io_manager" module="dagster_aws" /> would work but the <PyObject section="io-managers" object="FilesystemIOManager" module="dagster" /> would not, since the new run is in a new Kubernetes job with a separate filesystem.
+`FROM_FAILURE` requires an I/O manager that can access outputs from other runs. For example, on Kubernetes the <PyObject section="libraries" integration="aws" object="s3.s3_pickle_io_manager" module="dagster_aws" /> would work but the <PyObject section="io-managers" object="FilesystemIOManager" module="dagster" /> would not, since the new run is in a new Kubernetes job with a separate filesystem.
 
 :::
 
@@ -67,10 +70,10 @@ run_retries:
 You can also apply the `dagster/retry_on_asset_or_op_failure` tag on specific jobs using tags to override the default value for runs of that job:
 
 ```python
-from dagster import job
+import dagster as dg
 
 
-@job(tags={"dagster/max_retries": 3, "dagster/retry_on_asset_or_op_failure": False})
+@dg.job(tags={"dagster/max_retries": 3, "dagster/retry_on_asset_or_op_failure": False})
 def sample_job():
     pass
 ```
@@ -80,3 +83,14 @@ def sample_job():
 Setting `retry_on_asset_or_op_failure` to `false` will only change retry behavior for runs on Dagster version 1.6.7 or greater.
 
 :::
+
+### FROM_ASSET_FAILURE strategy
+
+Use the `FROM_ASSET_FAILURE` strategy together with a `dagster/retry_on_asset_or_op_failure` setting value of `false` to use persisted asset materialization records from the event log and automatically exclude already-materialized assets during retry. This can significantly improve recovery times from infrastructure interruptions, such as a Kubernetes node eviction or spot instance loss. It's particularly useful for dbt pipelines, as it enables recovering without requiring persisted dbt artifacts.
+
+<CodeExample
+  path="docs_snippets/docs_snippets/deployment/execution/asset_job_from_asset_failure_retries.py"
+  startAfter="start_from_asset_failure_job"
+  endBefore="end_from_asset_failure_job"
+  title="src/my_project/jobs.py"
+/>

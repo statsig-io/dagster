@@ -3,7 +3,7 @@ import textwrap
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from dagster_dg_core.utils import activate_venv
 
@@ -29,16 +29,17 @@ SNIPPETS_DIR = (
     / "guides"
     / "components"
     / "integrations"
-    / "airbyte-cloud-component"
+    / "airbyte-component"
 )
 
 
 def _swap_to_mock_airbyte_component(path: Path) -> None:
     path.write_text(
-        path.read_text().replace(
-            "dagster_airbyte.AirbyteCloudWorkspaceComponent",
+        path.read_text(encoding="utf-8").replace(
+            "dagster_airbyte.AirbyteWorkspaceComponent",
             "my_project.defs.airbyte_ingest.test_airbyte_utils.MockAirbyteComponent",
-        )
+        ),
+        encoding="utf-8",
     )
 
 
@@ -87,7 +88,7 @@ def test_components_docs_airbyte_workspace(
 
         # scaffold airbyte component
         context.run_command_and_snippet_output(
-            cmd='dg scaffold defs dagster_airbyte.AirbyteCloudWorkspaceComponent airbyte_ingest \\\n  --workspace-id test_workspace --client-id "{{ env.AIRBYTE_CLIENT_ID }}" --client-secret "{{ env.AIRBYTE_CLIENT_SECRET }}"',
+            cmd='dg scaffold defs dagster_airbyte.AirbyteWorkspaceComponent airbyte_ingest \\\n  --workspace-id test_workspace --client-id "{{ env.AIRBYTE_CLIENT_ID }}" --client-secret "{{ env.AIRBYTE_CLIENT_SECRET }}"',
             snippet_path=SNIPPETS_DIR
             / f"{context.get_next_snip_number()}-scaffold-airbyte-component.txt",
         )
@@ -118,12 +119,18 @@ def test_components_docs_airbyte_workspace(
             snippet_path=f"{context.get_next_snip_number()}-list-defs.txt",
         )
 
+        # Skip OSS component defs as they demonstrate the different authentication methods which
+        # are already tested in the integration tests and considering the tests here mock the
+        # entire AirbyteWorkspace class in test_airbyte_utils.py with MockAirbyteWorkspace, it seems
+        # pretty pointless to test these.
+        context._snip_number += 3  # noqa: SLF001
+
         # Update component.yaml with connection selector
         context.create_file(
             Path("my_project") / "defs" / "airbyte_ingest" / "defs.yaml",
             contents=textwrap.dedent(
                 """\
-                type: dagster_airbyte.AirbyteCloudWorkspaceComponent
+                type: dagster_airbyte.AirbyteWorkspaceComponent
 
                 attributes:
                   workspace:
@@ -151,7 +158,7 @@ def test_components_docs_airbyte_workspace(
             Path("my_project") / "defs" / "airbyte_ingest" / "defs.yaml",
             contents=textwrap.dedent(
                 """\
-                type: dagster_airbyte.AirbyteCloudWorkspaceComponent
+                type: dagster_airbyte.AirbyteWorkspaceComponent
 
                 attributes:
                   workspace:

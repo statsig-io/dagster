@@ -1,17 +1,9 @@
 from collections.abc import Sequence
 from functools import update_wrapper
-from typing import (  # noqa: UP035
-    TYPE_CHECKING,
-    AbstractSet,
-    Any,
-    Callable,
-    Optional,
-    Union,
-    cast,
-    overload,
-)
+from typing import TYPE_CHECKING, AbstractSet, Any, Callable, cast, overload  # noqa: UP035
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._core.decorator_utils import get_function_params, validate_expected_params
 from dagster._core.definitions.events import HookExecutionResult
 from dagster._core.definitions.hook_definition import HookDefinition
@@ -37,9 +29,9 @@ def _validate_hook_fn_params(fn, expected_positionals):
 class _Hook:
     def __init__(
         self,
-        name: Optional[str] = None,
-        required_resource_keys: Optional[AbstractSet[str]] = None,
-        decorated_fn: Optional[Callable[..., Any]] = None,
+        name: str | None = None,
+        required_resource_keys: AbstractSet[str] | None = None,
+        decorated_fn: Callable[..., Any] | None = None,
     ):
         self.name = check.opt_str_param(name, "name")
         self.required_resource_keys = check.opt_set_param(
@@ -77,20 +69,20 @@ def event_list_hook(
 @overload
 def event_list_hook(
     *,
-    name: Optional[str] = ...,
-    required_resource_keys: Optional[AbstractSet[str]] = ...,
-    decorated_fn: Optional[Callable[..., Any]] = ...,
+    name: str | None = ...,
+    required_resource_keys: AbstractSet[str] | None = ...,
+    decorated_fn: Callable[..., Any] | None = ...,
 ) -> _Hook:
     pass
 
 
 def event_list_hook(
-    hook_fn: Optional[Callable] = None,
+    hook_fn: Callable | None = None,
     *,
-    name: Optional[str] = None,
-    required_resource_keys: Optional[AbstractSet[str]] = None,
-    decorated_fn: Optional[Callable[..., Any]] = None,
-) -> Union[HookDefinition, _Hook]:
+    name: str | None = None,
+    required_resource_keys: AbstractSet[str] | None = None,
+    decorated_fn: Callable[..., Any] | None = None,
+) -> HookDefinition | _Hook:
     """Create a generic hook with the specified parameters from the decorated function.
 
     This decorator is currently used internally by Dagster machinery to support success_hook and
@@ -143,17 +135,18 @@ def success_hook(hook_fn: SuccessOrFailureHookFn) -> HookDefinition: ...
 @overload
 def success_hook(
     *,
-    name: Optional[str] = ...,
-    required_resource_keys: Optional[AbstractSet[str]] = ...,
+    name: str | None = ...,
+    required_resource_keys: AbstractSet[str] | None = ...,
 ) -> Callable[[SuccessOrFailureHookFn], HookDefinition]: ...
 
 
+@public
 def success_hook(
-    hook_fn: Optional[SuccessOrFailureHookFn] = None,
+    hook_fn: SuccessOrFailureHookFn | None = None,
     *,
-    name: Optional[str] = None,
-    required_resource_keys: Optional[AbstractSet[str]] = None,
-) -> Union[HookDefinition, Callable[[SuccessOrFailureHookFn], HookDefinition]]:
+    name: str | None = None,
+    required_resource_keys: AbstractSet[str] | None = None,
+) -> HookDefinition | Callable[[SuccessOrFailureHookFn], HookDefinition]:
     """Create a hook on step success events with the specified parameters from the decorated function.
 
     Args:
@@ -183,7 +176,7 @@ def success_hook(
         _validate_hook_fn_params(fn, expected_positionals)
 
         if name is None or callable(name):
-            _name = fn.__name__
+            _name = fn.__name__  # ty: ignore[unresolved-attribute]
         else:
             _name = name
 
@@ -215,15 +208,16 @@ def failure_hook(name: SuccessOrFailureHookFn) -> HookDefinition: ...
 
 @overload
 def failure_hook(
-    name: Optional[str] = ...,
-    required_resource_keys: Optional[AbstractSet[str]] = ...,
+    name: str | None = ...,
+    required_resource_keys: AbstractSet[str] | None = ...,
 ) -> Callable[[SuccessOrFailureHookFn], HookDefinition]: ...
 
 
+@public
 def failure_hook(
-    name: Optional[Union[SuccessOrFailureHookFn, str]] = None,
-    required_resource_keys: Optional[AbstractSet[str]] = None,
-) -> Union[HookDefinition, Callable[[SuccessOrFailureHookFn], HookDefinition]]:
+    name: SuccessOrFailureHookFn | str | None = None,
+    required_resource_keys: AbstractSet[str] | None = None,
+) -> HookDefinition | Callable[[SuccessOrFailureHookFn], HookDefinition]:
     """Create a hook on step failure events with the specified parameters from the decorated function.
 
     Args:
@@ -253,7 +247,7 @@ def failure_hook(
         _validate_hook_fn_params(fn, expected_positionals)
 
         if name is None or callable(name):
-            _name = fn.__name__
+            _name = fn.__name__  # ty: ignore[unresolved-attribute]
         else:
             _name = name
 
@@ -274,6 +268,6 @@ def failure_hook(
     # This case is for when decorator is used bare, without arguments, i.e. @failure_hook
     if callable(name):
         check.invariant(required_resource_keys is None)
-        return wrapper(name)
+        return wrapper(name)  # ty: ignore[invalid-argument-type]
 
     return wrapper

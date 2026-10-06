@@ -14,7 +14,10 @@ from dagster_tableau_tests.conftest import (
 
 def test_translator_sheet_spec(workspace_data: TableauWorkspaceData) -> None:
     translator = DagsterTableauTranslator()
-    asset_key_list = ["superstore_datasource", "embedded_superstore_datasource"]
+    asset_key_list = [
+        AssetKey(["superstore_datasource"]),
+        AssetKey(["test_workbook", "embedded_datasource", "embedded_superstore_datasource"]),
+    ]
     index = 0
     for sheet in workspace_data.sheets_by_id.values():
         asset_spec = translator.get_asset_spec(
@@ -30,14 +33,16 @@ def test_translator_sheet_spec(workspace_data: TableauWorkspaceData) -> None:
             "dagster-tableau/workbook_id": TEST_WORKBOOK_ID,
             "dagster-tableau/project_name": TEST_PROJECT_NAME,
             "dagster-tableau/project_id": TEST_PROJECT_ID,
+            "dagster/storage_kind": "tableau",
         }
         assert asset_spec.tags == {
-            "dagster/storage_kind": "tableau",
             "dagster-tableau/asset_type": "sheet",
+            "dagster/kind/tableau": "",
+            "dagster/kind/sheet": "",
         }
         deps = list(asset_spec.deps)
         assert len(deps) == 1
-        assert deps[0].asset_key == AssetKey([asset_key_list[index]])
+        assert deps[0].asset_key == asset_key_list[index]
         index += 1
 
 
@@ -55,10 +60,12 @@ def test_translator_dashboard_spec(workspace_data: TableauWorkspaceData, dashboa
         "dagster-tableau/workbook_id": TEST_WORKBOOK_ID,
         "dagster-tableau/project_name": TEST_PROJECT_NAME,
         "dagster-tableau/project_id": TEST_PROJECT_ID,
+        "dagster/storage_kind": "tableau",
     }
     assert asset_spec.tags == {
-        "dagster/storage_kind": "tableau",
         "dagster-tableau/asset_type": "dashboard",
+        "dagster/kind/tableau": "",
+        "dagster/kind/dashboard": "",
     }
     deps = list(asset_spec.deps)
     assert len(deps) == 1
@@ -81,10 +88,13 @@ def test_translator_data_source_spec(
         "dagster-tableau/id": TEST_DATA_SOURCE_ID,
         "dagster-tableau/has_extracts": False,
         "dagster-tableau/is_published": True,
+        "dagster/storage_kind": "tableau",
     }
     assert asset_spec.tags == {
-        "dagster/storage_kind": "tableau",
         "dagster-tableau/asset_type": "data_source",
+        "dagster/kind/tableau": "",
+        "dagster/kind/live": "",
+        "dagster/kind/published datasource": "",
     }
     deps = list(asset_spec.deps)
     assert len(deps) == 0
@@ -94,16 +104,23 @@ def test_translator_data_source_spec(
         TableauTranslatorData(content_data=embedded_data_source, workspace_data=workspace_data)
     )
 
-    assert asset_spec.key.path == ["embedded_superstore_datasource"]
+    assert asset_spec.key.path == [
+        "test_workbook",
+        "embedded_datasource",
+        "embedded_superstore_datasource",
+    ]
     assert asset_spec.metadata == {
         "dagster-tableau/id": TEST_EMBEDDED_DATA_SOURCE_ID,
         "dagster-tableau/has_extracts": True,
         "dagster-tableau/is_published": False,
         "dagster-tableau/workbook_id": TEST_WORKBOOK_ID,
+        "dagster/storage_kind": "tableau",
     }
     assert asset_spec.tags == {
-        "dagster/storage_kind": "tableau",
         "dagster-tableau/asset_type": "data_source",
+        "dagster/kind/tableau": "",
+        "dagster/kind/extract": "",
+        "dagster/kind/embedded datasource": "",
     }
     deps = list(asset_spec.deps)
     assert len(deps) == 0
@@ -130,6 +147,7 @@ def test_translator_custom_metadata(workspace_data: TableauWorkspaceData) -> Non
     assert asset_spec.metadata["custom"] == "metadata"
     assert asset_spec.key.path == ["prefix", "test_workbook", "sheet", "sales"]
     assert asset_spec.tags == {
-        "dagster/storage_kind": "tableau",
         "dagster-tableau/asset_type": "sheet",
+        "dagster/kind/sheet": "",
+        "dagster/kind/tableau": "",
     }

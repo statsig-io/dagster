@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from unittest import mock
 
 import pytest
@@ -18,7 +17,10 @@ from dagster import (
 from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
 from dagster._core.definitions.events import AssetMaterialization
 from dagster._core.definitions.materialize import materialize
-from dagster._core.definitions.metadata.metadata_value import TimestampMetadataValue
+from dagster._core.definitions.metadata.metadata_value import (
+    TextMetadataValue,
+    TimestampMetadataValue,
+)
 from dagster._core.definitions.partitions.definition import DailyPartitionsDefinition
 from dagster._core.definitions.sensor_definition import SensorEvaluationContext
 from dagster._core.errors import DagsterInvariantViolationError
@@ -232,15 +234,15 @@ def test_request_asset_checks(init_load_context: None, instance: DagsterInstance
 
     dag_asset_key = make_dag_key("dag")
 
-    @asset_check(asset="a")  # pyright: ignore[reportArgumentType]
+    @asset_check(asset="a")
     def check_task_asset():
         pass
 
-    @asset_check(asset=dag_asset_key)  # pyright: ignore[reportArgumentType]
+    @asset_check(asset=dag_asset_key)
     def check_dag_asset():
         pass
 
-    @asset_check(asset="c")  # pyright: ignore[reportArgumentType]
+    @asset_check(asset="c")
     def check_unrelated_asset():
         pass
 
@@ -391,7 +393,7 @@ def simulate_materialize_from_proxy_operator(
     assets_def: AssetsDefinition,
     dag_run_id: str,
     dag_id: str,
-    task_id: Optional[str],
+    task_id: str | None,
 ) -> ExecuteInProcessResult:
     # TODO consolidate with code in proxy operator
     tags = {
@@ -420,7 +422,7 @@ def test_pluggable_transformation(init_load_context: None, instance: DagsterInst
                 new_events.append(
                     event._replace(
                         metadata={
-                            "test": "test",
+                            "test": TextMetadataValue("test"),
                             EFFECTIVE_TIMESTAMP_METADATA_KEY: TimestampMetadataValue(1.0),
                         }
                     )
@@ -429,14 +431,14 @@ def test_pluggable_transformation(init_load_context: None, instance: DagsterInst
                 new_events.append(
                     event._replace(
                         metadata={
-                            "test": "test",
+                            "test": TextMetadataValue("test"),
                             EFFECTIVE_TIMESTAMP_METADATA_KEY: TimestampMetadataValue(0.0),
                         }
                     )
                 )
         return new_events
 
-    result, context = build_and_invoke_sensor(
+    result, _context = build_and_invoke_sensor(
         assets_per_task={
             "dag": {"task": [("a", [])]},
         },
@@ -520,7 +522,7 @@ def test_dag_level_override_materializations(
     freeze_datetime = datetime(2021, 1, 1)
 
     with freeze_time(freeze_datetime):
-        result, context = build_and_invoke_sensor(
+        result, _context = build_and_invoke_sensor(
             assets_per_task={},
             dag_level_asset_overrides={"dag": ["a", "b"]},
             instance=instance,

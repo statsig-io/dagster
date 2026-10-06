@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 from dagster import AssetKey, JsonMetadataValue, MarkdownMetadataValue
 from dagster._core.definitions.metadata.metadata_value import UrlMetadataValue
@@ -22,7 +22,7 @@ def dag_asset_metadata(dag_info: DagInfo) -> dict[str, Any]:
     }
 
 
-def peered_dag_asset_metadata(dag_info: DagInfo, source_code: Optional[str]) -> Mapping[str, Any]:
+def peered_dag_asset_metadata(dag_info: DagInfo, source_code: str | None) -> Mapping[str, Any]:
     metadata = dag_asset_metadata(dag_info)
     metadata[PEERED_DAG_MAPPING_METADATA_KEY] = [{"dag_id": dag_info.dag_id}]
     if source_code:
@@ -42,16 +42,15 @@ def get_leaf_assets_for_dag(
 ) -> set[AssetKey]:
     # An asset is a "leaf" for the dag if it has no transitive dependencies _within_ the dag. It may have
     # dependencies _outside_ the dag.
-    leaf_assets = []
     cache = {}
-    for asset_key in asset_keys_in_dag:
-        if (
-            get_transitive_dependencies_for_asset(
-                asset_key, downstreams_asset_dependency_graph, cache
-            ).intersection(asset_keys_in_dag)
-            == set()
-        ):
-            leaf_assets.append(asset_key)
+    leaf_assets = [
+        asset_key
+        for asset_key in asset_keys_in_dag
+        if get_transitive_dependencies_for_asset(
+            asset_key, downstreams_asset_dependency_graph, cache
+        ).intersection(asset_keys_in_dag)
+        == set()
+    ]
     return set(leaf_assets)
 
 

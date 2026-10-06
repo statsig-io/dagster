@@ -1,5 +1,6 @@
+import sys
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Any, Optional, Union
+from typing import Any
 
 from dagster import (
     AssetCheckEvaluation,
@@ -8,7 +9,6 @@ from dagster import (
     AssetMaterialization,
     Output,
 )
-from dagster._annotations import beta
 from dagster._record import record
 
 from dagster_dbt.cloud_v2.client import DbtCloudWorkspaceClient
@@ -16,7 +16,6 @@ from dagster_dbt.cloud_v2.run_handler import DbtCloudJobRunHandler, DbtCloudJobR
 from dagster_dbt.dagster_dbt_translator import DagsterDbtTranslator
 
 
-@beta
 @record
 class DbtCloudCliInvocation:
     """Represents a dbt Cloud cli invocation."""
@@ -26,7 +25,7 @@ class DbtCloudCliInvocation:
     manifest: Mapping[str, Any]
     dagster_dbt_translator: DagsterDbtTranslator
     run_handler: DbtCloudJobRunHandler
-    context: Optional[AssetExecutionContext]
+    context: AssetExecutionContext | None
 
     @classmethod
     def run(
@@ -36,7 +35,7 @@ class DbtCloudCliInvocation:
         client: DbtCloudWorkspaceClient,
         manifest: Mapping[str, Any],
         dagster_dbt_translator: DagsterDbtTranslator,
-        context: Optional[AssetExecutionContext] = None,
+        context: AssetExecutionContext | None = None,
     ) -> "DbtCloudCliInvocation":
         run_handler = DbtCloudJobRunHandler.run(
             job_id=job_id,
@@ -53,17 +52,23 @@ class DbtCloudCliInvocation:
         )
 
     def wait(
-        self, timeout: Optional[float] = None
-    ) -> Iterator[Union[AssetCheckEvaluation, AssetCheckResult, AssetMaterialization, Output]]:
-        self.run_handler.wait_for_success(timeout=timeout)
-        if "run_results.json" not in self.run_handler.list_run_artifacts():
-            return
-        run_results = DbtCloudJobRunResults.from_run_results_json(
-            run_results_json=self.run_handler.get_run_results()
-        )
-        yield from run_results.to_default_asset_events(
-            client=self.client,
-            manifest=self.manifest,
-            dagster_dbt_translator=self.dagster_dbt_translator,
-            context=self.context,
-        )
+        self, timeout: float | None = None
+    ) -> Iterator[AssetCheckEvaluation | AssetCheckResult | AssetMaterialization | Output]:
+        run = self.run_handler.wait(timeout=timeout)
+
+        # Write dbt Cloud run logs to stdout
+        logs = self.run_handler.get_run_logs()
+        if logs:
+            sys.stdout.write(logs)
+
+        if "run_results.json" in self.run_handler.list_run_artifacts():
+            run_results = DbtCloudJobRunResults.from_run_results_json(
+                run_results_json=self.run_handler.get_run_results()
+            )
+            yield from run_results.to_default_asset_events(
+                client=self.client,
+                manifest=self.manifest,
+                dagster_dbt_translator=self.dagster_dbt_translator,
+                context=self.context,
+            )
+        run.raise_for_status()

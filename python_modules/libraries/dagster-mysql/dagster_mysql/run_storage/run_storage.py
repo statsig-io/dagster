@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import ContextManager, Optional, cast  # noqa: UP035
+from typing import ContextManager, cast  # noqa: UP035
 
 import dagster._check as check
 import sqlalchemy as db
@@ -21,6 +21,7 @@ from dagster._core.storage.sql import (
     run_alembic_upgrade,
     stamp_alembic_rev,
 )
+from dagster._core.storage.sqlalchemy_compat import db_result
 from dagster._daemon.types import DaemonHeartbeat
 from dagster._serdes import ConfigurableClass, ConfigurableClassData, serialize_value
 from dagster._time import datetime_from_timestamp
@@ -46,7 +47,7 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
     ``$DAGSTER_HOME``. Configuration of this class should be done by setting values in that file.
 
 
-    .. literalinclude:: ../../../../../../examples/docs_snippets/docs_snippets/deploying/dagster-mysql-legacy.yaml
+    .. literalinclude:: ../../../../../../examples/docs_snippets/docs_snippets/deployment/execution/dagster-mysql-legacy.yaml
        :caption: dagster.yaml
        :start-after: start_marker_runs
        :end-before: end_marker_runs
@@ -56,7 +57,7 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
     :py:class:`~dagster.IntSource` and can be configured from environment variables.
     """
 
-    def __init__(self, mysql_url: str, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, mysql_url: str, inst_data: ConfigurableClassData | None = None):
         self._inst_data = check.opt_inst_param(inst_data, "inst_data", ConfigurableClassData)
         self.mysql_url = mysql_url
 
@@ -103,16 +104,16 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
         )
 
     @property
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         return self._inst_data
 
     @classmethod
     def config_type(cls) -> UserConfigSchema:
         return mysql_config()
 
-    def get_server_version(self) -> Optional[str]:
-        with self.connect() as conn:
-            row = conn.execute(db.text("select version()")).fetchone()
+    def get_server_version(self) -> str | None:
+        with self.connect() as conn, db_result(conn, db.text("select version()")) as result:
+            row = result.fetchone()
 
         if not row:
             return None
@@ -120,8 +121,8 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
         return cast("str", row[0])
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
-        cls, inst_data: Optional[ConfigurableClassData], config_value: MySqlStorageConfig
+    def from_config_value(  # ty: ignore[invalid-method-override]
+        cls, inst_data: ConfigurableClassData | None, config_value: MySqlStorageConfig
     ) -> "MySQLRunStorage":
         return MySQLRunStorage(inst_data=inst_data, mysql_url=mysql_url_from_config(config_value))
 
@@ -140,7 +141,7 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
         MySQLRunStorage.wipe_storage(mysql_url)
         return MySQLRunStorage(mysql_url)
 
-    def connect(self, run_id: Optional[str] = None) -> ContextManager[Connection]:
+    def connect(self, run_id: str | None = None) -> ContextManager[Connection]:
         return create_mysql_connection(self._engine, __file__, "run")
 
     def upgrade(self) -> None:
@@ -148,7 +149,7 @@ class MySQLRunStorage(SqlRunStorage, ConfigurableClass):
         with self.connect() as conn:
             run_alembic_upgrade(alembic_config, conn)
 
-    def has_built_index(self, migration_name: str) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def has_built_index(self, migration_name: str) -> None:  # ty: ignore[invalid-method-override]
         if migration_name not in self._index_migration_cache:
             self._index_migration_cache[migration_name] = super().has_built_index(migration_name)
         return self._index_migration_cache[migration_name]

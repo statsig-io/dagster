@@ -1,6 +1,7 @@
 ---
 title: Dagster & Anthropic
 sidebar_label: Anthropic
+sidebar_position: 1
 description: >
   The Anthropic integration allows you to easily interact with the Anthropic REST API using the Anthropic Python API to build AI steps into your Dagster pipelines. You can also log Anthropic API usage metadata in Dagster Insights, giving you detailed observability on API call credit consumption.
 tags: [community-supported]
@@ -10,6 +11,10 @@ sidebar_custom_props:
   logo: images/integrations/anthropic.svg
   community: true
 ---
+
+import CommunityIntegration from '@site/docs/partials/\_CommunityIntegration.md';
+
+<CommunityIntegration />
 
 <p>{frontMatter.description}</p>
 

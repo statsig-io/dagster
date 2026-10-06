@@ -7,7 +7,7 @@ import atexit
 import sys
 from itertools import islice
 from os import environ
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import Any
 
 import mlflow
 from dagster import Field, Noneable, Permissive, StringSource, resource
@@ -16,9 +16,6 @@ from dagster._core.definitions.resource_definition import dagster_maintained_res
 from dagster._utils.backoff import backoff
 from mlflow.entities.run_status import RunStatus
 from mlflow.exceptions import MlflowException
-
-if TYPE_CHECKING:
-    from mlflow.entities import Run
 
 CONFIG_SCHEMA = {
     "experiment_name": Field(StringSource, is_required=True, description="MlFlow experiment name."),
@@ -125,9 +122,7 @@ class MlFlow(metaclass=MlflowMeta):
         # a process exits in parallel runs
         atexit.unregister(mlflow.end_run)
 
-    def _get_current_run_id(
-        self, experiment: Optional[Any] = None, dagster_run_id: Optional[str] = None
-    ):
+    def _get_current_run_id(self, experiment: Any | None = None, dagster_run_id: str | None = None):
         """Gets the run id of a specific dagster run and experiment id.
         If it doesn't exist then it returns a None.
 
@@ -146,24 +141,20 @@ class MlFlow(metaclass=MlflowMeta):
         dagster_run_id = dagster_run_id or self.dagster_run_id
         if experiment:
             # Check if a run with this dagster run id has already been started
-            # in mlflow, will get an empty list if not.
+            # in mlflow, will get an empty dataframe if not.
             # Note: Search requests have a lower rate limit than others, so we
             # need to limit/retry searches where possible.
-            current_runs = cast(
-                "list[Run]",
-                backoff(
-                    mlflow.search_runs,
-                    retry_on=(MlflowException,),
-                    kwargs={
-                        "experiment_ids": [experiment.experiment_id],
-                        "filter_string": f"tags.dagster_run_id='{dagster_run_id}'",
-                        "output_format": "list",
-                    },
-                    max_retries=3,
-                ),
+            current_run_df = backoff(
+                mlflow.search_runs,
+                retry_on=(MlflowException,),
+                kwargs={
+                    "experiment_ids": [experiment.experiment_id],
+                    "filter_string": f"tags.dagster_run_id='{dagster_run_id}'",
+                },
+                max_retries=3,
             )
-            if current_runs:
-                return current_runs[0].info.run_id
+            if not current_run_df.empty:  # type: ignore
+                return current_run_df.run_id.values[0]  # type: ignore
 
     def _set_active_run(self, run_id=None):
         """This method sets the active run to be that of the specified
@@ -191,9 +182,9 @@ class MlFlow(metaclass=MlflowMeta):
             )
         except Exception as ex:
             run = mlflow.active_run()
-            if run is None or "is already active" not in str(ex):
+            if "is already active" not in str(ex):
                 raise (ex)
-            self.log.info(f"Run with id {run.info.run_id} is already active.")
+            self.log.info(f"Run with id {run.info.run_id} is already active.")  # type: ignore
 
     def _set_all_tags(self):
         """Method collects dagster_run_id plus all env variables/tags that have been

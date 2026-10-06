@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from collections.abc import Sequence
 from contextlib import contextmanager
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from dagster import IOManagerDefinition, OutputContext, io_manager
 from dagster._config.pythonic_config import ConfigurableIOManagerFactory
@@ -12,6 +12,7 @@ from dagster._core.storage.db_io_manager import (
     DbTypeHandler,
     TablePartitionDimension,
     TableSlice,
+    static_where_clause,
 )
 from dagster._core.storage.io_manager import dagster_maintained_io_manager
 from pydantic import Field
@@ -22,7 +23,7 @@ SNOWFLAKE_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def build_snowflake_io_manager(
-    type_handlers: Sequence[DbTypeHandler], default_load_type: Optional[type] = None
+    type_handlers: Sequence[DbTypeHandler], default_load_type: type | None = None
 ) -> IOManagerDefinition:
     """Builds an IO manager definition that reads inputs from and writes outputs to Snowflake.
 
@@ -235,13 +236,13 @@ class SnowflakeIOManager(ConfigurableIOManagerFactory):
         ),
     )
     user: str = Field(description="User login name.")
-    schema_: Optional[str] = Field(
+    schema_: str | None = Field(
         default=None, alias="schema", description="Name of the schema to use."
     )  # schema is a reserved word for pydantic
-    password: Optional[str] = Field(default=None, description="User password.")
-    warehouse: Optional[str] = Field(default=None, description="Name of the warehouse to use.")
-    role: Optional[str] = Field(default=None, description="Name of the role to use.")
-    private_key: Optional[str] = Field(
+    password: str | None = Field(default=None, description="User password.")
+    warehouse: str | None = Field(default=None, description="Name of the warehouse to use.")
+    role: str | None = Field(default=None, description="Name of the role to use.")
+    private_key: str | None = Field(
         default=None,
         description=(
             "Raw private key to use. See the `Snowflake documentation"
@@ -250,14 +251,14 @@ class SnowflakeIOManager(ConfigurableIOManagerFactory):
             " retrieve the base64 encoded key with this shell command: cat rsa_key.p8 | base64"
         ),
     )
-    private_key_path: Optional[str] = Field(
+    private_key_path: str | None = Field(
         default=None,
         description=(
             "Path to the private key. See the `Snowflake documentation"
             " <https://docs.snowflake.com/en/user-guide/key-pair-auth.html>`__ for details."
         ),
     )
-    private_key_password: Optional[str] = Field(
+    private_key_password: str | None = Field(
         default=None,
         description=(
             "The password of the private key. See the `Snowflake documentation"
@@ -275,11 +276,11 @@ class SnowflakeIOManager(ConfigurableIOManagerFactory):
             " set to UTC timezone to avoid a Snowflake bug. Defaults to False."
         ),
     )
-    authenticator: Optional[str] = Field(
+    authenticator: str | None = Field(
         default=None,
         description="Optional parameter to specify the authentication mechanism to use.",
     )
-    additional_snowflake_connection_args: Optional[dict[str, Any]] = Field(
+    additional_snowflake_connection_args: dict[str, Any] | None = Field(
         default=None,
         description=(
             "Additional keyword arguments to pass to the snowflake.connector.connect function. For a full list of"
@@ -309,7 +310,7 @@ class SnowflakeIOManager(ConfigurableIOManagerFactory):
         ...
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         """If an asset or op is not annotated with an return type, default_load_type will be used to
         determine which TypeHandler to use to store and load the output.
 
@@ -356,7 +357,7 @@ class SnowflakeDbClient(DbClient):
             if context.resource_config
             else {}
         )
-        with SnowflakeResource(schema=table_slice.schema, **no_schema_config).get_connection(  # pyright: ignore[reportArgumentType]
+        with SnowflakeResource(schema=table_slice.schema, **no_schema_config).get_connection(
             raw_conn=False
         ) as conn:
             yield conn
@@ -392,7 +393,7 @@ class SnowflakeDbClient(DbClient):
                 f"SELECT {col_str} FROM"
                 f" {table_slice.database}.{table_slice.schema}.{table_slice.table} WHERE\n"
             )
-            return query + _partition_where_clause(table_slice.partition_dimensions)
+            return query + partition_where_clause(table_slice.partition_dimensions)
         else:
             return f"""SELECT {col_str} FROM {table_slice.database}.{table_slice.schema}.{table_slice.table}"""
 
@@ -405,17 +406,17 @@ def _get_cleanup_statement(table_slice: TableSlice) -> str:
         query = (
             f"DELETE FROM {table_slice.database}.{table_slice.schema}.{table_slice.table} WHERE\n"
         )
-        return query + _partition_where_clause(table_slice.partition_dimensions)
+        return query + partition_where_clause(table_slice.partition_dimensions)
     else:
         return f"DELETE FROM {table_slice.database}.{table_slice.schema}.{table_slice.table}"
 
 
-def _partition_where_clause(partition_dimensions: Sequence[TablePartitionDimension]) -> str:
+def partition_where_clause(partition_dimensions: Sequence[TablePartitionDimension]) -> str:
     return " AND\n".join(
         (
             _time_window_where_clause(partition_dimension)
             if isinstance(partition_dimension.partitions, TimeWindow)
-            else _static_where_clause(partition_dimension)
+            else static_where_clause(partition_dimension)
         )
         for partition_dimension in partition_dimensions
     )
@@ -429,8 +430,3 @@ def _time_window_where_clause(table_partition: TablePartitionDimension) -> str:
     # Snowflake BETWEEN is inclusive; start <= partition expr <= end. We don't want to remove the next partition so we instead
     # write this as start <= partition expr < end.
     return f"""{table_partition.partition_expr} >= '{start_dt_str}' AND {table_partition.partition_expr} < '{end_dt_str}'"""
-
-
-def _static_where_clause(table_partition: TablePartitionDimension) -> str:
-    partitions = ", ".join(f"'{partition}'" for partition in table_partition.partitions)
-    return f"""{table_partition.partition_expr} in ({partitions})"""

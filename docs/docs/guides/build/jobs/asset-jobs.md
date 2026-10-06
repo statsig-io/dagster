@@ -1,6 +1,6 @@
 ---
 description: An asset job is a type of Dagster job that targets a selection of assets and can be launched manually from the UI, or programmatically by schedules or sensors.
-sidebar_position: 100
+sidebar_position: 200
 title: Asset jobs
 ---
 
@@ -14,7 +14,7 @@ Jobs are the main unit of execution and monitoring for [asset definitions](/guid
 
 In this section, we'll demonstrate how to create a few asset jobs that target the following assets:
 
-<CodeExample path="docs_snippets/docs_snippets/guides/data-modeling/asset-jobs/asset-jobs.py" language="python" startAfter="start_marker_assets" endBefore="end_marker_assets" title="src/<project_name>/defs/assets.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/build/assets/asset-jobs/asset-jobs.py" language="python" startAfter="start_marker_assets" endBefore="end_marker_assets" title="src/<project_name>/defs/assets.py" />
 
 To create an asset job, use the [`define_asset_job`](/api/dagster/assets#dagster.define_asset_job) method. An asset-based job is based on the assets the job targets and their dependencies.
 
@@ -23,13 +23,13 @@ You can target one or multiple assets, or create multiple jobs that target overl
 - `all_assets_job` targets all assets
 - `sugary_cereals_job` targets only the `sugary_cereals` asset
 
-<CodeExample path="docs_snippets/docs_snippets/guides/data-modeling/asset-jobs/asset-jobs.py" language="python" startAfter="start_marker_jobs" endBefore="end_marker_jobs" title="src/<project_name>/defs/jobs.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/build/assets/asset-jobs/asset-jobs.py" language="python" startAfter="start_marker_jobs" endBefore="end_marker_jobs" title="src/<project_name>/defs/jobs.py" />
 
 ## Making asset jobs available to Dagster tools
 
-Jobs are loaded automatically with [`dg`](/api/dg) and there is no need to explicity define a [`Definitions`](/api/dagster/definitions) object for them. If you include schedules or sensors, the [code location](/deployment/code-locations) will automatically include jobs that those schedules or sensors target.
+Jobs are loaded automatically with [`dg`](/api/clis) and there is no need to explicity define a [`Definitions`](/api/dagster/definitions) object for them. If you include schedules or sensors, the [code location](/guides/build/projects) will automatically include jobs that those schedules or sensors target.
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/assets/jobs_to_definitions.py" title="src/<project_name>/defs/assets.py"/>
+<CodeExample path="docs_snippets/docs_snippets/guides/build/assets/jobs_to_definitions.py" title="src/<project_name>/defs/assets.py"/>
 
 ## Testing asset jobs
 
@@ -43,6 +43,8 @@ You can run an asset job in a variety of ways:
 - Via the command line
 - Via the GraphQL API
 - In the UI
+
+For more information, see [Executing jobs](/guides/build/jobs/job-execution).
 
 ## Examples
 

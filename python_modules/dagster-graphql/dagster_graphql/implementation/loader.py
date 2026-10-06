@@ -1,13 +1,13 @@
 from collections import defaultdict
 from collections.abc import Sequence
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from dagster import (
     DagsterInstance,
     _check as check,
 )
-from dagster._core.remote_representation import RemoteRepository
+from dagster._core.remote_representation.external import RemoteRepository
 from dagster._core.scheduler.instigation import InstigatorState, InstigatorType
 
 
@@ -41,6 +41,10 @@ class RepositoryScopedBatchLoader:
         self._repository = remote_repository
         self._data: dict[RepositoryDataType, dict[str, list[Any]]] = {}
         self._limits: dict[RepositoryDataType, int] = {}
+
+    @property
+    def repository(self) -> RemoteRepository:
+        return self._repository
 
     def _get(self, data_type: RepositoryDataType, key: str, limit: int) -> Sequence[Any]:
         check.inst_param(data_type, "data_type", RepositoryDataType)
@@ -112,12 +116,12 @@ class RepositoryScopedBatchLoader:
         self._data[data_type] = fetched
         self._limits[data_type] = limit
 
-    def get_schedule_state(self, schedule_name: str) -> Optional[InstigatorState]:
+    def get_schedule_state(self, schedule_name: str) -> InstigatorState | None:
         check.invariant(self._repository.has_schedule(schedule_name))
         states = self._get(RepositoryDataType.SCHEDULE_STATES, schedule_name, 1)
         return states[0] if states else None
 
-    def get_sensor_state(self, sensor_name: str) -> Optional[InstigatorState]:
+    def get_sensor_state(self, sensor_name: str) -> InstigatorState | None:
         check.invariant(self._repository.has_sensor(sensor_name))
         states = self._get(RepositoryDataType.SENSOR_STATES, sensor_name, 1)
         return states[0] if states else None

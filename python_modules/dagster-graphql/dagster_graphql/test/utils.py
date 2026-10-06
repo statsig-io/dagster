@@ -4,7 +4,7 @@ import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Optional, Union, cast
+from typing import Any, TypeAlias, cast
 
 import dagster._check as check
 import graphene
@@ -16,7 +16,7 @@ from dagster._core.remote_representation.external import RemoteRepository
 from dagster._core.test_utils import wait_for_runs_to_finish
 from dagster._core.workspace.context import WorkspaceProcessContext, WorkspaceRequestContext
 from dagster._core.workspace.load_target import PythonFileTarget, WorkspaceFileTarget
-from typing_extensions import Protocol, TypeAlias, TypedDict
+from typing_extensions import Protocol, TypedDict
 
 from dagster_graphql import __file__ as dagster_graphql_init_py
 from dagster_graphql.schema import create_schema
@@ -27,7 +27,7 @@ class GqlResult(Protocol):
     def data(self) -> Mapping[str, Any]: ...
 
     @property
-    def errors(self) -> Optional[Sequence[str]]: ...
+    def errors(self) -> Sequence[str] | None: ...
 
 
 Selector: TypeAlias = dict[str, Any]
@@ -79,7 +79,7 @@ def _process_query_results(context: WorkspaceRequestContext, result) -> GqlResul
 def execute_dagster_graphql(
     context: WorkspaceRequestContext,
     query: str,
-    variables: Optional[GqlVariables] = None,
+    variables: GqlVariables | None = None,
     schema: graphene.Schema = SCHEMA,
 ) -> GqlResult:
     result = asyncio.run(
@@ -95,7 +95,7 @@ def execute_dagster_graphql(
 async def async_execute_dagster_graphql(
     context: WorkspaceRequestContext,
     query: str,
-    variables: Optional[GqlVariables] = None,
+    variables: GqlVariables | None = None,
     schema: graphene.Schema = SCHEMA,
 ) -> GqlResult:
     result = await schema.execute_async(
@@ -110,7 +110,7 @@ async def async_execute_dagster_graphql(
 def execute_dagster_graphql_subscription(
     context: WorkspaceRequestContext,
     query: str,
-    variables: Optional[GqlVariables] = None,
+    variables: GqlVariables | None = None,
     schema: graphene.Schema = SCHEMA,
 ) -> Sequence[GqlResult]:
     results = []
@@ -134,7 +134,7 @@ def execute_dagster_graphql_subscription(
 
 
 def execute_dagster_graphql_and_finish_runs(
-    context: WorkspaceRequestContext, query: str, variables: Optional[GqlVariables] = None
+    context: WorkspaceRequestContext, query: str, variables: GqlVariables | None = None
 ) -> GqlResult:
     result = execute_dagster_graphql(context, query, variables)
     wait_for_runs_to_finish(context.instance, timeout=30)
@@ -144,10 +144,10 @@ def execute_dagster_graphql_and_finish_runs(
 @contextmanager
 def define_out_of_process_context(
     python_or_workspace_file: str,
-    fn_name: Optional[str],
+    fn_name: str | None,
     instance: DagsterInstance,
     read_only: bool = False,
-    read_only_locations: Optional[Mapping[str, bool]] = None,
+    read_only_locations: Mapping[str, bool] | None = None,
 ) -> Iterator[WorkspaceRequestContext]:
     check.inst_param(instance, "instance", DagsterInstance)
 
@@ -167,7 +167,7 @@ def define_out_of_process_context(
 
 # Args are tuples of (location_name, python_file, function_name)
 @contextmanager
-def temp_workspace_file(python_fns: list[tuple[str, str, Optional[str]]]) -> Iterator[str]:
+def temp_workspace_file(python_fns: list[tuple[str, str, str | None]]) -> Iterator[str]:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_workspace_file = Path(temp_dir) / "workspace.yaml"
 
@@ -188,7 +188,7 @@ def temp_workspace_file(python_fns: list[tuple[str, str, Optional[str]]]) -> Ite
 
 def define_out_of_process_workspace(
     python_or_workspace_file: str,
-    fn_name: Optional[str],
+    fn_name: str | None,
     instance: DagsterInstance,
     read_only: bool = False,
 ) -> WorkspaceProcessContext:
@@ -224,7 +224,7 @@ def infer_repository(graphql_context: WorkspaceRequestContext) -> RemoteReposito
 
 
 def infer_repository_selector(
-    graphql_context: WorkspaceRequestContext, location_name: Optional[str] = None
+    graphql_context: WorkspaceRequestContext, location_name: str | None = None
 ) -> Selector:
     if len(graphql_context.code_locations) == 1:
         # This is to account for having a single in process repository
@@ -248,10 +248,10 @@ def infer_repository_selector(
 def infer_job_selector(
     graphql_context: WorkspaceRequestContext,
     job_name: str,
-    op_selection: Optional[Sequence[str]] = None,
-    asset_selection: Optional[Sequence[GqlAssetKey]] = None,
-    asset_check_selection: Optional[Sequence[GqlAssetCheckHandle]] = None,
-    location_name: Optional[str] = None,
+    op_selection: Sequence[str] | None = None,
+    asset_selection: Sequence[GqlAssetKey] | None = None,
+    asset_check_selection: Sequence[GqlAssetCheckHandle] | None = None,
+    location_name: str | None = None,
 ) -> Selector:
     selector = infer_repository_selector(graphql_context, location_name)
     selector.update(
@@ -301,17 +301,15 @@ def ensure_dagster_graphql_tests_import() -> None:
 
 def materialize_assets(
     context: WorkspaceRequestContext,
-    asset_selection: Optional[Sequence[AssetKey]] = None,
-    partition_keys: Optional[Sequence[str]] = None,
-    run_config_data: Optional[Mapping[str, Any]] = None,
-    location_name: Optional[str] = None,
-) -> Union[GqlResult, Sequence[GqlResult]]:
+    asset_selection: Sequence[AssetKey],
+    partition_keys: Sequence[str] | None = None,
+    run_config_data: Mapping[str, Any] | None = None,
+    location_name: str | None = None,
+) -> GqlResult | Sequence[GqlResult]:
     from dagster_graphql.client.query import LAUNCH_PIPELINE_EXECUTION_MUTATION
 
-    gql_asset_selection = (
-        cast("Sequence[GqlAssetKey]", [key.to_graphql_input() for key in asset_selection])
-        if asset_selection
-        else None
+    gql_asset_selection = cast(
+        "Sequence[GqlAssetKey]", [key.to_graphql_input() for key in asset_selection]
     )
     selector = infer_job_selector(
         context,
@@ -320,23 +318,20 @@ def materialize_assets(
         location_name=location_name,
     )
     if partition_keys:
-        results = []
-        for key in partition_keys:
-            results.append(
-                execute_dagster_graphql(
-                    context,
-                    LAUNCH_PIPELINE_EXECUTION_MUTATION,
-                    variables={
-                        "executionParams": {
-                            "selector": selector,
-                            "executionMetadata": {
-                                "tags": [{"key": "dagster/partition", "value": key}]
-                            },
-                            "runConfigData": run_config_data,
-                        }
-                    },
-                )
+        results = [
+            execute_dagster_graphql(
+                context,
+                LAUNCH_PIPELINE_EXECUTION_MUTATION,
+                variables={
+                    "executionParams": {
+                        "selector": selector,
+                        "executionMetadata": {"tags": [{"key": "dagster/partition", "value": key}]},
+                        "runConfigData": run_config_data,
+                    }
+                },
             )
+            for key in partition_keys
+        ]
         return results
     else:
         return execute_dagster_graphql(

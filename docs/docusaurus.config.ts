@@ -1,6 +1,7 @@
 import DagsterVersions from './dagsterVersions.json';
 import type * as Preset from '@docusaurus/preset-classic';
 import type {Config} from '@docusaurus/types';
+import AnnouncementBar from '@theme/AnnouncementBar';
 import {themes as prismThemes} from 'prism-react-renderer';
 
 const DagsterVersionsDropdownItems = Object.entries(DagsterVersions).splice(0, 5);
@@ -12,14 +13,17 @@ const config: Config = {
   favicon: 'img/favicon.ico',
   baseUrl: '/',
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'throw',
   onBrokenAnchors: 'throw',
   organizationName: 'dagster',
   projectName: 'dagster',
   markdown: {
     mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: 'throw',
+    },
   },
   themes: ['@docusaurus/theme-mermaid'],
+  clientModules: [require.resolve('./src/clientModules/disableSlashSearch.js')],
   i18n: {defaultLocale: 'en', locales: ['en']},
   plugins: [
     require.resolve('docusaurus-plugin-sass'),
@@ -39,11 +43,19 @@ const config: Config = {
           keywords: {boost: 75},
           content: {boost: 2},
         },
-        excludeRoutes: ['/api/python-api/**/*', '/about/changelog', '/migration/upgrading'],
+        excludeRoutes: ['/tags', '/tags/**/*', '/about/**/*', '/migration/upgrading'],
       },
     ],
   ],
   themeConfig: {
+    announcementBar: {
+      id: 'announcementBar',
+      content:
+        '<b>Developing with AI? Check out our new <a target="_blank" rel="noopener noreferrer" href="https://github.com/dagster-io/skills">AI skills</a>!</b>',
+      backgroundColor: 'var(--theme-color-background-blue)',
+      textColor: 'var(--theme-color-text-default)',
+      isCloseable: true,
+    },
     ...(process.env.ALGOLIA_APP_ID &&
       process.env.ALGOLIA_API_KEY &&
       process.env.ALGOLIA_INDEX_NAME &&
@@ -60,13 +72,18 @@ const config: Config = {
       disableSwitch: false,
       respectPrefersColorScheme: true,
     },
+    mermaid: {
+      // Mermaid 12 switched its defaults to the ELK layout engine and the "neo"
+      // look; keep the previous rendering so existing diagrams don't re-layout.
+      options: {layout: 'dagre', look: 'classic'},
+    },
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
       additionalLanguages: ['diff', 'json', 'bash', 'docker'],
     },
     zoom: {
-      selector: '.markdown > img, .tabs-container img ',
+      selector: '.theme-doc-markdown :not(a) > img, .tabs-container img',
       config: {
         // options you can specify via https://github.com/francoischalifour/medium-zoom#usage
         background: {
@@ -115,7 +132,7 @@ const config: Config = {
         {
           label: 'Integrations',
           type: 'doc',
-          docId: 'integrations/libraries/index',
+          docId: 'integrations/index',
           position: 'left',
         },
         {
@@ -156,6 +173,20 @@ const config: Config = {
               position: 'right',
               className: 'feedback-nav-link',
             },
+        {
+          to: 'https://dagster.plus/',
+          label: 'Sign in',
+          position: 'right',
+          className: 'hide-mobile',
+          style: {order: 98, margin: '0px 16px 0px 48px'},
+        },
+        {
+          to: 'https://dagster.plus/signup',
+          label: 'Try Dagster+',
+          position: 'right',
+          className: 'cta-button hide-mobile',
+          style: {order: 99, margin: '0px 0px 2px 0px'},
+        },
       ],
     },
     image: 'images/og.png',
@@ -169,8 +200,8 @@ const config: Config = {
     footer: {
       logo: {
         alt: 'Dagster Logo',
-        src: 'img/dagster_labs-primary-horizontal.svg',
-        srcDark: 'img/dagster_labs-reversed-horizontal.svg',
+        src: 'img/dagster-logo.svg',
+        srcDark: 'img/dagster-logo-reversed.svg',
         href: '/',
       },
       links: [
@@ -180,7 +211,7 @@ const config: Config = {
             <a href='https://www.dagster.io/terms'>Terms of Service</a>
             <a href='https://www.dagster.io/privacy/'>Privacy Policy</a>
             <a href='https://www.dagster.io/security/'>Security</a>
-            <a href='https://github.com/dagster-io/dagster/discussions/27332'>Feedback</a>
+            <a onClick="Osano.cm.showDrawer('osano-cm-dom-info-dialog-open')">Cookie Preferences</a>
           </div>
 
           <div class='footer__items--right'>
@@ -197,6 +228,8 @@ const config: Config = {
   } satisfies Preset.ThemeConfig,
 
   presets: [
+    // Ensure Osano loads before classic preset (and its plugins like gtag)
+    [require.resolve('./src/presets/osano'), {}],
     [
       '@docusaurus/preset-classic',
       {
@@ -207,7 +240,7 @@ const config: Config = {
           lastVersion: 'current',
           versions: {
             current: {
-              label: 'Latest (1.11.2)',
+              label: 'Latest (1.13.25)',
               path: '/',
             },
           },
@@ -221,6 +254,9 @@ const config: Config = {
             require.resolve('./node_modules/modern-normalize/modern-normalize.css'),
             require.resolve('./src/styles/custom.scss'),
           ],
+        },
+        googleTagManager: {
+          containerId: 'GTM-T3P7KMM4',
         },
         // https://docusaurus.io/docs/api/plugins/@docusaurus/plugin-sitemap#ex-config
         sitemap: {
@@ -236,12 +272,6 @@ const config: Config = {
             return items;
           },
         },
-        ...(process.env.GOOGLE_ANALYTICS_TRACKING_ID && {
-          gtag: {
-            trackingID: process.env.GOOGLE_ANALYTICS_TRACKING_ID,
-            anonymizeIP: true,
-          },
-        }),
       } satisfies Preset.Options,
     ],
   ],

@@ -3,14 +3,16 @@ import json
 import logging
 import time
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
+import pydantic
 import requests
-from dagster import Failure, Field, StringSource, __version__, get_dagster_logger, resource
-from dagster._core.definitions.resource_definition import dagster_maintained_resource
+from dagster import ConfigurableResource, Failure, __version__, get_dagster_logger
+from dagster_shared.utils.cached_method import cached_method
 from requests.auth import HTTPBasicAuth
 from requests.exceptions import RequestException
 
+from dagster_census.translator import CensusSync, CensusWorkspaceData
 from dagster_census.types import CensusOutput
 
 CENSUS_API_BASE = "app.getcensus.com/api"
@@ -21,35 +23,68 @@ DEFAULT_POLL_INTERVAL = 10
 SYNC_RUN_STATUSES = {"completed", "failed", "queued", "skipped", "working"}
 
 
-class CensusResource:
-    """This class exposes methods on top of the Census REST API."""
+class CensusResource(ConfigurableResource):
+    """This resource allows users to programatically interface with the Census REST API to launch
+    syncs and monitor their progress. This currently implements only a subset of the functionality
+    exposed by the API.
 
-    def __init__(
-        self,
-        api_key: str,
-        request_max_retries: int = 3,
-        request_retry_delay: float = 0.25,
-        log: logging.Logger = get_dagster_logger(),
-    ):
-        self.api_key = api_key
+    **Examples:**
 
-        self._request_max_retries = request_max_retries
-        self._request_retry_delay = request_retry_delay
+    .. code-block:: python
 
-        self._log = log
+        import dagster as dg
+        from dagster_census import CensusResource
 
-    @property
-    def _api_key(self):
-        if self.api_key.startswith("secret-token:"):
-            return self.api_key
-        return "secret-token:" + self.api_key
+        census_resource = CensusResource(
+            api_key=dg.EnvVar("CENSUS_API_KEY")
+        )
+
+        @dg.asset
+        def census_sync_asset(census: CensusResource):
+            census.trigger_sync_and_poll(sync_id=123456)
+
+        defs = dg.Definitions(
+            assets=[census_sync_asset],
+            resources={"census": census_resource}
+        )
+    """
+
+    api_key: str = pydantic.Field(..., description="The Census API key")
+    request_max_retries: int = pydantic.Field(
+        default=3,
+        description=(
+            "The maximum number of times requests to the Census API should be retried "
+            "before failing."
+        ),
+    )
+    request_retry_delay: float = pydantic.Field(
+        default=0.25,
+        description="Time (in seconds) to wait between each request retry.",
+    )
+    request_timeout: int = pydantic.Field(
+        default=15,
+        description="Time (in seconds) after which the requests to Census are declared timed out.",
+    )
 
     @property
     def api_base_url(self) -> str:
         return f"https://{CENSUS_API_BASE}/{CENSUS_VERSION}"
 
+    @classmethod
+    def _is_dagster_maintained(cls) -> bool:
+        return True
+
+    @property
+    @cached_method
+    def _log(self) -> logging.Logger:
+        return get_dagster_logger()
+
     def make_request(
-        self, method: str, endpoint: str, data: Optional[str] = None
+        self,
+        method: str,
+        endpoint: str,
+        data: str | None = None,
+        page_number: int | None = None,
     ) -> Mapping[str, Any]:
         """Creates and sends a request to the desired Census API endpoint.
 
@@ -67,6 +102,11 @@ class CensusResource:
             "Content-Type": "application/json;version=2",
         }
 
+        if page_number is not None:
+            params = {"page": page_number}
+        else:
+            params = {}
+
         num_retries = 0
         while True:
             try:
@@ -74,19 +114,20 @@ class CensusResource:
                     method=method,
                     url=url,
                     headers=headers,
-                    auth=HTTPBasicAuth("bearer", self._api_key),
+                    auth=HTTPBasicAuth("bearer", self.api_key),
                     data=data,
+                    params=params,
                 )
                 response.raise_for_status()
                 return response.json()
             except RequestException as e:
                 self._log.error("Request to Census API failed: %s", e)
-                if num_retries == self._request_max_retries:
+                if num_retries == self.request_max_retries:
                     break
                 num_retries += 1
-                time.sleep(self._request_retry_delay)
+                time.sleep(self.request_retry_delay)
 
-        raise Failure(f"Max retries ({self._request_max_retries}) exceeded with url: {url}.")
+        raise Failure(f"Max retries ({self.request_max_retries}) exceeded with url: {url}.")
 
     def get_sync(self, sync_id: int) -> Mapping[str, Any]:
         """Gets details about a given sync from the Census API.
@@ -136,12 +177,12 @@ class CensusResource:
         self,
         sync_run_id: int,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
-        poll_timeout: Optional[float] = None,
+        poll_timeout: float | None = None,
     ) -> Mapping[str, Any]:
         """Given a Census sync run, poll until the run is complete.
 
         Args:
-            sync_id (int): The Census Sync Run ID.
+            sync_run_id (int): The Census Sync Run ID.
             poll_interval (float): The time (in seconds) that will be waited between successive polls.
             poll_timeout (float): The maximum time that will waited before this operation is timed
                 out. By default, this will never time out.
@@ -215,7 +256,7 @@ class CensusResource:
         sync_id: int,
         force_full_sync: bool = False,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
-        poll_timeout: Optional[float] = None,
+        poll_timeout: float | None = None,
     ) -> CensusOutput:
         """Trigger a run for a specific sync and poll until it has completed.
 
@@ -250,57 +291,29 @@ class CensusResource:
             destination=destination_details,
         )
 
+    @cached_method
+    def fetch_census_workspace_data(self) -> CensusWorkspaceData:
+        """Retrieves all Census syncs from the workspace and returns it as a CensusWorkspaceData object.
 
-@dagster_maintained_resource
-@resource(
-    config_schema={
-        "api_key": Field(
-            StringSource,
-            is_required=True,
-            description="Census API Key.",
-        ),
-        "request_max_retries": Field(
-            int,
-            default_value=3,
-            description=(
-                "The maximum number of times requests to the Census API should be retried "
-                "before failing."
-            ),
-        ),
-        "request_retry_delay": Field(
-            float,
-            default_value=0.25,
-            description="Time (in seconds) to wait between each request retry.",
-        ),
-    },
-    description="This resource helps manage Census connectors",
-)
-def census_resource(context) -> CensusResource:
-    """This resource allows users to programatically interface with the Census REST API to launch
-    syncs and monitor their progress. This currently implements only a subset of the functionality
-    exposed by the API.
+        Returns:
+            CensusWorkspaceData: A snapshot of the Census workspace's syncs.
+        """
+        page = self.make_request(method="GET", endpoint="syncs")
 
-    **Examples:**
+        last_page_number = page["pagination"]["last_page"]
+        all_syncs = [self._census_sync_struct_from_json(sync) for sync in page["data"]]
 
-    .. code-block:: python
+        for i in range(2, last_page_number + 1):
+            page = self.make_request(method="GET", endpoint="syncs", page_number=i)
+            all_syncs.extend(self._census_sync_struct_from_json(sync) for sync in page["data"])
 
-        from dagster import job
-        from dagster_census import census_resource
+        return CensusWorkspaceData(syncs=all_syncs)
 
-        my_census_resource = census_resource.configured(
-            {
-                "api_key": {"env": "CENSUS_API_KEY"},
-            }
+    def _census_sync_struct_from_json(self, sync: dict[str, Any]) -> CensusSync:
+        return CensusSync(
+            id=sync["id"],
+            name=sync["label"] or sync["resource_identifier"],
+            source_id=sync["source_attributes"]["connection_id"],
+            destination_id=sync["destination_attributes"]["connection_id"],
+            mappings=sync["mappings"],
         )
-
-        @job(resource_defs={"census":my_census_resource})
-        def my_census_job():
-            ...
-
-    """
-    return CensusResource(
-        api_key=context.resource_config["api_key"],
-        request_max_retries=context.resource_config["request_max_retries"],
-        request_retry_delay=context.resource_config["request_retry_delay"],
-        log=context.log,
-    )

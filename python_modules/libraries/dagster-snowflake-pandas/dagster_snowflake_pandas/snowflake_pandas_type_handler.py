@@ -1,5 +1,4 @@
 from collections.abc import Mapping, Sequence
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -24,14 +23,14 @@ def _table_exists(table_slice: TableSlice, connection):
     return len(tables) > 0
 
 
-def _get_table_column_types(table_slice: TableSlice, connection) -> Optional[Mapping[str, str]]:
+def _get_table_column_types(table_slice: TableSlice, connection) -> Mapping[str, str] | None:
     if _table_exists(table_slice, connection):
         schema_list = connection.cursor().execute(f"DESCRIBE TABLE {table_slice.table}").fetchall()
         return {item[0]: item[1] for item in schema_list}
 
 
 def _convert_timestamp_to_string(
-    s: pd.Series, column_types: Optional[Mapping[str, str]], table_name: str
+    s: pd.Series, column_types: Mapping[str, str] | None, table_name: str
 ) -> pd.Series:
     """Converts columns of data of type pd.Timestamp to string so that it can be stored in
     snowflake.
@@ -86,7 +85,7 @@ class SnowflakePandasTypeHandler(DbTypeHandler[pd.DataFrame]):
                     return [SnowflakePandasTypeHandler(), SnowflakePySparkTypeHandler()]
 
             @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in snowflake
+                key_prefix=["my_schema"],  # will be used as the schema in snowflake
             )
             def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
                 ...
@@ -104,38 +103,43 @@ class SnowflakePandasTypeHandler(DbTypeHandler[pd.DataFrame]):
     ) -> Mapping[str, RawMetadataValue]:
         from snowflake import connector
 
-        connector.paramstyle = "pyformat"
-        with_uppercase_cols = obj.rename(str.upper, copy=False, axis="columns")
-        column_types = _get_table_column_types(table_slice, connection)
-        if context.resource_config and context.resource_config.get(
-            "store_timestamps_as_strings", False
-        ):
-            with_uppercase_cols = with_uppercase_cols.apply(
-                lambda x: _convert_timestamp_to_string(x, column_types, table_slice.table),
-                axis="index",
+        if obj.empty:
+            context.log.warning(
+                "Skipping Snowflake write for empty DataFrame. An empty table will not be created."
             )
+        else:
+            connector.paramstyle = "pyformat"
+            with_uppercase_cols = obj.rename(columns=str.upper)
+            column_types = _get_table_column_types(table_slice, connection)
+            if context.resource_config and context.resource_config.get(
+                "store_timestamps_as_strings", False
+            ):
+                with_uppercase_cols = with_uppercase_cols.apply(
+                    lambda x: _convert_timestamp_to_string(x, column_types, table_slice.table),
+                    axis="index",
+                )
 
-        write_pandas(
-            conn=connection,
-            df=with_uppercase_cols,
-            # originally we used pd.to_sql with pd_writer method to write the df to snowflake. pd_writer
-            # forced the database, schema, and table name to be uppercase, so we mimic that behavior here for feature parity
-            # in the future we could allow non-uppercase names
-            table_name=table_slice.table.upper(),
-            schema=table_slice.schema.upper(),
-            database=table_slice.database.upper() if table_slice.database else None,
-            auto_create_table=True,
-            use_logical_type=True,
-            quote_identifiers=True,
-        )
+            write_pandas(
+                conn=connection,
+                df=with_uppercase_cols,
+                # originally we used pd.to_sql with pd_writer method to write the df to snowflake. pd_writer
+                # forced the database, schema, and table name to be uppercase, so we mimic that behavior here for feature parity
+                # in the future we could allow non-uppercase names
+                table_name=table_slice.table.upper(),
+                schema=table_slice.schema.upper(),
+                database=table_slice.database.upper() if table_slice.database else None,
+                auto_create_table=True,
+                use_logical_type=True,
+                quote_identifiers=True,
+            )
 
         return {
             # output object may be a slice/partition, so we output different metadata keys based on
             # whether this output represents an entire table or just a slice/partition
             **(
-                TableMetadataSet(partition_row_count=obj.shape[0])
+                TableMetadataSet(partition_row_count=obj.shape[0], storage_kind="snowflake")
                 if context.has_partition_key
-                else TableMetadataSet(row_count=obj.shape[0])
+                else TableMetadataSet(row_count=obj.shape[0], storage_kind="snowflake")
             ),
             "dataframe_columns": MetadataValue.table_schema(
                 TableSchema(
@@ -187,7 +191,7 @@ Examples:
         from dagster import asset, Definitions
 
         @asset(
-            key_prefix=["my_schema"]  # will be used as the schema in snowflake
+            key_prefix=["my_schema"],  # will be used as the schema in snowflake
         )
         def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
             ...
@@ -197,8 +201,7 @@ Examples:
             resources={
                 "io_manager": snowflake_pandas_io_manager.configured({
                     "database": "my_database",
-                    "account" : {"env": "SNOWFLAKE_ACCOUNT"}
-                    ...
+                    "account": {"env": "SNOWFLAKE_ACCOUNT"}
                 })
             }
         )
@@ -209,9 +212,9 @@ Examples:
     .. code-block:: python
 
         Definitions(
-            assets=[my_table]
-            resources={"io_manager" snowflake_pandas_io_manager.configured(
-                {"database": "my_database", "schema": "my_schema", ...} # will be used as the schema
+            assets=[my_table],
+            resources={"io_manager": snowflake_pandas_io_manager.configured(
+                {"database": "my_database", "schema": "my_schema"} # will be used as the schema
             )}
         )
 
@@ -223,7 +226,7 @@ Examples:
     .. code-block:: python
 
         @asset(
-            key_prefix=["my_schema"]  # will be used as the schema in snowflake
+            key_prefix=["my_schema"],  # will be used as the schema in snowflake
         )
         def my_table() -> pd.DataFrame:
             ...
@@ -277,7 +280,7 @@ class SnowflakePandasIOManager(SnowflakeIOManager):
             from dagster import asset, Definitions, EnvVar
 
             @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in snowflake
+                key_prefix=["my_schema"],  # will be used as the schema in snowflake
             )
             def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
                 ...
@@ -285,7 +288,7 @@ class SnowflakePandasIOManager(SnowflakeIOManager):
             Definitions(
                 assets=[my_table],
                 resources={
-                    "io_manager": SnowflakePandasIOManager(database="MY_DATABASE", account=EnvVar("SNOWFLAKE_ACCOUNT"), ...)
+                    "io_manager": SnowflakePandasIOManager(database="MY_DATABASE", account=EnvVar("SNOWFLAKE_ACCOUNT"))
                 }
             )
 
@@ -295,9 +298,9 @@ class SnowflakePandasIOManager(SnowflakeIOManager):
         .. code-block:: python
 
             Definitions(
-                assets=[my_table]
+                assets=[my_table],
                 resources={
-                    "io_manager" SnowflakePandasIOManager(database="my_database", schema="my_schema", ...)
+                    "io_manager": SnowflakePandasIOManager(database="my_database", schema="my_schema")
                 }
             )
 
@@ -309,7 +312,7 @@ class SnowflakePandasIOManager(SnowflakeIOManager):
         .. code-block:: python
 
             @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in snowflake
+                key_prefix=["my_schema"],  # will be used as the schema in snowflake
             )
             def my_table() -> pd.DataFrame:
                 ...
@@ -355,5 +358,5 @@ class SnowflakePandasIOManager(SnowflakeIOManager):
         return [SnowflakePandasTypeHandler()]
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         return pd.DataFrame

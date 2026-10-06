@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Union
 
 from dagster_shared import check
 
+from dagster._annotations import public
 from dagster.components.core.context import ComponentLoadContext
 from dagster.components.lib.executable_component.component import ExecutableComponent, OpSpec
 from dagster.components.lib.executable_component.script_utils import (
@@ -21,20 +22,21 @@ if TYPE_CHECKING:
     from dagster._core.pipes.context import PipesExecutionResult
 
 
+@public
 class PythonScriptComponent(ExecutableComponent):
     """Represents a Python script, alongside the set of assets and asset checks that it is responsible for executing.
 
     Accepts a path to a Python script which will be executed in a dagster-pipes subprocess using your installed `python` executable.
 
     Examples:
-    ```yaml
-    type: dagster.PythonScriptComponent
-    attributes:
-      execution:
-        path: update_table.py
-      assets:
-        - key: my_table
-    ```
+        .. code-block:: yaml
+
+            type: dagster.PythonScriptComponent
+            attributes:
+              execution:
+                path: update_table.py
+              assets:
+                - key: my_table
     """
 
     execution: ScriptSpec

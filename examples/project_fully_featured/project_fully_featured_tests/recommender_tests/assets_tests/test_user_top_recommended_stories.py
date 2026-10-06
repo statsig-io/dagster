@@ -1,12 +1,11 @@
 import numpy as np
 from pandas import DataFrame, Series
-from scipy.sparse import coo_matrix
-from sklearn.decomposition import TruncatedSVD
-
 from project_fully_featured.assets.recommender.user_story_matrix import IndexedCooMatrix
 from project_fully_featured.assets.recommender.user_top_recommended_stories import (
     user_top_recommended_stories,
 )
+from scipy.sparse import coo_matrix
+from sklearn.decomposition import TruncatedSVD
 
 
 def test_user_top_recommended_stories():
@@ -21,6 +20,7 @@ def test_user_top_recommended_stories():
         recommender_model=model,
         user_story_matrix=IndexedCooMatrix(user_story_matrix, row_users, col_stories),
     )
+    assert isinstance(result, DataFrame)
 
     expected = DataFrame(
         [

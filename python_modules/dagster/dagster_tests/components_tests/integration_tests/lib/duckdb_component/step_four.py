@@ -1,7 +1,6 @@
 import os
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional
 
 import dagster as dg
 import duckdb
@@ -10,8 +9,8 @@ from pydantic import BaseModel
 
 
 class DuckDbScaffolderParams(BaseModel):
-    sql_file: Optional[str]
-    asset_key: Optional[str]
+    sql_file: str | None
+    asset_key: str | None
 
 
 class DuckDbComponentScaffolder(dg.Scaffolder[DuckDbScaffolderParams]):
@@ -55,7 +54,7 @@ class DuckDbComponent(dg.Component, dg.Model, dg.Resolvable):
         original_dir = os.getcwd()
         try:
             os.chdir(Path(__file__).parent)
-            query = open(sql_file).read()
+            query = open(sql_file, encoding="utf-8").read()
             # Read CSV from parent directory
             df = con.execute(query).fetchdf()
         finally:

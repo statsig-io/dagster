@@ -1,7 +1,17 @@
 import os
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any, Dict, Generic, List, NamedTuple, Optional, Union, cast  # noqa: F401, UP035
+from typing import (  # noqa: F401, UP035
+    Any,
+    Dict,
+    Generic,
+    List,
+    NamedTuple,
+    Optional,
+    TypeAlias,
+    Union,
+    cast,
+)
 
 from dagster_shared.serdes.serdes import (
     FieldSerializer,
@@ -10,10 +20,10 @@ from dagster_shared.serdes.serdes import (
     WhitelistMap,
     pack_value,
 )
-from typing_extensions import TypeAlias, TypeVar
+from typing_extensions import TypeVar
 
 import dagster._check as check
-from dagster._annotations import PublicAttr, deprecated, deprecated_param
+from dagster._annotations import PublicAttr, deprecated, deprecated_param, public
 from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.metadata.external_metadata import (
     EXTERNAL_METADATA_TYPE_INFER as EXTERNAL_METADATA_TYPE_INFER,
@@ -74,20 +84,20 @@ from dagster._utils.warnings import deprecation_warning, normalize_renamed_param
 
 ArbitraryMetadataMapping: TypeAlias = Mapping[str, Any]
 
-RawMetadataValue: TypeAlias = Union[
-    MetadataValue,
-    TableSchema,
-    TableColumnLineage,
-    AssetKey,
-    os.PathLike,
-    dict[Any, Any],
-    float,
-    int,
-    list[Any],
-    str,
-    datetime,
-    None,
-]
+RawMetadataValue: TypeAlias = (
+    MetadataValue
+    | TableSchema
+    | TableColumnLineage
+    | AssetKey
+    | os.PathLike
+    | dict[Any, Any]
+    | float
+    | int
+    | list[Any]
+    | str
+    | datetime
+    | None
+)
 
 MetadataMapping: TypeAlias = Mapping[str, MetadataValue]
 RawMetadataMapping: TypeAlias = Mapping[str, RawMetadataValue]
@@ -148,7 +158,7 @@ def normalize_metadata_value(raw_value: RawMetadataValue) -> "MetadataValue[Any]
     elif isinstance(raw_value, int):
         return MetadataValue.int(raw_value)
     elif isinstance(raw_value, (list, dict)):
-        return MetadataValue.json(raw_value)
+        return MetadataValue.json(raw_value)  # ty: ignore[invalid-argument-type]
     elif isinstance(raw_value, os.PathLike):
         return MetadataValue.path(raw_value)
     elif isinstance(raw_value, AssetKey):
@@ -199,7 +209,7 @@ class MetadataFieldSerializer(FieldSerializer):
             for k, v in metadata_dict.items()
         ]
 
-    def unpack(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def unpack(  # ty: ignore[invalid-method-override]
         self,
         metadata_entries: list["MetadataEntry"],
         whitelist_map: WhitelistMap,
@@ -222,12 +232,13 @@ T_MetadataValue = TypeVar("T_MetadataValue", bound=MetadataValue, covariant=True
     param="entry_data", breaking_version="2.0", additional_warn_text="Use `value` instead."
 )
 @whitelist_for_serdes(storage_name="EventMetadataEntry")
+@public
 class MetadataEntry(
     NamedTuple(
         "_MetadataEntry",
         [
             ("label", PublicAttr[str]),
-            ("description", PublicAttr[Optional[str]]),
+            ("description", PublicAttr[str | None]),
             ("entry_data", PublicAttr[MetadataValue]),
         ],
     ),
@@ -254,7 +265,7 @@ class MetadataEntry(
     def __new__(
         cls,
         label: str,
-        description: Optional[str] = None,
+        description: str | None = None,
         entry_data: Optional["RawMetadataValue"] = None,
         value: Optional["RawMetadataValue"] = None,
     ):

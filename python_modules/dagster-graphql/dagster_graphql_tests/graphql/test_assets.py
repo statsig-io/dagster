@@ -3,7 +3,7 @@ import json
 import os
 import time
 from collections.abc import Sequence
-from typing import Optional
+from unittest import mock
 
 import pytest
 from dagster import (
@@ -16,6 +16,10 @@ from dagster import (
     asset,
     define_asset_job,
     repository,
+)
+from dagster._core.definitions.asset_checks.asset_check_spec import (
+    AssetCheckKey,
+    AssetCheckSeverity,
 )
 from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
 from dagster._core.definitions.events import (
@@ -85,6 +89,23 @@ GET_ASSETS_QUERY = """
     }
 """
 
+GET_ASSETS_BY_KEYS_QUERY = """
+    query AssetKeyQuery($assetKeys: [AssetKeyInput!]) {
+        assetsOrError(assetKeys: $assetKeys) {
+            __typename
+            ...on AssetConnection {
+                nodes {
+                    id
+                    key {
+                        path
+                    }
+                }
+                cursor
+            }
+        }
+    }
+"""
+
 GET_ASSET_MATERIALIZATION = """
     query AssetQuery($assetKey: AssetKeyInput!) {
         assetOrError(assetKey: $assetKey) {
@@ -98,6 +119,7 @@ GET_ASSET_MATERIALIZATION = """
                         partitions
                     }
                 }
+                hasDefinitionOrRecord
             }
             ... on AssetNotFoundError {
                 __typename
@@ -231,6 +253,23 @@ mutation reportRunlessAssetEvents($eventParams: ReportRunlessAssetEventsParams!)
 }
 """
 
+REPORT_ASSET_CHECK_EVALUATION = """
+mutation reportAssetCheckEvaluations($eventParams: ReportAssetCheckEvaluationsParams!) {
+    reportAssetCheckEvaluations(eventParams: $eventParams) {
+        __typename
+        ... on PythonError {
+            message
+            stack
+        }
+        ... on ReportAssetCheckEvaluationsSuccess {
+            assetKey {
+                path
+            }
+        }
+    }
+}
+"""
+
 
 GET_ASSET_MATERIALIZATION_TIMESTAMP = """
     query AssetQuery($assetKey: AssetKeyInput!, $asOf: String) {
@@ -307,6 +346,17 @@ GET_ASSET_DATA_VERSIONS = """
                     key
                     value
                 }
+            }
+        }
+    }
+"""
+
+GET_ASSET_NODE_DESCRIPTION = """
+    query AssetNodeDescriptionQuery($assetKey: AssetKeyInput!, $characterLimit: Int) {
+        assetNodeOrError(assetKey: $assetKey) {
+            ... on AssetNode {
+                id
+                description(characterLimit: $characterLimit)
             }
         }
     }
@@ -751,6 +801,23 @@ GET_REPO_ASSET_GROUPS = """
     }
 """
 
+GET_REPO_ASSET_NODES_CONNECTION = """
+    query($repositorySelector: RepositorySelector!, $cursor: String, $limit: Int!) {
+        repositoryOrError(repositorySelector: $repositorySelector) {
+            ... on Repository {
+                assetNodesConnection(cursor: $cursor, limit: $limit) {
+                    nodes {
+                        id
+                        assetKey { path }
+                    }
+                    cursor
+                    hasMore
+                }
+            }
+        }
+    }
+"""
+
 GET_ASSET_OWNERS = """
     query AssetOwnersQuery($assetKeys: [AssetKeyInput!]) {
         assetNodes(assetKeys: $assetKeys) {
@@ -843,6 +910,23 @@ GET_ASSET_BACKFILL_POLICY = """
                     maxPartitionsPerRun
                     policyType
                     description
+                }
+            }
+        }
+    }
+"""
+
+
+GET_ASSET_OP_TAGS = """
+    query AssetNodeQuery($assetKey: AssetKeyInput!) {
+        assetNodeOrError(assetKey: $assetKey) {
+            ...on AssetNode {
+                assetKey {
+                    path
+                }
+                opTags {
+                    key
+                    value
                 }
             }
         }
@@ -978,9 +1062,9 @@ def _create_run(
     graphql_context: WorkspaceRequestContext,
     pipeline_name: str,
     mode: str = "default",
-    step_keys: Optional[Sequence[str]] = None,
-    asset_selection: Optional[Sequence[GqlAssetKey]] = None,
-    tags: Optional[Sequence[GqlTag]] = None,
+    step_keys: Sequence[str] | None = None,
+    asset_selection: Sequence[GqlAssetKey] | None = None,
+    tags: Sequence[GqlTag] | None = None,
 ) -> str:
     if asset_selection:
         selector = infer_job_selector(
@@ -1015,8 +1099,8 @@ def _create_partitioned_run(
     graphql_context: WorkspaceRequestContext,
     job_name: str,
     partition_key: str,
-    asset_selection: Optional[list[AssetKey]] = None,
-    tags: Optional[dict[str, str]] = None,
+    asset_selection: list[AssetKey] | None = None,
+    tags: dict[str, str] | None = None,
 ) -> str:
     base_partition_tags: Sequence[GqlTag] = [
         {"key": "dagster/partition", "value": partition_key},
@@ -1067,7 +1151,7 @@ def _get_sorted_materialization_events(
             for event in graphql_context.instance.all_logs(run_id=run_id)
             if event.dagster_event_type == DagsterEventType.ASSET_MATERIALIZATION
         ],
-        key=lambda event: event.get_dagster_event().asset_key,  # type: ignore  # (possible none)
+        key=lambda event: event.get_dagster_event().asset_key,  # (possible none)
     )
 
 
@@ -1083,6 +1167,41 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
         result.data["assetsOrError"]["nodes"].sort(key=lambda e: e["key"]["path"][0])
 
         snapshot.assert_match(result.data)
+
+    def test_assets_by_keys(self, graphql_context: WorkspaceRequestContext, snapshot):
+        _create_run(graphql_context, "multi_asset_job")
+        result = execute_dagster_graphql(graphql_context, GET_ASSETS_BY_KEYS_QUERY)
+        assert result.data
+        assert result.data["assetsOrError"]
+        assert len(result.data["assetsOrError"]["nodes"]) > 1
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSETS_BY_KEYS_QUERY,
+            variables={"assetKeys": None},
+        )
+        assert result.data
+        assert result.data["assetsOrError"]
+        assert len(result.data["assetsOrError"]["nodes"]) > 1
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSETS_BY_KEYS_QUERY,
+            variables={"assetKeys": []},
+        )
+        assert result.data
+        assert result.data["assetsOrError"]
+        assert len(result.data["assetsOrError"]["nodes"]) == 0
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSETS_BY_KEYS_QUERY,
+            variables={"assetKeys": [{"path": ["a"]}]},
+        )
+        assert result.data
+        assert result.data["assetsOrError"]
+        assert len(result.data["assetsOrError"]["nodes"]) == 1
+        assert result.data["assetsOrError"]["nodes"][0]["key"]["path"] == ["a"]
 
     def test_asset_key_pagination(self, graphql_context: WorkspaceRequestContext):
         _create_run(graphql_context, "multi_asset_job")
@@ -1149,6 +1268,90 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
             == AssetKey(result.data["assetsOrError"]["nodes"][limit - 1]["key"]["path"]).to_string()
         )
 
+    def test_asset_nodes_connection(self, graphql_context: WorkspaceRequestContext):
+        repository_selector = infer_repository_selector(graphql_context)
+
+        # Single big page returns everything and reports hasMore=false.
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_REPO_ASSET_NODES_CONNECTION,
+            variables={"repositorySelector": repository_selector, "limit": 10_000},
+        )
+        assert result.data
+        connection = result.data["repositoryOrError"]["assetNodesConnection"]
+        all_nodes = connection["nodes"]
+        assert len(all_nodes) > 1
+        assert connection["hasMore"] is False
+
+        all_keys = [AssetKey(n["assetKey"]["path"]).to_string() for n in all_nodes]
+        # Deterministic sort by stringified asset key.
+        assert all_keys == sorted(all_keys)
+        assert connection["cursor"] == all_keys[-1]
+
+        # Multi-page round-trip via cursor: no overlap, union equals the single-call result.
+        page_size = max(1, len(all_nodes) // 3)
+        collected: list[dict] = []
+        cursor: str | None = None
+        seen_cursors: set[str | None] = set()
+        while True:
+            assert cursor not in seen_cursors, "cursor must advance each page"
+            seen_cursors.add(cursor)
+            page_result = execute_dagster_graphql(
+                graphql_context,
+                GET_REPO_ASSET_NODES_CONNECTION,
+                variables={
+                    "repositorySelector": repository_selector,
+                    "cursor": cursor,
+                    "limit": page_size,
+                },
+            )
+            page = page_result.data["repositoryOrError"]["assetNodesConnection"]
+            assert len(page["nodes"]) <= page_size
+            collected.extend(page["nodes"])
+            if not page["hasMore"]:
+                break
+            cursor = page["cursor"]
+            assert cursor is not None
+
+        assert collected == all_nodes
+
+    def test_asset_nodes_connection_invalid_limit(self, graphql_context: WorkspaceRequestContext):
+        # limit <= 0 and limit > max must be rejected. The upper bound is configurable
+        # via DAGSTER_ASSET_NODES_CONNECTION_MAX_LIMIT.
+        from dagster._core.errors import DagsterInvariantViolationError
+
+        repository_selector = infer_repository_selector(graphql_context)
+
+        for bad_limit in (0, -1):
+            with pytest.raises(DagsterInvariantViolationError, match="limit must be between"):
+                execute_dagster_graphql(
+                    graphql_context,
+                    GET_REPO_ASSET_NODES_CONNECTION,
+                    variables={
+                        "repositorySelector": repository_selector,
+                        "limit": bad_limit,
+                    },
+                )
+
+        with mock.patch.dict(os.environ, {"DAGSTER_ASSET_NODES_CONNECTION_MAX_LIMIT": "3"}):
+            # Within the lowered max — OK.
+            ok_result = execute_dagster_graphql(
+                graphql_context,
+                GET_REPO_ASSET_NODES_CONNECTION,
+                variables={"repositorySelector": repository_selector, "limit": 3},
+            )
+            assert len(ok_result.data["repositoryOrError"]["assetNodesConnection"]["nodes"]) <= 3
+
+            # Above the lowered max — rejected.
+            with pytest.raises(
+                DagsterInvariantViolationError, match="limit must be between 1 and 3"
+            ):
+                execute_dagster_graphql(
+                    graphql_context,
+                    GET_REPO_ASSET_NODES_CONNECTION,
+                    variables={"repositorySelector": repository_selector, "limit": 4},
+                )
+
     def test_get_asset_key_materialization(
         self, graphql_context: WorkspaceRequestContext, snapshot
     ):
@@ -1158,6 +1361,8 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
             GET_ASSET_MATERIALIZATION,
             variables={"assetKey": {"path": ["a"]}},
         )
+        assert result.data["assetOrError"]["hasDefinitionOrRecord"]
+
         assert result.data
         snapshot.assert_match(result.data)
 
@@ -1184,7 +1389,22 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
             variables={"assetKey": {"path": ["bogus", "asset"]}},
         )
         assert result.data
+        assert not result.data["assetOrError"]["hasDefinitionOrRecord"]
         snapshot.assert_match(result.data)
+
+        graphql_context.instance.report_runless_asset_event(
+            AssetMaterialization(AssetKey(["bogus", "asset"]))
+        )
+
+        graphql_context.clear_loaders()
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSET_MATERIALIZATION,
+            variables={"assetKey": {"path": ["bogus", "asset"]}},
+        )
+        assert result.data
+        assert result.data["assetOrError"]["hasDefinitionOrRecord"]
 
     def test_additional_required_keys_query(self, graphql_context: WorkspaceRequestContext):
         result = execute_dagster_graphql(
@@ -1245,8 +1465,8 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
         graphql_context: WorkspaceRequestContext,
         event_type: DagsterEventType,
         asset_key: AssetKey,
-        partitions: Optional[Sequence[str]],
-        description: Optional[str],
+        partitions: Sequence[str] | None,
+        description: str | None,
     ):
         assert graphql_context.instance.all_asset_keys() == []
 
@@ -1299,6 +1519,154 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
                 assert observation
                 assert observation.description == description
 
+    def test_report_asset_check_evaluation(self, graphql_context: WorkspaceRequestContext):
+        asset_key = AssetKey("asset1")
+        check_name = "my_check"
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            REPORT_ASSET_CHECK_EVALUATION,
+            variables={
+                "eventParams": {
+                    "assetKey": {"path": asset_key.path},
+                    "checkName": check_name,
+                    "passed": True,
+                    "severity": "WARN",
+                }
+            },
+        )
+
+        assert result.data
+        assert result.data["reportAssetCheckEvaluations"]
+        assert (
+            result.data["reportAssetCheckEvaluations"]["__typename"]
+            == "ReportAssetCheckEvaluationsSuccess"
+        )
+        assert result.data["reportAssetCheckEvaluations"]["assetKey"]["path"] == list(
+            asset_key.path
+        )
+
+        check_key = AssetCheckKey(asset_key=asset_key, name=check_name)
+        record = graphql_context.instance.event_log_storage.get_latest_asset_check_execution_by_key(
+            [check_key]
+        ).get(check_key)
+        assert record is not None
+        assert record.event is not None
+        evaluation = record.event.asset_check_evaluation
+        assert evaluation is not None
+        assert evaluation.check_name == check_name
+        assert evaluation.passed is True
+        assert evaluation.severity == AssetCheckSeverity.WARN
+
+    def test_report_asset_check_evaluation_failed(self, graphql_context: WorkspaceRequestContext):
+        """Test reporting a failed check; severity defaults to ERROR when omitted."""
+        asset_key = AssetKey("asset1")
+        check_name = "my_failed_check"
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            REPORT_ASSET_CHECK_EVALUATION,
+            variables={
+                "eventParams": {
+                    "assetKey": {"path": asset_key.path},
+                    "checkName": check_name,
+                    "passed": False,
+                }
+            },
+        )
+
+        assert result.data
+        assert (
+            result.data["reportAssetCheckEvaluations"]["__typename"]
+            == "ReportAssetCheckEvaluationsSuccess"
+        )
+
+        check_key = AssetCheckKey(asset_key=asset_key, name=check_name)
+        record = graphql_context.instance.event_log_storage.get_latest_asset_check_execution_by_key(
+            [check_key]
+        ).get(check_key)
+        assert record is not None
+        assert record.event is not None
+        evaluation = record.event.asset_check_evaluation
+        assert evaluation is not None
+        assert evaluation.passed is False
+        assert evaluation.severity == AssetCheckSeverity.ERROR
+
+    def test_report_asset_check_evaluation_with_metadata(
+        self, graphql_context: WorkspaceRequestContext
+    ):
+        asset_key = AssetKey("asset1")
+        check_name = "my_metadata_check"
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            REPORT_ASSET_CHECK_EVALUATION,
+            variables={
+                "eventParams": {
+                    "assetKey": {"path": asset_key.path},
+                    "checkName": check_name,
+                    "passed": True,
+                    "severity": "WARN",
+                    "serializedMetadata": json.dumps({"row_count": 100, "status": "healthy"}),
+                }
+            },
+        )
+
+        assert result.data
+        assert (
+            result.data["reportAssetCheckEvaluations"]["__typename"]
+            == "ReportAssetCheckEvaluationsSuccess"
+        )
+
+        check_key = AssetCheckKey(asset_key=asset_key, name=check_name)
+        record = graphql_context.instance.event_log_storage.get_latest_asset_check_execution_by_key(
+            [check_key]
+        ).get(check_key)
+        assert record is not None
+        assert record.event is not None
+        evaluation = record.event.asset_check_evaluation
+        assert evaluation is not None
+        assert evaluation.metadata is not None
+        assert len(evaluation.metadata) == 2
+
+    def test_report_asset_check_evaluation_with_partition(
+        self, graphql_context: WorkspaceRequestContext
+    ):
+        asset_key = AssetKey("asset1")
+        check_name = "my_partition_check"
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            REPORT_ASSET_CHECK_EVALUATION,
+            variables={
+                "eventParams": {
+                    "assetKey": {"path": asset_key.path},
+                    "checkName": check_name,
+                    "passed": True,
+                    "severity": "WARN",
+                    "partitionKeys": ["2024-01-01"],
+                }
+            },
+        )
+
+        assert result.data
+        assert (
+            result.data["reportAssetCheckEvaluations"]["__typename"]
+            == "ReportAssetCheckEvaluationsSuccess"
+        )
+
+        check_key = AssetCheckKey(asset_key=asset_key, name=check_name)
+        record = graphql_context.instance.event_log_storage.get_latest_asset_check_execution_by_key(
+            [check_key]
+        ).get(check_key)
+        assert record is not None
+        assert record.event is not None
+        evaluation = record.event.asset_check_evaluation
+        assert evaluation is not None
+        assert evaluation.passed is True
+        assert evaluation.severity == AssetCheckSeverity.WARN
+        assert evaluation.partition == "2024-01-01"
+
     def test_asset_asof_timestamp(self, graphql_context: WorkspaceRequestContext):
         _create_run(graphql_context, "asset_tag_job")
         result = execute_dagster_graphql(
@@ -1312,7 +1680,10 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
         assert len(materializations) == 1
         first_timestamp = int(materializations[0]["timestamp"])
 
-        as_of_timestamp = first_timestamp + 1
+        # Use +2 instead of +1 to account for a potential 1ms discrepancy between
+        # int() truncation in the GraphQL timestamp and datetime.fromtimestamp() rounding
+        # in the DB timestamp column.
+        as_of_timestamp = first_timestamp + 2
 
         time.sleep(1.1)
         _create_run(graphql_context, "asset_tag_job")
@@ -1417,7 +1788,7 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
 
         assert len(result.data["assetNodes"]) == 1
         asset_node = result.data["assetNodes"][0]
-        assert asset_node["id"] == f'{main_repo_location_name()}.test_repo.["asset_one"]'
+        assert asset_node["id"] == f"r.{main_repo_location_name()}.test_repo.asset_one"
         assert asset_node["hasMaterializePermission"]
         assert asset_node["hasReportRunlessAssetEventPermission"]
 
@@ -1432,7 +1803,7 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
 
         assert len(result.data["assetNodes"]) == 2
         asset_node = result.data["assetNodes"][0]
-        assert asset_node["id"] == f'{main_repo_location_name()}.test_repo.["asset_one"]'
+        assert asset_node["id"] == f"r.{main_repo_location_name()}.test_repo.asset_one"
 
     def test_asset_node_is_executable(self, graphql_context: WorkspaceRequestContext):
         result = execute_dagster_graphql(
@@ -1453,6 +1824,54 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
         assert exec_asset_node["isExecutable"] is True
         unexec_asset_node = result.data["assetNodes"][1]
         assert unexec_asset_node["isExecutable"] is False
+
+    def test_asset_node_description_character_limit(self, graphql_context: WorkspaceRequestContext):
+        full_description = "A" * 100
+
+        # No characterLimit -> full description.
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSET_NODE_DESCRIPTION,
+            variables={"assetKey": {"path": ["asset_with_long_description"]}},
+        )
+        assert result.data
+        assert result.data["assetNodeOrError"]["description"] == full_description
+
+        # characterLimit smaller than description -> truncated.
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSET_NODE_DESCRIPTION,
+            variables={
+                "assetKey": {"path": ["asset_with_long_description"]},
+                "characterLimit": 10,
+            },
+        )
+        assert result.data
+        assert result.data["assetNodeOrError"]["description"] == full_description[:10]
+
+        # characterLimit >= description length -> full description unchanged.
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSET_NODE_DESCRIPTION,
+            variables={
+                "assetKey": {"path": ["asset_with_long_description"]},
+                "characterLimit": 1000,
+            },
+        )
+        assert result.data
+        assert result.data["assetNodeOrError"]["description"] == full_description
+
+        # Asset without a description -> None regardless of characterLimit.
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSET_NODE_DESCRIPTION,
+            variables={
+                "assetKey": {"path": ["asset_without_description"]},
+                "characterLimit": 10,
+            },
+        )
+        assert result.data
+        assert result.data["assetNodeOrError"]["description"] is None
 
     def test_asset_partitions_in_pipeline(self, graphql_context: WorkspaceRequestContext):
         selector = infer_job_selector(graphql_context, "two_assets_job")
@@ -1646,6 +2065,27 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
         new_start_time = materialization["stepStats"]["startTime"]
         assert new_start_time > start_time
 
+        assert asset_node["latestMaterializationByPartition"][1] is None
+
+    def test_latest_materialization_per_partition_no_materializations(
+        self, graphql_context: WorkspaceRequestContext
+    ):
+        """Test that latestMaterializationByPartition returns early with all Nones when
+        no materializations exist (i.e. latest_storage_ids is empty).
+        """
+        selector = infer_job_selector(graphql_context, "partition_materialization_job")
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_LATEST_MATERIALIZATION_PER_PARTITION,
+            variables={"pipelineSelector": selector, "partitions": ["a", "b"]},
+        )
+
+        assert result.data
+        assert result.data["assetNodes"]
+        asset_node = result.data["assetNodes"][0]
+        assert len(asset_node["latestMaterializationByPartition"]) == 2
+        assert asset_node["latestMaterializationByPartition"][0] is None
         assert asset_node["latestMaterializationByPartition"][1] is None
 
     def test_latest_run_for_partition(self, graphql_context: WorkspaceRequestContext):
@@ -2092,6 +2532,52 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
         assert materialized_ranges[0]["startTime"] == _get_datetime_float(time_0)
         assert materialized_ranges[0]["endTime"] == _get_datetime_float(time_3)
 
+    def test_time_partitions_overlapping_statuses(self, graphql_context: WorkspaceRequestContext):
+        """Test that overlapping partition statuses (e.g., both MATERIALIZED and FAILED) are properly flattened.
+
+        This test verifies that when a partition is both materialized and failed, the flattening
+        logic correctly applies priority (MATERIALIZING > FAILED > MATERIALIZED) to return
+        non-overlapping ranges.
+
+        Without the flattening logic (the old build_time_partition_ranges_generic), this
+        test would fail because overlapping ranges would be returned instead of properly
+        prioritized non-overlapping ranges.
+        """
+        # First materialize partition "b", then fail it
+        _create_partitioned_run(
+            graphql_context, "fail_partition_materialization_job", partition_key="b"
+        )
+
+        # Now fail the same partition - it should now show as FAILED (higher priority)
+        _create_partitioned_run(
+            graphql_context,
+            "fail_partition_materialization_job",
+            partition_key="b",
+            tags={"fail": "true"},
+        )
+
+        graphql_context.clear_loaders()
+
+        # Query partition statuses
+        selector = infer_job_selector(graphql_context, "fail_partition_materialization_job")
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_1D_ASSET_PARTITIONS,
+            variables={"pipelineSelector": selector},
+        )
+
+        assert result.data
+        assert result.data["assetNodes"]
+        asset_node = result.data["assetNodes"][0]
+
+        # Should show as FAILED (higher priority than MATERIALIZED), not both
+        # The old code without flattening logic would potentially show overlapping ranges
+        failed_partitions = asset_node["assetPartitionStatuses"]["failedPartitions"]
+        materialized_partitions = asset_node["assetPartitionStatuses"]["materializedPartitions"]
+
+        assert "b" in failed_partitions
+        assert "b" not in materialized_partitions  # Should not be in materialized since it failed
+
     def test_asset_observations(self, graphql_context: WorkspaceRequestContext):
         _create_run(graphql_context, "observation_job")
         result = execute_dagster_graphql(
@@ -2195,7 +2681,7 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
 
         assert result["asset_1"]["latestRun"] is None
         assert result["asset_1"]["latestMaterialization"] is None
-        assert FAKE_KEY not in result
+        assert result[FAKE_KEY]["latestRun"] is None
 
         # Test with 1 run on all assets
         first_run_id = _create_run(graphql_context, "failure_assets_job")
@@ -2901,9 +3387,7 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
         assert result.data["assetNodes"]
 
         fresh_diamond_bottom = [
-            a
-            for a in result.data["assetNodes"]
-            if a["id"] == f'{main_repo_location_name()}.test_repo.["fresh_diamond_bottom"]'
+            a for a in result.data["assetNodes"] if a["id"] == "w.fresh_diamond_bottom"
         ]
         assert len(fresh_diamond_bottom) == 1
         assert fresh_diamond_bottom[0]["autoMaterializePolicy"]["policyType"] == "LAZY"
@@ -2915,10 +3399,7 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
         assert result.data["assetNodes"]
 
         automation_condition_asset = [
-            a
-            for a in result.data["assetNodes"]
-            if a["id"]
-            == f'{main_repo_location_name()}.test_repo.["asset_with_automation_condition"]'
+            a for a in result.data["assetNodes"] if a["id"] == "w.asset_with_automation_condition"
         ]
         assert len(automation_condition_asset) == 1
         condition = automation_condition_asset[0]["automationCondition"]
@@ -2928,8 +3409,7 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
         custom_automation_condition_asset = [
             a
             for a in result.data["assetNodes"]
-            if a["id"]
-            == f'{main_repo_location_name()}.test_repo.["asset_with_custom_automation_condition"]'
+            if a["id"] == "w.asset_with_custom_automation_condition"
         ]
         assert len(custom_automation_condition_asset) == 1
         condition = custom_automation_condition_asset[0]["automationCondition"]
@@ -3009,6 +3489,9 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
                 ["one"],
                 ["check_in_op_asset"],
                 ["asset_3"],
+                ["owned_asset"],
+                ["partitioned_asset_for_checks"],
+                ["unowned_asset"],
             ]:
                 assert a["hasAssetChecks"] is True
             else:
@@ -3094,6 +3577,27 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
             == "Backfills in multiple runs, with a maximum of 10 partitions per run"
         )
 
+    def test_get_op_tags(self, graphql_context: WorkspaceRequestContext):
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSET_OP_TAGS,
+            variables={"assetKey": {"path": ["asset_with_op_tags"]}},
+        )
+
+        assert not result.errors
+        assert result.data
+        assert result.data["assetNodeOrError"]["assetKey"]["path"] == ["asset_with_op_tags"]
+        op_tags = {tag["key"]: tag["value"] for tag in result.data["assetNodeOrError"]["opTags"]}
+        assert op_tags == {"foo": "bar", "baz": "qux", "dagster/kind/python": ""}
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            GET_ASSET_OP_TAGS,
+            variables={"assetKey": {"path": ["single_run_backfill_policy_asset"]}},
+        )
+        assert not result.errors
+        assert result.data["assetNodeOrError"]["opTags"] == []
+
     def test_get_partition_mapping(self, graphql_context: WorkspaceRequestContext):
         result = execute_dagster_graphql(
             graphql_context,
@@ -3123,17 +3627,19 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
             DagsterEventType.ASSET_MATERIALIZATION.value: lambda asset_key: StepMaterializationData(
                 AssetMaterialization(asset_key=asset_key)
             ),
-            DagsterEventType.ASSET_MATERIALIZATION_PLANNED.value: lambda asset_key: AssetMaterializationPlannedData(
-                asset_key=asset_key
+            DagsterEventType.ASSET_MATERIALIZATION_PLANNED.value: lambda asset_key: (
+                AssetMaterializationPlannedData(asset_key=asset_key)
             ),
             DagsterEventType.ASSET_OBSERVATION.value: lambda asset_key: AssetObservationData(
                 AssetObservation(asset_key=asset_key)
             ),
-            DagsterEventType.ASSET_FAILED_TO_MATERIALIZE.value: lambda asset_key: AssetFailedToMaterializeData(
-                AssetMaterializationFailure(
-                    asset_key=asset_key,
-                    failure_type=AssetMaterializationFailureType.FAILED,
-                    reason=AssetMaterializationFailureReason.FAILED_TO_MATERIALIZE,
+            DagsterEventType.ASSET_FAILED_TO_MATERIALIZE.value: lambda asset_key: (
+                AssetFailedToMaterializeData(
+                    AssetMaterializationFailure(
+                        asset_key=asset_key,
+                        failure_type=AssetMaterializationFailureType.FAILED,
+                        reason=AssetMaterializationFailureReason.FAILED_TO_MATERIALIZE,
+                    )
                 )
             ),
         }
@@ -3171,7 +3677,7 @@ class TestAssetAwareEventLog(ExecutingGraphQLContextTestMatrix):
                 )
             )
 
-        expected_order: dict[AssetKey, Optional[str]] = {}
+        expected_order: dict[AssetKey, str | None] = {}
 
         for asset_key, event_type in asset_keys_to_event_type.items():
             event_records = storage.get_event_records(
@@ -3645,10 +4151,9 @@ class TestPersistentInstanceAssetInProgress(ExecutingGraphQLContextTestMatrix):
                 step_keys=None,
             )
 
-            for i in range(2):
-                queued_runs.append(
-                    create_valid_pipeline_run(graphql_context, job, execution_params, code_location)
-                )
+            queued_runs.extend(
+                create_valid_pipeline_run(graphql_context, job, execution_params) for i in range(2)
+            )
 
             in_progress_run_id = queued_runs[0].run_id
             unstarted_run_id = queued_runs[1].run_id
@@ -3853,11 +4358,7 @@ class TestCrossRepoAssetDependedBy(AllRepositoryGraphQLContextTestMatrix):
             CROSS_REPO_ASSET_GRAPH,
         )
         asset_nodes = result.data["assetNodes"]
-        derived_asset = next(
-            node
-            for node in asset_nodes
-            if node["id"] == 'cross_asset_repos.upstream_assets_repository.["derived_asset"]'
-        )
+        derived_asset = next(node for node in asset_nodes if node["id"] == "w.derived_asset")
         dependent_asset_keys = [
             {"path": ["downstream_asset1"]},
             {"path": ["downstream_asset2"]},
@@ -3949,7 +4450,7 @@ def get_partitioned_asset_repo():
 
 def test_1d_subset_backcompat():
     with instance_for_test(synchronous_run_coordinator=True) as instance:
-        instance.can_read_asset_status_cache = lambda: False
+        instance.can_read_asset_status_cache = lambda: False  # ty: ignore[invalid-assignment]
         assert instance.can_read_asset_status_cache() is False
 
         with define_out_of_process_context(
@@ -4032,7 +4533,7 @@ def test_1d_subset_backcompat():
 
 def test_2d_subset_backcompat():
     with instance_for_test(synchronous_run_coordinator=True) as instance:
-        instance.can_read_asset_status_cache = lambda: False
+        instance.can_read_asset_status_cache = lambda: False  # ty: ignore[invalid-assignment]
         assert instance.can_read_asset_status_cache() is False
 
         with define_out_of_process_context(
@@ -4106,6 +4607,20 @@ def test_concurrency_assets(graphql_context: WorkspaceRequestContext):
     assert _graphql_pool(AssetKey(["concurrency_asset"])) == {"foo"}
     assert _graphql_pool(AssetKey(["concurrency_graph_asset"])) == {"bar", "baz"}
     assert _graphql_pool(AssetKey(["concurrency_multi_asset_1"])) == {"buzz"}
+
+
+def test_legacy_freshness_policy_killswitch(graphql_context: WorkspaceRequestContext, monkeypatch):
+    monkeypatch.setenv("DAGSTER_LEGACY_FRESHNESS_POLICY_KILLSWITCH", "true")
+    result = execute_dagster_graphql(graphql_context, GET_FRESHNESS_INFO)
+
+    assert result.data
+    assert result.data["assetNodes"]
+
+    fresh_diamond_bottom = next(
+        a for a in result.data["assetNodes"] if a["id"] == "w.fresh_diamond_bottom"
+    )
+    assert fresh_diamond_bottom["freshnessInfo"] is None
+    assert fresh_diamond_bottom["freshnessPolicy"] is None
 
 
 class TestAssetEventHistory(ExecutingGraphQLContextTestMatrix):
@@ -4448,3 +4963,149 @@ class TestAssetEventHistory(ExecutingGraphQLContextTestMatrix):
             if min_timestamp_seen:
                 assert int(event["timestamp"]) <= min_timestamp_seen
             min_timestamp_seen = int(event["timestamp"])
+
+
+ASSETS_FOR_SAME_STORAGE_ADDRESS_QUERY = """
+    query AssetsForSameStorageAddressQuery($assetKey: AssetKeyInput!) {
+        assetNodeOrError(assetKey: $assetKey) {
+            __typename
+            ... on AssetNode {
+                assetKey {
+                    path
+                }
+                assetsForSameStorageAddress {
+                    assetKey {
+                        path
+                    }
+                }
+            }
+        }
+    }
+"""
+
+
+class TestAssetsForSameStorageAddress(ExecutingGraphQLContextTestMatrix):
+    def test_assets_for_same_storage_address(self, graphql_context: WorkspaceRequestContext):
+        # Test asset1 finds asset2 (case-insensitive)
+        result = execute_dagster_graphql(
+            graphql_context,
+            ASSETS_FOR_SAME_STORAGE_ADDRESS_QUERY,
+            variables={"assetKey": {"path": ["table_asset_1"]}},
+        )
+        assert result.data
+        asset_node = result.data["assetNodeOrError"]
+        assert asset_node["__typename"] == "AssetNode"
+        same_storage_address_keys = {
+            tuple(a["assetKey"]["path"]) for a in asset_node["assetsForSameStorageAddress"]
+        }
+        assert same_storage_address_keys == {("table_asset_2",)}
+
+    def test_assets_for_same_storage_address_reverse(
+        self, graphql_context: WorkspaceRequestContext
+    ):
+        # Test asset2 (uppercase) finds asset1 (lowercase)
+        result = execute_dagster_graphql(
+            graphql_context,
+            ASSETS_FOR_SAME_STORAGE_ADDRESS_QUERY,
+            variables={"assetKey": {"path": ["table_asset_2"]}},
+        )
+        assert result.data
+        asset_node = result.data["assetNodeOrError"]
+        assert asset_node["__typename"] == "AssetNode"
+        same_storage_address_keys = {
+            tuple(a["assetKey"]["path"]) for a in asset_node["assetsForSameStorageAddress"]
+        }
+        assert same_storage_address_keys == {("table_asset_1",)}
+
+    def test_assets_for_same_storage_address_no_match(
+        self, graphql_context: WorkspaceRequestContext
+    ):
+        # Test asset3 has unique table, returns empty
+        result = execute_dagster_graphql(
+            graphql_context,
+            ASSETS_FOR_SAME_STORAGE_ADDRESS_QUERY,
+            variables={"assetKey": {"path": ["table_asset_3"]}},
+        )
+        assert result.data
+        asset_node = result.data["assetNodeOrError"]
+        assert asset_node["assetsForSameStorageAddress"] == []
+
+    def test_assets_for_same_storage_address_no_metadata(
+        self, graphql_context: WorkspaceRequestContext
+    ):
+        # Test asset4 has no table_name, returns empty
+        result = execute_dagster_graphql(
+            graphql_context,
+            ASSETS_FOR_SAME_STORAGE_ADDRESS_QUERY,
+            variables={"assetKey": {"path": ["table_asset_4"]}},
+        )
+        assert result.data
+        asset_node = result.data["assetNodeOrError"]
+        assert asset_node["assetsForSameStorageAddress"] == []
+
+
+STORAGE_ADDRESS_QUERY = """
+    query StorageAddressQuery($assetKey: AssetKeyInput!) {
+        assetNodeOrError(assetKey: $assetKey) {
+            __typename
+            ... on AssetNode {
+                storageAddress {
+                    storageKind
+                    tableName
+                }
+            }
+        }
+    }
+"""
+
+
+class TestAssetNodeStorageAddress(ExecutingGraphQLContextTestMatrix):
+    def test_storage_address_lowercase(self, graphql_context: WorkspaceRequestContext):
+        # Already-lowercase table_name passes through unchanged; no kind tag -> storageKind null.
+        result = execute_dagster_graphql(
+            graphql_context,
+            STORAGE_ADDRESS_QUERY,
+            variables={"assetKey": {"path": ["table_asset_1"]}},
+        )
+        assert result.data
+        assert result.data["assetNodeOrError"]["storageAddress"] == {
+            "storageKind": None,
+            "tableName": "db.schema.shared_table",
+        }
+
+    def test_storage_address_uppercase_normalized(self, graphql_context: WorkspaceRequestContext):
+        # Uppercase metadata is normalized to lowercase so the frontend can compare directly.
+        result = execute_dagster_graphql(
+            graphql_context,
+            STORAGE_ADDRESS_QUERY,
+            variables={"assetKey": {"path": ["table_asset_2"]}},
+        )
+        assert result.data
+        assert result.data["assetNodeOrError"]["storageAddress"] == {
+            "storageKind": None,
+            "tableName": "db.schema.shared_table",
+        }
+
+    def test_storage_address_missing_returns_null(self, graphql_context: WorkspaceRequestContext):
+        # Asset with no table_name metadata returns null storageAddress.
+        result = execute_dagster_graphql(
+            graphql_context,
+            STORAGE_ADDRESS_QUERY,
+            variables={"assetKey": {"path": ["table_asset_4"]}},
+        )
+        assert result.data
+        assert result.data["assetNodeOrError"]["storageAddress"] is None
+
+    def test_storage_address_with_storage_kind(self, graphql_context: WorkspaceRequestContext):
+        # Asset with the dagster/storage_kind metadata field exposes it on storageAddress so
+        # the frontend doesn't have to dig through metadata.
+        result = execute_dagster_graphql(
+            graphql_context,
+            STORAGE_ADDRESS_QUERY,
+            variables={"assetKey": {"path": ["table_asset_with_kind"]}},
+        )
+        assert result.data
+        assert result.data["assetNodeOrError"]["storageAddress"] == {
+            "storageKind": "snowflake",
+            "tableName": "db.schema.snowflake_table",
+        }

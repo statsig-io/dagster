@@ -1,6 +1,6 @@
 from collections.abc import Iterator, Mapping
 from datetime import datetime, timezone
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from dagster import (
     AssetExecutionContext,
@@ -90,7 +90,7 @@ class DagsterDltResource(ConfigurableResource):
 
     def extract_resource_metadata(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         resource: DltResource,
         load_info: LoadInfo,
         dlt_pipeline: Pipeline,
@@ -137,7 +137,7 @@ class DagsterDltResource(ConfigurableResource):
         if rows_loaded:
             base_metadata["rows_loaded"] = MetadataValue.int(rows_loaded)
 
-        schema: Optional[str] = None
+        schema: str | None = None
         for load_package in load_info_dict.get("load_packages", []):
             for table in load_package.get("tables", []):
                 if table.get("name") == normalized_table_name:
@@ -146,7 +146,7 @@ class DagsterDltResource(ConfigurableResource):
             if schema:
                 break
 
-        destination_name: Optional[str] = base_metadata.get("destination_name")
+        destination_name: str | None = base_metadata.get("destination_name")
         table_name = None
         if destination_name and schema:
             table_name = ".".join([destination_name, schema, normalized_table_name])
@@ -168,6 +168,7 @@ class DagsterDltResource(ConfigurableResource):
             **TableMetadataSet(
                 column_schema=table_schema,
                 table_name=table_name,
+                storage_kind=destination_name,
             ),
         }
 
@@ -176,10 +177,11 @@ class DagsterDltResource(ConfigurableResource):
     @public
     def run(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
-        dlt_source: Optional[DltSource] = None,
-        dlt_pipeline: Optional[Pipeline] = None,
-        dagster_dlt_translator: Optional[DagsterDltTranslator] = None,
+        context: OpExecutionContext | AssetExecutionContext,
+        # Use Optional because the Dlt metaclass doesn't support __or__ (|operator)
+        dlt_source: Optional[DltSource] = None,  # noqa: UP045
+        dlt_pipeline: Optional[Pipeline] = None,  # noqa: UP045
+        dagster_dlt_translator: DagsterDltTranslator | None = None,
         **kwargs,
     ) -> DltEventIterator[DltEventType]:
         """Runs the dlt pipeline with subset support.
@@ -237,7 +239,7 @@ class DagsterDltResource(ConfigurableResource):
 
     def _run(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         dlt_source: DltSource,
         dlt_pipeline: Pipeline,
         dagster_dlt_translator: DagsterDltTranslator,
@@ -280,6 +282,18 @@ class DagsterDltResource(ConfigurableResource):
                     if dlt_source_resource
                 ]
             )
+
+        # Dlt keeps some local state that interferes with next runs.
+        # This is annoying when an asset fails and running a different one on the same pipeline
+        # would just pick up the failing job and fail again.
+        # When restore_from_destination is enabled (default), we can safely drop all local state
+        # because it will be restored from the destination.
+        # When restore_from_destination is disabled, we only drop pending packages to avoid
+        # wiping incremental loading cursors that can't be recovered from the destination.
+        if dlt_pipeline.config.restore_from_destination:
+            dlt_pipeline.drop()
+        else:
+            dlt_pipeline.drop_pending_packages()
 
         load_info = dlt_pipeline.run(dlt_source, **kwargs)
 

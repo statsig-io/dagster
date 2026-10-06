@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from typing import Any, Optional
+from typing import Any
 
 from dagster import InputContext, MetadataValue, OutputContext, TableColumn, TableSchema
 from dagster._core.definitions.metadata import RawMetadataValue
@@ -11,7 +11,7 @@ from pyspark.sql.types import StructType
 
 
 def _get_bigquery_write_options(
-    config: Optional[Mapping[str, Any]], table_slice: TableSlice
+    config: Mapping[str, Any] | None, table_slice: TableSlice
 ) -> Mapping[str, str]:
     conf = {
         "table": f"{table_slice.database}.{table_slice.schema}.{table_slice.table}",
@@ -44,7 +44,7 @@ class BigQueryPySparkTypeHandler(DbTypeHandler[DataFrame]):
                     return [BigQueryPySparkTypeHandler()]
 
             @asset(
-                key_prefix=["my_dataset"]  # my_dataset will be used as the dataset in BigQuery
+                key_prefix=["my_dataset"],  # my_dataset will be used as the dataset in BigQuery
             )
             def my_table() -> pyspark.sql.DataFrame:  # the name of the asset will be the table name
                 ...
@@ -58,14 +58,19 @@ class BigQueryPySparkTypeHandler(DbTypeHandler[DataFrame]):
 
     """
 
-    def handle_output(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def handle_output(  # ty: ignore[invalid-method-override]
         self, context: OutputContext, table_slice: TableSlice, obj: DataFrame, _
     ) -> Mapping[str, RawMetadataValue]:
-        options = _get_bigquery_write_options(context.resource_config, table_slice)
+        if obj.isEmpty():
+            context.log.warning(
+                "Skipping BigQuery write for empty DataFrame. An empty table will not be created."
+            )
+        else:
+            options = _get_bigquery_write_options(context.resource_config, table_slice)
 
-        with_uppercase_cols = obj.toDF(*[c.upper() for c in obj.columns])
+            with_uppercase_cols = obj.toDF(*[c.upper() for c in obj.columns])
 
-        with_uppercase_cols.write.format("bigquery").options(**options).mode("append").save()
+            with_uppercase_cols.write.format("bigquery").options(**options).mode("append").save()
 
         return {
             "dataframe_columns": MetadataValue.table_schema(
@@ -78,9 +83,9 @@ class BigQueryPySparkTypeHandler(DbTypeHandler[DataFrame]):
             ),
         }
 
-    def load_input(self, context: InputContext, table_slice: TableSlice, _) -> DataFrame:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def load_input(self, context: InputContext, table_slice: TableSlice, _) -> DataFrame:  # ty: ignore[invalid-method-override]
         options = _get_bigquery_read_options(table_slice)
-        spark = SparkSession.builder.getOrCreate()  # type: ignore
+        spark = SparkSession.builder.getOrCreate()
 
         if table_slice.partition_dimensions and len(context.asset_partition_keys) == 0:
             return spark.createDataFrame([], StructType([]))
@@ -115,7 +120,7 @@ Examples:
         from dagster import Definitions
 
         @asset(
-            key_prefix=["my_dataset"]  # will be used as the dataset in BigQuery
+            key_prefix=["my_dataset"],  # will be used as the dataset in BigQuery
         )
         def my_table() -> pd.DataFrame:  # the name of the asset will be the table name
             ...
@@ -124,7 +129,7 @@ Examples:
             assets=[my_table],
             resources={
                 "io_manager": bigquery_pyspark_io_manager.configured({
-                    "project" : {"env": "GCP_PROJECT"}
+                    "project": {"env": "GCP_PROJECT"}
                 })
             }
         )
@@ -137,8 +142,8 @@ Examples:
         Definitions(
             assets=[my_table],
             resources={
-                    "io_manager": bigquery_pandas_io_manager.configured({
-                        "project" : {"env": "GCP_PROJECT"}
+                    "io_manager": bigquery_pyspark_io_manager.configured({
+                        "project": {"env": "GCP_PROJECT"},
                         "dataset": "my_dataset"
                     })
                 }
@@ -231,7 +236,7 @@ class BigQueryPySparkIOManager(BigQueryIOManager):
             Definitions(
                 assets=[my_table],
                 resources={
-                        "io_manager": BigQueryPySparkIOManager(project=EnvVar("GCP_PROJECT", dataset="my_dataset")
+                        "io_manager": BigQueryPySparkIOManager(project=EnvVar("GCP_PROJECT"), dataset="my_dataset")
                     }
             )
 
@@ -297,5 +302,5 @@ class BigQueryPySparkIOManager(BigQueryIOManager):
         return [BigQueryPySparkTypeHandler()]
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         return DataFrame

@@ -3,6 +3,7 @@ import subprocess
 
 import pytest
 import yaml
+from dagster_shared.yaml_utils import safe_load_yaml
 from dagster_test.fixtures.docker_compose import (
     connect_container_to_network,
     disconnect_container_from_network,
@@ -21,7 +22,7 @@ def environ(monkeypatch, test_id):
 def other_docker_compose_yml(tmpdir):
     original = os.path.join(os.path.dirname(__file__), "docker-compose.yml")
     with open(original, encoding="utf8") as f:
-        docker_compose_yml = yaml.safe_load(f)
+        docker_compose_yml = safe_load_yaml(f)
 
     docker_compose_yml["services"]["server"]["container_name"] = "other_server"
 
@@ -51,13 +52,15 @@ def test_docker_compose_cm_with_yml(other_docker_compose_yml, docker_compose_cm,
 
 
 def test_docker_compose_cm_with_network(request, docker_compose_cm, retrying_requests):
+    env = os.environ.copy()
+    env["DOCKER_API_VERSION"] = "1.41"
     with docker_compose_cm(
         docker_compose_yml=os.path.join(
             os.path.dirname(request.fspath), "networked-docker-compose.yml"
         ),
         network_name="network",
     ) as docker_compose:
-        assert "network" in subprocess.check_output(["docker", "network", "ls"]).decode()
+        assert "network" in subprocess.check_output(["docker", "network", "ls"], env=env).decode()
         assert retrying_requests.get(f"http://{docker_compose['server']}:8000").ok
 
 
@@ -73,10 +76,12 @@ def test_docker_compose_cm_single_service(request, docker_compose_cm, retrying_r
 
 
 def test_docker_compose_cm_destroys_volumes(docker_compose_cm, test_id):
+    env = os.environ.copy()
+    env["DOCKER_API_VERSION"] = "1.41"
     with docker_compose_cm():
-        assert subprocess.check_output(["docker", "volume", "inspect", test_id])
+        assert subprocess.check_output(["docker", "volume", "inspect", test_id], env=env)
     with pytest.raises(Exception):
-        subprocess.check_output(["docker", "volume", "inspect", test_id])
+        subprocess.check_output(["docker", "volume", "inspect", test_id], env=env)
 
 
 def test_connect_container_to_network(docker_compose_cm, other_docker_compose_yml, caplog):

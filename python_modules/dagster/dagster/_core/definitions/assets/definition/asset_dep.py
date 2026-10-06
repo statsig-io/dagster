@@ -1,14 +1,13 @@
-from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, NamedTuple, Optional, Union
+from collections.abc import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, NamedTuple, Union
 
 import dagster._check as check
-from dagster._annotations import PublicAttr
+from dagster._annotations import PublicAttr, public
 from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
 from dagster._core.definitions.events import AssetKey, CoercibleToAssetKey
 from dagster._core.definitions.partitions.mapping import PartitionMapping
 from dagster._core.definitions.partitions.utils import warn_if_partition_mapping_not_builtin
 from dagster._core.errors import DagsterInvalidDefinitionError, DagsterInvariantViolationError
-from dagster._utils.warnings import deprecation_warning
 
 if TYPE_CHECKING:
     from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
@@ -21,12 +20,14 @@ CoercibleToAssetDep = Union[
 ]
 
 
+@public
 class AssetDep(
     NamedTuple(
         "_AssetDep",
         [
             ("asset_key", PublicAttr[AssetKey]),
-            ("partition_mapping", PublicAttr[Optional[PartitionMapping]]),
+            ("partition_mapping", PublicAttr[PartitionMapping | None]),
+            ("metadata", Mapping[str, Any]),
         ],
     )
 ):
@@ -58,7 +59,8 @@ class AssetDep(
         cls,
         asset: Union[CoercibleToAssetKey, "AssetSpec", "AssetsDefinition", "SourceAsset"],
         *,
-        partition_mapping: Optional[PartitionMapping] = None,
+        partition_mapping: PartitionMapping | None = None,
+        metadata: Mapping[str, Any] | None = None,
     ):
         from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
         from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
@@ -92,6 +94,7 @@ class AssetDep(
                 "partition_mapping",
                 PartitionMapping,
             ),
+            metadata=check.opt_mapping_param(metadata, "metadata", key_type=str),
         )
 
     @staticmethod
@@ -114,22 +117,13 @@ def _get_asset_key(arg: "CoercibleToAssetDep") -> AssetKey:
 
 
 def coerce_to_deps_and_check_duplicates(
-    coercible_to_asset_deps: Optional[Iterable["CoercibleToAssetDep"]],
-    key: Optional[Union[AssetKey, AssetCheckKey]],
+    coercible_to_asset_deps: Iterable["CoercibleToAssetDep"] | None,
+    key: AssetKey | AssetCheckKey | None,
 ) -> Sequence[AssetDep]:
     from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
 
     if not coercible_to_asset_deps:
         return []
-
-    # when AssetKey was a plain NamedTuple, it also happened to be Iterable[CoercibleToAssetKey]
-    # so continue to support it here
-    if isinstance(coercible_to_asset_deps, AssetKey):
-        deprecation_warning(
-            subject="Passing a single AssetKey to deps",
-            breaking_version="1.10.0",
-        )
-        coercible_to_asset_deps = [coercible_to_asset_deps]
 
     # expand any multi_assets into a list of keys
     all_deps = []
