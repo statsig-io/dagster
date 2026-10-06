@@ -1,10 +1,12 @@
 import pdb
 import sys
 import types
-from typing import Optional
+
+from dagster._annotations import public
 
 
 # From https://stackoverflow.com/questions/4716533/how-to-attach-debugger-to-a-python-subproccess
+@public
 class ForkedPdb(pdb.Pdb):
     """A pdb subclass that may be used from a forked multiprocessing child.
 
@@ -28,8 +30,8 @@ class ForkedPdb(pdb.Pdb):
 
     def interaction(
         self,
-        frame: Optional[types.FrameType],
-        traceback: Optional[types.TracebackType],
+        frame: types.FrameType | None,
+        traceback: types.TracebackType | None,
     ):
         _stdin = sys.stdin
         try:

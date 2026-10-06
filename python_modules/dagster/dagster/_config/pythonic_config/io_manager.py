@@ -1,9 +1,10 @@
 from abc import abstractmethod
 from collections.abc import Mapping
-from typing import Any, Generic, Optional, Union, cast
+from typing import Any, Generic, cast
 
 from typing_extensions import TypeVar
 
+from dagster._annotations import public
 from dagster._config.pythonic_config.attach_other_object_to_context import (
     IAttachDifferentObjectToOpContext as IAttachDifferentObjectToOpContext,
 )
@@ -26,7 +27,7 @@ from dagster._utils.cached_method import cached_method
 TIOManagerValue = TypeVar("TIOManagerValue", bound=IOManager)
 
 
-class ConfigurableIOManagerFactoryResourceDefinition(  # pyright: ignore[reportIncompatibleMethodOverride]
+class ConfigurableIOManagerFactoryResourceDefinition(  # ty: ignore[invalid-method-override]
     NestedResourcesResourceDefinition,
     IOManagerDefinition,
 ):
@@ -35,11 +36,11 @@ class ConfigurableIOManagerFactoryResourceDefinition(  # pyright: ignore[reportI
         configurable_resource_cls: type,
         resource_fn: ResourceFunction,
         config_schema: Any,
-        description: Optional[str],
+        description: str | None,
         nested_resources: Mapping[str, Any],
         nested_partial_resources: Mapping[str, Any],
-        input_config_schema: Optional[Union[CoercableToConfigSchema, type[Config]]] = None,
-        output_config_schema: Optional[Union[CoercableToConfigSchema, type[Config]]] = None,
+        input_config_schema: CoercableToConfigSchema | type[Config] | None = None,
+        output_config_schema: CoercableToConfigSchema | type[Config] | None = None,
         dagster_maintained: bool = False,
     ):
         input_config_schema_resolved: CoercableToConfigSchema = (
@@ -81,6 +82,7 @@ class ConfigurableIOManagerFactoryResourceDefinition(  # pyright: ignore[reportI
         return self._nested_partial_resources
 
 
+@public
 class ConfigurableIOManagerFactory(ConfigurableResourceFactory, Generic[TResValue]):
     """Base class for Dagster IO managers that utilize structured config. This base class
     is useful for cases in which the returned IO manager is not the same as the class itself
@@ -145,7 +147,7 @@ class ConfigurableIOManagerFactory(ConfigurableResourceFactory, Generic[TResValu
         return PartialIOManager(resource_cls=cls, data=kwargs)
 
     @cached_method
-    def get_resource_definition(self) -> ConfigurableIOManagerFactoryResourceDefinition:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_resource_definition(self) -> ConfigurableIOManagerFactoryResourceDefinition:
         return ConfigurableIOManagerFactoryResourceDefinition(
             self.__class__,
             resource_fn=self._get_initialize_and_run_fn(),
@@ -161,13 +163,13 @@ class ConfigurableIOManagerFactory(ConfigurableResourceFactory, Generic[TResValu
     @classmethod
     def input_config_schema(
         cls,
-    ) -> Optional[Union[CoercableToConfigSchema, type[Config]]]:
+    ) -> CoercableToConfigSchema | type[Config] | None:
         return None
 
     @classmethod
     def output_config_schema(
         cls,
-    ) -> Optional[Union[CoercableToConfigSchema, type[Config]]]:
+    ) -> CoercableToConfigSchema | type[Config] | None:
         return None
 
 
@@ -176,7 +178,7 @@ class PartialIOManager(
     Generic[TResValue],
 ):
     @cached_method
-    def get_resource_definition(self) -> ConfigurableIOManagerFactoryResourceDefinition:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_resource_definition(self) -> ConfigurableIOManagerFactoryResourceDefinition:
         input_config_schema = None
         output_config_schema = None
         if safe_is_subclass(self.resource_cls, ConfigurableIOManagerFactory):
@@ -199,6 +201,7 @@ class PartialIOManager(
         )
 
 
+@public
 class ConfigurableIOManager(ConfigurableIOManagerFactory, IOManager):
     """Base class for Dagster IO managers that utilize structured config.
 

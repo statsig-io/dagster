@@ -29,7 +29,7 @@ To attach schema metadata to an asset, you will need to:
 
 Below are two examples of how to attach column schema metadata to an asset, one as definition metadata and one as runtime metadata:
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/metadata-tags/asset_column_schema.py" title="src/<project_name>/defs/assets.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/build/metadata-tags/asset_column_schema.py" title="src/<project_name>/defs/assets.py" />
 
 The schema for `my_asset` will be visible in the Dagster UI.
 
@@ -39,7 +39,7 @@ Dagster's dbt integration enables automatically attaching column schema metadata
 
 ## Attaching row count
 
-Row count metadata can be attached to Dagster assets as [runtime metadata](index.md#runtime-metadata) to provide additional context about the number of rows in a materialized table. This will be highlighted in the Dagster UI. For example:
+Row count metadata can be attached to Dagster assets as [runtime metadata](/guides/build/assets/metadata-and-tags#runtime-metadata) to provide additional context about the number of rows in a materialized table. This will be highlighted in the Dagster UI. For example:
 
 ![Row count for an asset in the Dagster UI](/images/guides/build/assets/metadata-tags/metadata-row-count.png)
 
@@ -47,7 +47,7 @@ In addition to showing the latest row count, Dagster will let you track changes 
 
 To attach row count metadata to an asset, you will need to attach a numerical value to the `dagster/row_count` key in the metadata parameter of the <PyObject section="assets" module="dagster" object="MaterializeResult" /> object returned by the asset function. For example:
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/metadata-tags/asset_row_count.py" title="src/<project_name>/defs/assets.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/build/metadata-tags/asset_row_count.py" title="src/<project_name>/defs/assets.py" />
 
 ## Attaching column-level lineage
 
@@ -65,4 +65,4 @@ This function creates asset checks which compare the current materialization's s
 
 Let's define a column schema change check for our asset from the example above that defines table schema at runtime, `my_other_asset`.
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/metadata-tags/schema_change_checks.py" startAfter="start_check" endBefore="end_check" title="src/<project_name>/defs/assets.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/build/metadata-tags/schema_change_checks.py" startAfter="start_check" endBefore="end_check" title="src/<project_name>/defs/assets.py" />

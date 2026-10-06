@@ -1,14 +1,18 @@
 from collections.abc import Iterable, Mapping, Sequence
-from typing import AbstractSet, Any, Optional  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Any  # noqa: UP035
 
 from dagster_shared.utils.hash import make_hashable
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
 from dagster._core.definitions.events import AssetKey
 from dagster._core.definitions.repository_definition import SINGLETON_REPOSITORY_NAME
 from dagster._record import IHaveNew, record, record_custom
 from dagster._serdes import create_snapshot_id, whitelist_for_serdes
+
+if TYPE_CHECKING:
+    from dagster._core.definitions.asset_key import AssetOrCheckKey
 
 
 @record_custom
@@ -18,18 +22,18 @@ class JobSubsetSelector(IHaveNew):
     location_name: str
     repository_name: str
     job_name: str
-    op_selection: Optional[Sequence[str]]
-    asset_selection: Optional[AbstractSet[AssetKey]]
-    asset_check_selection: Optional[AbstractSet[AssetCheckKey]]
+    op_selection: Sequence[str] | None
+    asset_selection: AbstractSet[AssetKey] | None
+    asset_check_selection: AbstractSet[AssetCheckKey] | None
 
     def __new__(
         cls,
         location_name: str,
         repository_name: str,
         job_name: str,
-        op_selection: Optional[Sequence[str]],
-        asset_selection: Optional[Iterable[AssetKey]] = None,
-        asset_check_selection: Optional[Iterable[AssetCheckKey]] = None,
+        op_selection: Sequence[str] | None,
+        asset_selection: Iterable[AssetKey] | None = None,
+        asset_check_selection: Iterable[AssetCheckKey] | None = None,
     ):
         # coerce iterables to sets
         asset_selection = frozenset(asset_selection) if asset_selection else None
@@ -58,7 +62,7 @@ class JobSubsetSelector(IHaveNew):
     def is_subset_selection(self) -> bool:
         return bool(self.op_selection or self.asset_selection or self.asset_check_selection)
 
-    def with_op_selection(self, op_selection: Optional[Sequence[str]]) -> "JobSubsetSelector":
+    def with_op_selection(self, op_selection: Sequence[str] | None) -> "JobSubsetSelector":
         check.invariant(
             self.op_selection is None,
             f"Can not invoke with_op_selection when op_selection={self.op_selection} is"
@@ -80,9 +84,17 @@ class JobSubsetSelector(IHaveNew):
             self._hash = hash(make_hashable(self))
         return self._hash
 
+    @property
+    def entity_selection(self) -> AbstractSet["AssetOrCheckKey"] | None:
+        if self.asset_selection is None and self.asset_check_selection is None:
+            return None
+
+        return (self.asset_selection or set()) | (self.asset_check_selection or set())
+
 
 @whitelist_for_serdes
 @record_custom
+@public
 class JobSelector(IHaveNew):
     location_name: str
     repository_name: str
@@ -91,8 +103,8 @@ class JobSelector(IHaveNew):
     def __new__(
         cls,
         location_name: str,
-        repository_name: Optional[str] = None,
-        job_name: Optional[str] = None,
+        repository_name: str | None = None,
+        job_name: str | None = None,
     ):
         check.invariant(
             job_name is not None,
@@ -122,10 +134,11 @@ class JobSelector(IHaveNew):
 
     @staticmethod
     def from_graphql_input(graphql_data):
+        job_name = graphql_data.get("jobName") or graphql_data.get("pipelineName")
         return JobSelector(
             location_name=graphql_data["repositoryLocationName"],
             repository_name=graphql_data["repositoryName"],
-            job_name=graphql_data["jobName"],
+            job_name=job_name,
         )
 
     @property
@@ -136,6 +149,7 @@ class JobSelector(IHaveNew):
         )
 
 
+@public
 @whitelist_for_serdes
 @record
 class RepositorySelector:
@@ -211,6 +225,14 @@ class ScheduleSelector:
             schedule_name=graphql_data["scheduleName"],
         )
 
+    @staticmethod
+    def from_instigator_selector(selector: "InstigatorSelector"):
+        return ScheduleSelector(
+            location_name=selector.location_name,
+            repository_name=selector.repository_name,
+            schedule_name=selector.name,
+        )
+
 
 @record
 class ResourceSelector:
@@ -255,6 +277,14 @@ class SensorSelector:
             sensor_name=graphql_data["sensorName"],
         )
 
+    @staticmethod
+    def from_instigator_selector(selector: "InstigatorSelector"):
+        return SensorSelector(
+            location_name=selector.location_name,
+            repository_name=selector.repository_name,
+            sensor_name=selector.name,
+        )
+
     @property
     def instigator_name(self) -> str:
         return self.sensor_name
@@ -284,6 +314,10 @@ class InstigatorSelector:
 
     def get_id(self) -> str:
         return create_snapshot_id(self)
+
+    @property
+    def instigator_name(self) -> str:
+        return self.name
 
 
 @record
@@ -378,7 +412,7 @@ class PartitionsByAssetSelector:
     """The information needed to define partitions selection for a given asset key."""
 
     asset_key: AssetKey
-    partitions: Optional[PartitionsSelector] = None
+    partitions: PartitionsSelector | None = None
 
     def to_graphql_input(self):
         return {

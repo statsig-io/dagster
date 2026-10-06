@@ -2,22 +2,18 @@ import functools
 import sys
 import textwrap
 import traceback
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from itertools import chain
-from typing import TYPE_CHECKING, Annotated, Any, Callable, Optional, TypeVar, Union
+from types import UnionType
+from typing import TYPE_CHECKING, Annotated, Any, TypeVar, Union
 
 from pydantic import BaseModel, ConfigDict
 
 from dagster import _check as check
 from dagster._annotations import public
 from dagster.components.resolved.errors import ResolutionException
-
-try:
-    # this type only exists in python 3.10+
-    from types import UnionType  # type: ignore
-except ImportError:
-    UnionType = Union
+from dagster.components.resolved.form_config import ComponentFormConfig
 
 if TYPE_CHECKING:
     from dagster.components.resolved.context import ResolutionContext
@@ -122,13 +118,15 @@ class Resolver:
 
     def __init__(
         self,
-        fn: Union[ParentFn, AttrWithContextFn, Callable[["ResolutionContext", Any], Any]],
+        fn: ParentFn | AttrWithContextFn | Callable[["ResolutionContext", Any], Any],
         *,
-        model_field_name: Optional[str] = None,
-        model_field_type: Optional[type] = None,
-        description: Optional[str] = None,
-        examples: Optional[list[Any]] = None,
+        model_field_name: str | None = None,
+        model_field_type: type | UnionType | None = None,
+        description: str | None = None,
+        examples: list[Any] | None = None,
         inject_before_resolve: bool = True,
+        json_schema_extra: dict[str, Any] | None = None,
+        form_config: ComponentFormConfig | None = None,
     ):
         """Resolve this field by invoking the function which will receive the corresponding field value
         from the model.
@@ -145,6 +143,10 @@ class Resolver:
                 loading from yaml.
             inject_before_resolve (bool): If True (Default) string values will be evaluated
                 to perform possible template resolution before calling the resolver function.
+            json_schema_extra (Optional[dict[str, Any]]): Extra entries to merge into the
+                generated JSON schema for this field. For UI hints, prefer ``form_config``.
+            form_config (Optional[ComponentFormConfig]): Typed UI metadata for this field.
+                Merged into ``json_schema_extra``; ``form_config`` values take precedence.
         """
         if not isinstance(fn, (ParentFn, AttrWithContextFn)):
             if not callable(fn):
@@ -163,6 +165,12 @@ class Resolver:
         self.examples = examples
         self.inject_before_resolve = inject_before_resolve
 
+        merged: dict[str, Any] = {
+            **(json_schema_extra or {}),
+            **(form_config.to_field_json_schema_extra() if form_config else {}),
+        }
+        self.json_schema_extra: dict[str, Any] | None = merged or None
+
         super().__init__()
 
     @staticmethod
@@ -175,16 +183,18 @@ class Resolver:
         field_types = tuple(r.model_field_type or t for t, r in arg_resolver_pairs)
         return Resolver(
             fn=functools.partial(resolve_union, [r for _, r in arg_resolver_pairs]),
-            model_field_type=Union[field_types],  # type: ignore
+            model_field_type=Union[field_types],  # noqa: UP007  # ty: ignore[invalid-argument-type]
         )
 
     @staticmethod
     def default(
         *,
-        model_field_name: Optional[str] = None,
-        model_field_type: Optional[type] = None,
-        description: Optional[str] = None,
-        examples: Optional[list[Any]] = None,
+        model_field_name: str | None = None,
+        model_field_type: type | UnionType | None = None,
+        description: str | None = None,
+        examples: list[Any] | None = None,
+        json_schema_extra: dict[str, Any] | None = None,
+        form_config: ComponentFormConfig | None = None,
     ):
         """Default recursive resolution."""
         return Resolver(
@@ -194,12 +204,14 @@ class Resolver:
             description=description,
             examples=examples,
             inject_before_resolve=False,
+            json_schema_extra=json_schema_extra,
+            form_config=form_config,
         )
 
     @staticmethod
     def passthrough(
-        description: Optional[str] = None,
-        examples: Optional[list[Any]] = None,
+        description: str | None = None,
+        examples: list[Any] | None = None,
     ):
         """Resolve this field by returning the underlying value, without resolving any
         nested resolvers or processing any template variables.
@@ -256,6 +268,7 @@ class Resolver:
     def with_outer_resolver(self, outer: "Resolver"):
         description = outer.description or self.description
         examples = outer.examples or self.examples
+        json_schema_extra = outer.json_schema_extra or self.json_schema_extra
         return Resolver(
             self.fn,
             model_field_name=self.model_field_name,
@@ -263,6 +276,7 @@ class Resolver:
             description=description,
             examples=examples,
             inject_before_resolve=self.inject_before_resolve,
+            json_schema_extra=json_schema_extra,
         )
 
 

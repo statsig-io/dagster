@@ -3,25 +3,24 @@ description: Configure PingOne to use single sign-on (SSO) with your Dagster+ or
 sidebar_label: PingOne SSO
 sidebar_position: 8260
 title: Setting up PingOne SSO for Dagster+
+tags: [dagster-plus-feature]
 ---
+
+import TestSSO from '@site/docs/partials/\_TestSSO.md';
 
 In this guide, you'll configure PingOne to use single sign-on (SSO) with your Dagster+ organization.
 
-<details>
-  <summary>Prerequisites</summary>
+## Prerequisites
 
 To complete the steps in this guide, you'll need:
 
 - **The following in PingOne:**
   - An existing PingOne account
   - Organization admin permissions
-- **To install the [`dagster-cloud` CLI](/deployment/dagster-plus/management/dagster-cloud-cli/installing-and-configuring)**
+- **To install the [`dg` CLI](/api/clis/dg-cli/dg-cli-configuration#installation)**
 - **The following in Dagster+:**
   - A Pro plan
-  - [Access to a user token](/deployment/dagster-plus/management/tokens/user-tokens)
   - [Organization Admin permissions](/deployment/dagster-plus/authentication-and-access-control/rbac/user-roles-permissions) in your organization
-
-</details>
 
 ## Step 1: Add the Dagster+ app in PingOne \{#dagster-app}
 
@@ -50,16 +49,22 @@ To complete the steps in this guide, you'll need:
 
     1.  Fill in the following:
 
-        - **ACS URLs** and **Entity ID**: Copy and paste the following URL, replacing `<organization_name>` with your Dagster+ organization name:
+    - **ACS URLs** and **Entity ID**: Copy and paste the following URL, replacing `<organization_name>` with your Dagster+ organization name:
 
-          ```
-          https://<organization_name>.dagster.cloud/auth/saml/consume
-          ```
+      ```shell
+      https://<organization_name>.dagster.cloud/auth/saml/consume
+      ```
 
-        - **Assertion Validity Duration**: Type `60`.
-          In the following example, the organization's name is `hooli` and the Dagster+ domain is `https://hooli.dagster.cloud`:
+      :::info EU region
 
-        ![Service Provider Details](/images/dagster-plus/features/authentication-and-access-control/pingone/service-provider-details.png)
+      For EU region customers, the URL will be `https://<organization_name>.eu.dagster.cloud/auth/saml/consume`
+
+      :::
+
+    - **Assertion Validity Duration**: Type `60`.
+      In the following example, the organization's name is `hooli` and the Dagster+ domain is `https://hooli.dagster.cloud` (or `https://hooli.eu.dagster.cloud` in the EU region):
+
+      ![Service Provider Details](/images/dagster-plus/features/authentication-and-access-control/pingone/service-provider-details.png)
 
     2.  When finished, click **Save and Continue.**
 
@@ -90,12 +95,16 @@ Next, you'll save and upload the application's SAML metadata to Dagster+. This w
    ![SAML Metadata](/images/dagster-plus/features/authentication-and-access-control/pingone/saml-metadata.png)
 
 4. When prompted, save the file to your computer.
-5. After you've downloaded the SAML metadata file, upload it to Dagster+ using the `dagster-cloud` CLI:
+5. After you've downloaded the SAML metadata file, upload it to Dagster+ using the `dg` CLI:
+
+   :::note
+
+   Before running this command, you must first log in by running `dg plus login`.
+
+   :::
 
    ```shell
-   dagster-cloud organization settings saml upload-identity-provider-metadata <path/to/metadata> \
-     --api-token=<user_token> \
-     --url https://<organization_name>.dagster.cloud
+   dg api organization saml upload <path/to/metadata>
    ```
 
 ## Step 4: Grant access to users \{#grant-access}
@@ -108,8 +117,6 @@ Next, you'll assign users to the Dagster+ application in PingOne. This will allo
    ![Assign New Login](/images/dagster-plus/features/authentication-and-access-control/pingone/new-login.png)
 
 3. Edit the policy as needed to grant users access to the application.
-
-import TestSSO from '@site/docs/partials/\_TestSSO.md';
 
 <TestSSO />
 

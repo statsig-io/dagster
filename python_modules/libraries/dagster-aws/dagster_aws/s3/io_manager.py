@@ -1,6 +1,6 @@
 import io
 import pickle
-from typing import Any, Optional, Union
+from typing import Any
 
 from dagster import (
     ConfigurableIOManager,
@@ -27,10 +27,10 @@ class PickledObjectS3IOManager(UPathIOManager):
         self,
         s3_bucket: str,
         s3_session: Any,
-        s3_prefix: Optional[str] = None,
+        s3_prefix: str | None = None,
     ):
         self.bucket = check.str_param(s3_bucket, "s3_bucket")
-        check.opt_str_param(s3_prefix, "s3_prefix")
+        s3_prefix = check.opt_str_param(s3_prefix, "s3_prefix", default="")
         self.s3 = s3_session
         self.s3.list_objects(Bucket=s3_bucket, Prefix=s3_prefix, MaxKeys=1)
         base_path = UPath(s3_prefix) if s3_prefix else None
@@ -72,8 +72,14 @@ class PickledObjectS3IOManager(UPathIOManager):
         path = self._get_path(context)
         return {"uri": MetadataValue.path(self._uri_for_path(path))}
 
-    def get_op_output_relative_path(self, context: Union[InputContext, OutputContext]) -> UPath:
-        return UPath("storage", super().get_op_output_relative_path(context))
+    def get_op_output_relative_path(self, context: InputContext | OutputContext) -> UPath:
+        sanitized = self._sanitize_path(super().get_op_output_relative_path(context))
+        return UPath("storage", sanitized)
+
+    @staticmethod
+    def _sanitize_path(path: UPath) -> UPath:
+        sanitized_parts = [part.replace("[", "--").replace("]", "") for part in path.parts]
+        return UPath(*sanitized_parts)
 
     def _uri_for_path(self, path: UPath) -> str:
         return f"s3://{self.bucket}/{path.as_posix()}"

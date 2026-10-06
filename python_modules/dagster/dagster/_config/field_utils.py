@@ -1,9 +1,7 @@
 import hashlib
 import os
 from collections.abc import Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Optional, Union
-
-from typing_extensions import TypeGuard
+from typing import TYPE_CHECKING, Any, TypeAlias, TypeGuard
 
 import dagster._check as check
 from dagster._annotations import public
@@ -104,6 +102,7 @@ def _define_shape_key_hash(fields, description, field_aliases):
     return "Shape." + compute_fields_hash(fields, description, field_aliases=field_aliases)
 
 
+@public
 class Shape(_ConfigHasFields):
     """Schema for configuration data with string keys and typed values via :py:class:`Field`.
 
@@ -154,6 +153,7 @@ class Shape(_ConfigHasFields):
         self._initialized = True
 
 
+@public
 class Map(ConfigType):
     """Defines a config dict with arbitrary scalar keys and typed values.
 
@@ -208,7 +208,7 @@ class Map(ConfigType):
 
     @public
     @property
-    def key_label_name(self) -> Optional[str]:
+    def key_label_name(self) -> str | None:
         """Name which describes the role of keys in the map, if provided."""
         return self.given_name
 
@@ -226,6 +226,7 @@ def _define_permissive_dict_key(fields, description):
     )
 
 
+@public
 class Permissive(_ConfigHasFields):
     """Defines a config dict with a partially specified schema.
 
@@ -273,6 +274,7 @@ def _define_selector_key(fields, description):
     return "Selector." + compute_fields_hash(fields, description=description)
 
 
+@public
 class Selector(_ConfigHasFields):
     """Define a config field requiring the user to select one option.
 
@@ -397,7 +399,7 @@ def expand_map(original_root: object, the_dict: Mapping[object, object], stack: 
 
     key = next(iter(the_dict.keys()))
     key_type = _convert_potential_type(original_root, key, stack)
-    if not key_type or not key_type.kind == ConfigTypeKind.SCALAR:  # type: ignore
+    if not key_type or not key_type.kind == ConfigTypeKind.SCALAR:
         raise DagsterInvalidConfigDefinitionError(
             original_root,
             the_dict,
@@ -507,7 +509,7 @@ class IntEnvVar(int):
     def __str__(self) -> str:
         return str(int(self))
 
-    def get_value(self, default: Optional[int] = None) -> Optional[int]:
+    def get_value(self, default: int | None = None) -> int | None:
         """Returns the value of the environment variable, or the default value if the
         environment variable is not set. If no default is provided, None will be returned.
         """
@@ -520,6 +522,7 @@ class IntEnvVar(int):
         return self.name
 
 
+@public
 class EnvVar(str):
     """Class used to represent an environment variable in the Dagster config system.
 
@@ -545,14 +548,14 @@ class EnvVar(str):
         """Returns the name of the environment variable."""
         return super().__str__()
 
-    def get_value(self, default: Optional[str] = None) -> Optional[str]:
+    def get_value(self, default: str | None = None) -> str | None:
         """Returns the value of the environment variable, or the default value if the
         environment variable is not set. If no default is provided, None will be returned.
         """
         return os.getenv(self.env_var_name, default=default)
 
 
-DagsterEnvVar = Union[EnvVar, IntEnvVar]
+DagsterEnvVar: TypeAlias = EnvVar | IntEnvVar
 
 
 def is_dagster_env_var(value: Any) -> TypeGuard[DagsterEnvVar]:

@@ -4,7 +4,7 @@ import sys
 import time
 
 import pytest
-from dagster._core.remote_representation import InProcessCodeLocationOrigin, RemoteRepositoryOrigin
+from dagster._core.remote_origin import InProcessCodeLocationOrigin, RemoteRepositoryOrigin
 from dagster._core.remote_representation.external import CompoundID
 from dagster._core.scheduler.instigation import (
     InstigatorState,
@@ -158,6 +158,14 @@ query getSchedule($scheduleSelector: ScheduleSelector!, $ticksAfter: Float) {
           ... on PythonError {
             message
           }
+        }
+      }
+      owners {
+        ... on UserDefinitionOwner {
+          email
+        }
+        ... on TeamDefinitionOwner {
+          team
         }
       }
     }
@@ -504,7 +512,7 @@ def test_dry_run_nonexistent_schedule(graphql_context):
         )
     unknown_repo_selector = {**unknown_instigator_selector}
     unknown_repo_selector["repositoryName"] = "doesnt_exist"
-    with pytest.raises(UserFacingGraphQLError, match="GrapheneRepositoryNotFoundError"):
+    with pytest.raises(UserFacingGraphQLError, match="GrapheneScheduleNotFoundError"):
         execute_dagster_graphql(
             context,
             SCHEDULE_DRY_RUN_MUTATION,
@@ -663,6 +671,35 @@ def test_get_single_schedule_definition(graphql_context):
         datetime.datetime(2019, 3, 3, tzinfo=get_timezone("US/Central")).timestamp(),
         datetime.datetime(2019, 3, 4, tzinfo=get_timezone("US/Central")).timestamp(),
     ]
+
+
+def test_schedule_owners(graphql_context):
+    schedule_selector = infer_schedule_selector(graphql_context, "owned_schedule")
+    result = execute_dagster_graphql(
+        graphql_context,
+        GET_SCHEDULE_QUERY,
+        variables={"scheduleSelector": schedule_selector},
+    )
+    assert result.data
+    assert result.data["scheduleOrError"]["__typename"] == "Schedule"
+    schedule = result.data["scheduleOrError"]
+
+    assert schedule["owners"] is not None
+    assert len(schedule["owners"]) == 2
+
+    # Check the user owner
+    user_owner = None
+    team_owner = None
+    for owner in schedule["owners"]:
+        if owner.get("email"):
+            user_owner = owner
+        elif owner.get("team"):
+            team_owner = owner
+
+    assert user_owner is not None
+    assert user_owner["email"] == "test@elementl.com"
+    assert team_owner is not None
+    assert team_owner["team"] == "foo"
 
 
 def test_composite_cron_schedule_definition(graphql_context):
@@ -874,7 +911,7 @@ def test_repository_batching(graphql_context):
     assert "repositoryOrError" in result.data
     assert "schedules" in result.data["repositoryOrError"]
     counter = traced_counter.get()
-    counts = counter.counts()  # pyright: ignore[reportOptionalMemberAccess]
+    counts = counter.counts()  # ty: ignore[unresolved-attribute]
     assert counts
     assert len(counts) == 3
 
@@ -882,8 +919,8 @@ def test_repository_batching(graphql_context):
     # each schedule (~18 distinct schedules in the repo)
     # 1) `get_batch_ticks` is fetched to grab ticks
     # 2) `all_instigator_state` is fetched to instantiate GrapheneSchedule
-    assert counts.get("DagsterInstance.get_batch_ticks") == 1
-    assert counts.get("DagsterInstance.all_instigator_state") == 1
+    assert counts.get("SchedulingMethods.get_batch_ticks") == 1
+    assert counts.get("SchedulingMethods.all_instigator_state") == 1
 
 
 class TestScheduleMutations(ExecutingGraphQLContextTestMatrix):
@@ -1125,3 +1162,20 @@ class TestSchedulePermissions(ReadonlyGraphQLContextTestMatrix):
             },
         )
         assert stop_result.data["stopRunningSchedule"]["__typename"] == "UnauthorizedError"
+
+    def test_schedule_dry_run_failure(self, graphql_context):
+        assert graphql_context.read_only is True
+
+        schedule_selector = infer_schedule_selector(
+            graphql_context, "no_config_job_hourly_schedule"
+        )
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            SCHEDULE_DRY_RUN_MUTATION,
+            variables={"selectorData": schedule_selector, "timestamp": None},
+        )
+
+        assert not result.errors
+        assert result.data
+        assert result.data["scheduleDryRun"]["__typename"] == "UnauthorizedError"

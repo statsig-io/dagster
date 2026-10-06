@@ -4,7 +4,7 @@ import logging
 import time
 from collections.abc import Mapping, Sequence
 from enum import Enum
-from typing import Any, Optional, cast
+from typing import Any, cast
 from urllib.parse import urlencode, urljoin
 
 import requests
@@ -98,10 +98,10 @@ class DbtCloudClient:
         self,
         method: str,
         endpoint: str,
-        data: Optional[Mapping[str, Any]] = None,
-        params: Optional[Mapping[str, Any]] = None,
+        data: Mapping[str, Any] | None = None,
+        params: Mapping[str, Any] | None = None,
         return_text: bool = False,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
     ) -> Any:
         """Creates and sends a request to the desired dbt Cloud API endpoint.
 
@@ -149,7 +149,7 @@ class DbtCloudClient:
         raise Failure(f"Max retries ({self._request_max_retries}) exceeded with url: {url}.")
 
     def list_jobs(
-        self, project_id: int, order_by: Optional[str] = "-id"
+        self, project_id: int, order_by: str | None = "-id"
     ) -> Sequence[Mapping[str, Any]]:
         """List all dbt jobs in a dbt Cloud project.
 
@@ -245,9 +245,9 @@ class DbtCloudClient:
 
     def get_runs(
         self,
-        include_related: Optional[Sequence[str]] = None,
-        job_id: Optional[int] = None,
-        order_by: Optional[str] = "-id",
+        include_related: Sequence[str] | None = None,
+        job_id: int | None = None,
+        order_by: str | None = "-id",
         offset: int = 0,
         limit: int = 100,
     ) -> Sequence[Mapping[str, object]]:
@@ -260,9 +260,8 @@ class DbtCloudClient:
                 from dbt Cloud. This is technically a required field according to the API, but it
                 can be passed with an empty list where it will only load the default run
                 information. Valid values are "trigger", "job", "repository", and "environment".
-            job_definition_id (Optional[int]): This method can be optionally filtered to only
-                load runs for a specific job id if it is included here. If omitted it will pull
-                runs for every job.
+            job_id (Optional[int]): This method can be optionally filtered to only return runs
+                for a specific job by passing in the job's ID.
             order_by (Optional[str]): An identifier designated by dbt Cloud in which to sort the
                 results before returning them. Useful when combined with offset and limit to load
                 runs for a job. Defaults to "-id" where "-" designates reverse order and "id" is
@@ -286,7 +285,7 @@ class DbtCloudClient:
         return self.make_request("GET", f"{self._account_id}/runs/?{urlencode(query_dict)}")
 
     def get_run(
-        self, run_id: int, include_related: Optional[Sequence[str]] = None
+        self, run_id: int, include_related: Sequence[str] | None = None
     ) -> Mapping[str, Any]:
         """Gets details about a specific job run.
 
@@ -338,7 +337,7 @@ class DbtCloudClient:
         self._log.info(f"Cancelling run with id '{run_id}'")
         return self.make_request("POST", f"{self._account_id}/runs/{run_id}/cancel/")
 
-    def list_run_artifacts(self, run_id: int, step: Optional[int] = None) -> Sequence[str]:
+    def list_run_artifacts(self, run_id: int, step: int | None = None) -> Sequence[str]:
         """Lists the paths of the available run artifacts from a completed dbt Cloud run.
 
         Args:
@@ -362,7 +361,7 @@ class DbtCloudClient:
             ),
         )
 
-    def get_run_artifact(self, run_id: int, path: str, step: Optional[int] = None) -> str:
+    def get_run_artifact(self, run_id: int, path: str, step: int | None = None) -> str:
         """The string contents of a run artifact from a dbt Cloud run.
 
         Args:
@@ -385,7 +384,7 @@ class DbtCloudClient:
             return_text=True,
         )["text"]
 
-    def get_manifest(self, run_id: int, step: Optional[int] = None) -> Mapping[str, Any]:
+    def get_manifest(self, run_id: int, step: int | None = None) -> Mapping[str, Any]:
         """The parsed contents of a manifest.json file created by a completed run.
 
         Args:
@@ -401,7 +400,7 @@ class DbtCloudClient:
         """
         return json.loads(self.get_run_artifact(run_id, "manifest.json", step=step))
 
-    def get_run_results(self, run_id: int, step: Optional[int] = None) -> Mapping[str, Any]:
+    def get_run_results(self, run_id: int, step: int | None = None) -> Mapping[str, Any]:
         """The parsed contents of a run_results.json file created by a completed run.
 
         Args:
@@ -421,8 +420,8 @@ class DbtCloudClient:
         self,
         run_id: int,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
-        poll_timeout: Optional[float] = None,
-        href: Optional[str] = None,
+        poll_timeout: float | None = None,
+        href: str | None = None,
     ) -> Mapping[str, Any]:
         """Polls a dbt Cloud job run until it completes. Will raise a `dagster.Failure` exception if the
         run does not complete successfully.
@@ -442,7 +441,7 @@ class DbtCloudClient:
             Dict[str, Any]: A dictionary containing the parsed contents of the dbt Cloud run details.
                 See: https://docs.getdbt.com/dbt-cloud/api-v2#operation/getRunById for schema.
         """
-        status: Optional[str] = None
+        status: str | None = None
 
         if href is None:
             href = self.get_run(run_id).get("href")
@@ -500,7 +499,7 @@ class DbtCloudClient:
         self,
         job_id: int,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
-        poll_timeout: Optional[float] = None,
+        poll_timeout: float | None = None,
         **kwargs,
     ) -> DbtCloudOutput:
         """Runs a dbt Cloud job and polls until it completes. Will raise a `dagster.Failure` exception

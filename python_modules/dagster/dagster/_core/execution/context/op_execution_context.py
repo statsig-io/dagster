@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
-from typing import AbstractSet, Any, Optional, cast  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Any, cast  # noqa: UP035
 
 import dagster._check as check
 from dagster._annotations import deprecated, public
@@ -38,6 +38,9 @@ from dagster._core.log_manager import DagsterLogManager
 from dagster._core.storage.dagster_run import DagsterRun
 from dagster._utils.forked_pdb import ForkedPdb
 
+if TYPE_CHECKING:
+    from dagster._core.definitions.partitions.utils.multi import MultiPartitionKey
+
 
 class AbstractComputeExecutionContext(ABC):
     """Base class for op context implemented by OpExecutionContext and DagstermillExecutionContext."""
@@ -47,7 +50,7 @@ class AbstractComputeExecutionContext(ABC):
         """Implement this method to check if a logging tag is set."""
 
     @abstractmethod
-    def get_tag(self, key: str) -> Optional[str]:
+    def get_tag(self, key: str) -> str | None:
         """Implement this method to get a logging tag."""
 
     @property
@@ -91,6 +94,7 @@ class AbstractComputeExecutionContext(ABC):
         """The parsed config specific to this op."""
 
 
+@public
 class OpExecutionContext(AbstractComputeExecutionContext):
     """The ``context`` object that can be made available as the first argument to the function
     used for computing an op or asset.
@@ -117,7 +121,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
             "step_execution_context",
             StepExecutionContext,
         )
-        self._pdb: Optional[ForkedPdb] = None
+        self._pdb: ForkedPdb | None = None
         self._events: list[DagsterEvent] = []
         self._output_metadata: dict[str, Any] = {}
 
@@ -172,7 +176,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
         return self._step_execution_context.resources
 
     @property
-    def step_launcher(self) -> Optional[StepLauncher]:
+    def step_launcher(self) -> StepLauncher | None:
         """Optional[StepLauncher]: The current step launcher, if any."""
         return self._step_execution_context.step_launcher
 
@@ -181,6 +185,20 @@ class OpExecutionContext(AbstractComputeExecutionContext):
     def run_id(self) -> str:
         """str: The id of the current execution's run."""
         return self._step_execution_context.run_id
+
+    @public
+    @property
+    def location_name(self) -> str | None:
+        """Optional[str]: The name of the code location for this run.
+
+        This is the name of the code location (repository location) from which
+        the job/pipeline was loaded. Returns None if the job was not loaded from
+        a remote code location (e.g., in tests or when running locally without
+        a code location).
+        """
+        if self.dagster_run and self.dagster_run.remote_job_origin:
+            return self.dagster_run.remote_job_origin.location_name
+        return None
 
     @public
     @property
@@ -277,6 +295,38 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 #   "2023-08-21"
         """
         return self._step_execution_context.partition_key
+
+    @public
+    @property
+    def multi_partition_key(self) -> "MultiPartitionKey":
+        """The partition key for the current run, typed as a :py:class:`~dagster.MultiPartitionKey`.
+
+        Raises an error if the current run is not a partitioned run, or if the partitions definition
+        is not a :py:class:`~dagster.MultiPartitionsDefinition`.
+
+        The returned ``MultiPartitionKey`` provides a
+        :py:attr:`~dagster.MultiPartitionKey.keys_by_dimension` property for accessing individual
+        dimension values.
+
+        Examples:
+            .. code-block:: python
+
+                partitions_def = MultiPartitionsDefinition(
+                    {
+                        "date": DailyPartitionsDefinition("2023-08-20"),
+                        "color": StaticPartitionsDefinition(["red", "blue"]),
+                    }
+                )
+
+                @asset(partitions_def=partitions_def)
+                def my_asset(context: AssetExecutionContext):
+                    key = context.multi_partition_key
+                    context.log.info(key.keys_by_dimension)
+
+                # materializing the 2023-08-21|red partition of this asset will log:
+                #   {"date": "2023-08-21", "color": "red"}
+        """
+        return self._step_execution_context.multi_partition_key
 
     @public
     @property
@@ -388,7 +438,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
         return key in self.dagster_run.tags
 
     @public
-    def get_tag(self, key: str) -> Optional[str]:
+    def get_tag(self, key: str) -> str | None:
         """Get a logging tag.
 
         Args:
@@ -456,8 +506,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
     def add_output_metadata(
         self,
         metadata: Mapping[str, Any],
-        output_name: Optional[str] = None,
-        mapping_key: Optional[str] = None,
+        output_name: str | None = None,
+        mapping_key: str | None = None,
     ) -> None:
         """Add metadata to one of the outputs of an op.
 
@@ -499,8 +549,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
         )
 
     def get_output_metadata(
-        self, output_name: str, mapping_key: Optional[str] = None
-    ) -> Optional[Mapping[str, Any]]:
+        self, output_name: str, mapping_key: str | None = None
+    ) -> Mapping[str, Any] | None:
         return self._step_execution_context.get_output_metadata(
             output_name=output_name, mapping_key=mapping_key
         )
@@ -526,7 +576,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
         return self._step_execution_context.describe_op()
 
     @public
-    def get_mapping_key(self) -> Optional[str]:
+    def get_mapping_key(self) -> str | None:
         """Which mapping_key this execution is for if downstream of a DynamicOutput, otherwise None."""
         return self._step_execution_context.step.get_mapping_key()
 
@@ -652,8 +702,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @multi_asset(
                     outs={
                         "first_asset": AssetOut(key=["my_assets", "first_asset"]),
-                        "second_asset": AssetOut(key=["my_assets", "second_asset"])
-                    }
+                        "second_asset": AssetOut(key=["my_assets", "second_asset"]),
+                    },
                     partitions_def=partitions_def,
                 )
                 def a_multi_asset(context: AssetExecutionContext):
@@ -669,7 +719,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @asset(
                     partitions_def=partitions_def,
                     ins={
-                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
+                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
                     }
                 )
                 def self_dependent_asset(context: AssetExecutionContext, self_dependent_asset):
@@ -722,8 +772,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @multi_asset(
                     outs={
                         "first_asset": AssetOut(key=["my_assets", "first_asset"]),
-                        "second_asset": AssetOut(key=["my_assets", "second_asset"])
-                    }
+                        "second_asset": AssetOut(key=["my_assets", "second_asset"]),
+                    },
                     partitions_def=partitions_def,
                 )
                 def a_multi_asset(context: AssetExecutionContext):
@@ -742,7 +792,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @asset(
                     partitions_def=partitions_def,
                     ins={
-                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
+                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
                     }
                 )
                 def self_dependent_asset(context: AssetExecutionContext, self_dependent_asset):
@@ -792,8 +842,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @multi_asset(
                     outs={
                         "first_asset": AssetOut(key=["my_assets", "first_asset"]),
-                        "second_asset": AssetOut(key=["my_assets", "second_asset"])
-                    }
+                        "second_asset": AssetOut(key=["my_assets", "second_asset"]),
+                    },
                     partitions_def=partitions_def,
                 )
                 def a_multi_asset(context: AssetExecutionContext):
@@ -809,7 +859,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @asset(
                     partitions_def=partitions_def,
                     ins={
-                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
+                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
                     }
                 )
                 def self_dependent_asset(context: AssetExecutionContext, self_dependent_asset):
@@ -856,8 +906,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
 
                 @asset(
                     ins={
-                        "upstream_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
-                    }
+                        "upstream_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
+                    },
                     partitions_def=partitions_def,
                 )
                 def another_asset(context: AssetExecutionContext, upstream_asset):
@@ -871,7 +921,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @asset(
                     partitions_def=partitions_def,
                     ins={
-                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
+                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
                     }
                 )
                 def self_dependent_asset(context: AssetExecutionContext, self_dependent_asset):
@@ -915,7 +965,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @asset(
                     partitions_def=partitions_def,
                     ins={
-                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
+                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
                     }
                 )
                 def self_dependent_asset(context: AssetExecutionContext, self_dependent_asset):
@@ -954,8 +1004,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @multi_asset(
                     outs={
                         "first_asset": AssetOut(key=["my_assets", "first_asset"]),
-                        "second_asset": AssetOut(key=["my_assets", "second_asset"])
-                    }
+                        "second_asset": AssetOut(key=["my_assets", "second_asset"]),
+                    },
                     partitions_def=partitions_def,
                 )
                 def a_multi_asset(context: AssetExecutionContext):
@@ -1048,8 +1098,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @multi_asset(
                     outs={
                         "first_asset": AssetOut(key=["my_assets", "first_asset"]),
-                        "second_asset": AssetOut(key=["my_assets", "second_asset"])
-                    }
+                        "second_asset": AssetOut(key=["my_assets", "second_asset"]),
+                    },
                     partitions_def=partitions_def,
                 )
                 def a_multi_asset(context: AssetExecutionContext):
@@ -1065,7 +1115,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @asset(
                     partitions_def=partitions_def,
                     ins={
-                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
+                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
                     }
                 )
                 def self_dependent_asset(context: AssetExecutionContext, self_dependent_asset):
@@ -1114,8 +1164,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
 
                 @asset(
                     ins={
-                        "upstream_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
-                    }
+                        "upstream_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
+                    },
                     partitions_def=partitions_def,
                 )
                 def another_asset(context: AssetExecutionContext, upstream_asset):
@@ -1129,7 +1179,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @asset(
                     partitions_def=partitions_def,
                     ins={
-                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
+                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
                     }
                 )
                 def self_dependent_asset(context: AssetExecutionContext, self_dependent_asset):
@@ -1187,8 +1237,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
 
                 @asset(
                     ins={
-                        "upstream_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
-                    }
+                        "upstream_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
+                    },
                     partitions_def=partitions_def,
                 )
                 def another_asset(context: AssetExecutionContext, upstream_asset):
@@ -1205,7 +1255,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
                 @asset(
                     partitions_def=partitions_def,
                     ins={
-                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1))
+                        "self_dependent_asset": AssetIn(partition_mapping=TimeWindowPartitionMapping(start_offset=-1, end_offset=-1)),
                     }
                 )
                 def self_dependent_asset(context: AssetExecutionContext, self_dependent_asset):
@@ -1221,7 +1271,7 @@ class OpExecutionContext(AbstractComputeExecutionContext):
         return self._step_execution_context.asset_partitions_time_window_for_input(input_name)
 
     @public
-    def get_asset_provenance(self, asset_key: AssetKey) -> Optional[DataProvenance]:
+    def get_asset_provenance(self, asset_key: AssetKey) -> DataProvenance | None:
         """Return the provenance information for the most recent materialization of an asset.
 
         Args:
@@ -1256,10 +1306,10 @@ class OpExecutionContext(AbstractComputeExecutionContext):
         return self._step_execution_context.requires_typed_event_stream
 
     @property
-    def typed_event_stream_error_message(self) -> Optional[str]:
+    def typed_event_stream_error_message(self) -> str | None:
         return self._step_execution_context.typed_event_stream_error_message
 
-    def set_requires_typed_event_stream(self, *, error_message: Optional[str] = None) -> None:
+    def set_requires_typed_event_stream(self, *, error_message: str | None = None) -> None:
         self._step_execution_context.set_requires_typed_event_stream(error_message=error_message)
 
     @staticmethod
@@ -1275,8 +1325,8 @@ class OpExecutionContext(AbstractComputeExecutionContext):
         self,
         asset_key: AssetKey,
         *,
-        python_type: Optional[type] = None,
-        partition_key: Optional[str] = None,
+        python_type: type | None = None,
+        partition_key: str | None = None,
     ) -> Any:
         """Loads the value of an asset by key.
 

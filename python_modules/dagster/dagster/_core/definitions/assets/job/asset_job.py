@@ -1,12 +1,13 @@
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, AbstractSet, Any, Callable, Optional, Union  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Any, Callable, Union  # noqa: UP035
 
 from toposort import CircularDependencyError
 
 import dagster._check as check
 from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
 from dagster._core.definitions.asset_checks.asset_checks_definition import has_only_asset_checks
+from dagster._core.definitions.asset_key import AssetJobKey, AssetOrCheckKey
 from dagster._core.definitions.asset_selection import AssetSelection
 from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
 from dagster._core.definitions.assets.graph.asset_graph import AssetGraph, AssetNode
@@ -44,6 +45,9 @@ IMPLICIT_ASSET_JOB_NAME = "__ASSET_JOB"
 
 if TYPE_CHECKING:
     from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckSpec
+    from dagster._core.definitions.declarative_automation.automation_condition import (
+        AutomationCondition,
+    )
     from dagster._core.definitions.run_config import RunConfig
 
 
@@ -55,9 +59,9 @@ def is_reserved_asset_job_name(name: str) -> bool:
 
 def get_base_asset_job_lambda(
     asset_graph: AssetGraph,
-    resource_defs: Optional[Mapping[str, ResourceDefinition]],
-    executor_def: Optional[ExecutorDefinition],
-    logger_defs: Optional[Mapping[str, LoggerDefinition]],
+    resource_defs: Mapping[str, ResourceDefinition] | None,
+    executor_def: ExecutorDefinition | None,
+    logger_defs: Mapping[str, LoggerDefinition] | None,
 ) -> Callable[[], JobDefinition]:
     def build_asset_job_lambda() -> JobDefinition:
         job_def = build_asset_job(
@@ -79,19 +83,20 @@ def build_asset_job(
     name: str,
     asset_graph: AssetGraph,
     allow_different_partitions_defs: bool,
-    resource_defs: Optional[Mapping[str, object]] = None,
-    description: Optional[str] = None,
-    config: Optional[
-        Union[ConfigMapping, Mapping[str, object], PartitionedConfig, "RunConfig"]
-    ] = None,
-    tags: Optional[Mapping[str, str]] = None,
-    run_tags: Optional[Mapping[str, str]] = None,
-    metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-    executor_def: Optional[ExecutorDefinition] = None,
-    partitions_def: Optional[PartitionsDefinition] = None,
-    hooks: Optional[AbstractSet[HookDefinition]] = None,
-    op_retry_policy: Optional[RetryPolicy] = None,
-    _asset_selection_data: Optional[AssetSelectionData] = None,
+    resource_defs: Mapping[str, object] | None = None,
+    description: str | None = None,
+    config: Union[ConfigMapping, Mapping[str, object], PartitionedConfig, "RunConfig"]
+    | None = None,
+    tags: Mapping[str, str] | None = None,
+    run_tags: Mapping[str, str] | None = None,
+    metadata: Mapping[str, RawMetadataValue] | None = None,
+    executor_def: ExecutorDefinition | None = None,
+    partitions_def: PartitionsDefinition | None = None,
+    hooks: AbstractSet[HookDefinition] | None = None,
+    op_retry_policy: RetryPolicy | None = None,
+    owners: Sequence[str] | None = None,
+    automation_condition: "AutomationCondition | None" = None,
+    _asset_selection_data: AssetSelectionData | None = None,
 ) -> JobDefinition:
     """Builds a job that materializes the given assets. This is a private function that is used
     during resolution of jobs created with `define_asset_job`.
@@ -110,6 +115,9 @@ def build_asset_job(
         description (Optional[str]): A description of the job.
         op_retry_policy (Optional[RetryPolicy]): The default retry policy for all ops that compute assets in this job.
             Only used if retry policy is not defined on the asset definition.
+        owners (Optional[Sequence[str]]): A list of strings representing owners of the job.
+            Each string can be a user's email address, or a team name prefixed with `team:`,
+            e.g. `team:finops`.
 
     Examples:
         .. code-block:: python
@@ -185,6 +193,7 @@ def build_asset_job(
             logger_defs=original_job.loggers,
             hooks=original_job.hook_defs,
             op_retry_policy=original_job.op_retry_policy,
+            automation_condition=automation_condition or original_job.automation_condition,
         )
     return graph.to_job(
         resource_defs=all_resource_defs,
@@ -197,6 +206,8 @@ def build_asset_job(
         asset_layer=asset_layer,
         hooks=hooks,
         op_retry_policy=op_retry_policy,
+        owners=owners,
+        automation_condition=automation_condition,
         _asset_selection_data=_asset_selection_data,
     )
 
@@ -291,7 +302,7 @@ def get_asset_graph_for_job(
 def _subset_assets_defs(
     assets: Iterable["AssetsDefinition"],
     selected_asset_keys: AbstractSet[AssetKey],
-    selected_asset_check_keys: Optional[AbstractSet[AssetCheckKey]],
+    selected_asset_check_keys: AbstractSet[AssetCheckKey] | None,
     allow_extraneous_asset_keys: bool = False,
 ) -> tuple[
     Sequence["AssetsDefinition"],
@@ -361,8 +372,8 @@ def _infer_and_validate_common_partitions_def(
     asset_graph: AssetGraph,
     asset_keys: Iterable[AssetKey],
     allow_different_partitions_defs: bool,
-    required_partitions_def: Optional[PartitionsDefinition] = None,
-) -> Optional[PartitionsDefinition]:
+    required_partitions_def: PartitionsDefinition | None = None,
+) -> PartitionsDefinition | None:
     keys_by_partitions_def = defaultdict(set)
     for key in asset_keys:
         partitions_def = asset_graph.get(key).partitions_def
@@ -430,7 +441,7 @@ def build_node_deps(
     Mapping[NodeHandle, AssetsDefinition],
 ]:
     # sort so that nodes get a consistent name
-    assets_defs = sorted(asset_graph.assets_defs, key=lambda ad: (sorted(ak for ak in ad.keys)))
+    assets_defs = sorted(asset_graph.assets_defs, key=lambda ad: sorted(ak for ak in ad.keys))
 
     # if the same graph/op is used in multiple assets_definitions, their invocations must have
     # different names. we keep track of definitions that share a name and add a suffix to their
@@ -584,53 +595,76 @@ def _attempt_resolve_node_cycles(asset_graph: AssetGraph) -> AssetGraph:
     This ensures that no asset that shares a node with another asset will be downstream of
     that asset via a different node (i.e. there will be no cycles).
     """
-    # color for each asset
-    colors: dict[AssetKey, int] = {}
+    # color for each entity
+    colors: dict[AssetOrCheckKey, int] = {}
 
-    # recursively color an asset and all of its downstream assets
-    def _dfs(key: AssetKey, cur_color: int):
+    # AssetNode.child_entity_keys does not include checks that list this asset only in their
+    # additional_deps (only checks that target the asset). For cycle resolution we need to
+    # follow those edges so an additional-dep'd check is colored alongside its actual
+    # downstream position rather than getting stranded in its own color partition.
+    # In the future, we could consider updating AssetNode.child_entity_keys to include these checks,
+    # but that's a more invasive change that requires us to be more careful about perf.
+    extra_check_children: dict[AssetKey, set[AssetCheckKey]] = defaultdict(set)
+    for ad in asset_graph.assets_defs:
+        for spec in ad.check_specs:
+            for dep in spec.additional_deps:
+                extra_check_children[dep.asset_key].add(spec.key)
+
+    # recursively color an entity and all of its downstream entities
+    def _dfs(key: AssetOrCheckKey, cur_color: int):
         node = asset_graph.get(key)
         colors[key] = cur_color
         # in an external asset, treat all downstream as if they're in the same node
-        cur_node_asset_keys = node.assets_def.keys if node.is_materializable else node.child_keys
+        assets_def = asset_graph.assets_def_for_key(key)
+        cur_node_entity_keys = (
+            assets_def.keys | assets_def.check_keys
+            if assets_def.is_materializable
+            else node.child_entity_keys
+        )
 
-        for child_key in node.child_keys:
-            # if the downstream asset is in the current node,keep the same color
-            new_color = cur_color if child_key in cur_node_asset_keys else cur_color + 1
+        children = node.child_entity_keys
+        if isinstance(key, AssetKey):
+            children = children | extra_check_children.get(key, set())
 
-            # if current color of the downstream asset is less than the new color, re-do dfs
+        for child_key in children:
+            # if the downstream entity is in the current node, keep the same color
+            new_color = cur_color if child_key in cur_node_entity_keys else cur_color + 1
+
+            # if current color of the downstream entity is less than the new color, re-do dfs
             if colors.get(child_key, -1) < new_color:
                 _dfs(child_key, new_color)
 
     # dfs for each root node; will throw an error if there are key-level cycles
-    root_keys = asset_graph.toposorted_asset_keys_by_level[0]
+    root_keys = asset_graph.toposorted_entity_keys_by_level[0]
     for key in root_keys:
+        if isinstance(key, AssetJobKey):
+            # job entity nodes currently have no dep-graph edges, so they appear at the root
+            # level. a job is never computed by an op (it is the run container, not a step), so
+            # it contributes nothing to op-graph construction or cycle resolution.
+            continue
         _dfs(key, 0)
 
     color_mapping_by_assets_defs: dict[AssetsDefinition, Any] = defaultdict(
         lambda: defaultdict(set)
     )
     for key, color in colors.items():
-        node = asset_graph.get(key)
-        color_mapping_by_assets_defs[node.assets_def][color].add(key)
+        assets_def = asset_graph.assets_def_for_key(key)
+        color_mapping_by_assets_defs[assets_def][color].add(key)
 
     subsetted_assets_defs: list[AssetsDefinition] = []
     for assets_def, color_mapping in color_mapping_by_assets_defs.items():
         if assets_def.is_external or len(color_mapping) == 1 or not assets_def.can_subset:
             subsetted_assets_defs.append(assets_def)
         else:
-            for asset_keys in color_mapping.values():
+            for entity_keys in color_mapping.values():
+                asset_keys = {key for key in entity_keys if isinstance(key, AssetKey)}
+                check_keys = {key for key in entity_keys if isinstance(key, AssetCheckKey)}
                 subsetted_assets_defs.append(
-                    assets_def.subset_for(asset_keys, selected_asset_check_keys=None)
+                    assets_def.subset_for(asset_keys, selected_asset_check_keys=check_keys)
                 )
 
-    # We didn't color asset checks, so add any that are in their own node.
-    assets_defs_with_only_checks = [
-        ad for ad in asset_graph.assets_defs if has_only_asset_checks(ad)
-    ]
-
     asset_nodes_by_key, assets_defs_by_check_key = JobScopedAssetGraph.key_mappings_from_assets(
-        subsetted_assets_defs + assets_defs_with_only_checks
+        subsetted_assets_defs
     )
     return JobScopedAssetGraph(asset_nodes_by_key, assets_defs_by_check_key, asset_graph)
 

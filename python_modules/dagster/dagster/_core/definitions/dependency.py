@@ -9,13 +9,13 @@ from typing import (  # noqa: UP035
     Generic,
     NamedTuple,
     Optional,
-    Union,
+    TypeAlias,
     cast,
 )
 
 from dagster_shared.serdes import whitelist_for_serdes
 from dagster_shared.utils.hash import hash_collection
-from typing_extensions import TypeAlias, TypeVar
+from typing_extensions import TypeVar
 
 import dagster._check as check
 from dagster._annotations import PublicAttr, public
@@ -45,15 +45,16 @@ T_DependencyKey = TypeVar("T_DependencyKey", str, "NodeInvocation")
 DependencyMapping: TypeAlias = Mapping[T_DependencyKey, Mapping[str, "IDependencyDefinition"]]
 
 
+@public
 class NodeInvocation(
     NamedTuple(
         "Node",
         [
             ("name", PublicAttr[str]),
-            ("alias", PublicAttr[Optional[str]]),
+            ("alias", PublicAttr[str | None]),
             ("tags", PublicAttr[Mapping[str, Any]]),
             ("hook_defs", PublicAttr[AbstractSet[HookDefinition]]),
-            ("retry_policy", PublicAttr[Optional[RetryPolicy]]),
+            ("retry_policy", PublicAttr[RetryPolicy | None]),
         ],
     )
 ):
@@ -87,10 +88,10 @@ class NodeInvocation(
     def __new__(
         cls,
         name: str,
-        alias: Optional[str] = None,
-        tags: Optional[Mapping[str, str]] = None,
-        hook_defs: Optional[AbstractSet[HookDefinition]] = None,
-        retry_policy: Optional[RetryPolicy] = None,
+        alias: str | None = None,
+        tags: Mapping[str, str] | None = None,
+        hook_defs: AbstractSet[HookDefinition] | None = None,
+        retry_policy: RetryPolicy | None = None,
     ):
         return super().__new__(
             cls,
@@ -116,7 +117,7 @@ class Node(ABC):
     graph_definition: "GraphDefinition"
     _additional_tags: Mapping[str, str]
     _hook_defs: AbstractSet[HookDefinition]
-    _retry_policy: Optional[RetryPolicy]
+    _retry_policy: RetryPolicy | None
     _inputs: Mapping[str, "NodeInput"]
     _outputs: Mapping[str, "NodeOutput"]
 
@@ -125,9 +126,9 @@ class Node(ABC):
         name: str,
         definition: "NodeDefinition",
         graph_definition: "GraphDefinition",
-        tags: Optional[Mapping[str, str]] = None,
-        hook_defs: Optional[AbstractSet[HookDefinition]] = None,
-        retry_policy: Optional[RetryPolicy] = None,
+        tags: Mapping[str, str] | None = None,
+        hook_defs: AbstractSet[HookDefinition] | None = None,
+        retry_policy: RetryPolicy | None = None,
     ):
         from dagster._core.definitions.graph_definition import GraphDefinition
         from dagster._core.definitions.node_definition import NodeDefinition
@@ -231,7 +232,7 @@ class Node(ABC):
         return self._hook_defs
 
     @property
-    def retry_policy(self) -> Optional[RetryPolicy]:
+    def retry_policy(self) -> RetryPolicy | None:
         return self._retry_policy
 
     @abstractmethod
@@ -247,16 +248,16 @@ class Node(ABC):
 
 
 class GraphNode(Node):
-    definition: "GraphDefinition"  # pyright: ignore[reportIncompatibleVariableOverride]
+    definition: "GraphDefinition"
 
     def __init__(
         self,
         name: str,
         definition: "GraphDefinition",
         graph_definition: "GraphDefinition",
-        tags: Optional[Mapping[str, str]] = None,
-        hook_defs: Optional[AbstractSet[HookDefinition]] = None,
-        retry_policy: Optional[RetryPolicy] = None,
+        tags: Mapping[str, str] | None = None,
+        hook_defs: AbstractSet[HookDefinition] | None = None,
+        retry_policy: RetryPolicy | None = None,
     ):
         from dagster._core.definitions.graph_definition import GraphDefinition
 
@@ -283,16 +284,16 @@ class GraphNode(Node):
 
 
 class OpNode(Node):
-    definition: "OpDefinition"  # pyright: ignore[reportIncompatibleVariableOverride]
+    definition: "OpDefinition"
 
     def __init__(
         self,
         name: str,
         definition: "OpDefinition",
         graph_definition: "GraphDefinition",
-        tags: Optional[Mapping[str, str]] = None,
-        hook_defs: Optional[AbstractSet[HookDefinition]] = None,
-        retry_policy: Optional[RetryPolicy] = None,
+        tags: Mapping[str, str] | None = None,
+        hook_defs: AbstractSet[HookDefinition] | None = None,
+        retry_policy: RetryPolicy | None = None,
     ):
         from dagster._core.definitions.op_definition import OpDefinition
 
@@ -450,7 +451,7 @@ class NodeHandle(NamedTuple("_NodeHandle", [("name", str), ("parent", Optional["
     def from_path(path: Sequence[str]) -> "NodeHandle":
         check.sequence_param(path, "path", of_type=str)
 
-        cur: Optional[NodeHandle] = None
+        cur: NodeHandle | None = None
         _path = list(path)
         while len(_path) > 0:
             cur = NodeHandle(name=_path.pop(0), parent=cur)
@@ -499,7 +500,7 @@ class NodeHandle(NamedTuple("_NodeHandle", [("name", str), ("parent", Optional["
 #     node_handle = NodeHandle("foo", parent=None)
 #     node_output_handle = NodeOutputHandle(node_handle=node_handle, output_name="bar")
 #     node_output_handle.node_handle.path  # type checker knows node_output_handle.node_handle is not None
-T_OptionalNodeHandle = TypeVar("T_OptionalNodeHandle", bound=Optional[NodeHandle])
+T_OptionalNodeHandle = TypeVar("T_OptionalNodeHandle", bound=NodeHandle | None)
 
 
 @record(checked=False)
@@ -623,9 +624,10 @@ class IDependencyDefinition(ABC):
         """The result passed to the corresponding input will be a List made from different node outputs."""
 
 
+@public
 class DependencyDefinition(
     NamedTuple(
-        "_DependencyDefinition", [("node", str), ("output", str), ("description", Optional[str])]
+        "_DependencyDefinition", [("node", str), ("output", str), ("description", str | None)]
     ),
     IDependencyDefinition,
 ):
@@ -640,11 +642,13 @@ class DependencyDefinition(
 
     .. code-block:: python
 
+        from dagster import DependencyDefinition
+
         dependency_structure = {
             'my_downstream_op': {
                 'input': DependencyDefinition('my_upstream_op', 'result')
-            }
-            'my_downstream_op': {
+            },
+            'my_other_downstream_op': {
                 'input': DependencyDefinition('my_upstream_graph', 'result')
             }
         }
@@ -654,6 +658,8 @@ class DependencyDefinition(
     :py:func:`@job <job>` API:
 
     .. code-block:: python
+
+        from dagster import job
 
         @job
         def the_job():
@@ -671,7 +677,7 @@ class DependencyDefinition(
         cls,
         node: str,
         output: str = DEFAULT_OUTPUT,
-        description: Optional[str] = None,
+        description: str | None = None,
     ):
         return super().__new__(
             cls,
@@ -692,13 +698,14 @@ class DependencyDefinition(
         return [self]
 
 
+@public
 class MultiDependencyDefinition(
     NamedTuple(
         "_MultiDependencyDefinition",
         [
             (
                 "dependencies",
-                PublicAttr[Sequence[Union[DependencyDefinition, type["MappedInputPlaceholder"]]]],
+                PublicAttr[Sequence[DependencyDefinition | type["MappedInputPlaceholder"]]],
             )
         ],
     ),
@@ -746,7 +753,7 @@ class MultiDependencyDefinition(
 
     def __new__(
         cls,
-        dependencies: Sequence[Union[DependencyDefinition, type["MappedInputPlaceholder"]]],
+        dependencies: Sequence[DependencyDefinition | type["MappedInputPlaceholder"]],
     ):
         from dagster._core.definitions.composition import MappedInputPlaceholder
 
@@ -781,7 +788,7 @@ class MultiDependencyDefinition(
     @public
     def get_dependencies_and_mappings(
         self,
-    ) -> Sequence[Union[DependencyDefinition, type["MappedInputPlaceholder"]]]:
+    ) -> Sequence[DependencyDefinition | type["MappedInputPlaceholder"]]:
         """Return the combined list of dependencies contained by this object, inculding of :py:class:`DependencyDefinition` and :py:class:`MappedInputPlaceholder` objects."""
         return self.dependencies
 
@@ -795,7 +802,7 @@ class BlockingAssetChecksDependencyDefinition(
                 "asset_check_dependencies",
                 Sequence[DependencyDefinition],
             ),
-            ("other_dependency", Optional[DependencyDefinition]),
+            ("other_dependency", DependencyDefinition | None),
         ],
     ),
 ):
@@ -822,7 +829,7 @@ class BlockingAssetChecksDependencyDefinition(
     @public
     def get_dependencies_and_mappings(
         self,
-    ) -> Sequence[Union[DependencyDefinition, type["MappedInputPlaceholder"]]]:
+    ) -> Sequence[DependencyDefinition | type["MappedInputPlaceholder"]]:
         return self.get_node_dependencies()
 
 
@@ -839,7 +846,7 @@ class DynamicCollectDependencyDefinition(
 
 DepTypeAndOutputs: TypeAlias = tuple[
     DependencyType,
-    Union[NodeOutput, list[Union[NodeOutput, type["MappedInputPlaceholder"]]]],
+    NodeOutput | list[NodeOutput | type["MappedInputPlaceholder"]],
 ]
 
 InputToOutputMap: TypeAlias = dict[NodeInput, DepTypeAndOutputs]
@@ -862,7 +869,7 @@ def _create_handle_dict(
             if isinstance(
                 dep_def, (MultiDependencyDefinition, BlockingAssetChecksDependencyDefinition)
             ):
-                handles: list[Union[NodeOutput, type[MappedInputPlaceholder]]] = []
+                handles: list[NodeOutput | type[MappedInputPlaceholder]] = []
                 for inner_dep in dep_def.get_dependencies_and_mappings():
                     if isinstance(inner_dep, DependencyDefinition):
                         handles.append(node_dict[inner_dep.node].get_output(inner_dep.output))
@@ -1090,7 +1097,7 @@ class DependencyStructure:
         )
         return cast("NodeOutput", dep)
 
-    def get_dependency_definition(self, node_input: NodeInput) -> Optional[IDependencyDefinition]:
+    def get_dependency_definition(self, node_input: NodeInput) -> IDependencyDefinition | None:
         return self._deps_by_node_name[node_input.node_name].get(node_input.input_name)
 
     def has_fan_in_deps(self, node_input: NodeInput) -> bool:
@@ -1102,14 +1109,14 @@ class DependencyStructure:
 
     def get_fan_in_deps(
         self, node_input: NodeInput
-    ) -> Sequence[Union[NodeOutput, type["MappedInputPlaceholder"]]]:
+    ) -> Sequence[NodeOutput | type["MappedInputPlaceholder"]]:
         check.inst_param(node_input, "node_input", NodeInput)
         dep_type, deps = self._input_to_output_map[node_input]
         check.invariant(
             dep_type == DependencyType.FAN_IN,
             f"Cannot call get_multi_dep when dep is not fan in, got {dep_type}",
         )
-        return cast("list[Union[NodeOutput, type[MappedInputPlaceholder]]]", deps)
+        return cast("list[NodeOutput | type[MappedInputPlaceholder]]", deps)
 
     def has_dynamic_fan_in_dep(self, node_input: NodeInput) -> bool:
         check.inst_param(node_input, "node_input", NodeInput)
@@ -1147,10 +1154,10 @@ class DependencyStructure:
     def inputs(self) -> Sequence[NodeInput]:
         return list(self._input_to_output_map.keys())
 
-    def get_upstream_dynamic_output_for_node(self, node_name: str) -> Optional[NodeOutput]:
+    def get_upstream_dynamic_output_for_node(self, node_name: str) -> NodeOutput | None:
         return self._dynamic_fan_out_index.get(node_name)
 
-    def get_dependency_type(self, node_input: NodeInput) -> Optional[DependencyType]:
+    def get_dependency_type(self, node_input: NodeInput) -> DependencyType | None:
         result = self._input_to_output_map.get(node_input)
         if result is None:
             return None

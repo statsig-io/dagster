@@ -1,6 +1,6 @@
 import json
 from collections.abc import Iterable, Sequence, Set
-from typing import NamedTuple, Optional
+from typing import NamedTuple, cast
 
 import dagster._check as check
 from dagster._core.definitions.partitions.definition.partitions_definition import (
@@ -23,18 +23,58 @@ class DefaultPartitionsSubset(
 
     def __new__(
         cls,
-        subset: Optional[Set[str]] = None,
+        subset: Set[str] | None = None,
     ):
         check.opt_set_param(subset, "subset")
         return super().__new__(cls, subset or set())
 
+    @property
+    def is_empty(self) -> bool:
+        return len(self.subset) == 0
+
     def get_partition_keys_not_in_subset(
         self, partitions_def: PartitionsDefinition
     ) -> Iterable[str]:
-        return set(partitions_def.get_partition_keys()) - set(self.subset)
+        return [key for key in partitions_def.get_partition_keys() if key not in self.subset]
 
     def get_partition_keys(self) -> Iterable[str]:
         return self.subset
+
+    def __sub__(self, other: "PartitionsSubset") -> "PartitionsSubset":
+        if not isinstance(other, DefaultPartitionsSubset):
+            return super().__sub__(other)
+
+        if self is other:
+            return self.empty_subset()
+        if other.is_empty:
+            return self
+
+        return DefaultPartitionsSubset(self.subset - other.subset)
+
+    def __or__(self, other: "PartitionsSubset") -> "PartitionsSubset":
+        if not isinstance(other, DefaultPartitionsSubset):
+            return super().__or__(other)
+
+        if self is other or other.is_empty:
+            return self
+
+        if self.is_empty:
+            return other
+
+        return DefaultPartitionsSubset(self.subset | other.subset)
+
+    def __and__(self, other: "PartitionsSubset") -> "PartitionsSubset":
+        if not isinstance(other, DefaultPartitionsSubset):
+            return super().__and__(other)
+
+        if self is other:
+            return self
+        if other.is_empty:
+            return other
+        if self.is_empty:
+            return self
+
+        return DefaultPartitionsSubset(self.subset & other.subset)
 
     def get_ranges_for_keys(self, partition_keys: Sequence[str]) -> Sequence[PartitionKeyRange]:
         cur_range_start = None
@@ -130,7 +170,7 @@ class DefaultPartitionsSubset(
 
         if isinstance(data, list):
             # backwards compatibility
-            return cls(subset=set(data))
+            return cls(subset=set(cast("list[str]", data)))
         else:
             if data.get("version") != cls.SERIALIZATION_VERSION:
                 raise DagsterInvalidDeserializationVersionError(
@@ -144,8 +184,8 @@ class DefaultPartitionsSubset(
         cls,
         partitions_def: PartitionsDefinition,
         serialized: str,
-        serialized_partitions_def_unique_id: Optional[str],
-        serialized_partitions_def_class_name: Optional[str],
+        serialized_partitions_def_unique_id: str | None,
+        serialized_partitions_def_class_name: str | None,
     ) -> bool:
         if serialized_partitions_def_class_name is not None:
             return serialized_partitions_def_class_name == partitions_def.__class__.__name__
@@ -158,6 +198,8 @@ class DefaultPartitionsSubset(
     def __eq__(self, other: object) -> bool:
         return isinstance(other, DefaultPartitionsSubset) and self.subset == other.subset
 
+    __hash__ = None
+
     def __len__(self) -> int:
         return len(self.subset)
 
@@ -169,7 +211,7 @@ class DefaultPartitionsSubset(
 
     @classmethod
     def create_empty_subset(
-        cls, partitions_def: Optional[PartitionsDefinition] = None
+        cls, partitions_def: PartitionsDefinition | None = None
     ) -> "DefaultPartitionsSubset":
         return cls()
 

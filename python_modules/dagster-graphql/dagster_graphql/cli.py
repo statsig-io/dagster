@@ -1,7 +1,6 @@
 import asyncio
 from collections.abc import Mapping
 from io import TextIOWrapper
-from typing import Optional
 from urllib.parse import urljoin, urlparse
 
 import click
@@ -34,7 +33,7 @@ def create_dagster_graphql_cli():
 def execute_query(
     workspace_process_context: WorkspaceProcessContext,
     query: str,
-    variables: Optional[Mapping[str, object]] = None,
+    variables: Mapping[str, object] | None = None,
 ):
     check.inst_param(
         workspace_process_context, "workspace_process_context", WorkspaceProcessContext
@@ -69,7 +68,7 @@ def execute_query(
         check.invariant(len(result_dict_errors) == len(result_errors))
         for python_error, error_dict in zip(result_errors, result_dict_errors):
             # Typing errors caught by making is_list typed -- schrockn 2024-06-09
-            if hasattr(python_error, "original_error") and python_error.original_error:  # type: ignore
+            if hasattr(python_error, "original_error") and python_error.original_error:
                 error_dict["stack_trace"] = get_stack_trace_array(python_error.original_error)  # type: ignore
 
     return result_dict
@@ -140,7 +139,7 @@ PREDEFINED_QUERIES = {
     )
     + "\n\nExamples:"
     "\n\n1. dagster-graphql"
-    f"\n\n2. dagster-graphql -y path/to/{DEFAULT_WORKSPACE_YAML_FILENAME}"
+    f"\n\n2. dagster-graphql -w path/to/{DEFAULT_WORKSPACE_YAML_FILENAME}"
     "\n\n3. dagster-graphql -f path/to/file.py -a define_repo"
     "\n\n4. dagster-graphql -m some_module -a define_repo"
     "\n\n5. dagster-graphql -f path/to/file.py -a define_pipeline"
@@ -150,9 +149,7 @@ PREDEFINED_QUERIES = {
 @click.option(
     "--text", "-t", type=click.STRING, help="GraphQL document to execute passed as a string"
 )
-@click.option(
-    "--file", "-f", type=click.File(), help="GraphQL document to execute passed as a file"
-)
+@click.option("--file", type=click.File(), help="GraphQL document to execute passed as a file")
 @click.option(
     "--predefined",
     "-p",
@@ -189,12 +186,12 @@ PREDEFINED_QUERIES = {
 )
 @workspace_options
 def ui(
-    text: Optional[str],
-    file: Optional[TextIOWrapper],
-    predefined: Optional[str],
-    variables: Optional[str],
-    remote: Optional[str],
-    output: Optional[str],
+    text: str | None,
+    file: TextIOWrapper | None,
+    predefined: str | None,
+    variables: str | None,
+    remote: str | None,
+    output: str | None,
     ephemeral_instance: bool,
     **other_opts,
 ):
@@ -210,7 +207,7 @@ def ui(
         query = PREDEFINED_QUERIES[predefined]
     else:
         raise click.UsageError(
-            "Must select one and only one of text (-t), file (-f), or predefined (-p) "
+            "Must select one and only one of text (-t), file (--file), or predefined (-p) "
             "to select GraphQL document to execute."
         )
 

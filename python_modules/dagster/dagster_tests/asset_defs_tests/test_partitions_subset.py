@@ -3,22 +3,53 @@ from unittest.mock import MagicMock
 
 import dagster as dg
 import pytest
+from dagster._check import CheckError
+from dagster._core.definitions.assets.graph.asset_graph_subset import AssetGraphSubset
 from dagster._core.definitions.partitions.context import partition_loading_context
 from dagster._core.definitions.partitions.definition import (
     DailyPartitionsDefinition,
     MultiPartitionsDefinition,
     StaticPartitionsDefinition,
 )
+from dagster._core.definitions.partitions.snap import PartitionsSnap
 from dagster._core.definitions.partitions.subset import (
     AllPartitionsSubset,
     DefaultPartitionsSubset,
+    KeyRangesPartitionsSubset,
     TimeWindowPartitionsSubset,
 )
 from dagster._core.definitions.partitions.utils import PersistedTimeWindow
 from dagster._core.errors import DagsterInvalidDeserializationVersionError
-from dagster._core.test_utils import freeze_time
+from dagster._core.instance.types import DynamicPartitionsStore
+from dagster._core.test_utils import freeze_time, instance_for_test
 from dagster._serdes import deserialize_value, serialize_value
-from dagster._time import create_datetime
+from dagster._time import create_datetime, get_current_datetime
+
+
+def test_default_subset():
+    default_subset = DefaultPartitionsSubset({"a", "b", "c"})
+    assert not default_subset.is_empty
+
+    other_default_subset = DefaultPartitionsSubset({"b", "c", "d"})
+
+    empty_subset = DefaultPartitionsSubset(set())
+    assert empty_subset.is_empty
+
+    assert default_subset & other_default_subset == DefaultPartitionsSubset({"b", "c"})
+    assert default_subset | other_default_subset == DefaultPartitionsSubset({"a", "b", "c", "d"})
+    assert default_subset - other_default_subset == DefaultPartitionsSubset({"a"})
+    assert other_default_subset - default_subset == DefaultPartitionsSubset({"d"})
+
+    assert default_subset - default_subset == empty_subset
+    assert default_subset - empty_subset == default_subset
+    assert empty_subset - default_subset == empty_subset
+
+    assert default_subset | default_subset == default_subset
+    assert default_subset | empty_subset == default_subset
+    assert empty_subset | default_subset == default_subset
+    assert default_subset & default_subset == default_subset
+    assert default_subset & empty_subset == empty_subset
+    assert empty_subset & default_subset == empty_subset
 
 
 def test_default_subset_cannot_deserialize_invalid_version():
@@ -117,9 +148,7 @@ def test_time_window_partitions_subset_serialization_deserialization(
         ).with_partition_keys(["2023-01-01"]),
     )
 
-    deserialized = dg.deserialize_value(
-        dg.serialize_value(cast("TimeWindowPartitionsSubset", subset)), TimeWindowPartitionsSubset
-    )
+    deserialized = dg.deserialize_value(dg.serialize_value(subset), TimeWindowPartitionsSubset)
     assert deserialized == subset
     assert deserialized.get_partition_keys() == ["2023-01-01"]
     assert (
@@ -151,9 +180,61 @@ def test_time_window_partitions_subset_num_partitions_serialization():
     assert deserialized._asdict()["num_partitions"] is not None
 
 
+def test_skip_num_partitions_serialization_ctx():
+    """Test that skip_num_partitions_serialization_ctx skips pre-computing num_partitions
+    during serialization, but the deserialized subset can still compute it on demand.
+    """
+    from dagster._core.definitions.partitions.subset.time_window import (
+        skip_num_partitions_serialization_ctx,
+    )
+
+    daily_partitions_def = dg.DailyPartitionsDefinition("2023-01-01")
+    time_partitions_def = dg.TimeWindowPartitionsDefinition(
+        start=daily_partitions_def.start,
+        end=daily_partitions_def.end,
+        cron_schedule="0 0 * * *",
+        fmt="%Y-%m-%d",
+        timezone=daily_partitions_def.timezone,
+        end_offset=daily_partitions_def.end_offset,
+    )
+
+    tw = PersistedTimeWindow.from_public_time_window(
+        time_partitions_def.time_window_for_partition_key("2023-01-01"),
+        time_partitions_def.timezone,
+    )
+
+    subset = TimeWindowPartitionsSubset(
+        time_partitions_def, num_partitions=None, included_time_windows=[tw]
+    )
+
+    # Serialize with the context manager — num_partitions should NOT be pre-computed
+    with skip_num_partitions_serialization_ctx():
+        serialized = dg.serialize_value(subset)
+
+    deserialized = dg.deserialize_value(serialized, TimeWindowPartitionsSubset)
+
+    # The raw field should still be None since we skipped pre-computation
+    assert deserialized._asdict()["num_partitions"] is None
+
+    # But the property should still compute the correct value on demand
+    assert deserialized.num_partitions == 1
+
+    # The deserialized subset should be functionally equivalent
+    assert list(deserialized.get_partition_keys()) == ["2023-01-01"]
+    assert "2023-01-01" in deserialized
+    assert len(deserialized) == 1
+
+    # Contrast: without the context manager, num_partitions IS pre-computed
+    serialized_normal = dg.serialize_value(subset)
+    deserialized_normal = dg.deserialize_value(serialized_normal, TimeWindowPartitionsSubset)
+    assert deserialized_normal._asdict()["num_partitions"] is not None
+
+
 def test_all_partitions_subset_static_partitions_def() -> None:
     static_partitions_def = StaticPartitionsDefinition(["a", "b", "c", "d"])
-    with partition_loading_context(dynamic_partitions_store=MagicMock()) as ctx:
+    with partition_loading_context(
+        dynamic_partitions_store=MagicMock(spec=DynamicPartitionsStore)
+    ) as ctx:
         all_subset = AllPartitionsSubset(static_partitions_def, ctx)
         assert len(all_subset) == 4
         assert set(all_subset.get_partition_keys()) == {"a", "b", "c", "d"}
@@ -165,7 +246,7 @@ def test_all_partitions_subset_static_partitions_def() -> None:
         assert all_subset - abc_subset == DefaultPartitionsSubset({"d"})
         assert abc_subset - all_subset == DefaultPartitionsSubset(set())
 
-        round_trip_subset = deserialize_value(serialize_value(all_subset.to_serializable_subset()))
+        round_trip_subset = deserialize_value(serialize_value(all_subset.to_serializable_subset()))  # type: ignore
         assert isinstance(round_trip_subset, DefaultPartitionsSubset)
         assert set(round_trip_subset.get_partition_keys()) == set(all_subset.get_partition_keys())
 
@@ -173,7 +254,9 @@ def test_all_partitions_subset_static_partitions_def() -> None:
 def test_all_partitions_subset_time_window_partitions_def() -> None:
     with (
         freeze_time(create_datetime(2020, 1, 6, hour=10)),
-        partition_loading_context(dynamic_partitions_store=MagicMock()) as ctx,
+        partition_loading_context(
+            dynamic_partitions_store=MagicMock(spec=DynamicPartitionsStore)
+        ) as ctx,
     ):
         time_window_partitions_def = DailyPartitionsDefinition(start_date="2020-01-01")
         all_subset = AllPartitionsSubset(time_window_partitions_def, ctx)
@@ -197,7 +280,7 @@ def test_all_partitions_subset_time_window_partitions_def() -> None:
         )
         assert subset - all_subset == time_window_partitions_def.empty_subset()
 
-        round_trip_subset = deserialize_value(serialize_value(all_subset.to_serializable_subset()))
+        round_trip_subset = deserialize_value(serialize_value(all_subset.to_serializable_subset()))  # type: ignore
         assert isinstance(round_trip_subset, TimeWindowPartitionsSubset)
         assert set(round_trip_subset.get_partition_keys()) == set(all_subset.get_partition_keys())
 
@@ -206,7 +289,9 @@ def test_partitions_set_short_circuiting() -> None:
     static_partitions_def = dg.StaticPartitionsDefinition(["a", "b", "c", "d"])
     default_ps = DefaultPartitionsSubset({"a", "b", "c"})
 
-    with partition_loading_context(dynamic_partitions_store=MagicMock()) as ctx:
+    with partition_loading_context(
+        dynamic_partitions_store=MagicMock(spec=DynamicPartitionsStore)
+    ) as ctx:
         all_ps = AllPartitionsSubset(static_partitions_def, ctx)
 
     # Test short-circuiting of |. Returns the same AllPartionsSubset
@@ -272,6 +357,107 @@ def test_multi_partition_subset_to_range_conversion():
             multi_partitions_def.get_partition_keys_in_range(partition_key_range)
         )
     assert sorted(partition_keys_from_ranges) == sorted(target_partitions)
+
+
+def test_key_ranges_subset():
+    color_partition = dg.StaticPartitionsDefinition(
+        ["red", "yellow", "blue", "green", "purple", "orange"]
+    )
+
+    key_ranges_subset = KeyRangesPartitionsSubset(
+        key_ranges=[
+            dg.PartitionKeyRange("red", "blue"),
+            dg.PartitionKeyRange("orange", "orange"),
+        ],
+        partitions_snap=PartitionsSnap.from_def(color_partition),
+    )
+
+    with pytest.raises(
+        CheckError, match="This function can only be called within a partition_loading_context"
+    ):
+        key_ranges_subset.get_partition_keys()
+
+    assert not key_ranges_subset.is_empty
+
+    with (
+        instance_for_test() as instance,
+        partition_loading_context(
+            effective_dt=get_current_datetime(), dynamic_partitions_store=instance
+        ),
+    ):
+        assert key_ranges_subset.get_partition_keys_not_in_subset(color_partition) == [
+            "green",
+            "purple",
+        ]
+        assert not key_ranges_subset.is_empty
+        assert key_ranges_subset.partitions_definition == color_partition
+
+        assert key_ranges_subset.get_partition_key_ranges(color_partition) == [
+            dg.PartitionKeyRange("red", "blue"),
+            dg.PartitionKeyRange("orange", "orange"),
+        ]
+
+        assert key_ranges_subset.get_partition_keys() == ["red", "yellow", "blue", "orange"]
+
+        assert key_ranges_subset.with_partition_keys(["green"]) == DefaultPartitionsSubset(
+            {"red", "yellow", "blue", "green", "orange"}
+        )
+
+        assert KeyRangesPartitionsSubset.can_deserialize(
+            color_partition, key_ranges_subset.serialize(), None, None
+        )
+
+        assert (
+            KeyRangesPartitionsSubset.from_serialized(
+                color_partition, key_ranges_subset.serialize()
+            )
+            == key_ranges_subset
+        )
+
+        assert "yellow" in key_ranges_subset
+        assert "orange" in key_ranges_subset
+        assert "green" not in key_ranges_subset
+
+        assert len(key_ranges_subset) == 4
+
+        empty_subset = KeyRangesPartitionsSubset(
+            key_ranges=[], partitions_snap=PartitionsSnap.from_def(color_partition)
+        )
+
+        assert empty_subset == key_ranges_subset.empty_subset()
+        assert empty_subset == KeyRangesPartitionsSubset.create_empty_subset(color_partition)
+
+        assert len(empty_subset) == 0
+        assert empty_subset.is_empty
+        assert empty_subset.partitions_definition == color_partition
+        assert empty_subset.get_partition_keys() == []
+        assert empty_subset.get_partition_key_ranges(color_partition) == []
+        assert empty_subset.with_partition_keys(["red"]) == DefaultPartitionsSubset({"red"})
+
+
+def test_key_ranges_subset_dynamic_partitions():
+    dynamic_partitions_def = dg.DynamicPartitionsDefinition(name="dynamic_partitions_def")
+    with instance_for_test() as instance:
+        instance.add_dynamic_partitions("dynamic_partitions_def", ["a", "b", "c", "d"])
+        key_ranges_subset = KeyRangesPartitionsSubset(
+            key_ranges=[dg.PartitionKeyRange("a", "c")],
+            partitions_snap=PartitionsSnap.from_def(dynamic_partitions_def),
+        )
+        with pytest.raises(CheckError):
+            key_ranges_subset.get_partition_keys()
+
+        with partition_loading_context(dynamic_partitions_store=instance):
+            assert key_ranges_subset.get_partition_keys() == ["a", "b", "c"]
+
+        asset_graph_subset = AssetGraphSubset(
+            partitions_subsets_by_asset_key={
+                dg.AssetKey("asset"): key_ranges_subset,
+            },
+            non_partitioned_asset_keys=set(),
+        )
+
+        # can get asset keys from subset without partition loading context
+        assert asset_graph_subset.asset_keys == {dg.AssetKey("asset")}
 
 
 def test_multi_partition_subset_to_range_conversion_grouping_choices():

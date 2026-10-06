@@ -5,7 +5,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Optional, TextIO
+from typing import TextIO
 
 import dagster as dg
 from dagster import AssetExecutionContext
@@ -20,7 +20,7 @@ from dagster_pipes import PipesDefaultMessageWriter, _make_message
 
 
 class PipesFileLogReader(PipesChunkedLogReader):
-    def __init__(self, *, path: str, interval: float = 10, target_stream: TextIO):
+    def __init__(self, *, path: str, interval: float = 0.1, target_stream: TextIO):
         super().__init__(interval=interval, target_stream=target_stream)
 
         self.path = path
@@ -30,7 +30,7 @@ class PipesFileLogReader(PipesChunkedLogReader):
         return os.path.exists(self.path)
 
     def download_log_chunk(self, params: PipesParams) -> str:
-        with open(self.path) as file:
+        with open(self.path, encoding="utf-8") as file:
             file.seek(self.file_position)
             chunk = file.read()
             self.file_position = file.tell()
@@ -38,7 +38,7 @@ class PipesFileLogReader(PipesChunkedLogReader):
 
 
 class PipesFileMessageReader(PipesThreadedMessageReader):
-    def __init__(self, *, log_readers, path: Optional[str] = None):
+    def __init__(self, *, log_readers, path: str | None = None):
         self.path = path
         self.file_position = 0
 
@@ -60,15 +60,13 @@ class PipesFileMessageReader(PipesThreadedMessageReader):
     def get_params(self) -> Iterator[PipesParams]:
         yield {PipesDefaultMessageWriter.STDIO_KEY: PipesDefaultMessageWriter.STDOUT}
 
-    def download_messages(  # pyright: ignore[reportIncompatibleMethodOverride]
-        self, cursor: Optional[int], params: PipesParams
-    ) -> Optional[tuple[int, str]]:
+    def download_messages(self, cursor: int | None, params: PipesParams) -> tuple[int, str] | None:
         if cursor is None:
             cursor = 0
 
         assert self.path is not None
 
-        with open(self.path) as file:
+        with open(self.path, encoding="utf-8") as file:
             file.seek(cursor)
             chunk = file.read()
             if chunk:
@@ -89,14 +87,14 @@ def test_file_log_reader(tmp_path_factory, capsys):
 
     assert not reader.target_is_readable({}), "Should not be able to read without the file existing"
 
-    with open(log_path, "w") as file:
+    with open(log_path, "w", encoding="utf-8") as file:
         file.write("1\n")
 
     assert reader.target_is_readable({}), "Should be able to read after the file was created"
 
     reader.start({}, is_session_closed)
 
-    with open(log_path, "a") as file:
+    with open(log_path, "a", encoding="utf-8") as file:
         file.write("2\n")
         file.write("3\n")
 
@@ -154,19 +152,19 @@ def test_file_message_reader(tmp_path_factory, capsys):
             session.report_launched({"extras": new_params})
 
             def log_event(message: str):
-                with open(messages_path, "a") as file:
+                with open(messages_path, "a", encoding="utf-8") as file:
                     file.write(message + "\n")
 
             def log_line_1(message: str):
-                with open(log_path_1, "a") as file:
+                with open(log_path_1, "a", encoding="utf-8") as file:
                     file.write(message + "\n")
 
             def log_line_2(message: str):
-                with open(log_path_2, "a") as file:
+                with open(log_path_2, "a", encoding="utf-8") as file:
                     file.write(message + "\n")
 
             def log_line_3(message: str):
-                with open(log_path_3, "a") as file:
+                with open(log_path_3, "a", encoding="utf-8") as file:
                     file.write(message + "\n")
 
             log_line_1("Hello 1")
@@ -218,7 +216,7 @@ def test_file_message_reader(tmp_path_factory, capsys):
     mat = mats[0]
     assert mat.asset_key == dg.AssetKey(["my_asset"])
     assert mat.materialization.metadata["foo"].value == "bar"
-    assert mat.materialization.tags[DATA_VERSION_TAG] == "alpha"  # pyright: ignore[reportOptionalSubscript]
+    assert mat.materialization.tags[DATA_VERSION_TAG] == "alpha"  # ty: ignore[not-subscriptable]
 
     captured = capsys.readouterr()
 

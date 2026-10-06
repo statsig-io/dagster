@@ -1,5 +1,6 @@
+import re
+import traceback
 from datetime import date, datetime
-from typing import Optional
 
 import dagster as dg
 import dagster._check as check
@@ -29,6 +30,7 @@ from dagster._core.test_utils import (
     raise_exception_on_warnings,
 )
 from dagster._time import create_datetime, parse_time_string
+from dagster_shared.error import SerializableErrorInfo
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +43,7 @@ def get_upstream_partitions_for_partition_range(
     downstream_asset_key: AssetKey,
     upstream_partitions_def: PartitionsDefinition,
     upstream_asset_key: AssetKey,
-    downstream_partition_key_range: Optional[dg.PartitionKeyRange],
+    downstream_partition_key_range: dg.PartitionKeyRange | None,
 ) -> dg.PartitionKeyRange:
     if upstream_partitions_def is None:
         check.failed("upstream asset is not partitioned")
@@ -119,7 +121,7 @@ def test_assets_with_same_partitioning():
     assert get_upstream_partitions_for_partition_range(
         downstream_asset,
         downstream_asset.key,
-        upstream_asset.partitions_def,  # pyright: ignore[reportArgumentType]
+        upstream_asset.partitions_def,  # ty: ignore[invalid-argument-type]
         dg.AssetKey("upstream_asset"),
         dg.PartitionKeyRange("a", "c"),
     ) == dg.PartitionKeyRange("a", "c")
@@ -278,7 +280,7 @@ def test_access_partition_keys_from_context_only_one_asset_partitioned():
 
 def test_output_context_asset_partitions_time_window():
     class MyIOManager(dg.IOManager):
-        def handle_output(self, context, _obj):  # pyright: ignore[reportIncompatibleMethodOverride]
+        def handle_output(self, context, _obj):  # ty: ignore[invalid-method-override]
             assert context.asset_partitions_time_window == dg.TimeWindow(
                 parse_time_string("2021-06-06"), parse_time_string("2021-06-07")
             )
@@ -301,7 +303,7 @@ def test_input_context_asset_partitions_time_window():
     partitions_def = dg.DailyPartitionsDefinition(start_date="2021-05-05")
 
     class MyIOManager(dg.IOManager):
-        def handle_output(self, context, _obj):  # pyright: ignore[reportIncompatibleMethodOverride]
+        def handle_output(self, context, _obj):  # ty: ignore[invalid-method-override]
             assert context.asset_partitions_time_window == dg.TimeWindow(
                 parse_time_string("2021-06-06"), parse_time_string("2021-06-07")
             )
@@ -412,7 +414,7 @@ def test_multi_assets_with_same_partitioning():
     assert get_upstream_partitions_for_partition_range(
         downstream_asset_1,
         downstream_asset_1.key,
-        upstream_asset.partitions_def,  # pyright: ignore[reportArgumentType]
+        upstream_asset.partitions_def,  # ty: ignore[invalid-argument-type]
         dg.AssetKey("upstream_asset_1"),
         dg.PartitionKeyRange("a", "c"),
     ) == dg.PartitionKeyRange("a", "c")
@@ -420,7 +422,7 @@ def test_multi_assets_with_same_partitioning():
     assert get_upstream_partitions_for_partition_range(
         downstream_asset_2,
         downstream_asset_2.key,
-        upstream_asset.partitions_def,  # pyright: ignore[reportArgumentType]
+        upstream_asset.partitions_def,  # ty: ignore[invalid-argument-type]
         dg.AssetKey("upstream_asset_2"),
         dg.PartitionKeyRange("a", "c"),
     ) == dg.PartitionKeyRange("a", "c")
@@ -508,9 +510,18 @@ def test_multi_asset_with_different_partitions_defs():
 
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
-        match="Selected assets must have the same partitions definitions, but the selected assets ",
-    ):
+    ) as exc_info:
         dg.materialize(assets=[my_assets], partition_key="b")
+
+    tb_exc = traceback.TracebackException.from_exception(exc_info.value)
+    error_info = SerializableErrorInfo.from_traceback(tb_exc)
+
+    assert (
+        re.compile(
+            "Selected assets must have the same partitions definitions, but the selected assets "
+        ).search(str(error_info))
+        is not None
+    )
 
 
 def test_multi_asset_with_differrent_partitions_def_and_top_level_group_name():
@@ -700,7 +711,7 @@ def test_mismatched_job_partitioned_config_with_asset_partitions():
     with pytest.raises(
         CheckError,
         match=(
-            "Can't supply a PartitionedConfig for 'config' with a different PartitionsDefinition"
+            r"Can't supply a PartitionedConfig for 'config' with a different PartitionsDefinition"
             " than supplied for 'partitions_def'."
         ),
     ):
@@ -1103,5 +1114,49 @@ def test_time_partitioned_asset_get_partition_key():
         dg.materialize(
             assets=[daily_asset],
             resources={"io_manager": IOManagerDefinition.hardcoded_io_manager(CustomIOManager())},
-            partition_key=daily_partition_definition.get_partition_key(None),  # pyright: ignore[reportArgumentType]
+            partition_key=daily_partition_definition.get_partition_key(None),  # ty: ignore[invalid-argument-type]
         )
+
+
+def test_non_partitioned_spec_in_mixed_multi_asset_does_not_raise_partition_key_error():
+    pd = dg.MonthlyPartitionsDefinition(start_date="2024-01-01", end_offset=1)
+
+    @dg.asset(partitions_def=pd)
+    def partitioned_upstream(context: dg.AssetExecutionContext):
+        """External partitioned asset."""
+        context.log.info(f"Materializing partition {context.partition_key}")
+
+    @dg.multi_asset(
+        specs=[
+            # Partitioned spec — its mere existence poisons entity_partitions_def
+            dg.AssetSpec("partitioned_model", partitions_def=pd),
+            # Non-partitioned spec that depends on the partitioned upstream asset
+            dg.AssetSpec("non_partitioned_model", deps=["partitioned_upstream"]),
+        ],
+        can_subset=True,
+    )
+    def my_multi_asset(context: dg.AssetExecutionContext):
+        """Multi-asset with mixed partition specs — reproduces the bug."""
+        selected = context.selected_asset_keys
+        if dg.AssetKey("partitioned_model") in selected:
+            yield dg.MaterializeResult(asset_key="partitioned_model")
+        if dg.AssetKey("non_partitioned_model") in selected:
+            yield dg.MaterializeResult(asset_key="non_partitioned_model")
+
+    defs = dg.Definitions(assets=[partitioned_upstream, my_multi_asset])
+    job = defs.resolve_implicit_global_asset_job_def()
+
+    instance = dg.DagsterInstance.ephemeral()
+
+    result = job.execute_in_process(
+        asset_selection=[dg.AssetKey("partitioned_upstream")],
+        partition_key="2024-01-01",
+        instance=instance,
+    )
+    assert result.success
+
+    result = job.execute_in_process(
+        asset_selection=[dg.AssetKey("non_partitioned_model")],
+        instance=instance,
+    )
+    assert result.success

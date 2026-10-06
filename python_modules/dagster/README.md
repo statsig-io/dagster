@@ -1,8 +1,10 @@
 <div align="center">
   <!-- Note: Do not try adding the dark mode version here with the `picture` element, it will break formatting in PyPI -->
-  <a target="_blank" href="https://dagster.io" style="background:none">
-    <img alt="dagster logo" src="https://raw.githubusercontent.com/dagster-io/dagster/master/.github/dagster-readme-header.svg" width="auto" height="100%">
-  </a>
+  <div>
+    <a target="_blank" href="https://dagster.io" style="background:none">
+      <img alt="dagster logo" src="https://raw.githubusercontent.com/dagster-io/dagster/master/.github/dagster-logo-light.svg" height="72">
+    </a>
+  </div>
   <a target="_blank" href="https://github.com/dagster-io/dagster" style="background:none">
     <img src="https://img.shields.io/github/stars/dagster-io/dagster?labelColor=4F43DD&color=163B36&logo=github">
   </a>
@@ -35,24 +37,30 @@ With Dagster, you declare—as Python functions—the data assets that you want 
 Here is an example of a graph of three assets defined in Python:
 
 ```python
-from dagster import asset
-from pandas import DataFrame, read_html, get_dummies
+import dagster as dg
+import pandas as pd
+
 from sklearn.linear_model import LinearRegression
 
-@asset
-def country_populations() -> DataFrame:
-    df = read_html("https://tinyurl.com/mry64ebh")[0]
+
+@dg.asset
+def country_populations() -> pd.DataFrame:
+    df = pd.read_html("https://tinyurl.com/mry64ebh")[0]
     df.columns = ["country", "pop2022", "pop2023", "change", "continent", "region"]
-    df["change"] = df["change"].str.rstrip("%").str.replace("−", "-").astype("float")
+    df["change"] = df["change"].str.rstrip("%").astype("float")
     return df
 
-@asset
-def continent_change_model(country_populations: DataFrame) -> LinearRegression:
-    data = country_populations.dropna(subset=["change"])
-    return LinearRegression().fit(get_dummies(data[["continent"]]), data["change"])
 
-@asset
-def continent_stats(country_populations: DataFrame, continent_change_model: LinearRegression) -> DataFrame:
+@dg.asset
+def continent_change_model(country_populations: pd.DataFrame) -> LinearRegression:
+    data = country_populations.dropna(subset=["change"])
+    return LinearRegression().fit(pd.get_dummies(data[["continent"]]), data["change"])
+
+
+@dg.asset
+def continent_stats(
+    country_populations: pd.DataFrame, continent_change_model: LinearRegression
+) -> pd.DataFrame:
     result = country_populations.groupby("continent").sum()
     result["pop_change_factor"] = continent_change_model.coef_
     return result
@@ -70,16 +78,11 @@ Dagster is built to be used at every stage of the data development lifecycle - l
 
 If you're new to Dagster, we recommend checking out the [docs](https://docs.dagster.io) or following the hands-on [tutorial](https://docs.dagster.io/etl-pipeline-tutorial/).
 
-Dagster is available on PyPI and officially supports Python 3.9 through Python 3.13.
+Dagster is available on PyPI and officially supports Python 3.9 through Python 3.14.
 
 ```bash
-pip install dagster dagster-webserver
+uv add dagster dagster-webserver dagster-dg-cli
 ```
-
-This installs two packages:
-
-- `dagster`: The core programming model.
-- `dagster-webserver`: The server that hosts Dagster's web UI for developing and operating Dagster jobs and assets.
 
 ## Documentation
 
@@ -129,7 +132,7 @@ Join our community here:
 - 🌟 [Star us on GitHub](https://github.com/dagster-io/dagster)
 - 📥 [Subscribe to our Newsletter](https://dagster.io/newsletter-signup)
 - 🐦 [Follow us on Twitter](https://twitter.com/dagster)
-- 🕴️ [Follow us on LinkedIn](https://linkedin.com/showcase/dagster)
+- 🕴️ [Follow us on LinkedIn](https://www.linkedin.com/company/dagsterlabs/)
 - 📺 [Subscribe to our YouTube channel](https://www.youtube.com/@dagsterio)
 - 📚 [Read our blog posts](https://dagster.io/blog)
 - 👋 [Join us on Slack](https://dagster.io/slack)

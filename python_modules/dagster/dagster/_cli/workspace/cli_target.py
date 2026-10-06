@@ -1,9 +1,10 @@
 import logging
 import os
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import Any, Callable, Optional, TypeVar, cast
+from pathlib import Path
+from typing import Any, Optional, TypeVar, cast
 
 import click
 from click import UsageError
@@ -23,13 +24,13 @@ from dagster._core.definitions.repository_definition.valid_definitions import (
 )
 from dagster._core.instance import DagsterInstance
 from dagster._core.origin import DEFAULT_DAGSTER_ENTRY_POINT, RepositoryPythonOrigin
-from dagster._core.remote_representation.code_location import CodeLocation
-from dagster._core.remote_representation.external import RemoteJob, RemoteRepository
-from dagster._core.remote_representation.origin import (
+from dagster._core.remote_origin import (
     CodeLocationOrigin,
     GrpcServerCodeLocationOrigin,
     InProcessCodeLocationOrigin,
 )
+from dagster._core.remote_representation.code_location import CodeLocation
+from dagster._core.remote_representation.external import RemoteJob, RemoteRepository
 from dagster._core.workspace.context import WorkspaceProcessContext, WorkspaceRequestContext
 from dagster._core.workspace.load_target import (
     CompositeTarget,
@@ -79,8 +80,10 @@ def _get_workspace_load_target_from_cli_opts(
             return EmptyWorkspaceTarget()
         elif has_pyproject_dagster_block("pyproject.toml"):
             return PyProjectFileTarget("pyproject.toml")
-        elif os.path.exists("workspace.yaml"):
+        elif Path("workspace.yaml").exists():
             return WorkspaceFileTarget(paths=["workspace.yaml"])
+        elif Path("workspace.yml").exists():
+            return WorkspaceFileTarget(paths=["workspace.yml"])
         else:
             raise click.UsageError(
                 "No arguments given and no [tool.dagster] block in pyproject.toml found."
@@ -218,6 +221,7 @@ def _get_workspace_load_target_from_cli_opts(
             socket=None,
             host=workspace_opts.grpc_host or "localhost",
             location_name=None,
+            use_ssl=workspace_opts.use_ssl,
         )
     elif workspace_opts.grpc_socket:
         _check_attrs_falsey(
@@ -229,6 +233,7 @@ def _get_workspace_load_target_from_cli_opts(
             socket=workspace_opts.grpc_socket,
             host=workspace_opts.grpc_host or "localhost",
             location_name=None,
+            use_ssl=workspace_opts.use_ssl,
         )
     else:
         _raise_cli_usage_error()
@@ -282,7 +287,7 @@ def get_job_from_cli_opts(
     version: str,
     workspace_opts: "WorkspaceOpts",
     repository_opts: Optional["RepositoryOpts"],
-    job_name: Optional[str],
+    job_name: str | None,
 ) -> Iterator[RemoteJob]:
     # Instance isn't strictly required to load an RemoteJob, but is included
     # to satisfy the WorkspaceProcessContext / WorkspaceRequestContext requirements
@@ -338,8 +343,8 @@ def _origin_executable_matches_current_process(origin: CodeLocationOrigin) -> bo
 
 @record
 class RepositoryOpts:
-    repository: Optional[str] = None
-    location: Optional[str] = None
+    repository: str | None = None
+    location: str | None = None
 
     @classmethod
     def extract_from_cli_options(cls, cli_options: dict[str, object]) -> Self:
@@ -364,16 +369,16 @@ def run_config_option(*, name: str, command_name: str) -> Callable[[T_Callable],
     return wrap
 
 
-def job_name_option(f: Optional[T_Callable] = None, *, name: str) -> T_Callable:
+def job_name_option(f: T_Callable | None = None, *, name: str) -> T_Callable:
     if f is None:
-        return lambda f: job_name_option(f, name=name)  # type: ignore
+        return lambda f: job_name_option(f, name=name)  # ty: ignore[invalid-return-type]
     else:
         return apply_click_params(f, _generate_job_name_option(name))
 
 
-def repository_name_option(f: Optional[T_Callable] = None, *, name: str) -> T_Callable:
+def repository_name_option(f: T_Callable | None = None, *, name: str) -> T_Callable:
     if f is None:
-        return lambda f: repository_name_option(f, name=name)  # type: ignore
+        return lambda f: repository_name_option(f, name=name)  # ty: ignore[invalid-return-type]
     else:
         return apply_click_params(f, _generate_repository_name_option(name))
 
@@ -466,6 +471,7 @@ def _get_code_pointer_dict_from_python_pointer_opts(
         working_directory=working_directory,
         attribute=params.attribute,
         autoload_defs_module_name=params.autoload_defs_module_name,
+        resolve_lazy_defs=True,
     )
 
     # repository_name -> code_pointer
@@ -498,7 +504,7 @@ def _get_code_pointer_dict_from_python_pointer_opts(
 
 
 def get_repository_python_origin_from_cli_opts(
-    params: PythonPointerOpts, repo_name: Optional[str] = None
+    params: PythonPointerOpts, repo_name: str | None = None
 ) -> RepositoryPythonOrigin:
     if (
         sum(
@@ -577,7 +583,7 @@ def get_repository_python_origin_from_cli_opts(
 
 
 def get_code_location_from_workspace(
-    workspace: WorkspaceRequestContext, code_location_name: Optional[str]
+    workspace: WorkspaceRequestContext, code_location_name: str | None
 ) -> CodeLocation:
     if code_location_name is None:
         if len(workspace.code_location_names) == 1:
@@ -605,7 +611,7 @@ def get_code_location_from_workspace(
 
 
 def get_remote_repository_from_code_location(
-    code_location: CodeLocation, provided_repo_name: Optional[str]
+    code_location: CodeLocation, provided_repo_name: str | None
 ) -> RemoteRepository:
     check.inst_param(code_location, "code_location", CodeLocation)
     check.opt_str_param(provided_repo_name, "provided_repo_name")
@@ -634,7 +640,7 @@ def get_remote_repository_from_code_location(
 
 def get_remote_job_from_remote_repo(
     remote_repo: RemoteRepository,
-    provided_name: Optional[str],
+    provided_name: str | None,
 ) -> RemoteJob:
     check.inst_param(remote_repo, "remote_repo", RemoteRepository)
     check.opt_str_param(provided_name, "provided_name")
@@ -667,7 +673,7 @@ def get_run_config_from_file_list(file_list: list[str]) -> Mapping[str, object]:
 
 
 def get_run_config_from_cli_opts(
-    config_files: tuple[str, ...], config_json: Optional[str]
+    config_files: tuple[str, ...], config_json: str | None
 ) -> Mapping[str, object]:
     if not (config_files or config_json):
         return {}
@@ -691,7 +697,7 @@ def get_run_config_from_cli_opts(
 # ########################
 
 
-def _raise_cli_usage_error(msg: Optional[str] = None) -> Never:
+def _raise_cli_usage_error(msg: str | None = None) -> Never:
     raise UsageError(
         msg or "Invalid set of CLI arguments for loading repository/job. See --help for details."
     )

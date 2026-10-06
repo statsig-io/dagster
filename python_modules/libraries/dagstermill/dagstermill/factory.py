@@ -3,9 +3,10 @@ import os
 import pickle
 import sys
 import tempfile
+import time
 import uuid
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, Callable, Optional, Union, cast
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any, cast
 
 import nbformat
 import papermill
@@ -196,12 +197,42 @@ def execute_notebook(
 
         try:
             papermill_engines.register("dagstermill", DagstermillEngine)
-            papermill.execute_notebook(
-                input_path=parameterized_notebook_path,
-                output_path=executed_notebook_path,
-                engine_name="dagstermill",
-                log_output=True,
-            )
+
+            # Retry on kernel startup failures caused by ZMQ port collisions. When
+            # multiple notebooks execute in parallel, jupyter_client can pre-allocate
+            # the same port for different kernels (TOCTOU race), causing ipykernel to
+            # crash with "Address already in use" which surfaces as "Kernel died before
+            # replying to kernel_info". The failure is instant so retries are cheap.
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    papermill.execute_notebook(
+                        input_path=parameterized_notebook_path,
+                        output_path=executed_notebook_path,
+                        engine_name="dagstermill",
+                        log_output=True,
+                        # Bump kernel-startup timeout from papermill's 60s default
+                        # to 120s. Without this, papermill's default propagates
+                        # through to nbclient and shadows DagstermillEngine's own
+                        # 120s default in `execute_managed_notebook`, leading to
+                        # spurious "Kernel didn't respond in 60 seconds" failures
+                        # on slow / loaded CI hosts.
+                        start_timeout=120,
+                    )
+                    break
+                except RuntimeError as re:
+                    if (
+                        "Kernel died before replying to kernel_info" in str(re)
+                        and attempt < max_retries - 1
+                    ):
+                        step_context.log.warning(
+                            f"Kernel startup failed (attempt {attempt + 1}/{max_retries}),"
+                            " retrying. This is typically caused by a ZMQ port collision when"
+                            " multiple notebooks execute in parallel."
+                        )
+                        time.sleep(1)
+                        continue
+                    raise
 
         except Exception as ex:
             step_context.log.warn(
@@ -209,7 +240,7 @@ def execute_notebook(
             )
 
             if isinstance(ex, ExecutionError):
-                exception_name = ex.ename  # type: ignore
+                exception_name = ex.ename
                 if exception_name in ["RetryRequested", "Failure"]:
                     step_context.log.warn(
                         f"Encountered raised {exception_name} in notebook. Use"
@@ -273,9 +304,9 @@ def _make_dagstermill_compute_fn(
     dagster_factory_name: str,
     name: str,
     notebook_path: str,
-    output_notebook_name: Optional[str] = None,
-    asset_key_prefix: Optional[Sequence[str]] = None,
-    output_notebook: Optional[str] = None,
+    output_notebook_name: str | None = None,
+    asset_key_prefix: Sequence[str] | None = None,
+    output_notebook: str | None = None,
     save_notebook_on_failure: bool = False,
 ) -> Callable:
     def _t_fn(op_context: OpExecutionContext, inputs: Mapping[str, object]) -> Iterable:
@@ -350,15 +381,15 @@ def _make_dagstermill_compute_fn(
 def define_dagstermill_op(
     name: str,
     notebook_path: str,
-    ins: Optional[Mapping[str, In]] = None,
-    outs: Optional[Mapping[str, Out]] = None,
-    config_schema: Optional[Union[Any, Mapping[str, Any]]] = None,
-    required_resource_keys: Optional[set[str]] = None,
-    output_notebook_name: Optional[str] = None,
-    asset_key_prefix: Optional[Union[Sequence[str], str]] = None,
-    description: Optional[str] = None,
-    tags: Optional[Mapping[str, Any]] = None,
-    io_manager_key: Optional[str] = None,
+    ins: Mapping[str, In] | None = None,
+    outs: Mapping[str, Out] | None = None,
+    config_schema: Any | Mapping[str, Any] | None = None,
+    required_resource_keys: set[str] | None = None,
+    output_notebook_name: str | None = None,
+    asset_key_prefix: Sequence[str] | str | None = None,
+    description: str | None = None,
+    tags: Mapping[str, Any] | None = None,
+    io_manager_key: str | None = None,
     save_notebook_on_failure: bool = False,
 ) -> OpDefinition:
     """Wrap a Jupyter notebook in a op.
@@ -408,7 +439,7 @@ def define_dagstermill_op(
         required_resource_keys.add(io_mgr_key)
         outs = {
             **outs,
-            cast("str", output_notebook_name): Out(io_manager_key=io_mgr_key),
+            output_notebook_name: Out(io_manager_key=io_mgr_key),
         }
 
     if isinstance(asset_key_prefix, str):

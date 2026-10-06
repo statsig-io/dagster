@@ -211,7 +211,7 @@ def test_deprecated_classmethod(decorators):
     with pytest.warns(
         DeprecationWarning, match=r"`[^`]+Foo.bar` is deprecated and will be removed in 2.0"
     ) as warning:
-        Foo.bar()  # pyright: ignore[reportCallIssue]
+        Foo.bar()
     assert warning[0].filename.endswith("test_annotations.py")
 
 
@@ -329,7 +329,7 @@ def test_deprecated_param_staticmethod(decorators):
     with pytest.warns(
         DeprecationWarning, match=r"Parameter `baz` of [^`]+`[^`]+Foo.bar` is deprecated"
     ) as warning:
-        Foo.bar(baz="ok")  # pyright: ignore[reportArgumentType]
+        Foo.bar(baz="ok")
     assert warning[0].filename.endswith("test_annotations.py")
 
 
@@ -355,7 +355,7 @@ def test_deprecated_param_classmethod(decorators):
     with pytest.warns(
         DeprecationWarning, match=r"Parameter `baz` of [^`]+`[^`]+Foo.bar` is deprecated"
     ) as warning:
-        Foo.bar(baz="ok")  # pyright: ignore[reportCallIssue]
+        Foo.bar(baz="ok")
     assert warning[0].filename.endswith("test_annotations.py")
 
 
@@ -509,7 +509,7 @@ def test_preview_classmethod(decorators):
     with pytest.warns(
         dg.PreviewWarning, match=r"`[^`]+Foo.bar` is currently in preview"
     ) as warning:
-        Foo.bar()  # pyright: ignore[reportCallIssue]
+        Foo.bar()
     assert warning[0].filename.endswith("test_annotations.py")
 
 
@@ -712,7 +712,7 @@ def test_beta_classmethod(decorators):
     assert is_beta(Foo.__dict__["bar"])  # __dict__ access to get descriptor
 
     with pytest.warns(dg.BetaWarning, match=r"`[^`]+Foo.bar` is currently in beta") as warning:
-        Foo.bar()  # pyright: ignore[reportCallIssue]
+        Foo.bar()
     assert warning[0].filename.endswith("test_annotations.py")
 
 
@@ -868,7 +868,7 @@ def test_beta_param_staticmethod(decorators):
     with pytest.warns(
         dg.BetaWarning, match=r"Parameter `baz` of [^`]+`[^`]+Foo.bar` is currently in beta"
     ) as warning:
-        Foo.bar(baz="ok")  # pyright: ignore[reportArgumentType]
+        Foo.bar(baz="ok")
     assert warning[0].filename.endswith("test_annotations.py")
 
 
@@ -894,7 +894,7 @@ def test_beta_param_classmethod(decorators):
     with pytest.warns(
         dg.BetaWarning, match=r"Parameter `baz` of [^`]+`[^`]+Foo.bar` is currently in beta"
     ) as warning:
-        Foo.bar(baz="ok")  # pyright: ignore[reportCallIssue]
+        Foo.bar(baz="ok")
     assert warning[0].filename.endswith("test_annotations.py")
 
 
@@ -1040,7 +1040,7 @@ def test_superseded_classmethod(decorators):
     assert is_superseded(Foo.__dict__["bar"])  # __dict__ access to get descriptor
 
     with pytest.warns(dg.SupersessionWarning, match=r"`[^`]+Foo.bar` is superseded") as warning:
-        Foo.bar()  # pyright: ignore[reportCallIssue]
+        Foo.bar()
     assert warning[0].filename.endswith("test_annotations.py")
 
 
@@ -1206,7 +1206,7 @@ def test_hidden_annotations() -> None:
 
     with pytest.raises(
         CheckError,
-        match="Invariant failed. Description: Attempted to mark undefined parameter `baz` deprecated.",
+        match=r"Invariant failed. Description: Attempted to mark undefined parameter `baz` deprecated.",
     ):
 
         @deprecated_param(param="baz", breaking_version="2.0")
@@ -1223,3 +1223,37 @@ def test_hidden_annotations() -> None:
         match="vanilla_func got an unexpected keyword argument 'hidden_param'",
     ):
         vanilla_func(hidden_param="foo")
+
+
+def test_classes() -> None:
+    @public
+    class Public:
+        def bar(self):
+            pass
+
+    assert is_public(Public)
+
+    class NotPublic:
+        def bar(self):
+            pass
+
+    assert is_public(Public)
+    assert not is_public(NotPublic)
+
+    @public
+    class DerivedFromNotPublic(NotPublic):
+        def bar(self):
+            pass
+
+    assert is_public(Public)
+    assert not is_public(NotPublic)
+    assert is_public(DerivedFromNotPublic)
+
+    class DerivedFromPublic(Public):
+        def bar(self):
+            pass
+
+    assert is_public(Public)
+    assert not is_public(NotPublic)
+    assert is_public(DerivedFromNotPublic)
+    assert not is_public(DerivedFromPublic)

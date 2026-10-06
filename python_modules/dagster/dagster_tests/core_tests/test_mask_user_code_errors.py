@@ -3,7 +3,8 @@ import re
 import sys
 import time
 import traceback
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import dagster as dg
 import pytest
@@ -58,7 +59,7 @@ def test_masking_basic(enable_masking_user_code_errors):
         exc_info = sys.exc_info()
         err_info = serializable_error_info_from_exc_info(exc_info)
 
-    assert "hunter2" not in str(err_info)  # pyright: ignore[reportPossiblyUnboundVariable]
+    assert "hunter2" not in str(err_info)
 
 
 def test_masking_nested_user_code_err_boundaries(enable_masking_user_code_errors):
@@ -80,7 +81,7 @@ def test_masking_nested_user_code_err_boundaries(enable_masking_user_code_errors
         exc_info = sys.exc_info()
         err_info = serializable_error_info_from_exc_info(exc_info)
 
-    assert "hunter2" not in str(err_info)  # pyright: ignore[reportPossiblyUnboundVariable]
+    assert "hunter2" not in str(err_info)
 
 
 def test_masking_nested_user_code_err_boundaries_reraise(enable_masking_user_code_errors):
@@ -109,7 +110,7 @@ def test_masking_nested_user_code_err_boundaries_reraise(enable_masking_user_cod
         exc_info = sys.exc_info()
         err_info = serializable_error_info_from_exc_info(exc_info)
 
-    assert "hunter2" not in str(err_info)  # pyright: ignore[reportPossiblyUnboundVariable]
+    assert "hunter2" not in str(err_info)
 
 
 ERROR_ID_REGEX = r"[Ee]rror ID ([a-z0-9\-]+)"
@@ -118,10 +119,10 @@ ERROR_ID_REGEX = r"[Ee]rror ID ([a-z0-9\-]+)"
 @pytest.mark.parametrize(
     "exc_name, expect_exc_name_in_error, build_exc",
     [
-        ("UserError", False, lambda: UserError()),
+        ("UserError", False, UserError),
         ("TypeError", False, lambda: TypeError("hunter2")),
-        ("KeyboardInterrupt", True, lambda: KeyboardInterrupt()),
-        ("DagsterExecutionInterruptedError", True, lambda: dg.DagsterExecutionInterruptedError()),
+        ("KeyboardInterrupt", True, KeyboardInterrupt),
+        ("DagsterExecutionInterruptedError", True, dg.DagsterExecutionInterruptedError),
         ("Failure", True, lambda: dg.Failure("asdf")),
     ],
 )

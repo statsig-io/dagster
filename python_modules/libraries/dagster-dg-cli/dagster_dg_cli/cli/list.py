@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import click
 from dagster_dg_core.component import EnvRegistry
@@ -27,8 +27,8 @@ from dagster_shared.utils.warnings import disable_dagster_warnings
 from rich.console import Console
 from rich.text import Text
 
+from dagster_dg_cli.cli.response_schema import dg_response_schema
 from dagster_dg_cli.utils.plus import gql
-from dagster_dg_cli.utils.plus.gql_client import DagsterPlusGraphQLClient
 
 if TYPE_CHECKING:
     from rich.table import Table
@@ -73,12 +73,18 @@ def DagsterOuterTable(columns: Sequence[str]) -> "Table":
 @dg_path_options
 @cli_telemetry_wrapper
 def list_project_command(target_path: Path, **global_options: object) -> None:
-    """List projects in the current workspace."""
+    """List projects in the current workspace or emit the current project directory."""
     cli_config = normalize_cli_config(global_options, click.get_current_context())
-    dg_context = DgContext.for_workspace_environment(target_path, cli_config)
+    dg_context = DgContext.for_workspace_or_project_environment(target_path, cli_config)
 
-    for project in dg_context.project_specs:
-        click.echo(project.path)
+    if dg_context.is_in_workspace:
+        # In a workspace, list all projects with their relative paths
+        for project in dg_context.project_specs:
+            click.echo(project.path)
+    elif dg_context.is_project:
+        # In a standalone project (not in a workspace), emit the current directory
+        # This allows the command to work in both contexts for CI/CD workflows
+        click.echo(".")
 
 
 # ########################
@@ -99,11 +105,12 @@ def list_project_command(target_path: Path, **global_options: object) -> None:
     default=False,
     help="Output as JSON instead of a table.",
 )
+@dg_response_schema(module="dagster_dg_cli.cli.schemas.list_schemas", cls="DgComponentList")
 @dg_path_options
 @dg_global_options
 @cli_telemetry_wrapper
 def list_components_command(
-    target_path: Path, package: Optional[str], output_json: bool, **global_options: object
+    target_path: Path, package: str | None, output_json: bool, **global_options: object
 ) -> None:
     """List all available Dagster component types in the current Python environment."""
     cli_config = normalize_cli_config(global_options, click.get_current_context())
@@ -123,10 +130,10 @@ def list_components_command(
         ]
 
     if output_json:
-        output = [
+        items = [
             {"key": obj.key.to_typename(), "summary": obj.summary} for obj in component_objects
         ]
-        click.echo(json.dumps(output))
+        click.echo(json.dumps({"items": items}))
     else:
         # Create a table with component types
         table = DagsterInnerTable(["Key", "Summary"])
@@ -151,6 +158,7 @@ FEATURE_COLOR_MAP = {"component": "deep_sky_blue3", "scaffold-target": "khaki1"}
     default=False,
     help="Output as JSON instead of a table.",
 )
+@dg_response_schema(module="dagster_dg_cli.cli.schemas.list_schemas", cls="DgRegistryModuleList")
 @dg_path_options
 @dg_global_options
 @cli_telemetry_wrapper
@@ -167,8 +175,8 @@ def list_registry_modules_command(
     registry = EnvRegistry.from_dg_context(dg_context)
 
     if output_json:
-        json_output = [{"module": module} for module in sorted(registry.modules)]
-        click.echo(json.dumps(json_output))
+        items = [{"module": module} for module in sorted(registry.modules)]
+        click.echo(json.dumps({"items": items}))
     else:
         table = DagsterOuterTable(["Module"])
         for module in sorted(registry.modules):
@@ -251,26 +259,26 @@ def _supports_column(column: DefsColumn, defs_type: DefsType) -> bool:
         raise ValueError(f"Invalid column: {column}")
 
 
-def _get_asset_value(column: DefsColumn, asset: DgAssetMetadata) -> Optional[str]:
+def _get_asset_value(column: DefsColumn, asset: DgAssetMetadata) -> str | None:
     if column == DefsColumn.KEY:
-        return asset.key
+        return asset.asset_key
     elif column == DefsColumn.GROUP:
-        return asset.group
+        return asset.group_name
     elif column == DefsColumn.DEPS:
-        return "\n".join(asset.deps)
+        return "\n".join(asset.dependency_keys)
     elif column == DefsColumn.KINDS:
         return "\n".join(asset.kinds)
     elif column == DefsColumn.DESCRIPTION:
         return asset.description
     elif column == DefsColumn.TAGS:
-        return "\n".join(asset.tags)
+        return "\n".join(f'"{t["key"]}"="{t["value"]}"' for t in asset.tags)
     elif column == DefsColumn.IS_EXECUTABLE:
         return str(asset.is_executable)
     else:
         raise ValueError(f"Invalid column: {column}")
 
 
-def _get_asset_check_value(column: DefsColumn, asset_check: DgAssetCheckMetadata) -> Optional[str]:
+def _get_asset_check_value(column: DefsColumn, asset_check: DgAssetCheckMetadata) -> str | None:
     if column == DefsColumn.KEY:
         return asset_check.key
     elif column == DefsColumn.DEPS:
@@ -281,7 +289,7 @@ def _get_asset_check_value(column: DefsColumn, asset_check: DgAssetCheckMetadata
         raise ValueError(f"Invalid column: {column}")
 
 
-def _get_job_value(column: DefsColumn, job: DgJobMetadata) -> Optional[str]:
+def _get_job_value(column: DefsColumn, job: DgJobMetadata) -> str | None:
     if column == DefsColumn.KEY:
         return job.name
     elif column == DefsColumn.DESCRIPTION:
@@ -290,14 +298,14 @@ def _get_job_value(column: DefsColumn, job: DgJobMetadata) -> Optional[str]:
         raise ValueError(f"Invalid column: {column}")
 
 
-def _get_resource_value(column: DefsColumn, resource: DgResourceMetadata) -> Optional[str]:
+def _get_resource_value(column: DefsColumn, resource: DgResourceMetadata) -> str | None:
     if column == DefsColumn.KEY:
         return resource.name
     else:
         raise ValueError(f"Invalid column: {column}")
 
 
-def _get_schedule_value(column: DefsColumn, schedule: DgScheduleMetadata) -> Optional[str]:
+def _get_schedule_value(column: DefsColumn, schedule: DgScheduleMetadata) -> str | None:
     if column == DefsColumn.KEY:
         return schedule.name
     elif column == DefsColumn.CRON:
@@ -306,7 +314,7 @@ def _get_schedule_value(column: DefsColumn, schedule: DgScheduleMetadata) -> Opt
         raise ValueError(f"Invalid column: {column}")
 
 
-def _get_sensor_value(column: DefsColumn, sensor: DgSensorMetadata) -> Optional[str]:
+def _get_sensor_value(column: DefsColumn, sensor: DgSensorMetadata) -> str | None:
     if column == DefsColumn.KEY:
         return sensor.name
     else:
@@ -323,7 +331,7 @@ GET_VALUE_BY_DEFS_TYPE = {
 }
 
 
-def _get_value(column: DefsColumn, defs_type: DefsType, defn: Any) -> Optional[Text]:
+def _get_value(column: DefsColumn, defs_type: DefsType, defn: Any) -> Text | None:
     raw_value = GET_VALUE_BY_DEFS_TYPE[defs_type](column, defn)
     value = Text(raw_value) if raw_value else None
     if value and column in _TRUNCATED_COLUMN_WIDTHS:
@@ -357,6 +365,9 @@ def _get_table(columns: Sequence[DefsColumn], defs_type: DefsType, defs: Sequenc
     default=False,
     help="Output as JSON instead of a table.",
 )
+@dg_response_schema(
+    module="dagster_dg_cli.cli.schemas.list_schemas", cls="DgDefinitionMetadataSchema"
+)
 @click.option(
     "--path",
     "-p",
@@ -385,9 +396,9 @@ def _get_table(columns: Sequence[DefsColumn], defs_type: DefsType, defs: Sequenc
 def list_defs_command(
     output_json: bool,
     target_path: Path,
-    path: Optional[Path],
-    assets: Optional[str],
-    columns: Optional[Sequence[str]],
+    path: Path | None,
+    assets: str | None,
+    columns: Sequence[str] | None,
     **global_options: object,
 ) -> None:
     """List registered Dagster definitions in the current project environment."""
@@ -421,7 +432,10 @@ def list_defs_command(
         if columns:
             raise click.UsageError("Cannot use --columns with --json")
 
-        click.echo(json.dumps(definitions.to_dict(), indent=4))
+        from dagster_dg_cli.cli.schemas.list_schemas import DgDefinitionMetadataSchema
+
+        schema = DgDefinitionMetadataSchema.from_local_definitions(definitions)
+        click.echo(schema.model_dump_json(indent=4, exclude_none=True))
 
     # TABLE
     else:
@@ -472,8 +486,10 @@ class DagsterPlusScopesForVariable:
 
 def _get_dagster_plus_keys(
     location_name: str, env_var_keys: set[str]
-) -> Optional[Mapping[str, DagsterPlusScopesForVariable]]:
+) -> Mapping[str, DagsterPlusScopesForVariable] | None:
     """Retrieves the set Dagster Plus keys for the given location name, if Plus is configured, otherwise returns None."""
+    from dagster_rest_resources.gql_client import DagsterPlusGraphQLClient
+
     if not DagsterPlusCliConfig.exists():
         return None
     config = DagsterPlusCliConfig.get()
@@ -481,11 +497,16 @@ def _get_dagster_plus_keys(
         return None
 
     scopes_for_key = defaultdict(lambda: DagsterPlusScopesForVariable(False, False, False))
-    gql_client = DagsterPlusGraphQLClient.from_config(config)
+    gql_client = DagsterPlusGraphQLClient(
+        url=config.organization_url,
+        api_token=config.user_token,
+        organization=config.organization,
+        deployment=config.default_deployment,
+    )
 
-    secrets_by_location = gql_client.execute(
+    secrets_by_location = gql_client.execute_arbitrary(
         gql.GET_SECRETS_FOR_SCOPES_QUERY_NO_VALUE,
-        {
+        variables={
             "locationName": location_name,
             "scopes": {
                 "fullDeploymentScope": True,
@@ -568,19 +589,19 @@ def list_env_command(target_path: Path, **global_options: object) -> None:
 @cli_telemetry_wrapper
 def list_component_tree_command(
     target_path: Path,
-    output_file: Optional[str],
+    output_file: str | None,
     **other_opts: object,
 ) -> None:
     cli_config = normalize_cli_config(other_opts, click.get_current_context())
     dg_context = DgContext.for_project_environment(target_path, cli_config)
 
-    from dagster.components.core.tree import ComponentTree
+    from dagster.components.core.component_tree import ComponentTree
 
-    tree = ComponentTree.load(dg_context.root_path)
+    tree = ComponentTree.for_project(dg_context.root_path)
     output = tree.to_string_representation(hide_plain_defs=True)
 
     if output_file:
         click.echo("[dagster-components] Writing to file " + output_file)
-        Path(output_file).write_text(output)
+        Path(output_file).write_text(output, encoding="utf-8")
     else:
         click.echo(output)

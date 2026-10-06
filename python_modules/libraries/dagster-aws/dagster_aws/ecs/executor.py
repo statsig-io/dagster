@@ -1,7 +1,7 @@
 import json
 import os
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import boto3
 from dagster import (
@@ -17,6 +17,10 @@ from dagster._core.definitions.executor_definition import multiple_process_execu
 from dagster._core.definitions.metadata import MetadataValue
 from dagster._core.events import DagsterEvent, EngineEventData
 from dagster._core.execution.retries import RetryMode, get_retries_config
+from dagster._core.execution.step_dependency_config import (
+    StepDependencyConfig,
+    get_step_dependency_config_field,
+)
 from dagster._core.execution.tags import get_tag_concurrency_limits_config
 from dagster._core.executor.base import Executor
 from dagster._core.executor.init import InitExecutorContext
@@ -68,6 +72,7 @@ _ECS_EXECUTOR_CONFIG_SCHEMA = {
         ),
     ),
     "tag_concurrency_limits": get_tag_concurrency_limits_config(),
+    "step_dependency_config": get_step_dependency_config_field(),
 }
 
 
@@ -134,6 +139,9 @@ def ecs_executor(init_context: InitExecutorContext) -> Executor:
         max_concurrent=check.opt_int_elem(exc_cfg, "max_concurrent"),
         tag_concurrency_limits=check.opt_list_elem(exc_cfg, "tag_concurrency_limits"),
         should_verify_step=True,
+        step_dependency_config=StepDependencyConfig.from_config(
+            exc_cfg.get("step_dependency_config")  # type: ignore
+        ),
     )
 
 
@@ -145,11 +153,11 @@ class EcsStepHandler(StepHandler):
     def __init__(
         self,
         run_launcher: EcsRunLauncher,
-        run_task_kwargs: Optional[Mapping[str, Any]],
-        cpu: Optional[int],
-        memory: Optional[int],
-        ephemeral_storage: Optional[int],
-        task_overrides: Optional[Mapping[str, Any]],
+        run_task_kwargs: Mapping[str, Any] | None,
+        cpu: int | None,
+        memory: int | None,
+        ephemeral_storage: int | None,
+        task_overrides: Mapping[str, Any] | None,
     ):
         super().__init__()
 
@@ -184,7 +192,7 @@ class EcsStepHandler(StepHandler):
         self._cluster_arn = current_task["clusterArn"]
         self._task_definition_arn = current_task["taskDefinitionArn"]
 
-        self._run_task_kwargs = {
+        self._run_task_kwargs: dict[str, Any] = {
             "taskDefinition": current_task["taskDefinitionArn"],
             **run_launcher_kwargs,
             **run_task_kwargs,
@@ -236,6 +244,7 @@ class EcsStepHandler(StepHandler):
         ]
 
         task_overrides = self._get_task_overrides(step_tags) or {}
+        step_container_overrides = self._get_container_overrides(step_tags)
 
         task_overrides["containerOverrides"] = task_overrides.get("containerOverrides", [])
 
@@ -262,6 +271,8 @@ class EcsStepHandler(StepHandler):
                 container_overrides["environment"] = (
                     container_overrides.get("environment", []) + executor_env_vars
                 )
+                # merge step container overrides (e.g., resourceRequirements)
+                container_overrides.update(step_container_overrides)
                 break
         # if no existing container overrides for the executor container, add new container overrides
         else:
@@ -270,6 +281,7 @@ class EcsStepHandler(StepHandler):
                     "name": executor_container_name,
                     "command": args,
                     "environment": executor_env_vars,
+                    **step_container_overrides,
                 }
             )
 
@@ -299,6 +311,12 @@ class EcsStepHandler(StepHandler):
             overrides = deep_merge_dicts(overrides, json.loads(tag_overrides))
 
         return overrides
+
+    def _get_container_overrides(self, step_tags: Mapping[str, str]) -> dict[str, Any]:
+        if tag_overrides := step_tags.get("ecs/container_overrides"):
+            return json.loads(tag_overrides)
+
+        return {}
 
     def _get_step_id(self, step_handler_context: StepHandlerContext):
         """Step ID is used to identify the ECS task in the ECS cluster.
@@ -399,10 +417,7 @@ class EcsStepHandler(StepHandler):
 
         t = tasks[0]
         if t.get("lastStatus") in STOPPED_STATUSES:
-            failed_containers = []
-            for c in t.get("containers"):
-                if c.get("exitCode") != 0:
-                    failed_containers.append(c)
+            failed_containers = [c for c in t.get("containers") if c.get("exitCode") != 0]
             if len(failed_containers) > 0:
                 cluster_failure_info = (
                     f"Task {t.get('taskArn')} failed.\n"
@@ -418,7 +433,7 @@ class EcsStepHandler(StepHandler):
 
         return CheckStepHealthResult.healthy()
 
-    def terminate_step(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def terminate_step(  # ty: ignore[invalid-method-override]
         self,
         step_handler_context: StepHandlerContext,
     ) -> None:

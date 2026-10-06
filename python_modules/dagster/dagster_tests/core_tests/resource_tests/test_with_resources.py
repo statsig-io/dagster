@@ -82,7 +82,7 @@ def test_assets_direct_resource_conflicts():
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
         match=(
-            "Conflicting versions of resource with key 'foo' were provided to different assets."
+            r"Conflicting versions of resource with key 'foo' were provided to different assets."
             " When constructing a job, all resource definitions provided to assets must match by"
             " reference equality for a given key."
         ),
@@ -114,7 +114,7 @@ def test_source_assets_no_key_provided():
 
     # When an io manager definition is provided using the generic key, that
     # generic key is used as the io manager key for the source asset.
-    assert transformed_source.get_io_manager_key() == "io_manager"  # pyright: ignore[reportAttributeAccessIssue]
+    assert transformed_source.get_io_manager_key() == "io_manager"  # ty: ignore[unresolved-attribute]
 
     result = dg.materialize(
         [transformed_derived, transformed_source], selection=[transformed_derived]
@@ -149,7 +149,7 @@ def test_source_assets_key_provided():
 
     # When an io manager definition is provided using the generic key, that
     # generic key is used as the io manager key for the source asset.
-    assert transformed_source.get_io_manager_key() == "the_manager"  # pyright: ignore[reportAttributeAccessIssue]
+    assert transformed_source.get_io_manager_key() == "the_manager"  # ty: ignore[unresolved-attribute]
 
     result = dg.materialize(
         [transformed_derived, transformed_source], selection=[transformed_derived]
@@ -182,7 +182,7 @@ def test_source_assets_manager_def_provided():
 
     # When an io manager definition has already been provided, it will use an
     # override key.
-    assert transformed_source.io_manager_def == the_manager  # pyright: ignore[reportAttributeAccessIssue]
+    assert transformed_source.io_manager_def == the_manager  # ty: ignore[unresolved-attribute]
 
     result = dg.materialize(
         [transformed_derived, transformed_source], selection=[transformed_derived]
@@ -198,7 +198,7 @@ def test_asset_def_partial_application():
 
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
-        match="resource with key 'bar' required by op 'the_asset' was not provided.",
+        match=r"resource with key 'bar' required by op 'the_asset' was not provided.",
     ):
         dg.with_resources([the_asset], {"foo": ResourceDefinition.hardcoded_resource("foo")})
 
@@ -264,7 +264,7 @@ def test_asset_io_manager_transitive_dependencies():
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
         match=(
-            "resource with key 'the_resource' required by resource with key 'the_asset__io_manager'"
+            r"resource with key 'the_resource' required by resource with key 'the_asset__io_manager'"
             " was not provided."
         ),
     ):
@@ -277,7 +277,7 @@ def test_asset_io_manager_transitive_dependencies():
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
         match=(
-            "resource with key 'foo' required by resource with key 'the_resource' was not provided."
+            r"resource with key 'foo' required by resource with key 'the_resource' was not provided."
         ),
     ):
         dg.with_resources([the_asset], resource_defs={"the_resource": the_resource})
@@ -322,7 +322,7 @@ def test_source_asset_partial_resources():
 
     with pytest.raises(
         dg.DagsterInvariantViolationError,
-        match="Resource with key 'bar' required by resource with key 'foo', but not provided.",
+        match=r"Resource with key 'bar' required by resource with key 'foo', but not provided.",
     ):
         dg.with_resources([my_source_asset], resource_defs={"foo": foo_resource})
 
@@ -355,7 +355,7 @@ def test_asset_circular_resource_dependency():
 
     with pytest.raises(
         dg.DagsterInvariantViolationError,
-        match='Resource key "bar" transitively depends on itself.',
+        match=r'Resource key "bar" transitively depends on itself.',
     ):
         dg.with_resources([the_asset], resource_defs={"foo": foo, "bar": bar})
 
@@ -442,7 +442,7 @@ def test_bad_config_provided():
 
 
 def test_overlapping_io_manager_asset():
-    @dg.io_manager  # pyright: ignore[reportCallIssue,reportArgumentType]
+    @dg.io_manager
     def the_io_manager():
         pass
 
@@ -502,7 +502,7 @@ def test_overlapping_resources_asset():
 
 
 def test_overlapping_io_manager_source_asset():
-    @dg.io_manager  # pyright: ignore[reportCallIssue,reportArgumentType]
+    @dg.io_manager
     def the_io_manager():
         pass
 
@@ -527,7 +527,7 @@ def test_overlapping_io_manager_source_asset():
 def test_overlapping_resources_source_asset():
     foo_resource = ResourceDefinition.hardcoded_resource("blah")
 
-    @dg.io_manager(required_resource_keys={"foo"})  # pyright: ignore[reportArgumentType]
+    @dg.io_manager(required_resource_keys={"foo"})
     def the_io_manager():
         pass
 
@@ -572,7 +572,7 @@ def test_with_resources_no_exp_warnings():
     def blah():
         pass
 
-    @dg.io_manager  # pyright: ignore[reportCallIssue,reportArgumentType]
+    @dg.io_manager
     def the_manager():
         pass
 

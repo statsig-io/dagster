@@ -16,11 +16,17 @@ from dagster._core.execution.asset_backfill import (
     PartitionedAssetBackfillStatus,
     UnpartitionedAssetBackfillStatus,
 )
-from dagster._core.execution.backfill import BulkActionStatus, PartitionBackfill
+from dagster._core.execution.backfill import PartitionBackfill
 from dagster._core.instance import DagsterInstance
 from dagster._core.remote_representation.external import RemotePartitionSet
 from dagster._core.storage.compute_log_manager import ComputeIOType
-from dagster._core.storage.dagster_run import DagsterRun, RunPartitionData, RunRecord, RunsFilter
+from dagster._core.storage.dagster_run import (
+    CANCELABLE_RUN_STATUSES,
+    NOT_FINISHED_STATUSES,
+    DagsterRun,
+    RunPartitionData,
+    RunsFilter,
+)
 from dagster._core.storage.tags import (
     ASSET_PARTITION_RANGE_END_TAG,
     ASSET_PARTITION_RANGE_START_TAG,
@@ -29,13 +35,12 @@ from dagster._core.storage.tags import (
 )
 from dagster._core.workspace.permissions import Permissions
 from dagster_shared import seven
-from dagster_shared.error import DagsterError
 
 from dagster_graphql.implementation.fetch_partition_sets import (
     partition_status_counts_from_run_partition_data,
     partition_statuses_from_run_partition_data,
 )
-from dagster_graphql.implementation.utils import has_permission_for_asset_graph
+from dagster_graphql.implementation.utils import has_permission_for_backfill
 from dagster_graphql.schema.entity_key import GrapheneAssetKey
 from dagster_graphql.schema.errors import (
     GrapheneError,
@@ -126,6 +131,7 @@ class GrapheneBulkActionStatus(graphene.Enum):
     CANCELING = "CANCELING"
     COMPLETED_SUCCESS = "COMPLETED_SUCCESS"
     COMPLETED_FAILED = "COMPLETED_FAILED"
+    FAILING = "FAILING"
 
     class Meta:
         name = "BulkActionStatus"
@@ -134,20 +140,22 @@ class GrapheneBulkActionStatus(graphene.Enum):
         """Maps bulk action status to a run status for use with the RunsFeedEntry interface."""
         # the pyright ignores are required because GrapheneBulkActionStatus.STATUS and GrapheneRunStatus.STATUS
         # are interpreted as a Literal string during static analysis, but it is actually an Enum value
-        if self.args[0] == GrapheneBulkActionStatus.REQUESTED.value:  # pyright: ignore[reportAttributeAccessIssue]
-            return GrapheneRunStatus.STARTED  # pyright: ignore[reportReturnType]
-        if self.args[0] == GrapheneBulkActionStatus.COMPLETED.value:  # pyright: ignore[reportAttributeAccessIssue]
-            return GrapheneRunStatus.SUCCESS  # pyright: ignore[reportReturnType]
-        if self.args[0] == GrapheneBulkActionStatus.COMPLETED_SUCCESS.value:  # pyright: ignore[reportAttributeAccessIssue]
-            return GrapheneRunStatus.SUCCESS  # pyright: ignore[reportReturnType]
-        if self.args[0] == GrapheneBulkActionStatus.COMPLETED_FAILED.value:  # pyright: ignore[reportAttributeAccessIssue]
-            return GrapheneRunStatus.FAILURE  # pyright: ignore[reportReturnType]
-        if self.args[0] == GrapheneBulkActionStatus.FAILED.value:  # pyright: ignore[reportAttributeAccessIssue]
-            return GrapheneRunStatus.FAILURE  # pyright: ignore[reportReturnType]
-        if self.args[0] == GrapheneBulkActionStatus.CANCELED.value:  # pyright: ignore[reportAttributeAccessIssue]
-            return GrapheneRunStatus.CANCELED  # pyright: ignore[reportReturnType]
-        if self.args[0] == GrapheneBulkActionStatus.CANCELING.value:  # pyright: ignore[reportAttributeAccessIssue]
-            return GrapheneRunStatus.CANCELING  # pyright: ignore[reportReturnType]
+        if self.args[0] == GrapheneBulkActionStatus.REQUESTED.value:
+            return GrapheneRunStatus.STARTED  # ty: ignore[invalid-return-type]
+        if self.args[0] == GrapheneBulkActionStatus.COMPLETED.value:
+            return GrapheneRunStatus.SUCCESS  # ty: ignore[invalid-return-type]
+        if self.args[0] == GrapheneBulkActionStatus.COMPLETED_SUCCESS.value:
+            return GrapheneRunStatus.SUCCESS  # ty: ignore[invalid-return-type]
+        if self.args[0] == GrapheneBulkActionStatus.COMPLETED_FAILED.value:
+            return GrapheneRunStatus.FAILURE  # ty: ignore[invalid-return-type]
+        if self.args[0] == GrapheneBulkActionStatus.FAILED.value:
+            return GrapheneRunStatus.FAILURE  # ty: ignore[invalid-return-type]
+        if self.args[0] == GrapheneBulkActionStatus.CANCELED.value:
+            return GrapheneRunStatus.CANCELED  # ty: ignore[invalid-return-type]
+        if self.args[0] == GrapheneBulkActionStatus.CANCELING.value:
+            return GrapheneRunStatus.CANCELING  # ty: ignore[invalid-return-type]
+        if self.args[0] == GrapheneBulkActionStatus.FAILING.value:
+            return GrapheneRunStatus.FAILURE  # ty: ignore[invalid-return-type]
 
         raise DagsterInvariantViolationError(
             f"Unable to convert BulkActionStatus {self.args[0]} to a RunStatus. {self.args[0]} is an unknown status."
@@ -168,7 +176,7 @@ class GrapheneAssetBackfillTargetPartitions(graphene.ObjectType):
 
         if isinstance(partition_subset, TimeWindowPartitionsSubset):
             ranges = [
-                GraphenePartitionKeyRange(start, end)
+                GraphenePartitionKeyRange(start, end)  # ty: ignore[too-many-positional-arguments]
                 for start, end in partition_subset.get_partition_key_ranges(
                     partition_subset.partitions_def
                 )
@@ -191,7 +199,7 @@ class GrapheneAssetPartitions(graphene.ObjectType):
     class Meta:
         name = "AssetPartitions"
 
-    def __init__(self, asset_key: AssetKey, partitions_subset: Optional[PartitionsSubset]):
+    def __init__(self, asset_key: AssetKey, partitions_subset: PartitionsSubset | None):
         if partitions_subset is None:
             partitions = None
         else:
@@ -218,7 +226,7 @@ class GrapheneAssetPartitionRange(graphene.ObjectType):
     class Meta:
         name = "AssetPartitionRange"
 
-    def __init__(self, asset_key: AssetKey, partition_range: Optional[PartitionKeyRange]):
+    def __init__(self, asset_key: AssetKey, partition_range: PartitionKeyRange | None):
         super().__init__(
             assetKey=GrapheneAssetKey(path=asset_key.path),
             partitionRange=(
@@ -249,7 +257,7 @@ class GrapheneAssetBackfillData(graphene.ObjectType):
             root_partitions_subset = self._backfill_job.get_target_root_partitions_subset(
                 graphene_info.context
             )
-        except DagsterError:
+        except Exception:
             logging.getLogger("dagster").warning(
                 "Error generating root target partitions", exc_info=True
             )
@@ -392,7 +400,6 @@ class GraphenePartitionBackfill(graphene.ObjectType):
     def __init__(self, backfill_job: PartitionBackfill):
         self._backfill_job = check.inst_param(backfill_job, "backfill_job", PartitionBackfill)
 
-        self._records = None
         self._partition_run_data = None
 
         super().__init__(
@@ -409,38 +416,22 @@ class GraphenePartitionBackfill(graphene.ObjectType):
             assetCheckSelection=[],
         )
 
-    def _get_partition_set(self, graphene_info: ResolveInfo) -> Optional[RemotePartitionSet]:
+    def _get_partition_set(self, graphene_info: ResolveInfo) -> RemotePartitionSet | None:
         if self._backfill_job.partition_set_origin is None:
             return None
 
         origin = self._backfill_job.partition_set_origin
-        location_name = origin.repository_origin.code_location_origin.location_name
-        repository_name = origin.repository_origin.repository_name
-        if not graphene_info.context.has_code_location(location_name):
-            return None
-
-        location = graphene_info.context.get_code_location(location_name)
-        if not location.has_repository(repository_name):
-            return None
-
-        repository = location.get_repository(repository_name)
         partition_sets = [
             partition_set
-            for partition_set in repository.get_partition_sets()
+            for partition_set in graphene_info.context.get_partition_sets(
+                origin.repository_origin.get_selector()
+            )
             if partition_set.name == origin.partition_set_name
         ]
         if not partition_sets:
             return None
 
         return partition_sets[0]
-
-    def _get_records(self, graphene_info: ResolveInfo) -> Sequence[RunRecord]:
-        if self._records is None:
-            filters = RunsFilter.for_backfill(self._backfill_job.backfill_id)
-            self._records = graphene_info.context.instance.get_run_records(
-                filters=filters,
-            )
-        return self._records
 
     def _get_partition_run_data(self, graphene_info: ResolveInfo) -> Sequence[RunPartitionData]:
         if self._partition_run_data is not None:
@@ -494,24 +485,50 @@ class GraphenePartitionBackfill(graphene.ObjectType):
 
     @property
     def creation_timestamp(self) -> float:
-        return self.timestamp
+        return self.timestamp  # ty: ignore[invalid-return-type]
 
-    def resolve_unfinishedRuns(self, graphene_info: ResolveInfo) -> Sequence["GrapheneRun"]:
+    def resolve_unfinishedRuns(
+        self, graphene_info: ResolveInfo, limit: int | None = None
+    ) -> Sequence["GrapheneRun"]:
         from dagster_graphql.schema.pipelines.pipeline import GrapheneRun
 
-        records = self._get_records(graphene_info)
-        return [GrapheneRun(record) for record in records if not record.dagster_run.is_finished]
+        instance = graphene_info.context.instance
+        records = instance.get_run_records(
+            filters=RunsFilter(
+                tags=DagsterRun.tags_for_backfill_id(self._backfill_job.backfill_id),
+                statuses=NOT_FINISHED_STATUSES,
+            ),
+            limit=limit,
+        )
+        return [GrapheneRun(record) for record in records]
 
-    def resolve_cancelableRuns(self, graphene_info: ResolveInfo) -> Sequence["GrapheneRun"]:
+    def resolve_cancelableRuns(
+        self, graphene_info: ResolveInfo, limit: int | None = None
+    ) -> Sequence["GrapheneRun"]:
         from dagster_graphql.schema.pipelines.pipeline import GrapheneRun
 
-        records = self._get_records(graphene_info)
-        return [GrapheneRun(record) for record in records if record.dagster_run.is_cancelable]
+        instance = graphene_info.context.instance
+        records = instance.get_run_records(
+            filters=RunsFilter(
+                tags=DagsterRun.tags_for_backfill_id(self._backfill_job.backfill_id),
+                statuses=CANCELABLE_RUN_STATUSES,
+            ),
+            limit=limit,
+        )
+        return [GrapheneRun(record) for record in records]
 
-    def resolve_runs(self, graphene_info: ResolveInfo) -> "Sequence[GrapheneRun]":
+    def resolve_runs(
+        self, graphene_info: ResolveInfo, limit: int | None = None
+    ) -> "Sequence[GrapheneRun]":
         from dagster_graphql.schema.pipelines.pipeline import GrapheneRun
 
-        records = self._get_records(graphene_info)
+        instance = graphene_info.context.instance
+        if limit is None:
+            limit = instance.get_default_graphql_run_records_limit()
+        records = instance.get_run_records(
+            filters=RunsFilter.for_backfill(self._backfill_job.backfill_id),
+            limit=limit,
+        )
         return [GrapheneRun(record) for record in records]
 
     def resolve_tags(self, _graphene_info: ResolveInfo):
@@ -526,34 +543,19 @@ class GraphenePartitionBackfill(graphene.ObjectType):
     def resolve_runStatus(self, _graphene_info: ResolveInfo) -> GrapheneRunStatus:
         return GrapheneBulkActionStatus(self.status).to_dagster_run_status()
 
-    def resolve_endTimestamp(self, graphene_info: ResolveInfo) -> Optional[float]:
-        if self._backfill_job.backfill_end_timestamp is not None:
-            return self._backfill_job.backfill_end_timestamp
-        if self._backfill_job.status == BulkActionStatus.REQUESTED:
-            # if it's still in progress then there is no end time
-            return None
-        records = self._get_records(graphene_info)
-        if len(records) == 0:
-            # backfill was moved to a terminal state before any runs were launched. We cannot
-            # reconstruct the time the backfill actually moved to a terminal state, so use the start
-            # time as an estimation
-            return self.creationTime
-        max_end_time = 0
-        for record in records:
-            max_end_time = max(record.end_time or 0, max_end_time)
+    def resolve_endTimestamp(self, graphene_info: ResolveInfo) -> float | None:
+        return self._backfill_job.backfill_end_timestamp
 
-        return max_end_time
-
-    def resolve_endTime(self, graphene_info: ResolveInfo) -> Optional[float]:
+    def resolve_endTime(self, graphene_info: ResolveInfo) -> float | None:
         return self.resolve_endTimestamp(graphene_info)
 
     def resolve_isValidSerialization(self, _graphene_info: ResolveInfo) -> bool:
         return self._backfill_job.is_valid_serialization(_graphene_info.context)
 
-    def resolve_partitionNames(self, _graphene_info: ResolveInfo) -> Optional[Sequence[str]]:
+    def resolve_partitionNames(self, _graphene_info: ResolveInfo) -> Sequence[str] | None:
         return self._backfill_job.get_partition_names(_graphene_info.context)
 
-    def resolve_numPartitions(self, _graphene_info: ResolveInfo) -> Optional[int]:
+    def resolve_numPartitions(self, _graphene_info: ResolveInfo) -> int | None:
         return self._backfill_job.get_num_partitions(_graphene_info.context)
 
     def resolve_numCancelable(self, _graphene_info: ResolveInfo) -> int:
@@ -568,7 +570,6 @@ class GraphenePartitionBackfill(graphene.ObjectType):
             return None
 
         return GraphenePartitionSet(
-            repository_handle=partition_set.repository_handle,
             remote_partition_set=partition_set,
         )
 
@@ -608,7 +609,7 @@ class GraphenePartitionBackfill(graphene.ObjectType):
 
     def resolve_partitionsTargetedForAssetKey(
         self, graphene_info: ResolveInfo, asset_key
-    ) -> Optional[PartitionsSubset]:
+    ) -> PartitionsSubset | None:
         from dagster._core.definitions.events import AssetKey
 
         if not self._backfill_job.is_asset_backfill:
@@ -620,62 +621,41 @@ class GraphenePartitionBackfill(graphene.ObjectType):
         if not root_partitions_subset:
             return None
 
-        return GrapheneAssetBackfillTargetPartitions(root_partitions_subset)
+        return GrapheneAssetBackfillTargetPartitions(root_partitions_subset)  # ty: ignore[invalid-return-type]
 
     def resolve_assetBackfillData(
         self, graphene_info: ResolveInfo
-    ) -> Optional[GrapheneAssetBackfillData]:
+    ) -> GrapheneAssetBackfillData | None:
         if not self._backfill_job.is_asset_backfill:
             return None
 
         return GrapheneAssetBackfillData(self._backfill_job)
 
-    def resolve_error(self, _graphene_info: ResolveInfo) -> Optional[GraphenePythonError]:
+    def resolve_error(self, _graphene_info: ResolveInfo) -> GraphenePythonError | None:
         if self._backfill_job.error:
             return GraphenePythonError(self._backfill_job.error)
         return None
 
     def resolve_hasCancelPermission(self, graphene_info: ResolveInfo) -> bool:
-        if self._backfill_job.is_asset_backfill:
-            return has_permission_for_asset_graph(
-                graphene_info,
-                graphene_info.context.asset_graph,
-                self._backfill_job.asset_selection,
-                Permissions.CANCEL_PARTITION_BACKFILL,
-            )
-        if self._backfill_job.partition_set_origin is None:
-            return graphene_info.context.has_permission(Permissions.CANCEL_PARTITION_BACKFILL)
-        location_name = self._backfill_job.partition_set_origin.selector.location_name
-        return graphene_info.context.has_permission_for_location(
-            Permissions.CANCEL_PARTITION_BACKFILL, location_name
+        return has_permission_for_backfill(
+            graphene_info, Permissions.CANCEL_PARTITION_BACKFILL, self._backfill_job
         )
 
     def resolve_hasResumePermission(self, graphene_info: ResolveInfo) -> bool:
-        if self._backfill_job.is_asset_backfill:
-            return has_permission_for_asset_graph(
-                graphene_info,
-                graphene_info.context.asset_graph,
-                self._backfill_job.asset_selection,
-                Permissions.LAUNCH_PARTITION_BACKFILL,
-            )
-
-        if self._backfill_job.partition_set_origin is None:
-            return graphene_info.context.has_permission(Permissions.LAUNCH_PARTITION_BACKFILL)
-        location_name = self._backfill_job.partition_set_origin.selector.location_name
-        return graphene_info.context.has_permission_for_location(
-            Permissions.LAUNCH_PARTITION_BACKFILL, location_name
+        return has_permission_for_backfill(
+            graphene_info, Permissions.LAUNCH_PARTITION_BACKFILL, self._backfill_job
         )
 
-    def resolve_user(self, _graphene_info: ResolveInfo) -> Optional[str]:
+    def resolve_user(self, _graphene_info: ResolveInfo) -> str | None:
         return self._backfill_job.user
 
-    def resolve_title(self, _graphene_info: ResolveInfo) -> Optional[str]:
+    def resolve_title(self, _graphene_info: ResolveInfo) -> str | None:
         return self._backfill_job.title
 
-    def resolve_description(self, _graphene_info: ResolveInfo) -> Optional[str]:
+    def resolve_description(self, _graphene_info: ResolveInfo) -> str | None:
         return self._backfill_job.description
 
-    def resolve_logEvents(self, graphene_info: ResolveInfo, cursor: Optional[str] = None):
+    def resolve_logEvents(self, graphene_info: ResolveInfo, cursor: str | None = None):
         from dagster_graphql.schema.instigation import (
             GrapheneInstigationEvent,
             GrapheneInstigationEventConnection,
@@ -730,7 +710,7 @@ class GrapheneBackfillNotFoundError(graphene.ObjectType):
 
     def __init__(self, backfill_id: str):
         super().__init__()
-        self.backfill_id = backfill_id
+        self.backfill_id = backfill_id  # ty: ignore[invalid-assignment]
         self.message = f"Backfill {backfill_id} could not be found."
 
 

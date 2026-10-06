@@ -7,7 +7,7 @@ import atexit
 import sys
 from itertools import islice
 from os import environ
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import mlflow
 from dagster import Field, Noneable, Permissive, StringSource, resource
@@ -125,9 +125,7 @@ class MlFlow(metaclass=MlflowMeta):
         # a process exits in parallel runs
         atexit.unregister(mlflow.end_run)
 
-    def _get_current_run_id(
-        self, experiment: Optional[Any] = None, dagster_run_id: Optional[str] = None
-    ):
+    def _get_current_run_id(self, experiment: Any | None = None, dagster_run_id: str | None = None):
         """Gets the run id of a specific dagster run and experiment id.
         If it doesn't exist then it returns a None.
 
@@ -193,7 +191,7 @@ class MlFlow(metaclass=MlflowMeta):
             run = mlflow.active_run()
             if run is None or "is already active" not in str(ex):
                 raise (ex)
-            self.log.info(f"Run with id {run.info.run_id} is already active.")
+            self.log.info(f"Run with id {run.info.run_id} is already active.")  # type: ignore
 
     def _set_all_tags(self):
         """Method collects dagster_run_id plus all env variables/tags that have been

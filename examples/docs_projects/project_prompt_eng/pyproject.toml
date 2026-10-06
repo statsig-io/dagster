@@ -3,28 +3,36 @@ name = "project_prompt_eng"
 version = "0.0.1"
 description = "Project Prompt Engineering"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "dagster",
-    "dagster-dg-cli",
     "dagster-anthropic",
     "pydantic",
     "requests",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "ruff",
-    "pytest",
     "dagster-webserver",
+    "dagster-dg-cli",
+    "pytest",
 ]
+
+[build-system]
+requires = ["hatchling>=1.19.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+force-include = { "pyproject.toml" = "pyproject.toml" }
 
 [tool.dg]
 directory_type = "project"
 
 [tool.dg.project]
 root_module = "project_prompt_eng"
-autoload_defs = true
+registry_modules = [
+    "project_prompt_eng.components.*",
+]
 
-[tool.dg.project.python_environment]
-active = true
+[tool.uv]
+exclude-newer = "48h"

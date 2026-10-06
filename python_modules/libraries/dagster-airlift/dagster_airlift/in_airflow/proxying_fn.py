@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from airflow import DAG
 from airflow.models import BaseOperator
@@ -19,7 +20,7 @@ def proxying_to_dagster(
     *,
     global_vars: dict[str, Any],
     proxied_state: AirflowProxiedState,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
     build_from_task_fn: Callable[
         [BaseOperator], BaseProxyTaskToDagsterOperator
     ] = DefaultProxyTaskToDagsterOperator.build_from_task,

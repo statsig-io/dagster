@@ -3,13 +3,11 @@ import os
 import re
 import string
 import textwrap
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable, Literal
-
-from typing_extensions import TypeAlias
+from typing import Literal, TypeAlias
 
 from dagster._utils import pushd
 from dagster._utils.env import environ
@@ -25,7 +23,7 @@ MASK_SLING_WARNING = (r"warning.*\n", "")
 MASK_SLING_PROMO = (r"Follow Sling.*\n", "")
 MASK_SLING_DOWNLOAD_DUCKDB = (r".*downloading duckdb.*\n", "")
 MASK_EDITABLE_DAGSTER = (r" --use-editable-dagster", "")
-MASK_USING_ENVIRONMENT = (r"\nUsing[\s\S]*", "\n...")
+MASK_USING_ENVIRONMENT = (r"(Running `uv sync[^`]*`\.\.\.)[\s\S]*", r"\1\n...")
 MASK_TMP_WORKSPACE = (
     r"--workspace (/var/folders/.+|/tmp/.+)",
     "--workspace /tmp/workspace.yaml",
@@ -125,9 +123,12 @@ def get_editable_install_cmd_for_dg(package_manager: DgTestPackageManager) -> st
     return get_editable_install_cmd_for_paths(
         package_manager,
         [
-            EDITABLE_DIR / "dagster-cloud-cli",
-            EDITABLE_DIR / "dagster-dg-core",
+            EDITABLE_DIR.parent / "dagster",
+            EDITABLE_DIR.parent / "dagster-pipes",
             EDITABLE_DIR / "dagster-dg-cli",
+            EDITABLE_DIR / "dagster-dg-core",
+            EDITABLE_DIR / "dagster-cloud-cli",
+            EDITABLE_DIR / "dagster-rest-resources",
             EDITABLE_DIR / "dagster-shared",
         ],
     )
@@ -144,6 +145,7 @@ def get_editable_install_cmd_for_project(
             EDITABLE_DIR.parent / "dagster-pipes",
             EDITABLE_DIR.parent / "dagster-test",
             EDITABLE_DIR.parent / "dagster-webserver",
+            EDITABLE_DIR.parent / "dagster-graphql",
             EDITABLE_DIR / "dagster-shared",
         ],
     )
@@ -155,7 +157,7 @@ def get_editable_install_cmd_for_paths(
     if package_manager == "uv":
         lines = [
             "uv add --editable",
-            *[(str(path)) for path in paths if path != Path(".")],
+            *[str(path) for path in paths if path != Path(".")],
         ]
     elif package_manager == "pip":
         lines = [

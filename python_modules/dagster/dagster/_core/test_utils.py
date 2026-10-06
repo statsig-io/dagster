@@ -3,6 +3,7 @@ import datetime
 import logging
 import os
 import re
+import select
 import sys
 import time
 import unittest.mock
@@ -16,15 +17,17 @@ from pathlib import Path
 from signal import Signals
 from threading import Event
 from typing import (  # noqa: UP035
+    TYPE_CHECKING,
     AbstractSet,
     Any,
     Callable,
     NamedTuple,
     NoReturn,
-    Optional,
     TypeVar,
-    Union,
 )
+
+if TYPE_CHECKING:
+    import subprocess
 
 from typing_extensions import Self
 
@@ -63,11 +66,12 @@ from dagster._core.instance_for_test import (
     instance_for_test as instance_for_test,
 )
 from dagster._core.launcher import RunLauncher
-from dagster._core.remote_representation import RemoteRepository
+from dagster._core.loader import LoadingContext
+from dagster._core.remote_origin import InProcessCodeLocationOrigin
 from dagster._core.remote_representation.code_location import CodeLocation
+from dagster._core.remote_representation.external import RemoteRepository
 from dagster._core.remote_representation.external_data import RepositorySnap
 from dagster._core.remote_representation.handle import RepositoryHandle
-from dagster._core.remote_representation.origin import InProcessCodeLocationOrigin
 from dagster._core.run_coordinator import RunCoordinator, SubmitRunContext
 from dagster._core.secrets import SecretsLoader
 from dagster._core.storage.dagster_run import DagsterRun, DagsterRunStatus, RunsFilter
@@ -91,7 +95,7 @@ T_NamedTuple = TypeVar("T_NamedTuple", bound=NamedTuple)
 def assert_namedtuple_lists_equal(
     t1_list: Sequence[T_NamedTuple],
     t2_list: Sequence[T_NamedTuple],
-    exclude_fields: Optional[Sequence[str]] = None,
+    exclude_fields: Sequence[str] | None = None,
 ) -> None:
     assert len(t1_list) == len(t2_list)
     for t1, t2 in zip(t1_list, t2_list):
@@ -99,7 +103,7 @@ def assert_namedtuple_lists_equal(
 
 
 def assert_namedtuples_equal(
-    t1: T_NamedTuple, t2: T_NamedTuple, exclude_fields: Optional[Sequence[str]] = None
+    t1: T_NamedTuple, t2: T_NamedTuple, exclude_fields: Sequence[str] | None = None
 ) -> None:
     exclude_fields = exclude_fields or []
     for field in type(t1)._fields:
@@ -113,7 +117,7 @@ def step_output_event_filter(pipe_iterator: Iterator[DagsterEvent]):
             yield step_event
 
 
-def nesting_graph(depth: int, num_children: int, name: Optional[str] = None) -> GraphDefinition:
+def nesting_graph(depth: int, num_children: int, name: str | None = None) -> GraphDefinition:
     """Creates a job of nested graphs up to "depth" layers, with a fan-out of
     num_children at each layer.
 
@@ -223,7 +227,7 @@ def register_managed_run_for_test(
 
 
 def wait_for_runs_to_finish(
-    instance: DagsterInstance, timeout: float = 20, run_tags: Optional[Mapping[str, str]] = None
+    instance: DagsterInstance, timeout: float = 20, run_tags: Mapping[str, str] | None = None
 ) -> None:
     total_time = 0
     interval = 0.1
@@ -245,9 +249,9 @@ def wait_for_runs_to_finish(
 
 def poll_for_finished_run(
     instance: DagsterInstance,
-    run_id: Optional[str] = None,
+    run_id: str | None = None,
     timeout: float = 20,
-    run_tags: Optional[Mapping[str, str]] = None,
+    run_tags: Mapping[str, str] | None = None,
 ) -> DagsterRun:
     total_time = 0
     interval = 0.01
@@ -281,7 +285,7 @@ def poll_for_event(
     instance: DagsterInstance,
     run_id: str,
     event_type: str,
-    message: Optional[str],
+    message: str | None,
     timeout: float = 30,
 ) -> None:
     total_time = 0
@@ -309,6 +313,80 @@ def poll_for_event(
             raise Exception("Timed out")
 
 
+def poll_for_subprocess_output(
+    process: "subprocess.Popen[bytes]",
+    marker: bytes,
+    *,
+    timeout: float = 60,
+) -> tuple[bytes, bytes]:
+    """Poll a subprocess's stdout and stderr until ``marker`` appears in stdout
+    or ``timeout`` seconds elapse, then return the captured ``(stdout, stderr)``
+    bytes.
+
+    The marker is only checked against stdout; stderr is captured for
+    diagnostic purposes (e.g. assertion failure messages on miss).
+
+    The process is left running — the caller is responsible for terminating
+    and waiting on it (typically inside a ``try/finally``). Use this instead
+    of ``time.sleep(N) + process.terminate()`` patterns when waiting for a
+    child to emit a known startup line; the fixed-sleep approach races the
+    child under pod scheduling latency.
+
+    The process must have been started with ``stdout=subprocess.PIPE`` and
+    ``stderr=subprocess.PIPE`` and without ``text=True`` / ``encoding=...`` so
+    raw bytes can be polled via ``select`` + ``os.read``.
+
+    POSIX only (uses ``select.select`` on subprocess pipes).
+    """
+    stdout = check.not_none(process.stdout, "process.stdout must be a pipe")
+    stderr = check.not_none(process.stderr, "process.stderr must be a pipe")
+
+    stdout_buf = bytearray()
+    stderr_buf = bytearray()
+    open_streams = {stdout: stdout_buf, stderr: stderr_buf}
+    deadline = time.monotonic() + timeout
+
+    while open_streams and time.monotonic() < deadline and marker not in stdout_buf:
+        # Clamp at 0: time can advance past the deadline between the while
+        # condition above and this call, and select.select rejects negatives.
+        ready, _, _ = select.select(
+            list(open_streams), [], [], max(0.0, min(deadline - time.monotonic(), 0.5))
+        )
+        for stream in ready:
+            chunk = os.read(stream.fileno(), 4096)
+            if chunk:
+                open_streams[stream].extend(chunk)
+            else:
+                del open_streams[stream]
+
+    return bytes(stdout_buf), bytes(stderr_buf)
+
+
+def poll_for_pool_pending_step(
+    instance: DagsterInstance, pool_name: str, timeout: float = 60
+) -> bool:
+    """Wait until the named concurrency pool has at least one pending step.
+
+    A step becomes pending once the executor has attempted (and failed) to
+    claim a slot. Polling for this state is a more reliable synchronization
+    primitive than a fixed sleep in tests that interleave slot manipulation
+    with subprocess-based execution: subprocess startup latency on slower
+    runners (e.g. k8s pods) can cause a blind sleep to elapse before the
+    executor's first claim, hiding the blocked state the test is trying to
+    observe.
+
+    Returns True if a pending step was observed within ``timeout`` seconds,
+    False otherwise.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        info = instance.event_log_storage.get_concurrency_info(pool_name)
+        if info.pending_step_count > 0:
+            return True
+        time.sleep(0.1)
+    return False
+
+
 @contextmanager
 def new_cwd(path: str) -> Iterator[None]:
     old = os.getcwd()
@@ -330,24 +408,24 @@ from dagster._core.storage.runs import SqliteRunStorage
 
 
 class ExplodeOnInitRunStorage(SqliteRunStorage):
-    def __init__(self, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, inst_data: ConfigurableClassData | None = None):
         raise NotImplementedError("Init was called")
 
     @classmethod
     def from_config_value(
-        cls, inst_data: Optional[ConfigurableClassData], config_value
+        cls, inst_data: ConfigurableClassData | None, config_value
     ) -> "SqliteRunStorage":
         raise NotImplementedError("from_config_value was called")
 
 
 class ExplodingRunLauncher(RunLauncher, ConfigurableClass):
-    def __init__(self, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, inst_data: ConfigurableClassData | None = None):
         self._inst_data = inst_data
 
         super().__init__()
 
     @property
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         return self._inst_data
 
     @classmethod
@@ -373,7 +451,7 @@ class ExplodingRunLauncher(RunLauncher, ConfigurableClass):
 class MockedRunLauncher(RunLauncher, ConfigurableClass):
     def __init__(
         self,
-        inst_data: Optional[ConfigurableClassData] = None,
+        inst_data: ConfigurableClassData | None = None,
         bad_run_ids=None,
         bad_user_code_run_ids=None,
     ):
@@ -385,7 +463,7 @@ class MockedRunLauncher(RunLauncher, ConfigurableClass):
 
         super().__init__()
 
-    def launch_run(self, context):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def launch_run(self, context):
         run = context.dagster_run
         check.inst_param(run, "run", DagsterRun)
         check.invariant(run.status == DagsterRunStatus.STARTING)
@@ -428,7 +506,7 @@ class MockedRunLauncher(RunLauncher, ConfigurableClass):
 
 
 class MockedRunCoordinator(RunCoordinator, ConfigurableClass):
-    def __init__(self, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, inst_data: ConfigurableClassData | None = None):
         self._inst_data = inst_data
         self._queue = []
 
@@ -461,16 +539,16 @@ class MockedRunCoordinator(RunCoordinator, ConfigurableClass):
         check.not_implemented("Cancellation not supported")
 
 
-class TestSecretsLoader(SecretsLoader, ConfigurableClass):
-    def __init__(self, inst_data: Optional[ConfigurableClassData], env_vars: dict[str, str]):
+class MockSecretsLoader(SecretsLoader, ConfigurableClass):
+    def __init__(self, inst_data: ConfigurableClassData | None, env_vars: dict[str, str]):
         self._inst_data = inst_data
         self.env_vars = env_vars
 
-    def get_secrets_for_environment(self, location_name: str) -> dict[str, str]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_secrets_for_environment(self, location_name: str) -> dict[str, str]:  # ty: ignore[invalid-method-override]
         return self.env_vars.copy()
 
     @property
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         return self._inst_data
 
     @classmethod
@@ -492,7 +570,7 @@ def get_crash_signals() -> Sequence[Signals]:
 def in_process_test_workspace(
     instance: DagsterInstance,
     loadable_target_origin: LoadableTargetOrigin,
-    container_image: Optional[str] = None,
+    container_image: str | None = None,
 ) -> Iterator[WorkspaceRequestContext]:
     with WorkspaceProcessContext(
         instance,
@@ -606,7 +684,7 @@ def test_counter():
     assert counts["bar"] == 10
 
 
-def wait_for_futures(futures: dict[str, Future], timeout: Optional[float] = None):
+def wait_for_futures(futures: dict[str, Future], timeout: float | None = None):
     start_time = time.time()
     results = {}
     for target_id, future in futures.copy().items():
@@ -713,9 +791,9 @@ def ensure_dagster_tests_import() -> None:
 
 
 def create_test_asset_job(
-    assets: Sequence[Union[AssetsDefinition, SourceAsset]],
+    assets: Sequence[AssetsDefinition | SourceAsset],
     *,
-    selection: Optional[CoercibleToAssetSelection] = None,
+    selection: CoercibleToAssetSelection | None = None,
     name: str = "asset_job",
     resources: Mapping[str, object] = {},
     **kwargs: Any,
@@ -758,7 +836,7 @@ def get_freezable_log_manager():
 
 
 @contextmanager
-def freeze_time(new_now: Union[datetime.datetime, float]):
+def freeze_time(new_now: datetime.datetime | float):
     new_dt = (
         new_now
         if isinstance(new_now, datetime.datetime)
@@ -830,3 +908,19 @@ def get_paginated_partition_keys(
             raise Exception("Too many pages")
 
     return all_results
+
+
+class BasicLoadingContext(LoadingContext):
+    def __init__(self, instance: DagsterInstance | None = None):
+        from unittest import mock
+
+        self._loaders = {}
+        self._instance = instance or mock.MagicMock()
+
+    @property
+    def loaders(self):
+        return self._loaders
+
+    @property
+    def instance(self):
+        return self._instance

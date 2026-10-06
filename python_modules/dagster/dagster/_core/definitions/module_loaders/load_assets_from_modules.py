@@ -2,9 +2,10 @@ import inspect
 from collections.abc import Iterable, Iterator, Sequence
 from importlib import import_module
 from types import ModuleType
-from typing import Optional, Union, cast, get_args
+from typing import TypeAlias, cast, get_args
 
 import dagster._check as check
+from dagster._annotations import hidden_param, only_allow_hidden_params_in_kwargs
 from dagster._core.definitions.asset_checks.asset_checks_definition import has_only_asset_checks
 from dagster._core.definitions.asset_key import (
     CoercibleToAssetKeyPrefix,
@@ -15,7 +16,6 @@ from dagster._core.definitions.assets.definition.assets_definition import Assets
 from dagster._core.definitions.assets.definition.cacheable_assets_definition import (
     CacheableAssetsDefinition,
 )
-from dagster._core.definitions.auto_materialize_policy import AutoMaterializePolicy
 from dagster._core.definitions.backfill_policy import BackfillPolicy
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
@@ -29,7 +29,7 @@ from dagster._core.definitions.utils import resolve_automation_condition
 
 def find_objects_in_module_of_types(
     module: ModuleType,
-    types: Union[type, tuple[type, ...]],
+    types: type | tuple[type, ...],
 ) -> Iterator:
     """Yields instances or subclasses of the given type(s)."""
     for attr in dir(module):
@@ -42,7 +42,7 @@ def find_objects_in_module_of_types(
 
 def find_subclasses_in_module(
     module: ModuleType,
-    types: Union[type, tuple[type, ...]],
+    types: type | tuple[type, ...],
 ) -> Iterator[type]:
     """Yields instances or subclasses of the given type(s)."""
     for attr in dir(module):
@@ -51,20 +51,27 @@ def find_subclasses_in_module(
             yield value
 
 
-AssetLoaderTypes = Union[AssetsDefinition, SourceAsset, CacheableAssetsDefinition, AssetSpec]
+AssetLoaderTypes: TypeAlias = AssetsDefinition | SourceAsset | CacheableAssetsDefinition | AssetSpec
 
 
+@hidden_param(
+    param="legacy_freshness_policy",
+    breaking_version="1.13.0",
+)
+@hidden_param(
+    param="auto_materialize_policy",
+    breaking_version="1.10.0",
+)
 def load_assets_from_modules(
     modules: Iterable[ModuleType],
-    group_name: Optional[str] = None,
-    key_prefix: Optional[CoercibleToAssetKeyPrefix] = None,
+    group_name: str | None = None,
+    key_prefix: CoercibleToAssetKeyPrefix | None = None,
     *,
-    legacy_freshness_policy: Optional[LegacyFreshnessPolicy] = None,
-    auto_materialize_policy: Optional[AutoMaterializePolicy] = None,
-    automation_condition: Optional[AutomationCondition] = None,
-    backfill_policy: Optional[BackfillPolicy] = None,
-    source_key_prefix: Optional[CoercibleToAssetKeyPrefix] = None,
+    automation_condition: AutomationCondition | None = None,
+    backfill_policy: BackfillPolicy | None = None,
+    source_key_prefix: CoercibleToAssetKeyPrefix | None = None,
     include_specs: bool = False,
+    **kwargs,
 ) -> Sequence[AssetLoaderTypes]:
     """Constructs a list of assets and source assets from the given modules.
 
@@ -76,11 +83,9 @@ def load_assets_from_modules(
         key_prefix (Optional[Union[str, Sequence[str]]]):
             Prefix to prepend to the keys of the loaded assets. The returned assets will be copies
             of the loaded objects, with the prefix prepended.
-        legacy_freshness_policy (Optional[LegacyFreshnessPolicy]): LegacyFreshnessPolicy to apply to
-            all the loaded assets.
         automation_condition (Optional[AutomationCondition]): AutomationCondition to apply
             to all the loaded assets.
-        backfill_policy (Optional[AutoMaterializePolicy]): BackfillPolicy to apply to all the loaded assets.
+        backfill_policy (Optional[BackfillPolicy]): BackfillPolicy to apply to all the loaded assets.
         source_key_prefix (bool): Prefix to prepend to the keys of loaded SourceAssets. The returned
             assets will be copies of the loaded objects, with the prefix prepended.
 
@@ -88,6 +93,9 @@ def load_assets_from_modules(
         Sequence[Union[AssetsDefinition, SourceAsset]]:
             A list containing assets and source assets defined in the given modules.
     """
+    only_allow_hidden_params_in_kwargs(load_assets_from_modules, kwargs)
+    legacy_freshness_policy = kwargs.get("legacy_freshness_policy")
+    auto_materialize_policy = kwargs.get("auto_materialize_policy")
 
     def _asset_filter(dagster_object) -> bool:
         if isinstance(dagster_object, AssetsDefinition):
@@ -124,17 +132,24 @@ def load_assets_from_modules(
     )
 
 
+@hidden_param(
+    param="legacy_freshness_policy",
+    breaking_version="1.13.0",
+)
+@hidden_param(
+    param="auto_materialize_policy",
+    breaking_version="1.10.0",
+)
 def load_assets_from_current_module(
-    group_name: Optional[str] = None,
-    key_prefix: Optional[CoercibleToAssetKeyPrefix] = None,
+    group_name: str | None = None,
+    key_prefix: CoercibleToAssetKeyPrefix | None = None,
     *,
-    legacy_freshness_policy: Optional[LegacyFreshnessPolicy] = None,
-    auto_materialize_policy: Optional[AutoMaterializePolicy] = None,
-    automation_condition: Optional[AutomationCondition] = None,
-    backfill_policy: Optional[BackfillPolicy] = None,
-    source_key_prefix: Optional[CoercibleToAssetKeyPrefix] = None,
+    automation_condition: AutomationCondition | None = None,
+    backfill_policy: BackfillPolicy | None = None,
+    source_key_prefix: CoercibleToAssetKeyPrefix | None = None,
     include_specs: bool = False,
-) -> Sequence[Union[AssetsDefinition, SourceAsset, CacheableAssetsDefinition, AssetSpec]]:
+    **kwargs,
+) -> Sequence[AssetsDefinition | SourceAsset | CacheableAssetsDefinition | AssetSpec]:
     """Constructs a list of assets, source assets, and cacheable assets from the module where
     this function is called.
 
@@ -145,11 +160,9 @@ def load_assets_from_current_module(
         key_prefix (Optional[Union[str, Sequence[str]]]):
             Prefix to prepend to the keys of the loaded assets. The returned assets will be copies
             of the loaded objects, with the prefix prepended.
-        legacy_freshness_policy (Optional[LegacyFreshnessPolicy]): LegacyFreshnessPolicy to apply to
-            assets.
         automation_condition (Optional[AutomationCondition]): AutomationCondition to apply
             to all the loaded assets.
-        backfill_policy (Optional[AutoMaterializePolicy]): BackfillPolicy to apply to all the loaded assets.
+        backfill_policy (Optional[BackfillPolicy]): BackfillPolicy to apply to all the loaded assets.
         source_key_prefix (bool): Prefix to prepend to the keys of loaded SourceAssets. The returned
             assets will be copies of the loaded objects, with the prefix prepended.
 
@@ -157,7 +170,12 @@ def load_assets_from_current_module(
         Sequence[Union[AssetsDefinition, SourceAsset, CachableAssetsDefinition]]:
             A list containing assets, source assets, and cacheable assets defined in the module.
     """
-    caller = inspect.stack()[1]
+    only_allow_hidden_params_in_kwargs(load_assets_from_current_module, kwargs)
+    legacy_freshness_policy = kwargs.get("legacy_freshness_policy")
+    auto_materialize_policy = kwargs.get("auto_materialize_policy")
+
+    # strip out the decorator frames
+    caller = inspect.stack()[3]
     module = inspect.getmodule(caller[0])
     if module is None:
         check.failed("Could not find a module for the caller")
@@ -176,18 +194,25 @@ def load_assets_from_current_module(
     )
 
 
+@hidden_param(
+    param="legacy_freshness_policy",
+    breaking_version="1.13.0",
+)
+@hidden_param(
+    param="auto_materialize_policy",
+    breaking_version="1.10.0",
+)
 def load_assets_from_package_module(
     package_module: ModuleType,
-    group_name: Optional[str] = None,
-    key_prefix: Optional[CoercibleToAssetKeyPrefix] = None,
+    group_name: str | None = None,
+    key_prefix: CoercibleToAssetKeyPrefix | None = None,
     *,
-    legacy_freshness_policy: Optional[LegacyFreshnessPolicy] = None,
-    auto_materialize_policy: Optional[AutoMaterializePolicy] = None,
-    automation_condition: Optional[AutomationCondition] = None,
-    backfill_policy: Optional[BackfillPolicy] = None,
-    source_key_prefix: Optional[CoercibleToAssetKeyPrefix] = None,
+    automation_condition: AutomationCondition | None = None,
+    backfill_policy: BackfillPolicy | None = None,
+    source_key_prefix: CoercibleToAssetKeyPrefix | None = None,
     include_specs: bool = False,
-) -> Sequence[Union[AssetsDefinition, SourceAsset, CacheableAssetsDefinition, AssetSpec]]:
+    **kwargs,
+) -> Sequence[AssetsDefinition | SourceAsset | CacheableAssetsDefinition | AssetSpec]:
     """Constructs a list of assets and source assets that includes all asset
     definitions, source assets, and cacheable assets in all sub-modules of the given package module.
 
@@ -201,11 +226,9 @@ def load_assets_from_package_module(
         key_prefix (Optional[Union[str, Sequence[str]]]):
             Prefix to prepend to the keys of the loaded assets. The returned assets will be copies
             of the loaded objects, with the prefix prepended.
-        legacy_freshness_policy (Optional[LegacyFreshnessPolicy]): LegacyFreshnessPolicy to apply to all the loaded
-            assets.
         automation_condition (Optional[AutomationCondition]): AutomationCondition to apply
             to all the loaded assets.
-        backfill_policy (Optional[AutoMaterializePolicy]): BackfillPolicy to apply to all the loaded assets.
+        backfill_policy (Optional[BackfillPolicy]): BackfillPolicy to apply to all the loaded assets.
         source_key_prefix (bool): Prefix to prepend to the keys of loaded SourceAssets. The returned
             assets will be copies of the loaded objects, with the prefix prepended.
 
@@ -213,6 +236,10 @@ def load_assets_from_package_module(
         Sequence[Union[AssetsDefinition, SourceAsset, CacheableAssetsDefinition]]:
             A list containing assets, source assets, and cacheable assets defined in the module.
     """
+    only_allow_hidden_params_in_kwargs(load_assets_from_package_module, kwargs)
+    legacy_freshness_policy = kwargs.get("legacy_freshness_policy")
+    auto_materialize_policy = kwargs.get("auto_materialize_policy")
+
     return load_assets_from_modules(
         [*find_modules_in_package(package_module)],
         group_name,
@@ -226,17 +253,24 @@ def load_assets_from_package_module(
     )
 
 
+@hidden_param(
+    param="legacy_freshness_policy",
+    breaking_version="1.13.0",
+)
+@hidden_param(
+    param="auto_materialize_policy",
+    breaking_version="1.10.0",
+)
 def load_assets_from_package_name(
     package_name: str,
-    group_name: Optional[str] = None,
-    key_prefix: Optional[CoercibleToAssetKeyPrefix] = None,
+    group_name: str | None = None,
+    key_prefix: CoercibleToAssetKeyPrefix | None = None,
     *,
-    legacy_freshness_policy: Optional[LegacyFreshnessPolicy] = None,
-    auto_materialize_policy: Optional[AutoMaterializePolicy] = None,
-    backfill_policy: Optional[BackfillPolicy] = None,
-    source_key_prefix: Optional[CoercibleToAssetKeyPrefix] = None,
+    backfill_policy: BackfillPolicy | None = None,
+    source_key_prefix: CoercibleToAssetKeyPrefix | None = None,
     include_specs: bool = False,
-) -> Sequence[Union[AssetsDefinition, SourceAsset, CacheableAssetsDefinition, AssetSpec]]:
+    **kwargs,
+) -> Sequence[AssetsDefinition | SourceAsset | CacheableAssetsDefinition | AssetSpec]:
     """Constructs a list of assets, source assets, and cacheable assets that includes all asset
     definitions and source assets in all sub-modules of the given package.
 
@@ -248,11 +282,7 @@ def load_assets_from_package_name(
         key_prefix (Optional[Union[str, Sequence[str]]]):
             Prefix to prepend to the keys of the loaded assets. The returned assets will be copies
             of the loaded objects, with the prefix prepended.
-        legacy_freshness_policy (Optional[LegacyFreshnessPolicy]): LegacyFreshnessPolicy to apply to all the loaded
-            assets.
-        auto_materialize_policy (Optional[AutoMaterializePolicy]): AutoMaterializePolicy to apply
-            to all the loaded assets.
-        backfill_policy (Optional[AutoMaterializePolicy]): BackfillPolicy to apply to all the loaded assets.
+        backfill_policy (Optional[BackfillPolicy]): BackfillPolicy to apply to all the loaded assets.
         source_key_prefix (bool): Prefix to prepend to the keys of loaded SourceAssets. The returned
             assets will be copies of the loaded objects, with the prefix prepended.
 
@@ -260,6 +290,10 @@ def load_assets_from_package_name(
         Sequence[Union[AssetsDefinition, SourceAsset, CacheableAssetsDefinition]]:
             A list containing assets, source assets, and cacheable assets defined in the module.
     """
+    only_allow_hidden_params_in_kwargs(load_assets_from_package_name, kwargs)
+    legacy_freshness_policy = kwargs.get("legacy_freshness_policy")
+    auto_materialize_policy = kwargs.get("auto_materialize_policy")
+
     package_module = import_module(package_name)
     return load_assets_from_package_module(
         package_module,

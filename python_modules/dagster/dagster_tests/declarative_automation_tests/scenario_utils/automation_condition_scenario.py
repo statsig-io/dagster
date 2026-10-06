@@ -2,7 +2,6 @@ import dataclasses
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Optional
 
 import dagster as dg
 import dagster._check as check
@@ -29,7 +28,7 @@ from dagster_tests.declarative_automation_tests.scenario_utils.scenario_state im
 class FalseAutomationCondition(dg.AutomationCondition):
     """Always returns the empty subset."""
 
-    label: Optional[str] = None
+    label: str | None = None
 
     @property
     def description(self) -> str:
@@ -41,9 +40,9 @@ class FalseAutomationCondition(dg.AutomationCondition):
 
 @dataclass(frozen=True)
 class AutomationConditionScenarioState(ScenarioState):
-    automation_condition: Optional[dg.AutomationCondition] = None
-    condition_cursor: Optional[AutomationConditionCursor] = None
-    requested_asset_partitions: Optional[Sequence[AssetKeyPartitionKey]] = None
+    automation_condition: dg.AutomationCondition | None = None
+    condition_cursor: AutomationConditionCursor | None = None
+    requested_asset_partitions: Sequence[AssetKeyPartitionKey] | None = None
     ensure_empty_result: bool = True
     request_backfills: bool = False
 
@@ -81,19 +80,21 @@ class AutomationConditionScenarioState(ScenarioState):
         ).asset_graph
 
         with freeze_time(self.current_time):
+            cursor = AssetDaemonCursor.empty().with_updates(
+                0, 0, [], [self.condition_cursor] if self.condition_cursor else [], asset_graph
+            )
             evaluator = AutomationConditionEvaluator(
                 asset_graph=asset_graph,
                 instance=self.instance,
                 entity_keys=asset_graph.get_all_asset_keys(),
-                cursor=AssetDaemonCursor.empty().with_updates(
-                    0, 0, [], [self.condition_cursor] if self.condition_cursor else [], asset_graph
-                ),
+                cursor=cursor,
                 logger=self.logger,
                 emit_backfills=False,
+                evaluation_id=cursor.evaluation_id,
             )
-            evaluator.request_subsets_by_key = self._get_request_subsets_by_key(
+            evaluator.request_subsets_by_key = self._get_request_subsets_by_key(  # ty: ignore[invalid-assignment]
                 evaluator.asset_graph_view
-            )  # type: ignore
+            )
             context = AutomationContext.create(key=asset_key, evaluator=evaluator)
 
             full_result = await asset_condition.evaluate(context)  # type: ignore

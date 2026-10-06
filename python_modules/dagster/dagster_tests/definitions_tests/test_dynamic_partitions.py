@@ -1,6 +1,5 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Callable, Optional
 
 import dagster as dg
 import pytest
@@ -17,7 +16,7 @@ from dagster._core.test_utils import get_paginated_partition_keys
     ],
 )
 def test_dynamic_partitions_partitions(
-    partition_fn: Callable[[Optional[datetime]], Sequence[dg.Partition]],
+    partition_fn: Callable[[datetime | None], Sequence[dg.Partition]],
 ):
     partitions = dg.DynamicPartitionsDefinition(partition_fn)
 
@@ -34,7 +33,7 @@ def test_dynamic_partitions_partitions(
         (lambda _current_time: [str(x) for x in range(10)],),
     ],
 )
-def test_dynamic_partitions_keys(partition_fn: Callable[[Optional[datetime]], Sequence[str]]):
+def test_dynamic_partitions_keys(partition_fn: Callable[[datetime | None], Sequence[str]]):
     partitions = dg.DynamicPartitionsDefinition(partition_fn)
 
     all_keys = partition_fn(None)
@@ -81,7 +80,7 @@ def test_dynamic_partitioned_run():
         assert dg.materialize([my_asset], instance=instance, partition_key="a").success
         materialization = instance.get_latest_materialization_event(dg.AssetKey("my_asset"))
         assert materialization
-        assert materialization.dagster_event.partition == "a"  # pyright: ignore[reportOptionalMemberAccess]
+        assert materialization.dagster_event.partition == "a"  # ty: ignore[unresolved-attribute]
 
         with pytest.raises(CheckError):
             partitions_def.get_partition_keys()
@@ -103,7 +102,7 @@ def test_dynamic_partitioned_asset_dep():
         assert context.asset_keys_for_input() == ["apple"]
 
     with dg.instance_for_test() as instance:
-        instance.add_dynamic_partitions(partitions_def.name, ["apple"])  # pyright: ignore[reportArgumentType]
+        instance.add_dynamic_partitions(partitions_def.name, ["apple"])  # ty: ignore[invalid-argument-type]
         dg.materialize_to_memory([asset1], instance=instance, partition_key="apple")
 
 
@@ -133,7 +132,7 @@ def test_dynamic_partitioned_asset_io_manager_context():
         return asset1
 
     with dg.instance_for_test() as instance:
-        instance.add_dynamic_partitions(partitions_def.name, ["apple"])  # pyright: ignore[reportArgumentType]
+        instance.add_dynamic_partitions(partitions_def.name, ["apple"])  # ty: ignore[invalid-argument-type]
 
         dg.materialize(
             [asset1, asset2],
@@ -170,7 +169,7 @@ def test_dynamic_partitions_mapping():
         return 1
 
     with dg.instance_for_test() as instance:
-        instance.add_dynamic_partitions(partitions_def.name, ["apple"])  # pyright: ignore[reportArgumentType]
+        instance.add_dynamic_partitions(partitions_def.name, ["apple"])  # ty: ignore[invalid-argument-type]
 
         dg.materialize(
             [dynamic1, dynamic2, unpartitioned], instance=instance, partition_key="apple"
@@ -196,7 +195,7 @@ def test_unpartitioned_downstream_of_dynamic_asset():
         return 1
 
     with dg.instance_for_test() as instance:
-        instance.add_dynamic_partitions(partitions_def.name, partitions)  # pyright: ignore[reportArgumentType]
+        instance.add_dynamic_partitions(partitions_def.name, partitions)  # ty: ignore[invalid-argument-type]
 
         for partition in partitions[:-1]:
             dg.materialize([dynamic1], instance=instance, partition_key=partition)
@@ -208,7 +207,7 @@ def test_has_partition_key():
     partitions_def = dg.DynamicPartitionsDefinition(name="fruits")
 
     with dg.instance_for_test() as instance:
-        instance.add_dynamic_partitions(partitions_def.name, ["apple", "banana"])  # pyright: ignore[reportArgumentType]
+        instance.add_dynamic_partitions(partitions_def.name, ["apple", "banana"])  # ty: ignore[invalid-argument-type]
         assert partitions_def.has_partition_key("apple", dynamic_partitions_store=instance)
         assert partitions_def.has_partition_key("banana", dynamic_partitions_store=instance)
         assert not partitions_def.has_partition_key("peach", dynamic_partitions_store=instance)

@@ -3,21 +3,23 @@ import sys
 import tempfile
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack, contextmanager
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
+from dagster._annotations import public
 from dagster._core.instance import DagsterInstance
 from dagster._utils.env import environ
 from dagster._utils.error import serializable_error_info_from_exc_info
 from dagster._utils.merger import merge_dicts
 
 
+@public
 @contextmanager
 def instance_for_test(
-    overrides: Optional[Mapping[str, Any]] = None,
+    overrides: Mapping[str, Any] | None = None,
     set_dagster_home: bool = True,
-    temp_dir: Optional[str] = None,
+    temp_dir: str | None = None,
     synchronous_run_coordinator: bool = False,
     synchronous_run_launcher: bool = False,
 ) -> Iterator[DagsterInstance]:
@@ -46,7 +48,7 @@ def instance_for_test(
     """
     with ExitStack() as stack:
         if not temp_dir:
-            temp_dir = stack.enter_context(tempfile.TemporaryDirectory())
+            temp_dir = stack.enter_context(tempfile.TemporaryDirectory(ignore_cleanup_errors=True))
 
         # wait for any grpc processes that created runs during test disposal to finish,
         # since they might also be using this instance's tempdir (and to keep each test

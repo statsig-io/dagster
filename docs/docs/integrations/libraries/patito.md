@@ -1,6 +1,7 @@
 ---
 title: Dagster & Patito
 sidebar_label: Patito
+sidebar_position: 1
 description: Patito is a data validation framework for Polars, based on Pydantic.
 tags: [community-supported, metadata]
 source:
@@ -10,6 +11,10 @@ sidebar_custom_props:
   community: true
 partnerlink: https://github.com/JakobGM/patito
 ---
+
+import CommunityIntegration from '@site/docs/partials/\_CommunityIntegration.md';
+
+<CommunityIntegration />
 
 <p>{frontMatter.description}</p>
 
@@ -27,6 +32,7 @@ For more information on how to use Dagster with Polars, see [dagster-polars docu
 import dagster as dg
 import patito as pt
 import polars as pl
+
 
 class User(pt.Model):
     uid: str = pt.Field(unique=True, description="User ID")

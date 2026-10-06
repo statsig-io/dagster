@@ -18,6 +18,12 @@ Backfills can also be launched for a selection of partitioned assets as long as 
 
 ![Backfills launch modal](/images/guides/build/partitions-and-backfills/asset-backfill-partition-selection-modal.png)
 
+:::note
+
+The "Launch as..." toggle shown in the screenshot above (for choosing between single run and multiple runs) was removed from the UI in Dagster 1.5. Single-run backfills are now configured in code using `backfill_policy`. See [Launching single-run backfills using backfill policies](#launching-single-run-backfills-using-backfill-policies) below.
+
+:::
+
 To observe the progress of an asset backfill, navigate to the **Runs details** page for the run. This page can be accessed by clicking **Runs tab**, then clicking the ID of the run. To see all runs, including runs launched by a backfill, check the **Show runs within backfills** box:
 
 ![Asset backfill details page](/images/guides/build/partitions-and-backfills/asset-backfill-details-page.png)
@@ -48,5 +54,5 @@ To get this behavior, you need to:
 
   Which property to use depends on whether it's most convenient for you to operate on start/end datetime objects, start/end partition keys, or a list of partition keys.
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/partitions_schedules_sensors/backfills/single_run_backfill_asset.py" startAfter="start_marker" endBefore="end_marker" title="src/<project_name>/defs/assets.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/build/partitions_backfills/backfills/single_run_backfill_asset.py" startAfter="start_marker" endBefore="end_marker" title="src/<project_name>/defs/assets.py" />
 

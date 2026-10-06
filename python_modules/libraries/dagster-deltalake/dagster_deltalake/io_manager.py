@@ -4,7 +4,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, TypedDict, Union, cast
+from typing import TypedDict, cast
 
 from dagster import OutputContext
 from dagster._config.pythonic_config import ConfigurableIOManagerFactory
@@ -15,6 +15,7 @@ from dagster._core.storage.db_io_manager import (
     DbTypeHandler,
     TablePartitionDimension,
     TableSlice,
+    static_where_clause,
 )
 from pydantic import Field
 
@@ -33,7 +34,7 @@ DELTA_DATE_FORMAT = "%Y-%m-%d"
 class TableConnection:
     table_uri: str
     storage_options: dict[str, str]
-    table_config: Optional[dict[str, str]]
+    table_config: dict[str, str] | None
 
 
 class _StorageOptionsConfig(TypedDict, total=False):
@@ -121,37 +122,37 @@ class DeltaLakeIOManager(ConfigurableIOManagerFactory):
 
     root_uri: str = Field(description="Storage location where Delta tables are stored.")
     mode: WriteMode = Field(
-        default=WriteMode.overwrite.value,  # type: ignore
+        default=WriteMode.overwrite,
         description="The write mode passed to save the output.",
     )
     overwrite_schema: bool = Field(default=False)
     writer_engine: WriterEngine = Field(
-        default=WriterEngine.pyarrow.value,  # type: ignore
+        default=WriterEngine.pyarrow,
         description="Engine passed to write_deltalake.",
     )
 
-    storage_options: Union[AzureConfig, S3Config, LocalConfig, GcsConfig] = Field(
+    storage_options: AzureConfig | S3Config | LocalConfig | GcsConfig = Field(
         discriminator="provider",
         description="Configuration for accessing storage location.",
     )
 
-    client_options: Optional[ClientConfig] = Field(
+    client_options: ClientConfig | None = Field(
         default=None, description="Additional configuration passed to http client."
     )
 
-    table_config: Optional[dict[str, str]] = Field(
+    table_config: dict[str, str] | None = Field(
         default=None,
         description="Additional config and metadata added to table on creation.",
     )
 
-    schema_: Optional[str] = Field(
+    schema_: str | None = Field(
         default=None, alias="schema", description="Name of the schema to use."
     )  # schema is a reserved word for pydantic
 
-    custom_metadata: Optional[dict[str, str]] = Field(
+    custom_metadata: dict[str, str] | None = Field(
         default=None, description="Custom metadata that is added to transaction commit."
     )
-    writer_properties: Optional[dict[str, str]] = Field(
+    writer_properties: dict[str, str] | None = Field(
         default=None, description="Writer properties passed to the rust engine writer."
     )
 
@@ -160,7 +161,7 @@ class DeltaLakeIOManager(ConfigurableIOManagerFactory):
     def type_handlers() -> Sequence[DbTypeHandler]: ...
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         return None
 
     def create_io_manager(self, context) -> DbIOManager:
@@ -248,7 +249,7 @@ def _partition_where_clause(
         (
             _time_window_where_clause(partition_dimension)
             if isinstance(partition_dimension.partitions, TimeWindow)
-            else _static_where_clause(partition_dimension)
+            else static_where_clause(partition_dimension)
         )
         for partition_dimension in partition_dimensions
     )
@@ -260,8 +261,3 @@ def _time_window_where_clause(table_partition: TablePartitionDimension) -> str:
     start_dt_str = start_dt.strftime(DELTA_DATETIME_FORMAT)
     end_dt_str = end_dt.strftime(DELTA_DATETIME_FORMAT)
     return f"""{table_partition.partition_expr} >= '{start_dt_str}' AND {table_partition.partition_expr} < '{end_dt_str}'"""
-
-
-def _static_where_clause(table_partition: TablePartitionDimension) -> str:
-    partitions = ", ".join(f"'{partition}'" for partition in table_partition.partitions)
-    return f"""{table_partition.partition_expr} in ({partitions})"""

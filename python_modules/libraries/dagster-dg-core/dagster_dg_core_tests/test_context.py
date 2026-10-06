@@ -5,10 +5,10 @@ import textwrap
 from collections.abc import Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import pytest
-from dagster_dg_core.component import EnvRegistry
+from dagster_dg_core.component import EnvRegistry, get_used_env_vars
 from dagster_dg_core.config import DgFileConfigDirectoryType, get_type_str
 from dagster_dg_core.context import OLD_DG_PLUGIN_ENTRY_POINT_GROUPS, DgContext
 from dagster_dg_core.utils import (
@@ -26,8 +26,7 @@ from dagster_dg_core.utils import (
 )
 from dagster_dg_core.utils.warnings import DgWarningIdentifier
 from dagster_shared.utils.config import get_default_dg_user_config_path
-
-from dagster_dg_core_tests.utils import (
+from dagster_test.dg_utils.utils import (
     ConfigFileType,
     ProxyRunner,
     assert_runner_result,
@@ -137,6 +136,36 @@ def test_context_outside_project_or_workspace():
         assert context.config.cli.verbose is False
 
 
+def test_project_python_executable_env_file_formats():
+    # `dg dev` reads DG_PROJECT_PYTHON_EXECUTABLE from a project's .env to allow non-standard
+    # venv layouts (uv workspaces, Nix, etc.). Parsing goes through python-dotenv, so every
+    # format that dotenv accepts must be honored.
+    with (
+        ProxyRunner.test() as runner,
+        isolated_example_project_foo_bar(runner, in_workspace=False),
+    ):
+        project_root = Path.cwd()
+        env_path = project_root / ".env"
+        expected = project_root / "../shared/.venv/bin/python"
+        cases = [
+            "DG_PROJECT_PYTHON_EXECUTABLE=../shared/.venv/bin/python",
+            "export DG_PROJECT_PYTHON_EXECUTABLE=../shared/.venv/bin/python",
+            'DG_PROJECT_PYTHON_EXECUTABLE="../shared/.venv/bin/python"',
+            "DG_PROJECT_PYTHON_EXECUTABLE='../shared/.venv/bin/python'",
+            "# leading comment\nDG_PROJECT_PYTHON_EXECUTABLE=../shared/.venv/bin/python  # trailing",
+            "OTHER=ignored\nDG_PROJECT_PYTHON_EXECUTABLE=../shared/.venv/bin/python",
+        ]
+        for content in cases:
+            env_path.write_text(content + "\n", encoding="utf-8")
+            context = DgContext.for_project_environment(project_root, {})
+            assert context.project_python_executable == expected, f"Failed for content: {content!r}"
+
+        # Unset / missing variable falls back to the default project .venv.
+        env_path.write_text("OTHER=ignored\n", encoding="utf-8")
+        context = DgContext.for_project_environment(project_root, {})
+        assert context.project_python_executable.is_relative_to(project_root / ".venv")
+
+
 @pytest.mark.parametrize("user_config_file", ["default", "xdg_config_home", "explicit_env_var"])
 def test_context_with_user_config(monkeypatch, user_config_file: str):
     if user_config_file == "xdg_config_home" and is_windows():
@@ -171,11 +200,19 @@ def test_context_with_user_config(monkeypatch, user_config_file: str):
 # Temporary test until we switch src layout to the default.
 def test_context_with_root_layout():
     with (
-        ProxyRunner.test() as runner,
+        ProxyRunner.test(use_fixed_test_components=True) as runner,
         isolated_example_project_foo_bar(
             runner, uv_sync=True, in_workspace=False, package_layout="root"
         ),
     ):
+        # Suppress venv mismatch warning since test runs from different venv
+        with modify_toml_as_dict(Path("pyproject.toml")) as toml:
+            create_toml_node(
+                toml,
+                ("tool", "dg", "cli", "suppress_warnings"),
+                ["project_and_activated_venv_mismatch"],
+            )
+
         context = DgContext.from_file_discovery_and_command_line_config(Path.cwd(), {})
         assert context.root_path == Path.cwd()
         assert context.defs_path == Path.cwd() / "foo_bar" / "defs"
@@ -212,7 +249,7 @@ def test_setup_cfg_entry_point():
         with modify_toml_as_dict(Path("pyproject.toml")) as toml:
             delete_toml_node(toml, ("project", "entry-points", "dagster_dg_cli.registry_modules"))
         # Create a setup.cfg file with the entry point
-        with open("setup.cfg", "w") as f:
+        with open("setup.cfg", "w", encoding="utf-8") as f:
             f.write(
                 textwrap.dedent("""
                 [options.entry_points]
@@ -282,18 +319,6 @@ def test_missing_dg_registry_module_in_manifest_warning():
                 EnvRegistry.from_dg_context(context)
 
 
-def test_context_with_autoload_defs_and_definitions_py():
-    with (
-        ProxyRunner.test() as runner,
-        isolated_example_project_foo_bar(runner, in_workspace=False, uv_sync=True),
-    ):
-        # Set autoload_defs to true in pyproject.toml
-        with modify_dg_toml_config_as_dict(Path("pyproject.toml")) as toml:
-            create_toml_node(toml, ("project", "autoload_defs"), True)
-        with dg_warns("`project.autoload_defs` is enabled, but a code location load target"):
-            DgContext.for_project_environment(Path.cwd(), {})
-
-
 # ########################
 # ##### CONFIG TESTS
 # ########################
@@ -341,28 +366,28 @@ def test_invalid_config_workspace(config_file: ConfigFileType):
             with _reset_config_file(config_file):
                 _set_and_detect_invalid_key(config_file, path)
 
-        cases = [
-            ["cli.verbose", bool, 1],
-            ["cli.use_component_modules", Sequence[str], 1],
-            ["cli.suppress_warnings", list[DgWarningIdentifier], 1],
-            ["workspace.projects", list, 1],
-            ["workspace.projects[1]", dict, 1],
-            ["workspace.projects[0].path", str, 1],
-            ["workspace.scaffold_project_options", dict, 1],
-            [
+        mistyped_cases: list[tuple[str, Any, Any]] = [
+            ("cli.verbose", bool, 1),
+            ("cli.use_component_modules", Sequence[str], 1),
+            ("cli.suppress_warnings", list[DgWarningIdentifier], 1),
+            ("workspace.projects", list, 1),
+            ("workspace.projects[1]", dict, 1),
+            ("workspace.projects[0].path", str, 1),
+            ("workspace.scaffold_project_options", dict, 1),
+            (
                 "workspace.scaffold_project_options.use_editable_dagster",
-                Union[bool, str],
+                bool,
                 1,
-            ],
+            ),
         ]
-        for path, expected_type, val in cases:
+        for path, expected_type, val in mistyped_cases:
             with _reset_config_file(config_file):
                 _set_and_detect_mistyped_value(config_file, path, expected_type, val)
 
-        cases = [
-            ["workspace.projects[0].path", str],
+        missing_cases: list[tuple[str, Any]] = [
+            ("workspace.projects[0].path", str),
         ]
-        for path, expected_type in cases:
+        for path, expected_type in missing_cases:
             with _reset_config_file(config_file):
                 _set_and_detect_missing_required_key(config_file, path, expected_type)
 
@@ -382,54 +407,44 @@ def test_invalid_config_project(config_file: ConfigFileType):
             with _reset_config_file(config_file):
                 _set_and_detect_invalid_key(config_file, case)
 
-        cases = [
-            ["cli.verbose", bool, 1],
-            ["project.root_module", str, 1],
-            ["project.defs_module", str, 1],
-            ["project.code_location_name", str, 1],
-            ["project.code_location_target_module", str, 1],
+        mistyped_cases: list[tuple[str, Any, Any]] = [
+            ("cli.verbose", bool, 1),
+            ("project.root_module", str, 1),
+            ("project.defs_module", str, 1),
+            ("project.code_location_name", str, 1),
+            ("project.code_location_target_module", str, 1),
         ]
-        for path, expected_type, val in cases:
+        for path, expected_type, val in mistyped_cases:
             with _reset_config_file(config_file):
                 _set_and_detect_mistyped_value(config_file, path, expected_type, val)
 
-        cases = [
-            ["project.root_module", str],
+        missing_cases: list[tuple[str, Any]] = [
+            ("project.root_module", str),
         ]
-        for path, expected_type in cases:
+        for path, expected_type in missing_cases:
             with _reset_config_file(config_file):
                 _set_and_detect_missing_required_key(config_file, path, expected_type)
 
         with _reset_config_file(config_file):
-            full_registry_modules_key = _get_full_str_path(config_file, "project.registry_modules")
-            err_msg = f"Invalid module pattern `foo.*bar` at `{full_registry_modules_key}`"
-            _set_and_detect_error(
+            expected_type = "A pattern consisting of '.'-separated segments that are either valid Python identifiers or wildcards ('*')."
+            _set_and_detect_mistyped_value(
                 config_file,
-                ("project", "registry_modules"),
-                ["foo.*bar"],
-                err_msg,
+                "project.registry_modules[0]",
+                expected_type,
+                "foo.*bar",
             )
 
-        # Test specifying autoload_defs and code_location_target_module
-        # errors.
+        # test that multiple errors are reported
         with _reset_config_file(config_file):
             with modify_dg_toml_config_as_dict(Path(config_file)) as toml:
-                create_toml_node(
-                    toml,
-                    ("project", "autoload_defs"),
-                    True,
-                )
-
-            full_code_location_key = _get_full_str_path(
-                config_file, "project.code_location_target_module"
+                create_toml_node(toml, ("project", "invalid_key"), True)
+                set_toml_node(toml, ("project", "root_module"), 1)
+            err_msg_1 = _get_invalid_key_error_message("project.invalid_key", config_file)
+            err_msg_2 = _get_mistyped_value_error_message(
+                "project.root_module", str, config_file, 1
             )
-            err_msg = f"Cannot specify `{full_code_location_key}`"
-            _set_and_detect_error(
-                config_file,
-                ("project", "code_location_target_module"),
-                "foo_bar._definitions",
-                err_msg,
-            )
+            with dg_exits(re.escape(err_msg_1), re.escape(err_msg_2)):
+                DgContext.from_file_discovery_and_command_line_config(Path.cwd(), {})
 
 
 @pytest.mark.parametrize("config_file", ["dg.toml", "pyproject.toml"])
@@ -453,13 +468,6 @@ def test_code_location_config(config_file: ConfigFileType):
         ProxyRunner.test() as runner,
         isolated_example_project_foo_bar(runner, config_file_type=config_file),
     ):
-        with modify_dg_toml_config_as_dict(Path(config_file)) as toml:
-            create_toml_node(
-                toml,
-                ("project", "autoload_defs"),
-                False,
-            )
-
         context = DgContext.for_project_environment(Path.cwd(), {})
         assert context.code_location_target_module_name == "foo_bar.definitions"
         assert context.code_location_name == "foo-bar"
@@ -476,6 +484,21 @@ def test_code_location_config(config_file: ConfigFileType):
         context = DgContext.for_project_environment(Path.cwd(), {})
         assert context.code_location_target_module_name == "foo_bar._definitions"
         assert context.code_location_name == "my-code_location"
+
+
+@pytest.mark.parametrize("config_file", ["dg.toml", "pyproject.toml"])
+def test_cli_telemetry_config(config_file: ConfigFileType):
+    # Regression test for dagster-io/dagster#32728: validating `cli.telemetry.enabled`
+    # raised `TypeError: TypedDict does not support instance and class checks` because
+    # the validator called `isinstance` against a TypedDict.
+    with (
+        ProxyRunner.test() as runner,
+        isolated_example_project_foo_bar(runner, config_file_type=config_file, in_workspace=False),
+    ):
+        with modify_dg_toml_config_as_dict(Path(config_file)) as toml:
+            create_toml_node(toml, ("cli", "telemetry", "enabled"), False)
+        context = DgContext.from_file_discovery_and_command_line_config(Path.cwd(), {})
+        assert context.config.cli.telemetry_enabled is False
 
 
 def test_virtual_env_mismatch_warning():
@@ -500,9 +523,9 @@ def test_virtual_env_mismatch_warning():
 
 @contextmanager
 def _reset_config_file(config_file: ConfigFileType):
-    original = Path(config_file).read_text()
+    original = Path(config_file).read_text(encoding="utf-8")
     yield
-    Path(config_file).write_text(original)
+    Path(config_file).write_text(original, encoding="utf-8")
 
 
 def _get_full_str_path(config_file: ConfigFileType, str_path: str) -> str:
@@ -524,32 +547,48 @@ def _set_and_detect_error(
 def _set_and_detect_invalid_key(
     config_file: ConfigFileType, str_path: str, config_value: object = True
 ):
+    error_message = _get_invalid_key_error_message(str_path, config_file)
     path = toml_path_from_str(str_path)
-    leading_str_path, key = toml_path_to_str(path[:-1]), path[-1]
+    _set_and_detect_error(config_file, path, config_value, error_message)
+
+
+def _get_invalid_key_error_message(str_path: str, config_file: ConfigFileType) -> str:
+    leading_str_path, key = (
+        toml_path_to_str(toml_path_from_str(str_path)[:-1]),
+        toml_path_from_str(str_path)[-1],
+    )
     full_leading_str_path = _get_full_str_path(config_file, leading_str_path)
-    error_message = "\n".join(
+    return "\n".join(
         [
-            rf"Unrecognized fields at `{full_leading_str_path}`:",
-            rf"    ['{key}']",
+            rf"Unrecognized field at `{full_leading_str_path}`:",
+            rf"    {key}",
         ]
     )
-    _set_and_detect_error(config_file, path, config_value, error_message)
 
 
 # expected_type Any to handle typing constructs (`Literal` etc)
 def _set_and_detect_mistyped_value(
     config_file: ConfigFileType, str_path: str, expected_type: Any, config_value: object
 ):
+    error_message = _get_mistyped_value_error_message(
+        str_path, expected_type, config_file, config_value
+    )
     path = toml_path_from_str(str_path)
+    _set_and_detect_error(config_file, path, config_value, error_message)
+
+
+def _get_mistyped_value_error_message(
+    str_path: str, expected_type: Any, config_file: ConfigFileType, config_value: object
+) -> str:
     expected_str = get_type_str(expected_type)
     full_str_path = _get_full_str_path(config_file, str_path)
-    error_message = "\n".join(
+    return "\n".join(
         [
             rf"Invalid value for `{full_str_path}`:",
-            rf"    Expected {expected_str}, got `{config_value}`",
+            rf"    Expected: {expected_str}",
+            rf"    Received: {config_value}",
         ]
     )
-    _set_and_detect_error(config_file, path, config_value, error_message)
 
 
 # expected_type Any to handle typing constructs (`Literal` etc)
@@ -562,10 +601,55 @@ def _set_and_detect_missing_required_key(
     error_message = "\n".join(
         [
             rf"Missing required value for `{full_str_path}`:",
-            rf"   Expected {expected_str}",
+            rf"    Expected: {expected_str}",
         ]
     )
     with modify_dg_toml_config_as_dict(Path(config_file)) as toml:
         delete_toml_node(toml, path)
     with dg_exits(re.escape(error_message)):
         DgContext.from_file_discovery_and_command_line_config(Path.cwd(), {})
+
+
+# ########################
+# ##### ENV VAR TESTS
+# ########################
+
+
+def test_get_used_env_vars():
+    """Test that get_used_env_vars correctly extracts environment variables from various data structures."""
+    # Test string with env() notation
+    assert get_used_env_vars("{{ env('FOO') }}") == {"FOO"}
+    assert get_used_env_vars('{{ env("BAR") }}') == {"BAR"}
+
+    # Test string with env. notation - this is the main test case
+    assert get_used_env_vars("{{ env.FOO }}") == {"FOO"}
+    assert get_used_env_vars("{{ env.BAR }}") == {"BAR"}
+
+    # Test mixed notation
+    assert get_used_env_vars("{{ env('FOO') }} and {{ env.BAR }}") == {"FOO", "BAR"}
+
+    # Test with whitespace variations
+    assert get_used_env_vars("{{ env.FOO }}") == {"FOO"}  # No trailing space
+    assert get_used_env_vars("{{ env.FOO  }}") == {"FOO"}  # Multiple trailing spaces
+    assert get_used_env_vars("{{  env.FOO  }}") == {"FOO"}  # Leading and trailing spaces
+
+    # Test mapping
+    data = {
+        "key1": "{{ env.FOO }}",
+        "key2": "{{ env('BAR') }}",
+        "nested": {"key3": "{{ env.BAZ }}"},
+    }
+    assert get_used_env_vars(data) == {"FOO", "BAR", "BAZ"}
+
+    # Test sequence
+    data = ["{{ env.FOO }}", "{{ env.BAR }}", "normal string"]
+    assert get_used_env_vars(data) == {"FOO", "BAR"}
+
+    # Test non-string, non-mapping, non-sequence
+    assert get_used_env_vars(123) == set()
+    assert get_used_env_vars(None) == set()
+
+    # Test empty structures
+    assert get_used_env_vars({}) == set()
+    assert get_used_env_vars([]) == set()
+    assert get_used_env_vars("") == set()

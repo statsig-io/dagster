@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from dagster_pipes import (
     DagsterPipesError,
@@ -12,7 +12,7 @@ from dagster_pipes import (
 )
 
 import dagster._check as check
-from dagster._annotations import public
+from dagster._annotations import preview, public
 from dagster._core.definitions.asset_checks.asset_check_result import AssetCheckResult
 from dagster._core.definitions.metadata import MetadataValue, RawMetadataMapping, normalize_metadata
 from dagster._core.definitions.result import MaterializeResult
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from dagster._core.pipes.context import PipesMessageHandler
 
 
+@public
 class PipesClient(ABC):
     """Pipes client base class.
 
@@ -35,8 +36,8 @@ class PipesClient(ABC):
     def run(
         self,
         *,
-        context: Union[OpExecutionContext, AssetExecutionContext],
-        extras: Optional[PipesExtras] = None,
+        context: OpExecutionContext | AssetExecutionContext,
+        extras: PipesExtras | None = None,
         **kwargs,
     ) -> "PipesClientCompletedInvocation":
         """Synchronously execute an external process with the pipes protocol. Derived
@@ -53,6 +54,7 @@ class PipesClient(ABC):
         """
 
 
+@public
 class PipesClientCompletedInvocation:
     """A wrapper for the results of a pipes client invocation, typically returned from `PipesClient.run`.
 
@@ -67,7 +69,7 @@ class PipesClientCompletedInvocation:
     def __init__(
         self,
         session: PipesSession,
-        metadata: Optional[RawMetadataMapping] = None,
+        metadata: RawMetadataMapping | None = None,
     ):
         self._session = session
         self._metadata = normalize_metadata(metadata or {})
@@ -108,11 +110,6 @@ class PipesClientCompletedInvocation:
         This does not work on invocations that materialize multiple assets and will fail
         in that case. For multiple assets use `get_results` instead to get the result stream.
 
-        Args:
-            implicit_materializations (bool): Create MaterializeResults for expected asset
-                even if nothing was reported from the external process.
-
-
         Returns: MaterializeResult
         """
         return materialize_result_from_pipes_results(
@@ -138,6 +135,7 @@ class PipesClientCompletedInvocation:
         return self._session.get_custom_messages()
 
 
+@public
 class PipesContextInjector(ABC):
     @abstractmethod
     @contextmanager
@@ -165,6 +163,7 @@ class PipesContextInjector(ABC):
         """
 
 
+@public
 class PipesMessageReader(ABC):
     @abstractmethod
     @contextmanager
@@ -201,6 +200,18 @@ class PipesMessageReader(ABC):
         The code calling `open_pipes_session()` is responsible for calling `PipesSession.report_launched()`
         if using a message reader that accesses `launched_payload`.
         """
+
+    @property
+    @preview
+    def expected_writer_count(self) -> int:
+        """The number of independent external writers that will report into this reader.
+
+        Defaults to 1 for single-writer readers. Multi-writer readers like
+        :py:class:`PipesCompositeMessageReader` override this to report the actual number of
+        expected writers so that :py:class:`PipesMessageHandler` can correctly track the
+        aggregate `opened`/`closed` lifecycle.
+        """
+        return 1
 
     @abstractmethod
     def no_messages_debug_text(self) -> str:

@@ -12,10 +12,18 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from typing import Optional
 
 import click
+from dagster_shared.utils import find_uv_workspace_root
 from packaging import version
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
+
+try:
+    import tomllib  # ty: ignore[unresolved-import]
+except ImportError:
+    # Python < 3.11 fallback
+    import tomli as tomllib
 
 from dagster_cloud_cli import ui
 from dagster_cloud_cli.core import docker_runner
@@ -55,7 +63,7 @@ class LocalPackages:
     local_package_paths: list[str]
 
 
-def local_path_for(line: str, relative_to: str) -> Optional[str]:
+def local_path_for(line: str, relative_to: str) -> str | None:
     # Return the abspath for a local package, iff this line points to a local package,
     # otherwise return None.
     # This handles relative or absolute paths specified in requirements.txt,
@@ -81,13 +89,31 @@ def local_path_for(line: str, relative_to: str) -> Optional[str]:
 
 
 def get_requirements_lines(local_dir, python_interpreter: str) -> list[str]:
-    # Combine dependencies specified in requirements.txt and setup.py
+    # Combine dependencies specified in requirements.txt, setup.py, and pyproject.toml
+
     lines = get_requirements_txt_deps(local_dir)
     lines.extend(get_setup_py_deps(local_dir, python_interpreter))
+    lines.extend(get_pyproject_toml_deps(local_dir))
     return lines
 
 
 def collect_requirements(code_directory, python_interpreter: str) -> tuple[list[str], list[str]]:
+    if not os.path.exists(code_directory):
+        raise Exception(
+            f"Specified a build directory that does not exist: {os.path.abspath(code_directory)}."
+        )
+
+    required_files = [
+        "setup.py",
+        "requirements.txt",
+        "pyproject.toml",
+    ]
+
+    if not any(os.path.exists(os.path.join(code_directory, file)) for file in required_files):
+        raise Exception(
+            f"Could not find a setup.py, requirements.txt, or pyproject.toml in build directory {os.path.abspath(code_directory)}."
+        )
+
     # traverse all local packages and return the list of local packages and other requirements
     pending = [os.path.abspath(code_directory)]  # local packages to be processed
     seen = set()
@@ -115,14 +141,33 @@ def collect_requirements(code_directory, python_interpreter: str) -> tuple[list[
     return local_package_paths, deps_lines
 
 
+# TEMP (protobuf<7 compat): grpcio-health-checking 1.82.0 ships grpc_health/v1/health_pb2
+# generated with protobuf-7 gencode, which the protobuf runtime-version guard rejects against
+# the protobuf<7 runtime that dagster pins — the code server then crashes on import. The deps
+# pex resolves from PyPI, so it pulls 1.82.0 regardless of what the resolved dagster's metadata
+# says; force it here so every serverless build is compatible. Remove once dagster's protobuf<7
+# cap is lifted.
+_EXTRA_BUILD_CONSTRAINTS = ["grpcio-health-checking<1.82"]
+
+
 def get_deps_requirements(
     code_directory, python_version: version.Version
 ) -> tuple[LocalPackages, DepsRequirements]:
     python_interpreter = util.python_interpreter_for(python_version)
+
+    ui.print(f"Finding dependencies using build directory {os.path.abspath(code_directory)}")
+
     local_package_paths, deps_lines = collect_requirements(code_directory, python_interpreter)
 
+    # Skip the extra constraints when the project uses hash-pinned requirements: pip's
+    # --require-hashes mode rejects any unhashed requirement, and a hash-pinned project is
+    # already fully version-locked (immune to the upstream drift these constraints guard against).
+    extra_constraints = (
+        [] if any("--hash" in line for line in deps_lines) else _EXTRA_BUILD_CONSTRAINTS
+    )
+
     deps_requirements_text = "\n".join(
-        sorted(set(deps_lines)) + [""]
+        sorted(set(deps_lines) | set(extra_constraints)) + [""]
     )  # empty string adds trailing newline
 
     ui.print(f"List of local packages: {local_package_paths}")
@@ -343,7 +388,7 @@ def get_setup_py_deps(code_directory: str, python_interpreter: str) -> list[str]
             [python_interpreter, setup_py_path, "egg_info", f"--egg-base={temp_dir}"],
             capture_output=True,
             check=False,
-            cwd=temp_dir,
+            cwd=code_directory,
         )
         if proc.returncode:
             raise ValueError(
@@ -361,12 +406,121 @@ def get_setup_py_deps(code_directory: str, python_interpreter: str) -> list[str]
     return lines
 
 
+def _resolve_uv_workspace_dep(dep_name: str, code_directory: str) -> str | None:
+    """Find the relative path to a uv workspace member by package name.
+
+    Returns a relative path like "../shared-lib" or None if not found.
+    Assumes the directory name matches the package name.
+    """
+    result = find_uv_workspace_root(code_directory)
+    if not result:
+        return None
+
+    workspace_root, _ = result
+    candidate = os.path.join(str(workspace_root), dep_name)
+    if os.path.isdir(candidate):
+        return os.path.relpath(candidate, code_directory)
+
+    return None
+
+
+def get_pyproject_toml_deps(code_directory: str) -> list[str]:
+    pyproject_path = os.path.join(code_directory, "pyproject.toml")
+    if not os.path.exists(pyproject_path):
+        return []
+
+    try:
+        with open(pyproject_path, "rb") as file:
+            pyproject_data = tomllib.load(file)
+    except Exception as e:
+        raise ValueError(f"Error parsing pyproject.toml: {e}")
+
+    # Handle dependencies in [project] section (PEP 621)
+    project_section = pyproject_data.get("project", {})
+    dependencies = project_section.get("dependencies", [])
+    lines = [str(dep) for dep in dependencies]
+
+    # Handle optional dependencies in [project.optional-dependencies]
+    optional_deps = project_section.get("optional-dependencies", {})
+    for group_deps in optional_deps.values():
+        lines.extend(str(dep) for dep in group_deps)
+
+    # Handle legacy [tool.poetry.dependencies] for Poetry projects
+    poetry_section = pyproject_data.get("tool", {}).get("poetry", {})
+    poetry_deps = poetry_section.get("dependencies", {})
+    for dep_name, dep_spec in poetry_deps.items():
+        if dep_name == "python":
+            continue  # Skip python version constraint
+
+        if isinstance(dep_spec, str):
+            lines.append(f"{dep_name}{dep_spec}")
+        elif isinstance(dep_spec, dict):
+            version_spec = dep_spec.get("version", "")
+            if version_spec:
+                lines.append(f"{dep_name}{version_spec}")
+            else:
+                # Handle complex dependency specs (git, path, etc.)
+                lines.append(dep_name)
+
+    # Handle legacy [tool.poetry.dev-dependencies] (older Poetry format)
+    poetry_dev_deps = poetry_section.get("dev-dependencies", {})
+    for dep_name, dep_spec in poetry_dev_deps.items():
+        if isinstance(dep_spec, str):
+            lines.append(f"{dep_name}{dep_spec}")
+        elif isinstance(dep_spec, dict):
+            version_spec = dep_spec.get("version", "")
+            if version_spec:
+                lines.append(f"{dep_name}{version_spec}")
+            else:
+                lines.append(dep_name)
+
+    # Handle [tool.uv.sources] - resolve workspace and path dependencies to local paths.
+    # Match by canonical package name so version specifiers and extras in the requirement
+    # line don't defeat the lookup. Skip entries gated on a `group =` qualifier: pex builds
+    # have no active group context, so group-conditional sources must not be applied
+    # (otherwise a test-only local-path override would leak into the production deps pex).
+    uv_sources = pyproject_data.get("tool", {}).get("uv", {}).get("sources", {})
+    if uv_sources:
+        sources_by_canonical = {
+            canonicalize_name(name): cfg for name, cfg in uv_sources.items() if "group" not in cfg
+        }
+        resolved_lines = []
+        for line in lines:
+            try:
+                package_name = canonicalize_name(Requirement(line).name)
+            except InvalidRequirement:
+                ui.print(
+                    f"[uv.sources] could not parse requirement line {line!r}; "
+                    "passing through unchanged"
+                )
+                resolved_lines.append(line)
+                continue
+            source_config = sources_by_canonical.get(package_name)
+            if source_config:
+                if source_config.get("workspace"):
+                    resolved_path = _resolve_uv_workspace_dep(package_name, code_directory)
+                    if resolved_path:
+                        ui.print(
+                            f"[uv.sources] resolved {line!r} to workspace path {resolved_path}"
+                        )
+                        resolved_lines.append(resolved_path)
+                        continue
+                elif "path" in source_config:
+                    ui.print(f"[uv.sources] resolved {line!r} to path {source_config['path']}")
+                    resolved_lines.append(source_config["path"])
+                    continue
+            resolved_lines.append(line)
+        return resolved_lines
+
+    return lines
+
+
 @click.command()
 @click.argument("project_dir", type=click.Path(exists=True))
 @click.argument("build_output_dir", type=click.Path(exists=False))
 @util.python_version_option()
 def deps_main(project_dir, build_output_dir, python_version):
-    deps_pex_path, dagster_version = build_deps_pex(
+    _deps_pex_path, _dagster_version = build_deps_pex(
         project_dir, build_output_dir, util.parse_python_version(python_version)
     )
 

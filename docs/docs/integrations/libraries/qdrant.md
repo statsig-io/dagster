@@ -1,6 +1,7 @@
 ---
 title: Dagster & Qdrant
 sidebar_label: Qdrant
+sidebar_position: 1
 description: The Qdrant library lets you integrate Qdrant's vector database with Dagster, making it easy to build AI-driven data pipelines. You can run vector searches and manage data directly within Dagster.
 tags: [community-supported, storage]
 source:
@@ -10,6 +11,10 @@ sidebar_custom_props:
   community: true
 partnerlink: https://qdrant.tech/
 ---
+
+import CommunityIntegration from '@site/docs/partials/\_CommunityIntegration.md';
+
+<CommunityIntegration />
 
 <p>{frontMatter.description}</p>
 

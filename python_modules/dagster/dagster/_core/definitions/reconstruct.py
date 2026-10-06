@@ -11,6 +11,7 @@ from typing import (  # noqa: UP035
     Callable,
     NamedTuple,
     Optional,
+    TypeAlias,
     TypeVar,
     Union,
     overload,
@@ -19,9 +20,9 @@ from typing import (  # noqa: UP035
 import dagster_shared.seven as seven
 from dagster_shared.serdes import NamedTupleSerializer
 from dagster_shared.utils.hash import hash_collection
-from typing_extensions import TypeAlias
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._core.code_pointer import (
     CodePointer,
     CustomPointer,
@@ -62,10 +63,10 @@ class ReconstructableRepository(
         "_ReconstructableRepository",
         [
             ("pointer", CodePointer),
-            ("container_image", Optional[str]),
-            ("executable_path", Optional[str]),
+            ("container_image", str | None),
+            ("executable_path", str | None),
             ("entry_point", Sequence[str]),
-            ("container_context", Optional[Mapping[str, Any]]),
+            ("container_context", Mapping[str, Any] | None),
             ("repository_load_data", Optional["RepositoryLoadData"]),
         ],
     )
@@ -73,10 +74,10 @@ class ReconstructableRepository(
     def __new__(
         cls,
         pointer: CodePointer,
-        container_image: Optional[str] = None,
-        executable_path: Optional[str] = None,
-        entry_point: Optional[Sequence[str]] = None,
-        container_context: Optional[Mapping[str, Any]] = None,
+        container_image: str | None = None,
+        executable_path: str | None = None,
+        entry_point: Sequence[str] | None = None,
+        container_context: Mapping[str, Any] | None = None,
         repository_load_data: Optional["RepositoryLoadData"] = None,
     ):
         from dagster._core.definitions.repository_definition import RepositoryLoadData
@@ -117,9 +118,9 @@ class ReconstructableRepository(
         cls,
         file: str,
         fn_name: str,
-        working_directory: Optional[str] = None,
-        container_image: Optional[str] = None,
-        container_context: Optional[Mapping[str, Any]] = None,
+        working_directory: str | None = None,
+        container_image: str | None = None,
+        container_context: Mapping[str, Any] | None = None,
     ) -> "ReconstructableRepository":
         if not working_directory:
             working_directory = os.getcwd()
@@ -134,9 +135,9 @@ class ReconstructableRepository(
         cls,
         module: str,
         fn_name: str,
-        working_directory: Optional[str] = None,
-        container_image: Optional[str] = None,
-        container_context: Optional[Mapping[str, Any]] = None,
+        working_directory: str | None = None,
+        container_image: str | None = None,
+        container_context: Mapping[str, Any] | None = None,
     ) -> "ReconstructableRepository":
         return cls(
             ModuleCodePointer(module, fn_name, working_directory),
@@ -153,9 +154,6 @@ class ReconstructableRepository(
             container_context=self.container_context,
         )
 
-    def get_python_origin_id(self) -> str:
-        return self.get_python_origin().get_id()
-
     # Allow this to be hashed for use in `lru_cache`. This is needed because:
     # - `ReconstructableJob` uses `lru_cache`
     # - `ReconstructableJob` has a `ReconstructableRepository` attribute
@@ -167,7 +165,7 @@ class ReconstructableRepository(
 
 
 class ReconstructableJobSerializer(NamedTupleSerializer):
-    def before_unpack(self, _, unpacked_dict: dict[str, Any]) -> dict[str, Any]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def before_unpack(self, _, unpacked_dict: dict[str, Any]) -> dict[str, Any]:  # ty: ignore[invalid-method-override]
         solid_selection_str = unpacked_dict.get("solid_selection_str")
         solids_to_execute = unpacked_dict.get("solids_to_execute")
         if solid_selection_str:
@@ -179,7 +177,7 @@ class ReconstructableJobSerializer(NamedTupleSerializer):
     def pack_items(self, *args, **kwargs):
         for k, v in super().pack_items(*args, **kwargs):
             if k == "op_selection":
-                new_v = json.dumps(v["__set__"]) if v else None  # pyright: ignore[reportCallIssue,reportArgumentType,reportIndexIssue]
+                new_v = json.dumps(v["__set__"]) if v else None  # ty: ignore[invalid-argument-type, not-subscriptable]
                 yield "solid_selection_str", new_v
             else:
                 yield k, v
@@ -192,15 +190,15 @@ class ReconstructableJobSerializer(NamedTupleSerializer):
         "job_name": "pipeline_name",
     },
 )
-class ReconstructableJob(  # pyright: ignore[reportIncompatibleVariableOverride]
+class ReconstructableJob(
     NamedTuple(
         "_ReconstructableJob",
         [
             ("repository", ReconstructableRepository),
             ("job_name", str),
-            ("op_selection", Optional[AbstractSet[str]]),
-            ("asset_selection", Optional[AbstractSet[AssetKey]]),
-            ("asset_check_selection", Optional[AbstractSet[AssetCheckKey]]),
+            ("op_selection", AbstractSet[str] | None),
+            ("asset_selection", AbstractSet[AssetKey] | None),
+            ("asset_check_selection", AbstractSet[AssetCheckKey] | None),
         ],
     ),
     IJob,
@@ -222,9 +220,9 @@ class ReconstructableJob(  # pyright: ignore[reportIncompatibleVariableOverride]
         cls,
         repository: ReconstructableRepository,
         job_name: str,
-        op_selection: Optional[Iterable[str]] = None,
-        asset_selection: Optional[AbstractSet[AssetKey]] = None,
-        asset_check_selection: Optional[AbstractSet[AssetCheckKey]] = None,
+        op_selection: Iterable[str] | None = None,
+        asset_selection: AbstractSet[AssetKey] | None = None,
+        asset_check_selection: AbstractSet[AssetCheckKey] | None = None,
     ):
         op_selection = set(op_selection) if op_selection else None
         return super().__new__(
@@ -246,13 +244,13 @@ class ReconstructableJob(  # pyright: ignore[reportIncompatibleVariableOverride]
         return self._replace(repository=self.repository.with_repository_load_data(metadata))
 
     @lru_cache(maxsize=1)
-    def get_repository_definition(self) -> Optional["RepositoryDefinition"]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_repository_definition(self) -> Optional["RepositoryDefinition"]:
         return self.repository.get_definition()
 
     # Keep the most recent 1 definition (globally since this is a NamedTuple method)
     # This allows repeated calls to get_definition in execution paths to not reload the job
     @lru_cache(maxsize=1)
-    def get_definition(self) -> "JobDefinition":  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_definition(self) -> "JobDefinition":
         return check.not_none(self.get_repository_definition()).get_maybe_subset_job_def(
             self.job_name,
             self.op_selection,
@@ -266,9 +264,9 @@ class ReconstructableJob(  # pyright: ignore[reportIncompatibleVariableOverride]
     def get_subset(
         self,
         *,
-        op_selection: Optional[Iterable[str]] = None,
-        asset_selection: Optional[AbstractSet[AssetKey]] = None,
-        asset_check_selection: Optional[AbstractSet[AssetCheckKey]] = None,
+        op_selection: Iterable[str] | None = None,
+        asset_selection: AbstractSet[AssetKey] | None = None,
+        asset_check_selection: AbstractSet[AssetCheckKey] | None = None,
     ) -> "ReconstructableJob":
         if op_selection and (asset_selection or asset_check_selection):
             check.failed(
@@ -312,10 +310,7 @@ class ReconstructableJob(  # pyright: ignore[reportIncompatibleVariableOverride]
     def get_python_origin(self) -> JobPythonOrigin:
         return JobPythonOrigin(self.job_name, self.repository.get_python_origin())
 
-    def get_python_origin_id(self) -> str:
-        return self.get_python_origin().get_id()
-
-    def get_module(self) -> Optional[str]:
+    def get_module(self) -> str | None:
         """Return the module the job is found in, the origin is a module code pointer."""
         pointer = self.get_python_origin().get_repo_pointer()
         if isinstance(pointer, ModuleCodePointer):
@@ -330,6 +325,7 @@ class ReconstructableJob(  # pyright: ignore[reportIncompatibleVariableOverride]
         return self._hash
 
 
+@public
 def reconstructable(target: Callable[..., "JobDefinition"]) -> ReconstructableJob:
     """Create a :py:class:`~dagster._core.definitions.reconstructable.ReconstructableJob` from a
     function that returns a :py:class:`~dagster.JobDefinition`/:py:class:`~dagster.JobDefinition`,
@@ -396,7 +392,7 @@ def reconstructable(target: Callable[..., "JobDefinition"]) -> ReconstructableJo
                 "``GraphDefinition.to_job``, you must wrap the ``to_job`` call in a function at "
                 "module scope, ie not within any other functions. "
                 "To learn more, check out the docs on ``reconstructable``: "
-                "https://docs.dagster.io/api/python-api/execution#dagster.reconstructable"
+                "https://docs.dagster.io/api/dagster/execution#dagster.reconstructable"
             )
         raise DagsterInvariantViolationError(
             "Reconstructable target should be a function or definition produced "
@@ -412,8 +408,8 @@ def reconstructable(target: Callable[..., "JobDefinition"]) -> ReconstructableJo
 
     if seven.qualname_differs(target):
         raise DagsterInvariantViolationError(
-            f'Reconstructable target "{target.__name__}" has a different '
-            f'__qualname__ "{target.__qualname__}" indicating it is not '
+            f'Reconstructable target "{target.__name__}" has a different '  # ty: ignore[unresolved-attribute]
+            f'__qualname__ "{target.__qualname__}" indicating it is not '  # ty: ignore[unresolved-attribute]
             "defined at module scope. Use a function or decorated function "
             "defined at module scope instead, or use build_reconstructable_job."
         )
@@ -424,7 +420,7 @@ def reconstructable(target: Callable[..., "JobDefinition"]) -> ReconstructableJo
             and hasattr(target, "__name__")
             and getattr(inspect.getmodule(target), "__name__", None) != "__main__"
         ):
-            return ReconstructableJob.for_module(target.__module__, target.__name__)
+            return ReconstructableJob.for_module(target.__module__, target.__name__)  # ty: ignore[invalid-argument-type]
     except:
         pass
 
@@ -437,7 +433,9 @@ def reconstructable(target: Callable[..., "JobDefinition"]) -> ReconstructableJo
         )
 
     pointer = FileCodePointer(
-        python_file=python_file, fn_name=target.__name__, working_directory=os.getcwd()
+        python_file=python_file,
+        fn_name=target.__name__,  # ty: ignore[unresolved-attribute]
+        working_directory=os.getcwd(),
     )
 
     return bootstrap_standalone_recon_job(pointer)
@@ -446,9 +444,9 @@ def reconstructable(target: Callable[..., "JobDefinition"]) -> ReconstructableJo
 def build_reconstructable_job(
     reconstructor_module_name: str,
     reconstructor_function_name: str,
-    reconstructable_args: Optional[tuple[object]] = None,
-    reconstructable_kwargs: Optional[Mapping[str, object]] = None,
-    reconstructor_working_directory: Optional[str] = None,
+    reconstructable_args: tuple[object] | None = None,
+    reconstructable_kwargs: Mapping[str, object] | None = None,
+    reconstructor_working_directory: str | None = None,
 ) -> ReconstructableJob:
     """Create a :py:class:`dagster._core.definitions.reconstructable.ReconstructableJob`.
 
@@ -483,10 +481,10 @@ def build_reconstructable_job(
             from dagster import JobDefinition, job, build_reconstructable_job
 
             class JobFactory:
-                def make_job(*args, **kwargs):
+                def make_job(self, *args, **kwargs):
 
                     @job
-                    def _job(...):
+                    def _job():
                         ...
 
                     return _job
@@ -497,9 +495,9 @@ def build_reconstructable_job(
 
             factory = JobFactory()
 
-            foo_job_args = (...,...)
+            foo_job_args = (..., ...)
 
-            foo_job_kwargs = {...:...}
+            foo_job_kwargs = {...}
 
             foo_job = factory.make_job(*foo_job_args, **foo_job_kwargs)
 
@@ -519,7 +517,7 @@ def build_reconstructable_job(
     _reconstructable_args: list[object] = list(
         check.opt_tuple_param(reconstructable_args, "reconstructable_args")
     )
-    _reconstructable_kwargs: list[list[Union[str, object]]] = list(
+    _reconstructable_kwargs: list[list[str | object]] = list(
         (
             [key, value]
             for key, value in check.opt_mapping_param(
@@ -559,14 +557,14 @@ LoadableDefinition: TypeAlias = Union[
     "JobDefinition",
     "RepositoryDefinition",
     "GraphDefinition",
-    "Sequence[Union[AssetsDefinition, SourceAsset]]",
+    "Sequence[AssetsDefinition | SourceAsset]",
 ]
 
 T_LoadableDefinition = TypeVar("T_LoadableDefinition", bound=LoadableDefinition)
 
 
 def _is_list_of_assets(
-    definition: LoadableDefinition,
+    definition: object,
 ) -> bool:
     from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
     from dagster._core.definitions.source_asset import SourceAsset
@@ -576,7 +574,7 @@ def _is_list_of_assets(
     )
 
 
-def _check_is_loadable(definition: T_LoadableDefinition) -> T_LoadableDefinition:
+def _check_is_loadable(definition: object) -> LoadableDefinition:
     from dagster._core.definitions.definitions_class import Definitions
     from dagster._core.definitions.graph_definition import GraphDefinition
     from dagster._core.definitions.job_definition import JobDefinition
@@ -600,17 +598,17 @@ def _check_is_loadable(definition: T_LoadableDefinition) -> T_LoadableDefinition
             "Loadable attributes must be either a JobDefinition, GraphDefinition, Definitions, "
             f"or RepositoryDefinition. Got {definition!r}."
         )
-    return definition
+    return definition  # ty: ignore[invalid-return-type]
 
 
 def load_def_in_module(
-    module_name: str, attribute: str, working_directory: Optional[str]
+    module_name: str, attribute: str, working_directory: str | None
 ) -> LoadableDefinition:
     return def_from_pointer(CodePointer.from_module(module_name, attribute, working_directory))
 
 
 def load_def_in_package(
-    package_name: str, attribute: str, working_directory: Optional[str]
+    package_name: str, attribute: str, working_directory: str | None
 ) -> LoadableDefinition:
     return def_from_pointer(
         CodePointer.from_python_package(package_name, attribute, working_directory)
@@ -618,7 +616,7 @@ def load_def_in_package(
 
 
 def load_def_in_python_file(
-    python_file: str, attribute: str, working_directory: Optional[str]
+    python_file: str, attribute: str, working_directory: str | None
 ) -> LoadableDefinition:
     return def_from_pointer(CodePointer.from_python_file(python_file, attribute, working_directory))
 
@@ -642,7 +640,7 @@ def def_from_pointer(
             LazyDefinitions,
         ),
     ) or not callable(target):
-        return _check_is_loadable(target)  # type: ignore
+        return _check_is_loadable(target)
 
     # if its a function invoke it - otherwise we are pointing to a
     # artifact in module scope, likely decorator output
@@ -651,9 +649,10 @@ def def_from_pointer(
         raise DagsterInvariantViolationError(
             f"Error invoking function at {pointer.describe()} with no arguments. "
             "Reconstructable target must be callable with no arguments"
+            f"Got {target}, {pointer.describe()}"
         )
 
-    return _check_is_loadable(target())
+    return _check_is_loadable(target())  # ty: ignore[call-top-callable]
 
 
 def job_def_from_pointer(pointer: CodePointer) -> "JobDefinition":
@@ -717,7 +716,7 @@ def _repository_def_from_target_def_inner(
     ):
         return RepositoryDefinition(
             name=SINGLETON_REPOSITORY_NAME,
-            repository_data=CachingRepositoryData.from_list(target),
+            repository_data=CachingRepositoryData.from_list(target),  # ty: ignore[invalid-argument-type]
         )
     elif isinstance(target, RepositoryDefinition):
         return target
@@ -731,9 +730,11 @@ def repository_def_from_target_def(
     from dagster._core.definitions.definitions_load_context import DefinitionsLoadContext
 
     repo_def = _repository_def_from_target_def_inner(target, None)
+    context = DefinitionsLoadContext.get()
     return (
-        repo_def.replace_reconstruction_metadata(
-            DefinitionsLoadContext.get().get_pending_reconstruction_metadata()
+        repo_def.replace_repository_load_data(
+            context.get_pending_reconstruction_metadata(),
+            context.accessed_defs_state_info,
         )
         if repo_def
         else None
@@ -769,8 +770,10 @@ def initialize_repository_def_from_pointer(
             f"Received a {type(target)}"
         )
 
-    return check.inst(repo_def, RepositoryDefinition).replace_reconstruction_metadata(
-        DefinitionsLoadContext.get().get_pending_reconstruction_metadata()
+    context = DefinitionsLoadContext.get()
+    return check.inst(repo_def, RepositoryDefinition).replace_repository_load_data(
+        context.get_pending_reconstruction_metadata(),
+        context.accessed_defs_state_info,
     )
 
 
@@ -811,6 +814,8 @@ def reconstruct_repository_def_from_pointer(
                 if curr_repo_load_data
                 else {},
                 reconstruction_metadata=curr_context.get_pending_reconstruction_metadata(),
+                defs_state_info=curr_context.accessed_defs_state_info,
+                code_location_name=curr_context.code_location_name,
             ),
         )
     else:
@@ -829,6 +834,8 @@ def reconstruct_repository_def_from_pointer(
             f"Received a {type(target)}"
         )
 
-    return check.inst(repo_def, RepositoryDefinition).replace_reconstruction_metadata(
-        DefinitionsLoadContext.get().get_pending_reconstruction_metadata()
+    context = DefinitionsLoadContext.get()
+    return check.inst(repo_def, RepositoryDefinition).replace_repository_load_data(
+        context.get_pending_reconstruction_metadata(),
+        context.accessed_defs_state_info,
     )

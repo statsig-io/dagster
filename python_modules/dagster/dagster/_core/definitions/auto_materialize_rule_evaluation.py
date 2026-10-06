@@ -1,6 +1,6 @@
 from abc import ABC, abstractproperty
 from enum import Enum
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 from dagster_shared.serdes.serdes import (
     NamedTupleSerializer,
@@ -106,7 +106,7 @@ class WaitingOnAssetsRuleEvaluationData(
 class BackcompatNullSerializer(NamedTupleSerializer):
     """Unpacks an arbitrary object into None."""
 
-    def unpack(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def unpack(  # ty: ignore[invalid-method-override]
         self,
         unpacked_dict: dict[str, UnpackedValue],
         whitelist_map: WhitelistMap,
@@ -120,7 +120,7 @@ class BackcompatAutoMaterializeAssetEvaluationSerializer(NamedTupleSerializer):
     AutomationConditionEvaluationWithRunIds.
     """
 
-    def unpack(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def unpack(  # ty: ignore[invalid-method-override]
         self,
         unpacked_dict: dict[str, UnpackedValue],
         whitelist_map: WhitelistMap,
@@ -154,4 +154,4 @@ class AutoMaterializeRuleSnapshot(NamedTuple):
 @whitelist_for_serdes(serializer=BackcompatNullSerializer)
 class AutoMaterializeRuleEvaluation(NamedTuple):
     rule_snapshot: AutoMaterializeRuleSnapshot
-    evaluation_data: Optional[AutoMaterializeRuleEvaluationData]
+    evaluation_data: AutoMaterializeRuleEvaluationData | None

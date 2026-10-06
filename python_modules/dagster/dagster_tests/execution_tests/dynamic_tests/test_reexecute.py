@@ -6,6 +6,7 @@ import pytest
 from dagster import AssetSelection, OpExecutionContext, ReexecutionOptions, in_process_executor
 from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
 from dagster._core.instance import DagsterInstance
+from dagster_shared.seven import IS_PYTHON_3_14
 
 
 @dg.op
@@ -245,7 +246,13 @@ def dynamic_with_transitive_optional_output_job():
         ):
             yield dg.Output(i + 1)
 
-    @dg.job(resource_defs={"io_manager": dg.fs_io_manager})
+    # Pinned to in_process_executor (matching the rest of this file) so the
+    # re-execute_job path is not subject to multiprocess subprocess startup
+    # races on CPU-constrained CI nodes (EKS pods).
+    @dg.job(
+        executor_def=in_process_executor,
+        resource_defs={"io_manager": dg.fs_io_manager},
+    )
     def _dynamic_with_transitive_optional_output_job():
         dynamic_results = dynamic_op().map(lambda n: echo(add_one_with_optional_output(n)))
         adder(dynamic_results.collect())
@@ -683,7 +690,7 @@ def dyn_bool():
     yield dg.DynamicOutput(True, mapping_key="yes")
 
 
-@dg.job
+@dg.job(executor_def=in_process_executor)
 def crashy_job():
     echo(dyn_bool().map(maybe_trigger).collect())
 
@@ -692,6 +699,7 @@ def _execute_crashy_job():
     dg.execute_job(dg.reconstructable(crashy_job), instance=DagsterInstance.get())
 
 
+@pytest.mark.skipif(IS_PYTHON_3_14, reason="multiprocessing.Process behaves differently on 3.14")
 def test_crash() -> None:
     with dg.instance_for_test() as instance:
         run_proc = Process(
@@ -700,11 +708,29 @@ def test_crash() -> None:
         run_proc.start()
         time.sleep(0.1)
 
-        while run_proc.is_alive() and not instance.run_storage.get_cursor_values({"boom"}):
+        # Wait for cursor value to be set, with a timeout
+        # The cursor signals that the job has reached the point we want to test.
+        # Budget is wide enough to cover Python + dagster startup and per-step
+        # multiprocess subprocess startup on slow CI nodes (EKS pods).
+        max_wait = 60  # seconds
+        start = time.time()
+        while time.time() - start < max_wait:
+            cursor_values = instance.run_storage.get_cursor_values({"boom"})
+            if cursor_values:
+                break
+            if not run_proc.is_alive():
+                # Process died before setting cursor - wait a bit more in case of lag
+                time.sleep(0.5)
+                cursor_values = instance.run_storage.get_cursor_values({"boom"})
+                break
             time.sleep(0.1)
+
         run_proc.kill()
         run_proc.join()
-        run_id = instance.run_storage.get_cursor_values({"boom"})["boom"]
+
+        cursor_values = instance.run_storage.get_cursor_values({"boom"})
+        assert cursor_values, "Process exited before setting cursor value 'boom'"
+        run_id = cursor_values["boom"]
         run = instance.get_run_by_id(run_id)
         assert run
         instance.report_run_failed(run)

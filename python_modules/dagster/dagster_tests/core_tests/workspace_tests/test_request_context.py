@@ -4,17 +4,18 @@ from unittest import mock
 
 import pytest
 from dagster._core.errors import DagsterCodeLocationLoadError, DagsterCodeLocationNotFoundError
+from dagster._core.remote_origin import RegisteredCodeLocationOrigin
 from dagster._core.remote_representation.code_location import CodeLocation
 from dagster._core.remote_representation.feature_flags import (
     CodeLocationFeatureFlags,
     get_feature_flags_for_location,
 )
-from dagster._core.remote_representation.origin import RegisteredCodeLocationOrigin
 from dagster._core.workspace.context import WorkspaceRequestContext
 from dagster._core.workspace.workspace import (
     CodeLocationEntry,
     CodeLocationLoadStatus,
     CurrentWorkspace,
+    DefinitionsSource,
 )
 from dagster._utils.error import SerializableErrorInfo
 
@@ -37,6 +38,7 @@ def workspace_request_context() -> WorkspaceRequestContext:
                     display_metadata={},
                     update_timestamp=now,
                     version_key=str(now),
+                    definitions_source=DefinitionsSource.CODE_SERVER,
                 ),
                 "loaded_loc": CodeLocationEntry(
                     origin=RegisteredCodeLocationOrigin("loaded_loc"),
@@ -46,6 +48,7 @@ def workspace_request_context() -> WorkspaceRequestContext:
                     display_metadata={},
                     update_timestamp=now,
                     version_key=str(now),
+                    definitions_source=DefinitionsSource.CODE_SERVER,
                 ),
                 "error_loc": CodeLocationEntry(
                     origin=RegisteredCodeLocationOrigin("error_loc"),
@@ -55,6 +58,7 @@ def workspace_request_context() -> WorkspaceRequestContext:
                     display_metadata={},
                     update_timestamp=now,
                     version_key=str(now),
+                    definitions_source=DefinitionsSource.CODE_SERVER,
                 ),
             }
         ),
@@ -97,6 +101,7 @@ def _location_with_mocked_versions(dagster_library_versions: Mapping[str, str]):
         display_metadata={},
         update_timestamp=time.time(),
         version_key="test",
+        definitions_source=DefinitionsSource.CODE_SERVER,
     )
 
 

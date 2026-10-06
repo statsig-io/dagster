@@ -88,7 +88,7 @@ def test_manual_instance():
     with pytest.raises(
         dg.DagsterInvariantViolationError,
         match=(
-            "Reconstructable target was not a function returning a job definition, or a job"
+            r"Reconstructable target was not a function returning a job definition, or a job"
             " definition produced by a decorated function."
         ),
     ):
@@ -111,7 +111,7 @@ def test_bad_target():
             " or RepositoryDefinition. Got None."
         ),
     ):
-        dg.reconstructable(not_the_pipeline)  # pyright: ignore[reportArgumentType]
+        dg.reconstructable(not_the_pipeline)
 
 
 def test_inner_scope():

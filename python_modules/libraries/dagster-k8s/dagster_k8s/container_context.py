@@ -4,7 +4,6 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional, cast
 
 import dagster._check as check
-import kubernetes
 import kubernetes.client
 from dagster._config import process_config
 from dagster._core.container_context import process_shared_container_context_config
@@ -51,7 +50,8 @@ class K8sContainerContext(
         [
             ("server_k8s_config", UserDefinedDagsterK8sConfig),
             ("run_k8s_config", UserDefinedDagsterK8sConfig),
-            ("namespace", Optional[str]),
+            ("namespace", str | None),
+            ("server_replica_count", int | None),
         ],
     )
 ):
@@ -63,22 +63,23 @@ class K8sContainerContext(
 
     def __new__(
         cls,
-        image_pull_policy: Optional[str] = None,
-        image_pull_secrets: Optional[Sequence[Mapping[str, str]]] = None,
-        service_account_name: Optional[str] = None,
-        env_config_maps: Optional[Sequence[str]] = None,
-        env_secrets: Optional[Sequence[str]] = None,
-        env_vars: Optional[Sequence[str]] = None,
-        volume_mounts: Optional[Sequence[Mapping[str, Any]]] = None,
-        volumes: Optional[Sequence[Mapping[str, Any]]] = None,
-        labels: Optional[Mapping[str, str]] = None,
-        namespace: Optional[str] = None,
-        resources: Optional[Mapping[str, Any]] = None,
-        scheduler_name: Optional[str] = None,
-        security_context: Optional[Mapping[str, Any]] = None,
-        server_k8s_config: Optional[UserDefinedDagsterK8sConfig] = None,
-        run_k8s_config: Optional[UserDefinedDagsterK8sConfig] = None,
-        env: Optional[Sequence[Mapping[str, Any]]] = None,
+        image_pull_policy: str | None = None,
+        image_pull_secrets: Sequence[Mapping[str, str]] | None = None,
+        service_account_name: str | None = None,
+        env_config_maps: Sequence[str] | None = None,
+        env_secrets: Sequence[str] | None = None,
+        env_vars: Sequence[str] | None = None,
+        volume_mounts: Sequence[Mapping[str, Any]] | None = None,
+        volumes: Sequence[Mapping[str, Any]] | None = None,
+        labels: Mapping[str, str] | None = None,
+        namespace: str | None = None,
+        resources: Mapping[str, Any] | None = None,
+        scheduler_name: str | None = None,
+        security_context: Mapping[str, Any] | None = None,
+        server_k8s_config: UserDefinedDagsterK8sConfig | None = None,
+        run_k8s_config: UserDefinedDagsterK8sConfig | None = None,
+        env: Sequence[Mapping[str, Any]] | None = None,
+        server_replica_count: int | None = None,
     ):
         top_level_k8s_config = K8sContainerContext._get_base_user_defined_k8s_config(
             image_pull_policy=check.opt_str_param(image_pull_policy, "image_pull_policy"),
@@ -109,6 +110,7 @@ class K8sContainerContext(
             top_level_k8s_config._replace(  # remove k8s service/deployment fields
                 deployment_metadata={},
                 service_metadata={},
+                service_spec_config={},
             ),
             run_k8s_config or UserDefinedDagsterK8sConfig.from_dict({}),
         )
@@ -127,13 +129,14 @@ class K8sContainerContext(
             run_k8s_config=run_k8s_config,
             server_k8s_config=server_k8s_config,
             namespace=namespace,
+            server_replica_count=check.opt_int_param(server_replica_count, "server_replica_count"),
         )
 
     @staticmethod
     def _get_base_user_defined_k8s_config(
-        image_pull_policy: Optional[str],
-        image_pull_secrets: Optional[Sequence[Mapping[str, str]]],
-        service_account_name: Optional[str],
+        image_pull_policy: str | None,
+        image_pull_secrets: Sequence[Mapping[str, str]] | None,
+        service_account_name: str | None,
         env_config_maps: Sequence[str],
         env_secrets: Sequence[str],
         env_vars: Sequence[str],
@@ -141,7 +144,7 @@ class K8sContainerContext(
         volumes: Sequence[Mapping[str, Any]],
         labels: Mapping[str, str],
         resources: Mapping[str, Any],
-        scheduler_name: Optional[str],
+        scheduler_name: str | None,
         security_context: Mapping[str, Any],
         env: Sequence[Mapping[str, Any]],
     ) -> UserDefinedDagsterK8sConfig:
@@ -272,6 +275,9 @@ class K8sContainerContext(
             ),
             run_k8s_config=self._merge_k8s_config(self.run_k8s_config, other.run_k8s_config),
             namespace=other.namespace if other.namespace else self.namespace,
+            server_replica_count=other.server_replica_count
+            if other.server_replica_count is not None
+            else self.server_replica_count,
         )
 
     def _snake_case_allowed_fields(
@@ -297,6 +303,8 @@ class K8sContainerContext(
                 model_class = kubernetes.client.V1PodSpec
             elif key == "job_spec_config":
                 model_class = kubernetes.client.V1JobSpec
+            elif key == "service_spec_config":
+                model_class = kubernetes.client.V1ServiceSpec
             else:
                 raise Exception(f"Unexpected key in allowlist {key}")
             result[key] = k8s_snake_case_keys(
@@ -306,8 +314,8 @@ class K8sContainerContext(
 
     def validate_user_k8s_config_for_run(
         self,
-        only_allow_user_defined_k8s_config_fields: Optional[Mapping[str, Any]],
-        only_allow_user_defined_env_vars: Optional[Sequence[str]],
+        only_allow_user_defined_k8s_config_fields: Mapping[str, Any] | None,
+        only_allow_user_defined_env_vars: Sequence[str] | None,
     ):
         return self._validate_user_k8s_config(
             self.run_k8s_config,
@@ -317,8 +325,8 @@ class K8sContainerContext(
 
     def validate_user_k8s_config_for_code_server(
         self,
-        only_allow_user_defined_k8s_config_fields: Optional[Mapping[str, Any]],
-        only_allow_user_defined_env_vars: Optional[Sequence[str]],
+        only_allow_user_defined_k8s_config_fields: Mapping[str, Any] | None,
+        only_allow_user_defined_env_vars: Sequence[str] | None,
     ):
         return self._validate_user_k8s_config(
             self.server_k8s_config,
@@ -329,8 +337,8 @@ class K8sContainerContext(
     def _validate_user_k8s_config(
         self,
         user_defined_k8s_config: UserDefinedDagsterK8sConfig,
-        only_allow_user_defined_k8s_config_fields: Optional[Mapping[str, Any]],
-        only_allow_user_defined_env_vars: Optional[Sequence[str]],
+        only_allow_user_defined_k8s_config_fields: Mapping[str, Any] | None,
+        only_allow_user_defined_env_vars: Sequence[str] | None,
     ) -> "K8sContainerContext":
         used_fields = self._get_used_k8s_config_fields(user_defined_k8s_config)
 
@@ -343,9 +351,11 @@ class K8sContainerContext(
 
             for key, used_fields_with_key in used_fields.items():
                 if isinstance(used_fields_with_key, set):
-                    for used_field in used_fields_with_key:
-                        if not snake_case_allowlist.get(key, {}).get(used_field):
-                            disallowed_fields.append(f"{key}.{used_field}")
+                    disallowed_fields.extend(
+                        f"{key}.{used_field}"
+                        for used_field in used_fields_with_key
+                        if not snake_case_allowlist.get(key, {}).get(used_field)
+                    )
                 else:
                     check.invariant(isinstance(used_fields_with_key, bool))
                     if used_fields_with_key and not only_allow_user_defined_k8s_config_fields.get(
@@ -552,6 +562,7 @@ class K8sContainerContext(
                     processed_context_value.get("run_k8s_config", {})
                 ),
                 env=processed_context_value.get("env"),
+                server_replica_count=processed_context_value.get("server_replica_count"),
             ),
         )
 

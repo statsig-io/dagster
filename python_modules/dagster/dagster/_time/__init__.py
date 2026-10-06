@@ -1,6 +1,8 @@
+import os
 import time
 from datetime import datetime, timedelta, timezone, tzinfo
-from typing import Union, cast
+from functools import lru_cache
+from typing import cast
 
 import dagster._check as check
 from dagster._vendored.dateutil import parser
@@ -67,7 +69,7 @@ def create_datetime(year, month, day, *args, **kwargs):
     return datetime(year, month, day, *args, **kwargs, tzinfo=tz)
 
 
-def datetime_from_timestamp(timestamp: float, tz: Union[str, tzinfo] = timezone.utc) -> datetime:
+def datetime_from_timestamp(timestamp: float, tz: str | tzinfo = timezone.utc) -> datetime:
     """Creates a datetime object from a unix timestamp. Will always have a timezone
     (defaults to UTC if none is specified).
     """
@@ -115,10 +117,10 @@ def parse_time_string(datetime_str) -> datetime:
     """
     dt = parser.parse(datetime_str)
 
-    if not dt.tzinfo:  # pyright: ignore[reportAttributeAccessIssue]
-        dt = dt.replace(tzinfo=timezone.utc)  # pyright: ignore[reportAttributeAccessIssue]
+    if not dt.tzinfo:
+        dt = dt.replace(tzinfo=timezone.utc)
 
-    return dt  # pyright: ignore[reportReturnType]
+    return dt
 
 
 def is_second_ambiguous_time(dt: datetime, tz: str):
@@ -178,7 +180,22 @@ def dst_safe_strftime(dt: datetime, tz: str, fmt: str, cron_schedule: str) -> st
     return dt.strftime(fmt)
 
 
+lru_cache_size = int(os.getenv("DAGSTER_DST_SAFE_STRPTIME_LRU_CACHE_SIZE", "8192"))
+
+
 def dst_safe_strptime(date_string: str, tz: str, fmt: str) -> datetime:
+    if not lru_cache_size:
+        return _dst_safe_strptime_impl(date_string, tz, fmt)
+    else:
+        return _cached_dst_safe_strptime(date_string, tz, fmt)
+
+
+@lru_cache(maxsize=lru_cache_size)
+def _cached_dst_safe_strptime(date_string: str, tz: str, fmt: str) -> datetime:
+    return _dst_safe_strptime_impl(date_string, tz, fmt)
+
+
+def _dst_safe_strptime_impl(date_string: str, tz: str, fmt: str) -> datetime:
     """A method for parsing a datetime created with the dst_safe_strftime() method."""
     try:
         # first, try to parse the datetime in the normal format

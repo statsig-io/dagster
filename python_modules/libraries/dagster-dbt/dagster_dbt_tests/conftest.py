@@ -2,7 +2,7 @@ import os
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from dagster_dbt import DbtCliResource
@@ -13,9 +13,11 @@ from dagster_dbt_tests.dbt_projects import (
     test_asset_key_exceptions_path,
     test_dagster_dbt_mixed_freshness_path,
     test_dbt_alias_path,
+    test_dbt_functions_path,
     test_dbt_model_versions_path,
     test_dbt_python_interleaving_path,
     test_dbt_semantic_models_path,
+    test_dbt_snapshot_path,
     test_dbt_source_freshness_path,
     test_dbt_unit_tests_path,
     test_dependencies_path,
@@ -62,7 +64,7 @@ def disable_openblas_threading_affinity_fixture() -> None:
 
 
 def _create_dbt_invocation(
-    project_dir: Path, build_project: bool = False, target: Optional[str] = None
+    project_dir: Path, build_project: bool = False, target: str | None = None
 ) -> DbtCliInvocation:
     dbt = DbtCliResource(
         project_dir=os.fspath(project_dir), global_config_flags=["--quiet"], target=target
@@ -119,6 +121,11 @@ def test_dbt_alias_manifest_fixture() -> dict[str, Any]:
     return _create_dbt_invocation(test_dbt_alias_path).get_artifact("manifest.json")
 
 
+@pytest.fixture(name="test_dbt_functions_manifest", scope="session")
+def test_dbt_functions_manifest_fixture() -> dict[str, Any]:
+    return _create_dbt_invocation(test_dbt_functions_path).get_artifact("manifest.json")
+
+
 @pytest.fixture(name="test_dbt_model_versions_manifest", scope="session")
 def test_dbt_model_versions_manifest_fixture() -> dict[str, Any]:
     return _create_dbt_invocation(test_dbt_model_versions_path).get_artifact("manifest.json")
@@ -131,7 +138,9 @@ def test_dbt_python_interleaving_manifest_fixture() -> dict[str, Any]:
 
 @pytest.fixture(name="test_dbt_semantic_models_manifest", scope="session")
 def test_dbt_semantic_models_manifest_fixture() -> dict[str, Any]:
-    return _create_dbt_invocation(test_dbt_semantic_models_path).get_artifact("manifest.json")
+    return _create_dbt_invocation(test_dbt_semantic_models_path, build_project=True).get_artifact(
+        "manifest.json"
+    )
 
 
 @pytest.fixture(name="test_dbt_source_freshness_manifest", scope="session")
@@ -189,9 +198,23 @@ def test_dagster_dbt_mixed_freshness_manifest_fixture() -> dict[str, Any]:
 
 @pytest.fixture(name="test_metadata_manifest", scope="session")
 def test_metadata_manifest_fixture() -> dict[str, Any]:
-    # Prepopulate duckdb with jaffle shop data to support testing individual column metadata.
+    # Create the source_raw_customers table in DuckDB before dbt runs.
+    # stg_customers reads from this source table (not a seed), so it must exist
+    # before dbt build.
+    subprocess.run(
+        ["python", test_metadata_path / "init_db.py"],
+        check=True,
+    )
     return _create_dbt_invocation(
         test_metadata_path,
+        build_project=True,
+    ).get_artifact("manifest.json")
+
+
+@pytest.fixture(name="test_dbt_snapshot_manifest", scope="session")
+def test_dbt_snapshot_manifest_fixture() -> dict[str, Any]:
+    return _create_dbt_invocation(
+        test_dbt_snapshot_path,
         build_project=True,
     ).get_artifact("manifest.json")
 

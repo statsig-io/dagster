@@ -7,7 +7,7 @@ import sys
 from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import AbstractSet, NamedTuple, Optional, Union, cast  # noqa: UP035
+from typing import AbstractSet, NamedTuple  # noqa: UP035
 from unittest import mock
 
 import dagster as dg
@@ -34,8 +34,8 @@ from dagster._core.definitions.repository_definition.valid_definitions import (
 )
 from dagster._core.execution.api import create_execution_plan
 from dagster._core.instance import DagsterInstance
+from dagster._core.remote_origin import InProcessCodeLocationOrigin
 from dagster._core.remote_representation.external_data import RepositorySnap
-from dagster._core.remote_representation.origin import InProcessCodeLocationOrigin
 from dagster._core.storage.tags import PARTITION_NAME_TAG
 from dagster._core.test_utils import (
     InProcessTestWorkspaceLoadTarget,
@@ -68,9 +68,7 @@ def get_code_location_origin(
         sensors=scenario_spec.sensors,
     )
 
-    return _get_code_location_origin_from_repository(
-        cast("dg.RepositoryDefinition", repository), location_name=location_name
-    )
+    return _get_code_location_origin_from_repository(repository, location_name=location_name)
 
 
 def _get_code_location_origin_from_repository(repository: RepositoryDefinition, location_name: str):
@@ -96,7 +94,7 @@ def _get_code_location_origin_from_repository(repository: RepositoryDefinition, 
 
 class MultiAssetSpec(NamedTuple):
     specs: Sequence[dg.AssetSpec]
-    partitions_def: Optional[dg.PartitionsDefinition] = None
+    partitions_def: dg.PartitionsDefinition | None = None
     can_subset: bool = False
 
 
@@ -104,9 +102,9 @@ class MultiAssetSpec(NamedTuple):
 class ScenarioSpec:
     """A construct for declaring and modifying a desired Definitions object."""
 
-    asset_specs: Sequence[Union[dg.AssetSpec, MultiAssetSpec]]
+    asset_specs: Sequence[dg.AssetSpec | MultiAssetSpec]
     check_specs: Sequence[dg.AssetCheckSpec] = field(default_factory=list)
-    current_time: datetime.datetime = field(default_factory=lambda: get_current_datetime())
+    current_time: datetime.datetime = field(default_factory=get_current_datetime)
     sensors: Sequence[dg.SensorDefinition] = field(default_factory=list)
     additional_repo_specs: Sequence["ScenarioSpec"] = field(default_factory=list)
 
@@ -173,7 +171,7 @@ class ScenarioSpec:
                     )
         for check_spec in self.check_specs:
 
-            @dg.asset_check(  # pyright: ignore[reportArgumentType]
+            @dg.asset_check(
                 asset=check_spec.asset_key,
                 name=check_spec.key.name,
                 blocking=check_spec.blocking,
@@ -200,7 +198,7 @@ class ScenarioSpec:
             self, additional_repo_specs=[*self.additional_repo_specs, *scenario_specs]
         )
 
-    def with_current_time(self, time: Union[str, datetime.datetime]) -> "ScenarioSpec":
+    def with_current_time(self, time: str | datetime.datetime) -> "ScenarioSpec":
         if isinstance(time, str):
             time = parse_time_string(time)
         return dataclasses.replace(self, current_time=time)
@@ -214,7 +212,9 @@ class ScenarioSpec:
         )
 
     def with_asset_properties(
-        self, keys: Optional[Iterable[CoercibleToAssetKey]] = None, **kwargs
+        self,
+        keys: Iterable[CoercibleToAssetKey] | None = None,
+        **kwargs,
     ) -> "ScenarioSpec":
         """Convenience method to update the properties of one or more assets in the scenario state."""
         new_asset_specs = []
@@ -253,7 +253,7 @@ class ScenarioState:
     """A reference to the state of a specific scenario alongside an instance."""
 
     scenario_spec: ScenarioSpec
-    instance: dg.DagsterInstance = field(default_factory=lambda: DagsterInstance.ephemeral())
+    instance: dg.DagsterInstance = field(default_factory=DagsterInstance.ephemeral)
     logger: logging.Logger = field(default_factory=lambda: logging.getLogger(__name__))
 
     @property
@@ -264,7 +264,7 @@ class ScenarioState:
     def asset_graph(self) -> AssetGraph:
         return self.scenario_spec.asset_graph
 
-    def with_current_time(self, time: Union[str, datetime.datetime]) -> Self:
+    def with_current_time(self, time: str | datetime.datetime) -> Self:
         return dataclasses.replace(self, scenario_spec=self.scenario_spec.with_current_time(time))
 
     def with_current_time_advanced(self, **kwargs) -> Self:
@@ -273,7 +273,7 @@ class ScenarioState:
         )
 
     def with_asset_properties(
-        self, keys: Optional[Iterable[CoercibleToAssetKey]] = None, **kwargs
+        self, keys: Iterable[CoercibleToAssetKey] | None = None, **kwargs
     ) -> Self:
         return dataclasses.replace(
             self, scenario_spec=self.scenario_spec.with_asset_properties(keys, **kwargs)
@@ -282,7 +282,7 @@ class ScenarioState:
     def _with_run_with_status_for_assets(
         self,
         asset_keys: AbstractSet[dg.AssetKey],
-        partition_key: Optional[str],
+        partition_key: str | None,
         status: DagsterRunStatus,
     ) -> Self:
         run_id = make_new_run_id()
@@ -304,7 +304,7 @@ class ScenarioState:
         return self
 
     def with_in_progress_run_for_asset(
-        self, asset_key: CoercibleToAssetKey, partition_key: Optional[str] = None
+        self, asset_key: CoercibleToAssetKey, partition_key: str | None = None
     ) -> Self:
         asset_key = AssetKey.from_coercible(asset_key)
         return self._with_run_with_status_for_assets(
@@ -312,7 +312,7 @@ class ScenarioState:
         )
 
     def with_failed_run_for_asset(
-        self, asset_key: CoercibleToAssetKey, partition_key: Optional[str] = None
+        self, asset_key: CoercibleToAssetKey, partition_key: str | None = None
     ) -> Self:
         asset_key = AssetKey.from_coercible(asset_key)
         return self._with_run_with_status_for_assets(
@@ -346,7 +346,7 @@ class ScenarioState:
         )
 
     def with_reported_materialization(
-        self, asset_key: CoercibleToAssetKey, partition_key: Optional[str] = None
+        self, asset_key: CoercibleToAssetKey, partition_key: str | None = None
     ) -> Self:
         mat = dg.AssetMaterialization(
             asset_key=asset_key,
@@ -358,8 +358,8 @@ class ScenarioState:
     def with_reported_observation(
         self,
         asset_key: CoercibleToAssetKey,
-        partition_key: Optional[str] = None,
-        data_version: Optional[str] = None,
+        partition_key: str | None = None,
+        data_version: str | None = None,
     ) -> Self:
         obs = dg.AssetObservation(
             asset_key=asset_key,

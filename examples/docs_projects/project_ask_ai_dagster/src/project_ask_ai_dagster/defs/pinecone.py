@@ -1,7 +1,5 @@
-from typing import Optional
-
 import dagster as dg
-from pinecone import Pinecone
+from pinecone import Pinecone  # ty: ignore[unresolved-import]
 from pydantic import Field
 
 
@@ -11,7 +9,7 @@ class PineconeResource(dg.ConfigurableResource):
     openai_api_key: str = Field(description="OpenAI API key")
 
     def setup_for_execution(self, context: dg.InitResourceContext) -> None:
-        self._pinecone = Pinecone(api_key=self.pinecone_api_key)  # type: ignore
+        self._pinecone = Pinecone(api_key=self.pinecone_api_key)
 
     def create_index(self, index_name: str, dimension: int = 1536):
         if index_name not in self._pinecone.list_indexes().names():
@@ -22,7 +20,7 @@ class PineconeResource(dg.ConfigurableResource):
                 spec={"serverless": {"cloud": "aws", "region": "us-east-1"}},
             )
 
-    def get_index(self, index_name: str, namespace: Optional[str] = None):
+    def get_index(self, index_name: str, namespace: str | None = None):
         index = self._pinecone.Index(index_name)
         if namespace:
             return index, {"namespace": namespace}

@@ -3,14 +3,17 @@ from pathlib import Path
 projects_path = Path(__file__).joinpath("..").resolve()
 
 test_jaffle_shop_path = projects_path.joinpath("jaffle_shop")
+test_fusion_compatible_jaffle_shop_path = projects_path.joinpath("fusion_compatible/jaffle_shop")
 test_pre_packaged_jaffle_shop_path = projects_path.joinpath("pre_packaged_jaffle_shop")
 test_asset_checks_path = projects_path.joinpath("test_dagster_asset_checks")
 test_asset_key_exceptions_path = projects_path.joinpath("test_dagster_asset_key_exceptions")
 test_dbt_alias_path = projects_path.joinpath("test_dagster_dbt_alias")
+test_dbt_functions_path = projects_path.joinpath("test_dagster_dbt_functions")
 test_dbt_model_versions_path = projects_path.joinpath("test_dagster_dbt_model_versions")
 test_dbt_python_interleaving_path = projects_path.joinpath("test_dagster_dbt_python_interleaving")
 test_dbt_semantic_models_path = projects_path.joinpath("test_dagster_dbt_semantic_models")
 test_dbt_source_freshness_path = projects_path.joinpath("test_dagster_dbt_source_freshness")
+test_dbt_snapshot_path = projects_path.joinpath("test_dagster_dbt_snapshot")
 test_dbt_unit_tests_path = projects_path.joinpath("test_dagster_dbt_unit_tests")
 test_duplicate_source_asset_key_path = projects_path.joinpath(
     "test_dagster_duplicate_source_asset_key"

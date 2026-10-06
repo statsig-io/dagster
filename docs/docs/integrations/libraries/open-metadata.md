@@ -1,6 +1,7 @@
 ---
 title: Dagster & Open Metadata
 sidebar_label: Open Metadata
+sidebar_position: 1
 description: With this integration you can create a Open Metadata service to ingest metadata produced by the Dagster application. View the Ingestion Pipeline running from the Open Metadata Service Page.
 tags: [community-supported, metadata]
 source:
@@ -10,6 +11,10 @@ sidebar_custom_props:
   community: true
 partnerlink: https://docs.open-metadata.org/latest/connectors/pipeline/dagster
 ---
+
+import CommunityIntegration from '@site/docs/partials/\_CommunityIntegration.md';
+
+<CommunityIntegration />
 
 <p>{frontMatter.description}</p>
 

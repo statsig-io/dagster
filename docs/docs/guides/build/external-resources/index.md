@@ -2,6 +2,8 @@
 description: Dagster resources are objects used by Dagster assets and ops that provide access to external systems, databases, or services.
 sidebar_position: 50
 title: External resources
+canonicalUrl: "/guides/build/external-resources"
+slug: "/guides/build/external-resources"
 ---
 
 Dagster resources are objects used by Dagster assets and ops that provide access to external systems, databases, or services. For example, a simple ETL (Extract Transform Load) pipeline fetches data from an API, ingests it into a database, and updates a dashboard. External tools and services this pipeline uses could be:
@@ -21,8 +23,6 @@ Resources allow you to:
 - **Share implementations across multiple assets or ops** - When multiple assets access the same external services, resources provide a standard way to structure your code to share the implementations.
 
 ## Relevant APIs
-
-{/* TODO replace `ResourceParam` with <PyObject section="resources" module="dagster" object="ResourceParam"/> in table below  */}
 
 | Name                                             | Description                                                                                                                                                                                                                             |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

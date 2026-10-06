@@ -2,15 +2,17 @@ from abc import ABC, abstractmethod, abstractproperty
 from collections.abc import Sequence
 from datetime import datetime
 from functools import cached_property
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from dagster._annotations import public
 from dagster._core.definitions.partitions.definition.partitions_definition import (
     PartitionsDefinition,
 )
 from dagster._core.definitions.partitions.subset.partitions_subset import PartitionsSubset
-from dagster._core.instance import DynamicPartitionsStore
 from dagster._record import record
+
+if TYPE_CHECKING:
+    from dagster._core.instance import DynamicPartitionsStore
 
 
 @record
@@ -32,6 +34,7 @@ class UpstreamPartitionsResult:
         return list(self.required_but_nonexistent_subset.get_partition_keys())
 
 
+@public
 class PartitionMapping(ABC):
     """Defines a correspondence between the partitions in an asset and the partitions in an asset
     that it depends on.
@@ -47,8 +50,8 @@ class PartitionMapping(ABC):
         upstream_partitions_subset: PartitionsSubset,
         upstream_partitions_def: PartitionsDefinition,
         downstream_partitions_def: PartitionsDefinition,
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None,
     ) -> PartitionsSubset:
         """Returns the subset of partition keys in the downstream asset that use the data in the given
         partition key subset of the upstream asset.
@@ -64,7 +67,7 @@ class PartitionMapping(ABC):
     def validate_partition_mapping(
         self,
         upstream_partitions_def: PartitionsDefinition,
-        downstream_partitions_def: Optional[PartitionsDefinition],
+        downstream_partitions_def: PartitionsDefinition | None,
     ) -> None:
         """Raises an exception if the mapping is not valid for the two partitions definitions
         due to some incompatibility between the definitions (ignoring specific keys or subsets).
@@ -76,11 +79,11 @@ class PartitionMapping(ABC):
     @abstractmethod
     def get_upstream_mapped_partitions_result_for_partitions(
         self,
-        downstream_partitions_subset: Optional[PartitionsSubset],
-        downstream_partitions_def: Optional[PartitionsDefinition],
+        downstream_partitions_subset: PartitionsSubset | None,
+        downstream_partitions_def: PartitionsDefinition | None,
         upstream_partitions_def: PartitionsDefinition,
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None,
     ) -> UpstreamPartitionsResult:
         """Returns a UpstreamPartitionsResult object containing the partition keys the downstream
         partitions subset was mapped to in the upstream partitions definition.

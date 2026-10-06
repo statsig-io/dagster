@@ -84,7 +84,7 @@ def test_dagster_cloud_yaml_check() -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             os.mkdir(os.path.join(tmpdir, "subdir"))
             yaml_path = os.path.join(tmpdir, "dagster_cloud.yaml")
-            with open(yaml_path, "w") as f:
+            with open(yaml_path, "w", encoding="utf-8") as f:
                 f.write(text)
             runner = CliRunner()
             return runner.invoke(
@@ -123,6 +123,8 @@ def test_dagster_cloud_yaml_check() -> None:
 
     result = check_yaml(LONG_VALID_DAGSTER_CLOUD_YAML)
     assert not result.exit_code, result.output
+    assert "deprecated" in result.output.lower()
+    assert "dg plus deploy start" in result.output
 
 
 def test_dagster_cloud_connect_check(empty_config, monkeypatch, mocker) -> None:
@@ -149,4 +151,6 @@ def test_dagster_cloud_connect_check(empty_config, monkeypatch, mocker) -> None:
     result = run_connect_check()
     assert "Able to connect to dagster.cloud" in result.output
     assert not result.exit_code
+    assert "deprecated" in result.output.lower()
+    assert "dg plus deploy start" in result.output
     get_organization_settings.assert_called_once()

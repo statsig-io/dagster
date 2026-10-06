@@ -4,7 +4,7 @@ import subprocess
 import sys
 from collections.abc import Mapping
 from contextlib import contextmanager
-from typing import Optional
+from pathlib import Path
 
 import dagster._check as check
 from dagster._core.code_pointer import FileCodePointer
@@ -15,28 +15,29 @@ from dagster._core.origin import (
     JobPythonOrigin,
     RepositoryPythonOrigin,
 )
-from dagster._core.remote_representation import (
+from dagster._core.remote_origin import (
     GrpcServerCodeLocationOrigin,
     InProcessCodeLocationOrigin,
-    RemoteJob,
-    RemoteSchedule,
-)
-from dagster._core.remote_representation.origin import (
     RemoteInstigatorOrigin,
     RemoteJobOrigin,
     RemoteRepositoryOrigin,
 )
+from dagster._core.remote_representation.external import RemoteJob, RemoteSchedule
 from dagster._core.test_utils import in_process_test_workspace
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._serdes import create_snapshot_id
-from dagster._utils import file_relative_path, git_repository_root
+from dagster._utils import discover_oss_root, file_relative_path
 
 IS_BUILDKITE = os.getenv("BUILDKITE") is not None
 
 
 def get_test_repo_path():
-    return os.path.join(
-        git_repository_root(), "python_modules", "dagster-test", "dagster_test", "test_project"
+    return str(
+        discover_oss_root(Path(__file__))
+        / "python_modules"
+        / "dagster-test"
+        / "dagster_test"
+        / "test_project"
     )
 
 
@@ -67,6 +68,7 @@ def get_buildkite_registry_config():
 
 def find_local_test_image(docker_image):
     import docker
+    import docker.errors
 
     try:
         client = docker.from_env()
@@ -75,14 +77,14 @@ def find_local_test_image(docker_image):
             f"Found existing image tagged {docker_image}, skipping image build. To rebuild, first run: "
             f"docker rmi {docker_image}"
         )
-    except docker.errors.ImageNotFound:  # pyright: ignore[reportAttributeAccessIssue]
+    except docker.errors.ImageNotFound:
         build_and_tag_test_image(docker_image)
 
 
 def build_and_tag_test_image(tag):
     check.str_param(tag, "tag")
 
-    base_python = "3.11"
+    base_python = "3.12"
 
     # Build and tag local dagster test image
     return subprocess.check_output(["./build.sh", base_python, tag], cwd=get_test_repo_path())
@@ -90,12 +92,12 @@ def build_and_tag_test_image(tag):
 
 def get_test_project_recon_job(
     job_name: str,
-    container_image: Optional[str] = None,
-    container_context: Optional[Mapping[str, object]] = None,
-    filename: Optional[str] = None,
+    container_image: str | None = None,
+    container_context: Mapping[str, object] | None = None,
+    filename: str | None = None,
 ) -> "ReOriginatedReconstructableJobForTest":
     filename = filename or "repo.py"
-    return ReOriginatedReconstructableJobForTest(  # type: ignore # ignored for update, fix me!
+    return ReOriginatedReconstructableJobForTest(
         ReconstructableRepository.for_file(
             file_relative_path(__file__, f"test_jobs/{filename}"),
             "define_demo_execution_repo",
@@ -119,16 +121,16 @@ class ReOriginatedReconstructableJobForTest(ReconstructableJob):
 
     def get_python_origin(self):
         """Hack! Inject origin that the docker-celery images will use. The BK image uses a different
-        directory structure (/workdir/python_modules/dagster-test/dagster_test/test_project) than
-        the test that creates the ReconstructableJob. As a result the normal origin won't
-        work, we need to inject this one.
+        directory structure (/workdir/python_modules/modules/dagster-test/dagster_test/test_project) than
+        the images inside the kind cluster (/modules/dagster-test/dagster_test/test_project). As a result
+        the normal origin won't work, we need to inject this one.
         """
         return JobPythonOrigin(
             self.job_name,
             RepositoryPythonOrigin(
                 executable_path="python",
                 code_pointer=FileCodePointer(
-                    "/dagster_test/test_project/test_jobs/repo.py",
+                    "/modules/dagster-test/dagster_test/test_project/test_jobs/repo.py",
                     "define_demo_execution_repo",
                 ),
                 container_image=self.repository.container_image,
@@ -152,16 +154,16 @@ class ReOriginatedExternalJobForTest(RemoteJob):
 
     def get_python_origin(self):
         """Hack! Inject origin that the k8s images will use. The BK image uses a different directory
-        structure (/workdir/python_modules/dagster-test/dagster_test/test_project) than the images
-        inside the kind cluster (/dagster_test/test_project). As a result the normal origin won't
-        work, we need to inject this one.
+        structure (/workdir/python_modules/modules/dagster-test/dagster_test/test_project) than the images
+        inside the kind cluster (/modules/dagster-test/dagster_test/test_project). As a result the normal
+        origin won't work, we need to inject this one.
         """
         return JobPythonOrigin(
             self._job_index.name,
             RepositoryPythonOrigin(
                 executable_path="python",
                 code_pointer=FileCodePointer(
-                    f"/dagster_test/test_project/test_jobs/{self._filename}",
+                    f"/modules/dagster-test/dagster_test/test_project/test_jobs/{self._filename}",
                     "define_demo_execution_repo",
                 ),
                 container_image=self._container_image,
@@ -172,8 +174,8 @@ class ReOriginatedExternalJobForTest(RemoteJob):
 
     def get_remote_origin(self) -> RemoteJobOrigin:
         """Hack! Inject origin that the k8s images will use. The BK image uses a different directory
-        structure (/workdir/python_modules/dagster-test/dagster_test/test_project) than the images
-        inside the kind cluster (/dagster_test/test_project). As a result the normal origin won't
+        structure (/workdir/python_modules/modules/dagster-test/dagster_test/test_project) than the images
+        inside the kind cluster (/modules/dagster-test/dagster_test/test_project). As a result the normal origin won't
         work, we need to inject this one.
         """
         return RemoteJobOrigin(
@@ -181,7 +183,7 @@ class ReOriginatedExternalJobForTest(RemoteJob):
                 code_location_origin=InProcessCodeLocationOrigin(
                     loadable_target_origin=LoadableTargetOrigin(
                         executable_path="python",
-                        python_file=f"/dagster_test/test_project/test_jobs/{self._filename}",
+                        python_file=f"/modules/dagster-test/dagster_test/test_project/test_jobs/{self._filename}",
                         attribute="define_demo_execution_repo",
                     ),
                     container_image=self._container_image,
@@ -223,13 +225,13 @@ class ReOriginatedExternalScheduleForTest(RemoteSchedule):
         )
 
     @property
-    def selector_id(self):  # pyright: ignore[reportIncompatibleVariableOverride]
+    def selector_id(self):
         """Hack! Inject a selector that matches the one that the k8s helm chart will use."""
         return create_snapshot_id(
             InstigatorSelector(
-                "user-code-deployment-1",  # pyright: ignore[reportCallIssue]
-                "demo_execution_repo",
-                self.name,
+                location_name="user-code-deployment-1",
+                repository_name="demo_execution_repo",
+                name=self.name,
             )
         )
 

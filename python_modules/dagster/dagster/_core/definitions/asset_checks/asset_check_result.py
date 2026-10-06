@@ -1,8 +1,8 @@
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, AbstractSet, NamedTuple, Optional  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, NamedTuple  # noqa: UP035
 
 import dagster._check as check
-from dagster._annotations import PublicAttr
+from dagster._annotations import PublicAttr, public
 from dagster._core.definitions.asset_checks.asset_check_evaluation import (
     AssetCheckEvaluation,
     AssetCheckEvaluationTargetMaterializationData,
@@ -25,16 +25,17 @@ if TYPE_CHECKING:
     from dagster._core.execution.context.compute import StepExecutionContext
 
 
+@public
 class AssetCheckResult(
     NamedTuple(
         "_AssetCheckResult",
         [
             ("passed", PublicAttr[bool]),
-            ("asset_key", PublicAttr[Optional[AssetKey]]),
-            ("check_name", PublicAttr[Optional[str]]),
+            ("asset_key", PublicAttr[AssetKey | None]),
+            ("check_name", PublicAttr[str | None]),
             ("metadata", PublicAttr[Mapping[str, MetadataValue]]),
             ("severity", PublicAttr[AssetCheckSeverity]),
-            ("description", PublicAttr[Optional[str]]),
+            ("description", PublicAttr[str | None]),
         ],
     ),
     EventWithMetadata,
@@ -62,11 +63,11 @@ class AssetCheckResult(
         cls,
         *,
         passed: bool,
-        asset_key: Optional[CoercibleToAssetKey] = None,
-        check_name: Optional[str] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
+        asset_key: CoercibleToAssetKey | None = None,
+        check_name: str | None = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
         severity: AssetCheckSeverity = AssetCheckSeverity.ERROR,
-        description: Optional[str] = None,
+        description: str | None = None,
     ):
         normalized_metadata = normalize_metadata(
             check.opt_mapping_param(metadata, "metadata", key_type=str),
@@ -82,7 +83,7 @@ class AssetCheckResult(
         )
 
     def resolve_target_check_key(
-        self, check_names_by_asset_key: Optional[Mapping[AssetKey, AbstractSet[str]]]
+        self, check_names_by_asset_key: Mapping[AssetKey, AbstractSet[str]] | None
     ) -> AssetCheckKey:
         if not check_names_by_asset_key:
             raise DagsterInvariantViolationError(
@@ -137,6 +138,62 @@ class AssetCheckResult(
 
         return AssetCheckKey(asset_key=resolved_asset_key, name=resolved_check_name)
 
+    def _get_partitioned_target_materialization_data(
+        self, step_context: "StepExecutionContext", asset_key: AssetKey, partition_key: str
+    ) -> AssetCheckEvaluationTargetMaterializationData | None:
+        from dagster._core.storage.event_log.base import AssetRecordsFilter
+
+        asset_materializations = step_context.instance.fetch_materializations(
+            AssetRecordsFilter(
+                asset_key=asset_key,
+                asset_partitions=[partition_key],
+            ),
+            limit=1,
+        )
+        if asset_materializations.records:
+            mat = asset_materializations.records[0]
+            return AssetCheckEvaluationTargetMaterializationData(
+                run_id=mat.event_log_entry.run_id,
+                storage_id=mat.storage_id,
+                timestamp=mat.timestamp,
+            )
+        return None
+
+    def _get_unpartitioned_target_materialization_data(
+        self, step_context: "StepExecutionContext", asset_key: AssetKey
+    ) -> AssetCheckEvaluationTargetMaterializationData | None:
+        from dagster._core.events import DagsterEventType
+
+        input_asset_info = step_context.maybe_fetch_and_get_input_asset_version_info(asset_key)
+
+        if (
+            input_asset_info is not None
+            and input_asset_info.event_type == DagsterEventType.ASSET_MATERIALIZATION
+        ):
+            return AssetCheckEvaluationTargetMaterializationData(
+                run_id=input_asset_info.run_id,
+                storage_id=input_asset_info.storage_id,
+                timestamp=input_asset_info.timestamp,
+            )
+        return None
+
+    def _get_target_materialization_data(
+        self,
+        step_context: "StepExecutionContext",
+        check_key: AssetCheckKey,
+    ) -> AssetCheckEvaluationTargetMaterializationData | None:
+        # Always scope the materialization lookup to the step's partition when the step is
+        # partitioned, even if the check itself is unpartitioned. Otherwise a concurrent
+        # materialization of a different partition could become the target.
+        if step_context.has_partition_key:
+            return self._get_partitioned_target_materialization_data(
+                step_context, check_key.asset_key, step_context.partition_key
+            )
+        else:
+            return self._get_unpartitioned_target_materialization_data(
+                step_context, check_key.asset_key
+            )
+
     def to_asset_check_evaluation(
         self, step_context: "StepExecutionContext"
     ) -> AssetCheckEvaluation:
@@ -154,35 +211,29 @@ class AssetCheckResult(
             all_check_names_by_asset_key.setdefault(check_key.asset_key, set()).add(check_key.name)
         check_key = self.resolve_target_check_key(all_check_names_by_asset_key)
 
-        input_asset_info = step_context.maybe_fetch_and_get_input_asset_version_info(
-            check_key.asset_key
+        # Unpartitioned asset check can exist for partitioned asset
+        check_spec = assets_def_for_check.get_spec_for_check_key(check_key)
+        evaluation_partition = (
+            step_context.partition_key
+            if step_context.has_partition_key and check_spec.partitions_def is not None
+            else None
         )
-        from dagster._core.events import DagsterEventType
-
-        if (
-            input_asset_info is not None
-            and input_asset_info.event_type == DagsterEventType.ASSET_MATERIALIZATION
-        ):
-            target_materialization_data = AssetCheckEvaluationTargetMaterializationData(
-                run_id=input_asset_info.run_id,
-                storage_id=input_asset_info.storage_id,
-                timestamp=input_asset_info.timestamp,
-            )
-        else:
-            target_materialization_data = None
 
         return AssetCheckEvaluation(
             check_name=check_key.name,
             asset_key=check_key.asset_key,
             passed=self.passed,
             metadata=self.metadata,
-            target_materialization_data=target_materialization_data,
+            target_materialization_data=self._get_target_materialization_data(
+                step_context, check_key
+            ),
             severity=self.severity,
             description=self.description,
-            blocking=assets_def_for_check.get_spec_for_check_key(check_key).blocking,
+            blocking=check_spec.blocking,
+            partition=evaluation_partition,
         )
 
-    def with_metadata(self, metadata: Mapping[str, RawMetadataValue]) -> "AssetCheckResult":  # pyright: ignore[reportIncompatibleMethodOverride]
+    def with_metadata(self, metadata: Mapping[str, RawMetadataValue]) -> "AssetCheckResult":  # ty: ignore[invalid-method-override]
         return AssetCheckResult(
             passed=self.passed,
             asset_key=self.asset_key,

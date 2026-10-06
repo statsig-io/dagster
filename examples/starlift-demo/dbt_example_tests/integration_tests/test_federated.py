@@ -1,8 +1,8 @@
 import os
 import subprocess
-from collections.abc import Generator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from datetime import timedelta
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 from dagster import AssetKey, AssetsDefinition, DagsterInstance, materialize
@@ -169,7 +169,7 @@ def test_dagster_materializes(
     for asset in materializable_assets:
         for spec in asset.specs:
             assert instance.get_latest_materialization_event(asset_key=spec.key)
-    dagster_dev_module, af_instance_fn = stage_and_fn
+    _dagster_dev_module, af_instance_fn = stage_and_fn
     af_instances = af_instance_fn()
     dags_per_instance = {
         OTHER_TEAM_FEDERATED_INSTANCE_NAME: ["upload_source_data", "run_scrapers_daily"],
@@ -188,4 +188,4 @@ def test_dagster_materializes(
                 if asset_materialization:
                     break
 
-        assert asset_materialization  # pyright: ignore[reportPossiblyUnboundVariable]
+        assert asset_materialization

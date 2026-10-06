@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Mapping, Sequence
 from itertools import chain
-from typing import Any, Optional, Union
+from typing import Any
 
 import dagster._check as check
 import requests.exceptions
@@ -62,6 +62,9 @@ class DagsterGraphQLClient:
         headers (Optional[Dict[str, str]]): Additional headers to include in the request. To use
             this client in Dagster Cloud, set the "Dagster-Cloud-Api-Token" header to a user token
             generated in the Dagster Cloud UI.
+        path_prefix (str): Optional path prefix for deployments behind a non-root path
+            (e.g., ``"/dagster"``). Must start with ``"/"`` and not end with ``"/"`` when
+            non-empty. Defaults to ``""``.
 
     Raises:
         :py:class:`~requests.exceptions.ConnectionError`: if the client cannot connect to the host.
@@ -70,20 +73,28 @@ class DagsterGraphQLClient:
     def __init__(
         self,
         hostname: str,
-        port_number: Optional[int] = None,
-        transport: Optional[Transport] = None,
+        port_number: int | None = None,
+        transport: Transport | None = None,
         use_https: bool = False,
         timeout: int = 300,
-        headers: Optional[dict[str, str]] = None,
-        auth: Optional[AuthBase] = None,
+        headers: dict[str, str] | None = None,
+        auth: AuthBase | None = None,
+        path_prefix: str = "",
     ):
         self._hostname = check.str_param(hostname, "hostname")
         self._port_number = check.opt_int_param(port_number, "port_number")
         self._use_https = check.bool_param(use_https, "use_https")
 
+        self._path_prefix = check.str_param(path_prefix, "path_prefix")
+        if self._path_prefix:
+            if not self._path_prefix.startswith("/"):
+                raise check.CheckError(f'path_prefix must start with "/", got: {self._path_prefix}')
+            self._path_prefix = self._path_prefix.rstrip("/")
+
         self._url = (
             ("https://" if self._use_https else "http://")
             + (f"{self._hostname}:{self._port_number}" if self._port_number else self._hostname)
+            + self._path_prefix
             + "/graphql"
         )
 
@@ -96,7 +107,7 @@ class DagsterGraphQLClient:
             ),
         )
         try:
-            self._client = Client(transport=self._transport, fetch_schema_from_transport=True)
+            self._client = Client(transport=self._transport)
         except requests.exceptions.ConnectionError as exc:
             raise DagsterGraphQLClientError(
                 f"Error when connecting to url {self._url}. "
@@ -105,9 +116,16 @@ class DagsterGraphQLClient:
                 + "correctly?"
             ) from exc
 
-    def _execute(self, query: str, variables: Optional[dict[str, Any]] = None):
+    def _execute(self, query: str, variables: dict[str, Any] | None = None):
         try:
             return self._client.execute(gql(query), variable_values=variables)
+        except requests.exceptions.ConnectionError as exc:
+            raise DagsterGraphQLClientError(
+                f"Error when connecting to url {self._url}. "
+                + f"Did you specify hostname: {self._hostname} "
+                + (f"and port_number: {self._port_number} " if self._port_number else "")
+                + "correctly?"
+            ) from exc
         except TransportServerError as exc:
             raise DagsterGraphQLClientError(
                 f"Server error with code {exc.code}\nand message {exc}\n"
@@ -133,15 +151,15 @@ class DagsterGraphQLClient:
     def _core_submit_execution(
         self,
         pipeline_name: str,
-        repository_location_name: Optional[str] = None,
-        repository_name: Optional[str] = None,
-        run_config: Optional[Union[RunConfig, Mapping[str, Any]]] = None,
+        repository_location_name: str | None = None,
+        repository_name: str | None = None,
+        run_config: RunConfig | Mapping[str, Any] | None = None,
         mode: str = "default",
-        preset: Optional[str] = None,
-        tags: Optional[Mapping[str, str]] = None,
-        op_selection: Optional[Sequence[str]] = None,
-        asset_selection: Optional[Sequence[CoercibleToAssetKey]] = None,
-        is_using_job_op_graph_apis: Optional[bool] = False,
+        preset: str | None = None,
+        tags: Mapping[str, str] | None = None,
+        op_selection: Sequence[str] | None = None,
+        asset_selection: Sequence[CoercibleToAssetKey] | None = None,
+        is_using_job_op_graph_apis: bool | None = False,
     ):
         check.opt_str_param(repository_location_name, "repository_location_name")
         check.opt_str_param(repository_name, "repository_name")
@@ -186,7 +204,7 @@ class DagsterGraphQLClient:
                 for coercible in asset_selection
             ]
 
-        variables: dict[str, Any] = {
+        variables: dict[str, dict[str, Any]] = {
             "executionParams": {
                 "selector": {
                     "repositoryLocationName": repository_location_name,
@@ -239,12 +257,12 @@ class DagsterGraphQLClient:
     def submit_job_execution(
         self,
         job_name: str,
-        repository_location_name: Optional[str] = None,
-        repository_name: Optional[str] = None,
-        run_config: Optional[Union[RunConfig, Mapping[str, Any]]] = None,
-        tags: Optional[dict[str, Any]] = None,
-        op_selection: Optional[Sequence[str]] = None,
-        asset_selection: Optional[Sequence[CoercibleToAssetKey]] = None,
+        repository_location_name: str | None = None,
+        repository_name: str | None = None,
+        run_config: RunConfig | Mapping[str, Any] | None = None,
+        tags: dict[str, Any] | None = None,
+        op_selection: Sequence[str] | None = None,
+        asset_selection: Sequence[CoercibleToAssetKey] | None = None,
     ) -> str:
         """Submits a job with attached configuration for execution.
 

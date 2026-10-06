@@ -1,12 +1,15 @@
 from collections.abc import Mapping, Sequence
-from typing import Optional
 
 import polars as pl
 from dagster import InputContext, MetadataValue, OutputContext, TableColumn, TableSchema, io_manager
 from dagster._annotations import beta
 from dagster._core.definitions.metadata import RawMetadataValue, TableMetadataSet
 from dagster._core.storage.db_io_manager import DbIOManager, DbTypeHandler, TableSlice
-from dagster_snowflake.snowflake_io_manager import SnowflakeDbClient, SnowflakeIOManager
+from dagster_snowflake.snowflake_io_manager import (
+    SnowflakeDbClient,
+    SnowflakeIOManager,
+    partition_where_clause,
+)
 
 
 def _table_exists(table_slice: TableSlice, connection):
@@ -40,7 +43,7 @@ class SnowflakePolarsTypeHandler(DbTypeHandler[pl.DataFrame]):
                     return [SnowflakePolarsTypeHandler()]
 
             @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in snowflake
+                key_prefix=["my_schema"],  # will be used as the schema in snowflake
             )
             def my_table() -> pl.DataFrame:  # the name of the asset will be the table name
                 ...
@@ -56,47 +59,49 @@ class SnowflakePolarsTypeHandler(DbTypeHandler[pl.DataFrame]):
     def handle_output(
         self, context: OutputContext, table_slice: TableSlice, obj: pl.DataFrame, connection
     ) -> Mapping[str, RawMetadataValue]:
-        # Rename columns to uppercase to match Snowflake convention
-        with_uppercase_cols = obj.rename({col: col.upper() for col in obj.columns})
-        write_mode = "replace"
+        if obj.is_empty():
+            context.log.warning(
+                "Skipping Snowflake write for empty DataFrame. An empty table will not be created."
+            )
+        else:
+            # Rename columns to uppercase to match Snowflake convention
+            with_uppercase_cols = obj.rename({col: col.upper() for col in obj.columns})
+            write_mode = "replace"
 
-        # Use the fully qualified table name
-        full_table_name = f"{table_slice.database.upper()}.{table_slice.schema.upper()}.{table_slice.table.upper()}"  # pyright: ignore[reportOptionalMemberAccess]
+            # Use the fully qualified table name
+            full_table_name = f"{table_slice.database.upper()}.{table_slice.schema.upper()}.{table_slice.table.upper()}"  # ty: ignore[unresolved-attribute]
 
-        # If we're appending to a partition, we need to delete existing data for that partition first
-        # Determine the write mode based on whether we're dealing with partitions
-        # For partitioned assets, we should append rather than replace
-        if table_slice.partition_dimensions and _table_exists(table_slice, connection):
-            write_mode = "append"
-            # Build DELETE statement for the partition
-            delete_stmt = f"DELETE FROM {full_table_name} WHERE "
-            partition_conditions = []
-            for dim in table_slice.partition_dimensions:
-                partition_conditions.append(f"{dim.partition_expr} = '{dim.partitions[0]}'")
-            delete_stmt += " AND ".join(partition_conditions)
-            connection.cursor().execute(delete_stmt)
+            # If we're appending to a partition, we need to delete existing data for that partition first
+            # Determine the write mode based on whether we're dealing with partitions
+            # For partitioned assets, we should append rather than replace
+            if table_slice.partition_dimensions and _table_exists(table_slice, connection):
+                write_mode = "append"
+                delete_stmt = f"DELETE FROM {full_table_name} WHERE\n" + partition_where_clause(
+                    table_slice.partition_dimensions
+                )
+                connection.cursor().execute(delete_stmt)
 
-        # Write using Polars native write_database with ADBC
-        # This is more efficient than converting to pandas
+            # Write using Polars native write_database with ADBC
+            # This is more efficient than converting to pandas
 
-        with connection.cursor() as cursor:
-            cursor.execute(f"USE DATABASE {table_slice.database.upper()}")  # pyright: ignore[reportOptionalMemberAccess]
-            cursor.execute(f"USE SCHEMA {table_slice.schema.upper()}")
+            with connection.cursor() as cursor:
+                cursor.execute(f"USE DATABASE {table_slice.database.upper()}")  # ty: ignore[unresolved-attribute]
+                cursor.execute(f"USE SCHEMA {table_slice.schema.upper()}")
 
-        with_uppercase_cols.write_database(
-            table_name=table_slice.table.upper(),
-            connection=connection,
-            if_table_exists=write_mode,
-            engine="adbc",
-        )
+            with_uppercase_cols.write_database(
+                table_name=table_slice.table.upper(),
+                connection=connection,
+                if_table_exists=write_mode,
+                engine="adbc",
+            )
 
         return {
             # output object may be a slice/partition, so we output different metadata keys based on
             # whether this output represents an entire table or just a slice/partition
             **(
-                TableMetadataSet(partition_row_count=obj.shape[0])
+                TableMetadataSet(partition_row_count=obj.shape[0], storage_kind="snowflake")
                 if context.has_partition_key
-                else TableMetadataSet(row_count=obj.shape[0])
+                else TableMetadataSet(row_count=obj.shape[0], storage_kind="snowflake")
             ),
             "dataframe_columns": MetadataValue.table_schema(
                 TableSchema(
@@ -153,7 +158,7 @@ class SnowflakePolarsIOManager(SnowflakeIOManager):
             import polars as pl
 
             @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in snowflake
+                key_prefix=["my_schema"],  # will be used as the schema in snowflake
             )
             def my_table() -> pl.DataFrame:  # the name of the asset will be the table name
                 ...
@@ -161,7 +166,7 @@ class SnowflakePolarsIOManager(SnowflakeIOManager):
             defs = Definitions(
                 assets=[my_table],
                 resources={
-                    "io_manager": SnowflakePolarsIOManager(database="MY_DATABASE", account=EnvVar("SNOWFLAKE_ACCOUNT"), ...)
+                    "io_manager": SnowflakePolarsIOManager(database="MY_DATABASE", account=EnvVar("SNOWFLAKE_ACCOUNT"))
                 }
             )
 
@@ -173,7 +178,7 @@ class SnowflakePolarsIOManager(SnowflakeIOManager):
             defs = Definitions(
                 assets=[my_table],
                 resources={
-                    "io_manager": SnowflakePolarsIOManager(database="my_database", schema="my_schema", ...)
+                    "io_manager": SnowflakePolarsIOManager(database="my_database", schema="my_schema")
                 }
             )
 
@@ -185,7 +190,7 @@ class SnowflakePolarsIOManager(SnowflakeIOManager):
         .. code-block:: python
 
             @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in snowflake
+                key_prefix=["my_schema"],  # will be used as the schema in snowflake
             )
             def my_table() -> pl.DataFrame:
                 ...
@@ -233,7 +238,7 @@ class SnowflakePolarsIOManager(SnowflakeIOManager):
         return [SnowflakePolarsTypeHandler()]
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         return pl.DataFrame
 
 
@@ -257,7 +262,7 @@ def snowflake_polars_io_manager(init_context):
             import polars as pl
 
             @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in snowflake
+                key_prefix=["my_schema"],  # will be used as the schema in snowflake
             )
             def my_table() -> pl.DataFrame:  # the name of the asset will be the table name
                 ...
@@ -267,8 +272,7 @@ def snowflake_polars_io_manager(init_context):
                 resources={
                     "io_manager": snowflake_polars_io_manager.configured({
                         "database": "my_database",
-                        "account" : {"env": "SNOWFLAKE_ACCOUNT"},
-                        ...
+                        "account": {"env": "SNOWFLAKE_ACCOUNT"}
                     })
                 }
             )
@@ -281,7 +285,7 @@ def snowflake_polars_io_manager(init_context):
             defs = Definitions(
                 assets=[my_table],
                 resources={"io_manager": snowflake_polars_io_manager.configured(
-                    {"database": "my_database", "schema": "my_schema", ...} # will be used as the schema
+                    {"database": "my_database", "schema": "my_schema"} # will be used as the schema
                 )}
             )
 
@@ -293,7 +297,7 @@ def snowflake_polars_io_manager(init_context):
         .. code-block:: python
 
             @asset(
-                key_prefix=["my_schema"]  # will be used as the schema in snowflake
+                key_prefix=["my_schema"],  # will be used as the schema in snowflake
             )
             def my_table() -> pl.DataFrame:
                 ...

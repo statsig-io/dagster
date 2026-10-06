@@ -1,15 +1,15 @@
 import enum
 from collections.abc import Mapping
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, TypeAlias
 
 import dagster as dg
 import pydantic
 import pytest
 from dagster import Field as LegacyDagsterField
 from dagster._config.config_type import ConfigTypeKind
+from dagster._config.pythonic_config.config import PermissiveConfig
 from dagster._config.type_printer import print_config_type_to_string
 from dagster._utils.cached_method import cached_method
-from typing_extensions import TypeAlias
 
 
 def test_default_config_class_non_permissive() -> None:
@@ -103,7 +103,7 @@ def test_struct_config_persmissive_cached_method() -> None:
             calls["plus"] += 1
             return self.x + self.y
 
-    plus_config = PlusConfig(x=1, y=2, z=10)  # type: ignore
+    plus_config = PlusConfig(x=1, y=2, z=10)
 
     assert plus_config.plus() == 3
     assert calls["plus"] == 1
@@ -229,7 +229,7 @@ def test_struct_config_mapping_list() -> None:
 
 def test_complex_config_schema() -> None:
     class AnOpConfig(dg.Config):
-        a_complex_thing: Mapping[int, list[Mapping[str, Optional[int]]]]
+        a_complex_thing: Mapping[int, list[Mapping[str, int | None]]]
 
     executed = {}
 
@@ -253,8 +253,8 @@ def test_complex_config_schema() -> None:
     )
     assert executed["yes"]
 
-    a_struct_config_op(AnOpConfig(a_complex_thing={5: [{"foo": 1, "bar": 2, "baz": None}]}))  # type: ignore
-    a_struct_config_op(config=AnOpConfig(a_complex_thing={5: [{"foo": 1, "bar": 2, "baz": None}]}))  # type: ignore
+    a_struct_config_op(AnOpConfig(a_complex_thing={5: [{"foo": 1, "bar": 2, "baz": None}]}))
+    a_struct_config_op(config=AnOpConfig(a_complex_thing={5: [{"foo": 1, "bar": 2, "baz": None}]}))
     a_struct_config_op({"a_complex_thing": {5: [{"foo": 1, "bar": 2, "baz": None}]}})
     a_struct_config_op(config={"a_complex_thing": {5: [{"foo": 1, "bar": 2, "baz": None}]}})
 
@@ -265,7 +265,7 @@ def test_struct_config_optional_nested() -> None:
         a_str: str
 
     class AnOpConfig(dg.Config):
-        an_optional_nested: Optional[ANestedConfig]
+        an_optional_nested: ANestedConfig | None
 
     executed = {}
 
@@ -321,7 +321,7 @@ def test_struct_config_optional_nested_in_list() -> None:
         a_str: str
 
     class AnOpConfig(dg.Config):
-        an_optional_nested: Optional[list[ANestedConfig]]
+        an_optional_nested: list[ANestedConfig] | None
 
     executed = {}
 
@@ -430,7 +430,7 @@ def test_discriminated_unions() -> None:
         scales: bool
 
     class OpConfigWithUnion(dg.Config):
-        pet: Union[Cat, Dog, Lizard] = pydantic.Field(..., discriminator="pet_type")
+        pet: Cat | Dog | Lizard = pydantic.Field(..., discriminator="pet_type")
         n: int
 
     executed = {}
@@ -438,11 +438,11 @@ def test_discriminated_unions() -> None:
     @dg.op
     def a_struct_config_op(config: OpConfigWithUnion):
         if config.pet.pet_type == "cat":
-            assert config.pet.meows == 2
+            assert config.pet.meows == 2  # ty: ignore[unresolved-attribute]
         elif config.pet.pet_type == "dog":
-            assert config.pet.barks == 3.0
+            assert config.pet.barks == 3.0  # ty: ignore[unresolved-attribute]
         elif config.pet.pet_type == "lizard":
-            assert config.pet.scales
+            assert config.pet.scales  # ty: ignore[unresolved-attribute]
         assert config.n == 4
 
         executed["yes"] = True
@@ -498,6 +498,71 @@ def test_discriminated_unions() -> None:
         )
 
 
+def test_discriminated_unions_with_default() -> None:
+    class Cat(dg.Config):
+        pet_type: Literal["cat"] = "cat"
+        meows: int = 2
+
+    class Dog(dg.Config):
+        pet_type: Literal["dog"] = "dog"
+        barks: float = 3.0
+
+    class OpConfigWithUnion(dg.Config):
+        pet: Cat | Dog = pydantic.Field(default=Dog(), discriminator="pet_type")
+
+    # The Pydantic default is propagated into the config schema as an optional
+    # field with a Selector-shaped default value
+    fields = OpConfigWithUnion.to_fields_dict()
+    assert not fields["pet"].is_required
+    assert fields["pet"].default_value == {"dog": {"barks": 3.0}}
+
+    executed = {}
+
+    @dg.op
+    def a_struct_config_op(config: OpConfigWithUnion):
+        executed["pet"] = config.pet
+
+    @dg.job
+    def a_job():
+        a_struct_config_op()
+
+    # No config provided: the default is used
+    a_job.execute_in_process()
+    assert executed["pet"] == Dog()
+
+    # Explicit config still overrides the default
+    a_job.execute_in_process(
+        {"ops": {"a_struct_config_op": {"config": {"pet": {"cat": {"meows": 5}}}}}}
+    )
+    assert executed["pet"] == Cat(meows=5)
+
+    # default_factory defaults are propagated as well
+    class OpConfigWithFactoryDefault(dg.Config):
+        pet: Cat | Dog = pydantic.Field(default_factory=Dog, discriminator="pet_type")
+
+    fields = OpConfigWithFactoryDefault.to_fields_dict()
+    assert not fields["pet"].is_required
+    assert fields["pet"].default_value == {"dog": {"barks": 3.0}}
+
+    # A union without a default stays required, with no config default
+    class OpConfigRequired(dg.Config):
+        pet: Cat | Dog = pydantic.Field(..., discriminator="pet_type")
+
+    fields = OpConfigRequired.to_fields_dict()
+    assert fields["pet"].is_required
+    assert not fields["pet"].default_provided
+
+    # An explicit default of None (accepted by Pydantic even on a non-Optional
+    # annotation) makes the field optional but is not propagated as a config
+    # default, since None is not a valid Selector value
+    class OpConfigNoneDefault(dg.Config):
+        pet: Cat | Dog = pydantic.Field(default=None, discriminator="pet_type")  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+
+    fields = OpConfigNoneDefault.to_fields_dict()
+    assert not fields["pet"].is_required
+    assert not fields["pet"].default_provided
+
+
 def test_nested_discriminated_unions() -> None:
     class Poodle(dg.Config):
         breed_type: Literal["poodle"]
@@ -514,10 +579,10 @@ def test_nested_discriminated_unions() -> None:
     class Dog(dg.Config):
         pet_type: Literal["dog"]
         barks: float
-        breed: Union[Poodle, Dachshund] = pydantic.Field(..., discriminator="breed_type")
+        breed: Poodle | Dachshund = pydantic.Field(..., discriminator="breed_type")
 
     class OpConfigWithUnion(dg.Config):
-        pet: Union[Cat, Dog] = pydantic.Field(..., discriminator="pet_type")
+        pet: Cat | Dog = pydantic.Field(..., discriminator="pet_type")
         n: int
 
     executed = {}
@@ -567,7 +632,7 @@ def test_discriminated_unions_direct_instantiation() -> None:
         scales: bool
 
     class OpConfigWithUnion(dg.Config):
-        pet: Union[Cat, Dog, Lizard] = pydantic.Field(..., discriminator="pet_type")
+        pet: Cat | Dog | Lizard = pydantic.Field(..., discriminator="pet_type")
         n: int
 
     config = OpConfigWithUnion(pet=Cat(meows=3), n=5)
@@ -591,10 +656,10 @@ def test_nested_discriminated_config_instantiation() -> None:
     class Dog(dg.Config):
         pet_type: Literal["dog"] = "dog"
         barks: float
-        breed: Union[Poodle, Dachshund] = pydantic.Field(..., discriminator="breed_type")
+        breed: Poodle | Dachshund = pydantic.Field(..., discriminator="breed_type")
 
     class OpConfigWithUnion(dg.Config):
-        pet: Union[Cat, Dog] = pydantic.Field(..., discriminator="pet_type")
+        pet: Cat | Dog = pydantic.Field(..., discriminator="pet_type")
         n: int
 
     config = OpConfigWithUnion(pet=Dog(barks=5.5, breed=Poodle(fluffy=True)), n=3)
@@ -622,10 +687,10 @@ def test_nested_discriminated_resource_instantiation() -> None:
     class Dog(dg.Config):
         pet_type: Literal["dog"] = "dog"
         barks: float
-        breed: Union[Poodle, Dachshund] = pydantic.Field(..., discriminator="breed_type")
+        breed: Poodle | Dachshund = pydantic.Field(..., discriminator="breed_type")
 
     class ResourceWithUnion(dg.ConfigurableResource):
-        pet: Union[Cat, Dog] = pydantic.Field(..., discriminator="pet_type")
+        pet: Cat | Dog = pydantic.Field(..., discriminator="pet_type")
         n: int
 
     resource_with_union = ResourceWithUnion(pet=Dog(barks=5.5, breed=Poodle(fluffy=True)), n=3)
@@ -658,7 +723,7 @@ def test_nested_discriminated_resource_instantiation() -> None:
 
 def test_struct_config_optional_map() -> None:
     class AnOpConfig(dg.Config):
-        an_optional_dict: Optional[dict[str, int]]
+        an_optional_dict: dict[str, int] | None
 
     executed = {}
 
@@ -707,7 +772,7 @@ def test_struct_config_optional_map() -> None:
 
 def test_struct_config_optional_array() -> None:
     class AnOpConfig(dg.Config):
-        a_string_list: Optional[list[str]]
+        a_string_list: list[str] | None
 
     executed = {}
 
@@ -809,7 +874,7 @@ def test_literal_in_resource_config() -> None:
     a_job.execute_in_process(resources={"my_resource": MyResource(a_literal="bar")})
 
     with pytest.raises(pydantic.ValidationError):
-        a_job.execute_in_process(resources={"my_resource": MyResource(a_literal="baz")})  # type: ignore
+        a_job.execute_in_process(resources={"my_resource": MyResource(a_literal="baz")})
 
 
 def test_enum_complex() -> None:
@@ -818,7 +883,7 @@ def test_enum_complex() -> None:
         BAR = "bar"
 
     class AnOpConfig(dg.Config):
-        an_optional_enum: Optional[MyEnum]
+        an_optional_enum: MyEnum | None
         an_enum_list: list[MyEnum]
 
     executed = {}
@@ -924,7 +989,7 @@ def test_conversion_to_fields() -> None:
         an_int: str
         with_description: str = pydantic.Field(description="a description")
         with_default_value: int = pydantic.Field(default=12)
-        optional_str: Optional[str] = None
+        optional_str: str | None = None
         a_literal: FooBarLiteral
         a_default_literal: FooBarLiteral = "bar"
         a_literal_with_description: FooBarLiteral = pydantic.Field(
@@ -971,7 +1036,7 @@ def test_to_config_dict_combined_with_cached_method() -> None:
 
 def test_aliases() -> None:
     class ConfigWithAlias(dg.ConfigurableResource):
-        field_name: Optional[Mapping[str, str]] = pydantic.Field(
+        field_name: Mapping[str, str] | None = pydantic.Field(
             alias="alias_name",
             default=None,
         )
@@ -991,3 +1056,18 @@ def test_aliases() -> None:
     d = {"test": "test"}
     result = echo_job.execute_in_process(resources={"my_resource": ConfigWithAlias(alias_name=d)})
     assert result.output_for_node("echo_config") == d
+
+
+def test_permissive_extra_field_via_dot():
+    class ExtraConfig(PermissiveConfig):
+        foo: int
+
+    conf = ExtraConfig(foo=10, bar="hello", baz=[1, 2, 3])
+    conf1 = ExtraConfig(foo=10, bar="hello", baz=[1, 2, 3])
+    assert conf == conf1
+    assert conf.foo == 10
+    assert conf.bar == "hello"  # ty: ignore[unresolved-attribute]
+    assert conf.baz == [1, 2, 3]  # ty: ignore[unresolved-attribute]
+    # confirm it's in dict and convert_to_config_dictionary
+    expected = {"foo": 10, "bar": "hello", "baz": [1, 2, 3]}
+    assert conf.model_dump() == expected

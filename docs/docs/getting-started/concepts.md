@@ -1,6 +1,5 @@
 ---
 description: Dagster offers abstractions for data pipeline orchestration, enabling a modular, declarative approach to data engineering, making it easier to manage dependencies, monitor execution, and ensure data quality.
-sidebar_position: 200
 title: Concepts
 ---
 
@@ -25,6 +24,8 @@ Dagster provides a variety of abstractions for building and orchestrating data p
     subgraph DagsterObjects[Dagster Objects]
       Asset
       AssetCheck[Asset Check]
+      AutomationCondition[Automation Condition]
+      Executor
       Graph
       IOManager[IO Manager]
       Job
@@ -86,6 +87,8 @@ Dagster provides a variety of abstractions for building and orchestrating data p
 ```
 
 An <PyObject section="assets" module="dagster" object="asset" /> represents a logical unit of data such as a table, dataset, or machine learning model. Assets can have dependencies on other assets, forming the data lineage for your pipelines. As the core abstraction in Dagster, assets can interact with many other Dagster entities to facilitate certain tasks. When you define an asset, either with the <PyObject section="assets" module="dagster" object="asset" decorator /> decorator or via a [component](/guides/build/components), the definition is automatically added to a top-level <PyObject section="definitions" module="dagster" object="Definitions" /> object.
+
+To dive deeper into how assets shape the way you design your data platform, [check out our deep-dive on assets](https://dagster.io/blog/software-defined-assets).
 
 | Concept                     | Relationship                                                        |
 | --------------------------- | ------------------------------------------------------------------- |
@@ -163,9 +166,42 @@ An <PyObject section="asset-checks" module="dagster" object="asset_check" /> is 
 
 Specs are standalone objects that describe the identity and metadata of Dagster entities without defining their behavior. For example, an <PyObject module="dagster" section="assets" object="AssetSpec" /> contains essential information like the asset's <PyObject module="dagster" section="assets" object="AssetKey" displayText="key" /> (its unique identifier) and [tags](/guides/build/assets/metadata-and-tags) (labels for organizing and annotating the asset), but it doesn't include the logic for materializing that asset.
 
-| Concept          | Relationship                                                      |
-| ---------------- | ----------------------------------------------------------------- |
+| Concept         | Relationship                                                      |
+| --------------- | ----------------------------------------------------------------- |
 | [asset](#asset) | `asset spec` may describe the identity and metadata of an `asset` |
+
+## Automation condition
+
+```mermaid
+%%{
+  init: {
+    'theme': 'base',
+    'themeVariables': {
+      'primaryColor': '#4F43DD',
+      'primaryTextColor': '#FFFFFF',
+      'primaryBorderColor': '#231F1B',
+      'lineColor': '#DEDDFF',
+      'secondaryColor': '#BDBAB7',
+      'tertiaryColor': '#FFFFFF'
+    }
+  }
+}%%
+  graph LR
+    style Asset fill:#BDBAB7,stroke:#BDBAB7,stroke-width:2px
+    style AssetCheck fill:#BDBAB7,stroke:#BDBAB7,stroke-width:2px
+
+    AutomationCondition(Automation Condition)
+
+    AutomationCondition -.-> Asset
+    AutomationCondition -.-> AssetCheck[Asset Check]
+```
+
+An <PyObject section="assets" module="dagster" object="AutomationCondition" /> describes when an asset or asset check should be executed, based on the status of the asset and its upstream dependencies. Automation conditions are evaluated by an automation condition sensor and can be composed to express complex scheduling logic without writing custom sensor code.
+
+| Concept                     | Relationship                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| [asset](#asset)             | `automation condition` may be attached to an `asset` to control when it is materialized       |
+| [asset check](#asset-check) | `automation condition` may be attached to an `asset check` to control when it is materialized |
 
 ## Code location
 
@@ -191,7 +227,7 @@ Specs are standalone objects that describe the identity and metadata of Dagster 
     Definitions ==> CodeLocation
 ```
 
-A [code location](/deployment/code-locations) is a collection of Dagster entity [definitions](#definitions) deployed in a specific environment. A code location determines the Python environment (including the version of Dagster being used as well as any other Python dependencies). A Dagster project can have multiple code locations, helping isolate dependencies.
+A [code location](/guides/build/projects) is a collection of Dagster entity [definitions](#definitions) deployed in a specific environment. A code location determines the Python environment (including the version of Dagster being used as well as any other Python dependencies). A Dagster project can have multiple code locations, helping isolate dependencies.
 
 | Concept                     | Relationship                                                             |
 | --------------------------- | ------------------------------------------------------------------------ |
@@ -241,8 +277,8 @@ A [code location](/deployment/code-locations) is a collection of Dagster entity 
 
 Components are objects that programmatically build <PyObject section="assets" module="dagster" object="asset" pluralize /> and other Dagster entity definitions, such as <PyObject section="asset-checks" module="dagster" object="asset_check" pluralize />, <PyObject section="schedules-sensors" module="dagster" object="schedule" pluralize />, <PyObject section="resources" module="dagster" object="ResourceDefinition" displayText="resources" />, and <PyObject section="schedules-sensors" module="dagster" object="sensor" pluralize />. They accept schematized configuration parameters (which are specified using YAML or lightweight Python) and use them to build the actual definitions you need. Components are designed to help you quickly bootstrap parts of your Dagster project and serve as templates for repeatable patterns.
 
-| Concept                     | Relationship                                             |
-| --------------------------- | -------------------------------------------------------- |
+| Concept                     | Relationship                                              |
+| --------------------------- | --------------------------------------------------------- |
 | [asset](#asset)             | `component` builds `assets` and other `definitions`       |
 | [asset check](#asset-check) | `component` builds `asset_checks` and other `definitions` |
 | [definitions](#definitions) | `component` builds `assets` and other `definitions`       |
@@ -281,7 +317,7 @@ Components are objects that programmatically build <PyObject section="assets" mo
     Config -.-> Sensor
 ```
 
-A <PyObject section="config" module="dagster" object="Config" displayText="config" /> is used to specify config schema for assets, jobs, schedules, and sensors. A <PyObject section="config" module="dagster" object="RunConfig" />  is a container for all the configuration that can be passed to a run. This allows for parameterization and the reuse of pipelines to serve multiple purposes.
+A <PyObject section="config" module="dagster" object="Config" displayText="config" /> is used to specify config schema for assets, jobs, schedules, and sensors. A <PyObject section="config" module="dagster" object="RunConfig" /> is a container for all the configuration that can be passed to a run. This allows for parameterization and the reuse of pipelines to serve multiple purposes.
 
 | Concept               | Relationship                         |
 | --------------------- | ------------------------------------ |
@@ -331,6 +367,7 @@ A <PyObject section="config" module="dagster" object="Config" displayText="confi
 ```
 
 In Dagster, "definitions" means two things:
+
 - The objects that combine metadata about Dagster entities with Python functions that define how they behave, for example, <PyObject section="assets" module="dagster" object="asset" />, <PyObject section="schedules-sensors" module="dagster" object="ScheduleDefinition" /> , and [resource](/api/dagster/resources) definitions.
 - The top-level <PyObject section="definitions" module="dagster" object="Definitions" /> object that contains references to all the definitions in a Dagster project. Entities included in the `Definitions` object will be deployed and visible within the Dagster UI.
 
@@ -345,6 +382,39 @@ In Dagster, "definitions" means two things:
 | [sensor](#sensor)               | Top-level `Definitions` object may contain one or more `sensor` definitions      |
 | [component](#component)         | `definition` may be the output of a `component`                                  |
 | [code location](#code-location) | `definitions` must be deployed in a `code location`                              |
+
+## Executor
+
+```mermaid
+%%{
+  init: {
+    'theme': 'base',
+    'themeVariables': {
+      'primaryColor': '#4F43DD',
+      'primaryTextColor': '#FFFFFF',
+      'primaryBorderColor': '#231F1B',
+      'lineColor': '#DEDDFF',
+      'secondaryColor': '#BDBAB7',
+      'tertiaryColor': '#FFFFFF'
+    }
+  }
+}%%
+  graph LR
+    style Job fill:#BDBAB7,stroke:#BDBAB7,stroke-width:2px
+    style CodeLocation fill:#BDBAB7,stroke:#BDBAB7,stroke-width:2px
+
+    Executor(Executor)
+
+    Executor ==> CodeLocation[Code Location]
+    Executor -.-> Job
+```
+
+An <PyObject section="internals" module="dagster" object="ExecutorDefinition" displayText="executor" /> defines how the steps within a job run are executed. Every job has a default executor (single process), and custom executors can be specified per job or for an entire code location.
+
+| Concept                         | Relationship                                                             |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| [code location](#code-location) | `executor` is set for each `code location`                               |
+| [job](#job)                     | `executor` may be added to a `job` to control how its steps are executed |
 
 ## Graph
 
@@ -524,7 +594,7 @@ An <PyObject section="ops" module="dagster" object="op" /> is a computational un
 A <PyObject section="partitions" object="PartitionsDefinition" /> represents a logical slice of a dataset or computation mapped to a certain segments (such as increments of time). Partitions enable incremental processing, making workflows more efficient by only running on relevant subsets of data.
 
 | Concept         | Relationship                          |
-| ----------------| ------------------------------------- |
+| --------------- | ------------------------------------- |
 | [asset](#asset) | `partition` may be used by an `asset` |
 
 ## Resource

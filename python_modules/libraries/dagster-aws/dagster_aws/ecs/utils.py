@@ -1,9 +1,10 @@
 import hashlib
 import re
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
-from dagster._core.remote_representation.origin import RemoteJobOrigin
+from dagster._core.remote_origin import RemoteJobOrigin
 
 from dagster_aws.ecs.tasks import DagsterEcsTaskDefinitionConfig
 
@@ -29,7 +30,15 @@ class RetryableEcsException(Exception): ...
 
 
 def run_ecs_task(ecs, run_task_kwargs) -> Mapping[str, Any]:
-    response = ecs.run_task(**run_task_kwargs)
+    run_task_kwargs = {"clientToken": str(uuid.uuid4()), **run_task_kwargs}
+    try:
+        response = ecs.run_task(**run_task_kwargs)
+    except ecs.exceptions.InvalidParameterException as e:
+        # ECS sometimes raises transient throttling errors in the underlying EC2 services
+        # as InvalidParameterExceptions
+        if "Throttling" in e.response.get("Error", {}).get("Message", ""):
+            raise RetryableEcsException(str(e)) from e
+        raise
 
     tasks = response["tasks"]
 
@@ -52,7 +61,9 @@ def run_ecs_task(ecs, run_task_kwargs) -> Mapping[str, Any]:
 
         failure_message = "\n".join(failure_messages) if failure_messages else "Task failed."
 
-        if "Capacity is unavailable at this time" in failure_message:
+        if any(failure.get("reason") == "AGENT" for failure in failures) or (
+            "Capacity is unavailable at this time" in failure_message
+        ):
             raise RetryableEcsException(failure_message)
 
         raise Exception(failure_message)
@@ -161,6 +172,12 @@ def is_transient_task_stopped_reason(stopped_reason: str) -> bool:
         return True
 
     if "The Service Discovery instance could not be registered" in stopped_reason:
+        return True
+
+    if "InsufficientFreeAddressesInSubnet" in stopped_reason:
+        return True
+
+    if "Task provisioning failed" in stopped_reason:
         return True
 
     return False

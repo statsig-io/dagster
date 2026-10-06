@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, List, Optional, Tuple, Union  # noqa: F40
 # re-exports
 import dagster._check as check
 from dagster._annotations import deprecated
+from dagster._core.definitions.asset_checks.asset_check_evaluation import AssetCheckEvaluation
 from dagster._core.definitions.events import AssetKey, AssetPartitionWipeRange
 from dagster._core.definitions.partitions.context import partition_loading_context
 from dagster._core.events import (
@@ -25,6 +26,9 @@ from starlette.concurrency import (
 )
 
 if TYPE_CHECKING:
+    from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckSeverity
+    from dagster._core.definitions.metadata import RawMetadataValue
+
     from dagster_graphql.schema.errors import (
         GrapheneAssetNotFoundError,
         GrapheneUnauthorizedError,
@@ -39,7 +43,11 @@ from dagster_graphql.implementation.execution.backfill import (
     resume_partition_backfill as resume_partition_backfill,
     retry_partition_backfill as retry_partition_backfill,
 )
-from dagster_graphql.implementation.utils import assert_permission, assert_permission_for_location
+from dagster_graphql.implementation.utils import (
+    assert_permission,
+    assert_permission_for_run,
+    has_permission_for_run,
+)
 
 if TYPE_CHECKING:
     from dagster._core.storage.compute_log_manager import CapturedLogData
@@ -85,7 +93,10 @@ def terminate_pipeline_execution(
     run_id: str,
     terminate_policy: "GrapheneTerminateRunPolicy",
 ) -> Union[
-    "GrapheneTerminateRunSuccess", "GrapheneTerminateRunFailure", "GrapheneUnauthorizedError"
+    "GrapheneTerminateRunSuccess",
+    "GrapheneTerminateRunFailure",
+    "GrapheneUnauthorizedError",
+    "GrapheneRunNotFoundError",
 ]:
     from dagster_graphql.schema.errors import GrapheneRunNotFoundError, GrapheneUnauthorizedError
     from dagster_graphql.schema.pipelines.pipeline import GrapheneRun
@@ -113,22 +124,11 @@ def terminate_pipeline_execution(
     run = record.dagster_run
     graphene_run = GrapheneRun(record)
 
-    location_name = run.remote_job_origin.location_name if run.remote_job_origin else None
-
-    if location_name:
-        if not graphene_info.context.has_permission_for_location(
-            Permissions.TERMINATE_PIPELINE_EXECUTION, location_name
-        ):
-            return GrapheneTerminateRunFailure(
-                run=graphene_run,
-                message="You do not have permission to terminate this run",
-            )
-    else:
-        if not graphene_info.context.has_permission(Permissions.TERMINATE_PIPELINE_EXECUTION):
-            return GrapheneTerminateRunFailure(
-                run=graphene_run,
-                message="You do not have permission to terminate this run",
-            )
+    if not has_permission_for_run(graphene_info, Permissions.TERMINATE_PIPELINE_EXECUTION, run):
+        return GrapheneTerminateRunFailure(
+            run=graphene_run,
+            message="You do not have permission to terminate this run",
+        )
 
     can_cancel_run = run.status in CANCELABLE_RUN_STATUSES
 
@@ -199,13 +199,7 @@ def delete_pipeline_run(
         assert_permission(graphene_info, Permissions.DELETE_PIPELINE_RUN)
         return GrapheneRunNotFoundError(run_id)
 
-    location_name = run.remote_job_origin.location_name if run.remote_job_origin else None
-    if location_name:
-        assert_permission_for_location(
-            graphene_info, Permissions.DELETE_PIPELINE_RUN, location_name
-        )
-    else:
-        assert_permission(graphene_info, Permissions.DELETE_PIPELINE_RUN)
+    assert_permission_for_run(graphene_info, Permissions.DELETE_PIPELINE_RUN, run)
 
     instance.delete_run(run_id)
 
@@ -228,7 +222,7 @@ def get_chunk_size() -> int:
 async def gen_events_for_run(
     graphene_info: "ResolveInfo",
     run_id: str,
-    after_cursor: Optional[str] = None,
+    after_cursor: str | None = None,
 ) -> AsyncIterator[
     Union[
         "GraphenePipelineRunLogsSubscriptionFailure",
@@ -316,7 +310,7 @@ async def gen_events_for_run(
 
 
 async def gen_captured_log_data(
-    graphene_info: "ResolveInfo", log_key: Sequence[str], cursor: Optional[str] = None
+    graphene_info: "ResolveInfo", log_key: Sequence[str], cursor: str | None = None
 ) -> AsyncIterator["GrapheneCapturedLogs"]:
     from dagster_graphql.schema.logs.compute_logs import from_captured_log_data
 
@@ -391,10 +385,10 @@ def wipe_assets(
 def create_asset_event(
     event_type: DagsterEventType,
     asset_key: AssetKey,
-    partition_key: Optional[str],
-    description: Optional[str],
-    tags: Optional[Mapping[str, str]],
-) -> Union[AssetMaterialization, AssetObservation]:
+    partition_key: str | None,
+    description: str | None,
+    tags: Mapping[str, str] | None,
+) -> AssetMaterialization | AssetObservation:
     if event_type == DagsterEventType.ASSET_MATERIALIZATION:
         return AssetMaterialization(
             asset_key=asset_key, partition=partition_key, description=description, tags=tags
@@ -411,9 +405,9 @@ def report_runless_asset_events(
     graphene_info: "ResolveInfo",
     event_type: DagsterEventType,
     asset_key: AssetKey,
-    partition_keys: Optional[Sequence[str]] = None,
-    description: Optional[str] = None,
-    tags: Optional[Mapping[str, str]] = None,
+    partition_keys: Sequence[str] | None = None,
+    description: str | None = None,
+    tags: Mapping[str, str] | None = None,
 ) -> "GrapheneReportRunlessAssetEventsSuccess":
     from dagster_graphql.schema.roots.mutation import GrapheneReportRunlessAssetEventsSuccess
 
@@ -430,3 +424,26 @@ def report_runless_asset_events(
         )
 
     return GrapheneReportRunlessAssetEventsSuccess(assetKey=asset_key)
+
+
+def report_asset_check_evaluation(
+    graphene_info: "ResolveInfo",
+    asset_key: AssetKey,
+    check_name: str,
+    passed: bool,
+    severity: "AssetCheckSeverity",
+    metadata: Mapping[str, "RawMetadataValue"] | None = None,
+    partition: str | None = None,
+    description: str | None = None,
+) -> None:
+    instance = graphene_info.context.instance
+    evaluation = AssetCheckEvaluation(
+        asset_key=asset_key,
+        check_name=check_name,
+        passed=passed,
+        severity=severity,
+        metadata=metadata or {},
+        partition=partition,
+        description=description,
+    )
+    instance.report_runless_asset_event(evaluation)

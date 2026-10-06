@@ -1,13 +1,14 @@
 import importlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, TypeVar, Union, cast, overload
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar, Union, cast, overload
 
 import dagster_shared.check as check
 from dagster_shared.serdes.serdes import NamedTupleSerializer, whitelist_for_serdes
 from dagster_shared.yaml_utils import load_run_config_yaml
 from typing_extensions import Self
 
+from dagster._annotations import public
 from dagster._utils import convert_dagster_submodule_name
 
 if TYPE_CHECKING:
@@ -24,12 +25,13 @@ class ConfigurableClassDataSerializer(NamedTupleSerializer["ConfigurableClassDat
     def pack_items(self, *args, **kwargs):
         for k, v in super().pack_items(*args, **kwargs):
             if k == "module_name":
-                yield k, convert_dagster_submodule_name(v, "public")  # pyright: ignore[reportArgumentType]
+                yield k, convert_dagster_submodule_name(v, "public")  # ty: ignore[invalid-argument-type]
             else:
                 yield k, v
 
 
 @whitelist_for_serdes(serializer=ConfigurableClassDataSerializer)
+@public
 class ConfigurableClassData(
     NamedTuple(
         "_ConfigurableClassData",
@@ -75,7 +77,7 @@ class ConfigurableClassData(
     def rehydrate(self, as_type: type[T_ConfigurableClass]) -> T_ConfigurableClass: ...
 
     def rehydrate(
-        self, as_type: Optional[type[T_ConfigurableClass]] = None
+        self, as_type: type[T_ConfigurableClass] | None = None
     ) -> Union["ConfigurableClass", T_ConfigurableClass]:
         from dagster._config import process_config, resolve_to_config_type
         from dagster._core.errors import DagsterInvalidConfigError
@@ -118,6 +120,7 @@ class ConfigurableClassData(
         return klass.from_config_value(self, check.not_none(result.value))
 
 
+@public
 class ConfigurableClass(ABC):
     """Abstract mixin for classes that can be loaded from config.
 
@@ -150,7 +153,7 @@ class ConfigurableClass(ABC):
 
     @property
     @abstractmethod
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         """Subclass must be able to return the inst_data as a property if it has been constructed
         through the from_config_value code path.
         """

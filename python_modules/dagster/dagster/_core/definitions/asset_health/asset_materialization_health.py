@@ -1,5 +1,6 @@
-from collections.abc import Iterable
-from typing import TYPE_CHECKING, Optional, Union
+from collections.abc import Iterable, Mapping
+from functools import cached_property, reduce
+from typing import TYPE_CHECKING, Optional, TypeAlias
 
 from dagster_shared import record
 from dagster_shared.serdes import whitelist_for_serdes
@@ -10,8 +11,8 @@ from dagster._core.definitions.asset_health.asset_health import AssetHealthStatu
 from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.partitions.context import partition_loading_context
 from dagster._core.definitions.partitions.definition import PartitionsDefinition
+from dagster._core.definitions.partitions.snap import PartitionsSnap
 from dagster._core.loader import LoadableBy, LoadingContext
-from dagster._core.remote_representation.external_data import PartitionsSnap
 from dagster._core.storage.dagster_run import RunRecord
 from dagster._core.storage.event_log.base import AssetRecord
 from dagster._core.storage.partition_status_cache import get_partition_subsets
@@ -21,6 +22,73 @@ if TYPE_CHECKING:
 
 
 @whitelist_for_serdes
+@record.record
+class MinimalAssetMaterializationHealthState(LoadableBy[AssetKey]):
+    """Minimal object for computing the health status for the materialization state of an asset.
+    This object is intended to be small and quick to deserialize. Deserializing AssetMaterializationHealthState
+    can be slow if there is a large entity subset. Rather than storing entity subsets, we store the number
+    of partitions in each state. This lets us quickly compute the health status of the asset and create
+    the metadata required for the UI.
+    """
+
+    latest_materialization_timestamp: float | None
+    latest_terminal_run_id: str | None
+    num_failed_partitions: int
+    num_currently_materialized_partitions: int
+    partitions_snap: PartitionsSnap | None
+    latest_failed_to_materialize_timestamp: float | None = None
+    latest_failed_to_materialize_run_id: str | None = None
+    # Number of currently failed partitions whose failing run will be automatically retried.
+    # Derived from (up_for_retry ∩ failed) on the full state, so it never exceeds
+    # num_failed_partitions.
+    num_up_for_retry_partitions: int = 0
+
+    @property
+    def health_status(self) -> AssetHealthStatus:
+        if self.num_failed_partitions == 0 and self.num_currently_materialized_partitions == 0:
+            return AssetHealthStatus.UNKNOWN
+        if self.num_failed_partitions > 0:
+            # If every currently failed partition is up for retry, the asset is in a transient
+            # WARNING state rather than DEGRADED.
+            if self.num_up_for_retry_partitions == self.num_failed_partitions:
+                return AssetHealthStatus.WARNING
+            return AssetHealthStatus.DEGRADED
+        else:
+            return AssetHealthStatus.HEALTHY
+
+    @property
+    def partitions_def(self) -> PartitionsDefinition | None:
+        if self.partitions_snap is None:
+            return None
+        return self.partitions_snap.get_partitions_definition()
+
+    @classmethod
+    def from_asset_materialization_health_state(
+        cls,
+        asset_materialization_health_state: "AssetMaterializationHealthState",
+    ) -> "MinimalAssetMaterializationHealthState":
+        return cls(
+            latest_materialization_timestamp=asset_materialization_health_state.latest_materialization_timestamp,
+            latest_terminal_run_id=asset_materialization_health_state.latest_terminal_run_id,
+            num_failed_partitions=asset_materialization_health_state.failed_subset.size,
+            num_currently_materialized_partitions=asset_materialization_health_state.currently_materialized_subset.size,
+            partitions_snap=asset_materialization_health_state.partitions_snap,
+            latest_failed_to_materialize_timestamp=asset_materialization_health_state.latest_failed_to_materialize_timestamp,
+            latest_failed_to_materialize_run_id=asset_materialization_health_state.latest_failed_to_materialize_run_id,
+            num_up_for_retry_partitions=asset_materialization_health_state.num_up_for_retry_partitions,
+        )
+
+    @classmethod
+    def _blocking_batch_load(
+        cls, keys: Iterable[AssetKey], context: LoadingContext
+    ) -> Iterable[Optional["MinimalAssetMaterializationHealthState"]]:
+        asset_materialization_health_states = (
+            context.instance.get_minimal_asset_materialization_health_state_for_assets(list(keys))
+        )
+        return [asset_materialization_health_states.get(key) for key in keys]
+
+
+@whitelist_for_serdes(skip_when_none_fields={"up_for_retry_subsets_by_run_id"})
 @record.record
 class AssetMaterializationHealthState(LoadableBy[AssetKey]):
     """For tracking the materialization health of an asset, we only care about the most recent
@@ -40,15 +108,24 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
     failed_subset: The subset of the asset that is currently in a failed state.
     partitions_snap: The partitions definition for the asset. None if it is not a partitioned asset.
     latest_terminal_run_id: The id of the latest run with a successful or failed materialization event for the asset.
+    up_for_retry_subsets_by_run_id: For each currently failed run that will be automatically
+        retried, the subset of the asset that failed in that run. Keyed by run id so that the
+        entries can be individually re-validated against the run's current retry status (a run
+        tagged as will-retry may never actually be retried, e.g. on infra failures). None when
+        up-for-retry state is not tracked (e.g. state computed before this was tracked).
     """
 
     materialized_subset: SerializableEntitySubset[AssetKey]
     failed_subset: SerializableEntitySubset[AssetKey]
-    partitions_snap: Optional[PartitionsSnap]
-    latest_terminal_run_id: Optional[str]
+    partitions_snap: PartitionsSnap | None
+    latest_terminal_run_id: str | None
+    latest_materialization_timestamp: float | None = None
+    latest_failed_to_materialize_timestamp: float | None = None
+    latest_failed_to_materialize_run_id: str | None = None
+    up_for_retry_subsets_by_run_id: Mapping[str, SerializableEntitySubset[AssetKey]] | None = None
 
     @property
-    def partitions_def(self) -> Optional[PartitionsDefinition]:
+    def partitions_def(self) -> PartitionsDefinition | None:
         if self.partitions_snap is None:
             return None
         return self.partitions_snap.get_partitions_definition()
@@ -58,11 +135,48 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
         """The subset of the asset that is currently in a successfully materialized state."""
         return self.materialized_subset.compute_difference(self.failed_subset)
 
+    @cached_property
+    def up_for_retry_subset(self) -> SerializableEntitySubset[AssetKey] | None:
+        """The subset of the asset that is currently failed and whose failing run will be retried:
+        the union of the per-run up-for-retry subsets, intersected with the failed subset (so it
+        never extends beyond the failed subset, even if the per-run entries drift). None when
+        up-for-retry state is not tracked.
+
+        Cached: this record is immutable, so the union is invariant for the life of the instance.
+        """
+        if self.up_for_retry_subsets_by_run_id is None:
+            return None
+        union = reduce(
+            lambda acc, subset: acc.compute_union(subset),
+            self.up_for_retry_subsets_by_run_id.values(),
+            # empty subset of the same shape as failed_subset
+            self.failed_subset.compute_difference(self.failed_subset),
+        )
+        return union.compute_intersection(self.failed_subset)
+
+    @property
+    def num_up_for_retry_partitions(self) -> int:
+        """Number of currently failed partitions whose failing run will be retried. Returns 0 when
+        up-for-retry state is not tracked.
+        """
+        up_for_retry_subset = self.up_for_retry_subset
+        if up_for_retry_subset is None:
+            return 0
+        return up_for_retry_subset.size
+
     @property
     def health_status(self) -> AssetHealthStatus:
         if self.materialized_subset.is_empty and self.failed_subset.is_empty:
             return AssetHealthStatus.UNKNOWN
         elif not self.failed_subset.is_empty:
+            # If every currently failed partition is up for retry, the asset is in a transient
+            # WARNING state rather than DEGRADED.
+            up_for_retry_subset = self.up_for_retry_subset
+            if (
+                up_for_retry_subset is not None
+                and self.failed_subset.compute_difference(up_for_retry_subset).is_empty
+            ):
+                return AssetHealthStatus.WARNING
             return AssetHealthStatus.DEGRADED
         else:
             return AssetHealthStatus.HEALTHY
@@ -71,11 +185,17 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
     async def compute_for_asset(
         cls,
         asset_key: AssetKey,
-        partitions_def: Optional[PartitionsDefinition],
+        partitions_def: PartitionsDefinition | None,
         loading_context: LoadingContext,
     ) -> "AssetMaterializationHealthState":
         """Creates an AssetMaterializationHealthState for the given asset. Requires fetching the AssetRecord
         and potentially the latest run from the DB, or regenerating the partition status cache.
+
+        NOTE: this method always sets up_for_retry_subsets_by_run_id to None, so an asset whose
+        state is recomputed from scratch reports DEGRADED rather than WARNING until its next
+        failure event. We could compute the true up-for-retry state by fetching the latest run for
+        each failed partition; this is intentionally skipped in the first version of this change
+        and can be added later.
         """
         asset_record = await AssetRecord.gen(loading_context, asset_key)
 
@@ -84,7 +204,7 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
                 materialized_partition_subset,
                 failed_partition_subset,
                 _,
-            ) = get_partition_subsets(
+            ) = await get_partition_subsets(
                 loading_context.instance,
                 loading_context,
                 asset_key,
@@ -96,6 +216,9 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
                 check.failed("Expected partitions subset for a partitioned asset")
 
             last_run_id = None
+            last_failed_run_id = None
+            latest_materialization_timestamp = None
+            latest_failed_to_materialize_timestamp = None
             if asset_record is not None:
                 entry = asset_record.asset_entry
                 latest_record = max(
@@ -106,6 +229,21 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
                     key=lambda record: -1 if record is None else record.storage_id,
                 )
                 last_run_id = latest_record.run_id if latest_record else None
+                last_failed_run_id = (
+                    entry.last_failed_to_materialize_record.run_id
+                    if entry.last_failed_to_materialize_record
+                    else None
+                )
+                latest_materialization_timestamp = (
+                    entry.last_materialization_record.timestamp
+                    if entry.last_materialization_record
+                    else None
+                )
+                latest_failed_to_materialize_timestamp = (
+                    entry.last_failed_to_materialize_record.timestamp
+                    if entry.last_failed_to_materialize_record
+                    else None
+                )
 
             return cls(
                 materialized_subset=SerializableEntitySubset(
@@ -116,6 +254,9 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
                 ),
                 partitions_snap=PartitionsSnap.from_def(partitions_def),
                 latest_terminal_run_id=last_run_id,
+                latest_materialization_timestamp=latest_materialization_timestamp,
+                latest_failed_to_materialize_timestamp=latest_failed_to_materialize_timestamp,
+                latest_failed_to_materialize_run_id=last_failed_run_id,
             )
 
         if asset_record is None:
@@ -124,22 +265,55 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
                 failed_subset=SerializableEntitySubset(key=asset_key, value=False),
                 partitions_snap=None,
                 latest_terminal_run_id=None,
+                latest_materialization_timestamp=None,
+                latest_failed_to_materialize_timestamp=None,
+                latest_failed_to_materialize_run_id=None,
             )
 
         asset_entry = asset_record.asset_entry
+        latest_materialization_timestamp = (
+            asset_entry.last_materialization_record.timestamp
+            if asset_entry.last_materialization_record
+            else None
+        )
+        latest_failed_to_materialize_timestamp = (
+            asset_entry.last_failed_to_materialize_record.timestamp
+            if asset_entry.last_failed_to_materialize_record
+            else None
+        )
+        latest_failed_run_id = (
+            asset_entry.last_failed_to_materialize_record.run_id
+            if asset_entry.last_failed_to_materialize_record
+            else None
+        )
         if asset_entry.last_run_id is None:
             return AssetMaterializationHealthState(
                 materialized_subset=SerializableEntitySubset(key=asset_key, value=False),
                 failed_subset=SerializableEntitySubset(key=asset_key, value=False),
                 partitions_snap=None,
                 latest_terminal_run_id=None,
+                latest_materialization_timestamp=latest_materialization_timestamp,
+                latest_failed_to_materialize_timestamp=latest_failed_to_materialize_timestamp,
+                latest_failed_to_materialize_run_id=latest_failed_run_id,
             )
 
         has_ever_materialized = asset_entry.last_materialization is not None
         (
             is_currently_failed,
             latest_terminal_run_id,
-        ) = await _get_is_currently_failed_and_latest_terminal_run_id(loading_context, asset_record)
+            latest_terminal_run_timestamp,
+        ) = await _get_is_currently_failed_and_latest_terminal_run_id_and_timestamp(
+            loading_context, asset_record
+        )
+
+        if is_currently_failed:
+            # if failure events are not stored for the asset, _get_is_currently_failed_and_latest_terminal_run_id_and_timestamp
+            # will return the latest terminal run id and timestamp as computed from the DB. We want to
+            # use these values for the latest failed run id and timestamp if available
+            latest_failed_run_id = latest_failed_run_id or latest_terminal_run_id
+            latest_failed_to_materialize_timestamp = (
+                latest_failed_to_materialize_timestamp or latest_terminal_run_timestamp
+            )
 
         return cls(
             materialized_subset=SerializableEntitySubset(
@@ -148,6 +322,9 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
             failed_subset=SerializableEntitySubset(key=asset_key, value=is_currently_failed),
             partitions_snap=None,
             latest_terminal_run_id=latest_terminal_run_id,
+            latest_materialization_timestamp=latest_materialization_timestamp,
+            latest_failed_to_materialize_timestamp=latest_failed_to_materialize_timestamp,
+            latest_failed_to_materialize_run_id=latest_failed_run_id,
         )
 
     @classmethod
@@ -157,16 +334,12 @@ class AssetMaterializationHealthState(LoadableBy[AssetKey]):
         asset_materialization_health_states = (
             context.instance.get_asset_materialization_health_state_for_assets(list(keys))
         )
-
-        if asset_materialization_health_states is None:
-            return [None for _ in keys]
-        else:
-            return [asset_materialization_health_states.get(key) for key in keys]
+        return [asset_materialization_health_states.get(key) for key in keys]
 
 
-async def _get_is_currently_failed_and_latest_terminal_run_id(
+async def _get_is_currently_failed_and_latest_terminal_run_id_and_timestamp(
     loading_context: LoadingContext, asset_record: AssetRecord
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None, float | None]:
     """Determines if the asset is currently in a failed state. If we are storing failure events for the
     asset, this can be determined by looking at the AssetRecord. For assets where we are not storing failure
     events, we have to derive the failure state from the latest run record.
@@ -187,10 +360,11 @@ async def _get_is_currently_failed_and_latest_terminal_run_id(
             if latest_record
             else False,
             latest_record.run_id if latest_record else None,
+            latest_record.timestamp if latest_record else None,
         )
 
     if asset_entry.last_run_id is None:
-        return False, None
+        return False, None, None
 
     # if failure events are not stored, we usually have to fetch the run record to check if the
     # asset is currently failed. However, if the latest run id is the same as the last materialization run id,
@@ -199,7 +373,11 @@ async def _get_is_currently_failed_and_latest_terminal_run_id(
         asset_entry.last_materialization
         and asset_entry.last_run_id == asset_entry.last_materialization.run_id
     ):
-        return False, asset_entry.last_materialization.run_id
+        return (
+            False,
+            asset_entry.last_materialization.run_id,
+            asset_entry.last_materialization.timestamp,
+        )
 
     run_record = await RunRecord.gen(loading_context, asset_entry.last_run_id)
     if run_record is None or not run_record.dagster_run.is_finished or run_record.end_time is None:
@@ -210,6 +388,9 @@ async def _get_is_currently_failed_and_latest_terminal_run_id(
         return (
             False,
             asset_entry.last_materialization.run_id if asset_entry.last_materialization else None,
+            asset_entry.last_materialization.timestamp
+            if asset_entry.last_materialization
+            else None,
         )
 
     if (
@@ -217,10 +398,14 @@ async def _get_is_currently_failed_and_latest_terminal_run_id(
         and asset_entry.last_materialization.timestamp > run_record.end_time
     ):
         # the latest materialization was reported manually
-        return False, asset_entry.last_materialization.run_id
+        return (
+            False,
+            asset_entry.last_materialization.run_id,
+            asset_entry.last_materialization.timestamp,
+        )
 
     # if the run failed, then report the asset as failed
-    return run_record.dagster_run.is_failure, run_record.dagster_run.run_id
+    return run_record.dagster_run.is_failure, run_record.dagster_run.run_id, run_record.end_time
 
 
 @whitelist_for_serdes
@@ -229,6 +414,8 @@ class AssetHealthMaterializationDegradedPartitionedMeta:
     num_failed_partitions: int
     num_missing_partitions: int
     total_num_partitions: int
+    latest_run_id: str | None = None
+    latest_failed_to_materialize_run_id: str | None = None
 
 
 @whitelist_for_serdes
@@ -236,19 +423,55 @@ class AssetHealthMaterializationDegradedPartitionedMeta:
 class AssetHealthMaterializationHealthyPartitionedMeta:
     num_missing_partitions: int
     total_num_partitions: int
+    latest_run_id: str | None = None
+    latest_failed_to_materialize_run_id: str | None = None
 
 
 @whitelist_for_serdes
 @record.record
 class AssetHealthMaterializationDegradedNotPartitionedMeta:
-    failed_run_id: Optional[str]
+    failed_run_id: str | None
+
+    @property
+    def latest_failed_to_materialize_run_id(self) -> str | None:
+        return self.failed_run_id
 
 
-AssetHealthMaterializationMetadata = Union[
-    AssetHealthMaterializationDegradedPartitionedMeta,
-    AssetHealthMaterializationHealthyPartitionedMeta,
-    AssetHealthMaterializationDegradedNotPartitionedMeta,
-]
+@whitelist_for_serdes
+@record.record
+class AssetHealthMaterializationWarningPartitionedMeta:
+    """Metadata for a partitioned asset in WARNING materialization health: every currently failed
+    partition is covered by a pending auto-retry.
+    """
+
+    num_up_for_retry_partitions: int
+    num_missing_partitions: int
+    total_num_partitions: int
+    latest_run_id: str | None = None
+    latest_failed_to_materialize_run_id: str | None = None
+
+
+@whitelist_for_serdes
+@record.record
+class AssetHealthMaterializationWarningNotPartitionedMeta:
+    """Metadata for a non-partitioned asset in WARNING materialization health: the latest failed
+    run is pending an auto-retry.
+    """
+
+    failed_run_id: str | None
+
+    @property
+    def latest_failed_to_materialize_run_id(self) -> str | None:
+        return self.failed_run_id
+
+
+AssetHealthMaterializationMetadata: TypeAlias = (
+    AssetHealthMaterializationDegradedPartitionedMeta
+    | AssetHealthMaterializationHealthyPartitionedMeta
+    | AssetHealthMaterializationDegradedNotPartitionedMeta
+    | AssetHealthMaterializationWarningPartitionedMeta
+    | AssetHealthMaterializationWarningNotPartitionedMeta
+)
 
 
 async def get_materialization_status_and_metadata(
@@ -259,12 +482,25 @@ async def get_materialization_status_and_metadata(
     needed to power the UIs. Metadata is fetched from the AssetLatestMaterializationState object, again
     either via streamline or by computing it based on the state of the DB.
     """
-    asset_materialization_health_state = await AssetMaterializationHealthState.gen(
+    asset_materialization_health_state = await MinimalAssetMaterializationHealthState.gen(
         context, asset_key
     )
+    if asset_materialization_health_state is None:
+        # if the minimal health stat does not exist, try fetching the full health state. It's possible that
+        # deserializing the full health state is non-performant since it contains a serialized entity subset, which
+        # is why we only fetch it if the minimal health state does not exist.
+        slow_deserialize_asset_materialization_health_state = (
+            await AssetMaterializationHealthState.gen(context, asset_key)
+        )
+        if slow_deserialize_asset_materialization_health_state is not None:
+            asset_materialization_health_state = (
+                MinimalAssetMaterializationHealthState.from_asset_materialization_health_state(
+                    slow_deserialize_asset_materialization_health_state
+                )
+            )
     # captures streamline disabled or consumer state doesn't exist
     if asset_materialization_health_state is None:
-        if context.instance.streamline_read_asset_health_required():
+        if context.instance.streamline_read_asset_health_required("asset-materialization-health"):
             return AssetHealthStatus.UNKNOWN, None
 
         if not context.asset_graph.has(asset_key):
@@ -274,7 +510,11 @@ async def get_materialization_status_and_metadata(
             if asset_record is None:
                 return AssetHealthStatus.UNKNOWN, None
             has_ever_materialized = asset_record.asset_entry.last_materialization is not None
-            is_currently_failed, run_id = await _get_is_currently_failed_and_latest_terminal_run_id(
+            (
+                is_currently_failed,
+                run_id,
+                _,
+            ) = await _get_is_currently_failed_and_latest_terminal_run_id_and_timestamp(
                 context, asset_record
             )
             if is_currently_failed:
@@ -298,10 +538,12 @@ async def get_materialization_status_and_metadata(
             return AssetHealthStatus.UNKNOWN, None
 
         asset_materialization_health_state = (
-            await AssetMaterializationHealthState.compute_for_asset(
-                asset_key,
-                node_snap.partitions_def,
-                context,
+            MinimalAssetMaterializationHealthState.from_asset_materialization_health_state(
+                await AssetMaterializationHealthState.compute_for_asset(
+                    asset_key,
+                    node_snap.partitions_def,
+                    context,
+                )
             )
         )
 
@@ -313,15 +555,17 @@ async def get_materialization_status_and_metadata(
                 total_num_partitions = (
                     asset_materialization_health_state.partitions_def.get_num_partitions()
                 )
-            # asset is health, so no partitions are failed
-            num_materialized = len(
-                asset_materialization_health_state.materialized_subset.subset_value
+            # asset is healthy, so no partitions are failed
+            num_missing = (
+                total_num_partitions
+                - asset_materialization_health_state.num_currently_materialized_partitions
             )
-            num_missing = total_num_partitions - num_materialized
         if num_missing > 0 and total_num_partitions > 0:
             meta = AssetHealthMaterializationHealthyPartitionedMeta(
                 num_missing_partitions=num_missing,
                 total_num_partitions=total_num_partitions,
+                latest_run_id=asset_materialization_health_state.latest_terminal_run_id,
+                latest_failed_to_materialize_run_id=asset_materialization_health_state.latest_failed_to_materialize_run_id,
             )
         else:
             # captures the case when asset is not partitioned, or the asset is partitioned and all partitions are materialized
@@ -333,21 +577,47 @@ async def get_materialization_status_and_metadata(
                 total_num_partitions = (
                     asset_materialization_health_state.partitions_def.get_num_partitions()
                 )
-            num_failed = len(asset_materialization_health_state.failed_subset.subset_value)
-            num_materialized = len(
-                asset_materialization_health_state.currently_materialized_subset.subset_value
+            num_missing = (
+                total_num_partitions
+                - asset_materialization_health_state.num_currently_materialized_partitions
+                - asset_materialization_health_state.num_failed_partitions
             )
-            num_missing = total_num_partitions - num_materialized - num_failed
             meta = AssetHealthMaterializationDegradedPartitionedMeta(
-                num_failed_partitions=num_failed,
+                num_failed_partitions=asset_materialization_health_state.num_failed_partitions,
                 num_missing_partitions=num_missing,
                 total_num_partitions=total_num_partitions,
+                latest_run_id=asset_materialization_health_state.latest_terminal_run_id,
+                latest_failed_to_materialize_run_id=asset_materialization_health_state.latest_failed_to_materialize_run_id,
             )
         else:
             meta = AssetHealthMaterializationDegradedNotPartitionedMeta(
-                failed_run_id=asset_materialization_health_state.latest_terminal_run_id,
+                failed_run_id=asset_materialization_health_state.latest_failed_to_materialize_run_id,
             )
         return AssetHealthStatus.DEGRADED, meta
+    elif asset_materialization_health_state.health_status == AssetHealthStatus.WARNING:
+        # WARNING means every currently failed partition is covered by a pending auto-retry.
+        if asset_materialization_health_state.partitions_def is not None:
+            with partition_loading_context(dynamic_partitions_store=context.instance):
+                total_num_partitions = (
+                    asset_materialization_health_state.partitions_def.get_num_partitions()
+                )
+            num_missing = (
+                total_num_partitions
+                - asset_materialization_health_state.num_currently_materialized_partitions
+                - asset_materialization_health_state.num_failed_partitions
+            )
+            meta = AssetHealthMaterializationWarningPartitionedMeta(
+                num_up_for_retry_partitions=asset_materialization_health_state.num_up_for_retry_partitions,
+                num_missing_partitions=num_missing,
+                total_num_partitions=total_num_partitions,
+                latest_run_id=asset_materialization_health_state.latest_terminal_run_id,
+                latest_failed_to_materialize_run_id=asset_materialization_health_state.latest_failed_to_materialize_run_id,
+            )
+        else:
+            meta = AssetHealthMaterializationWarningNotPartitionedMeta(
+                failed_run_id=asset_materialization_health_state.latest_failed_to_materialize_run_id,
+            )
+        return AssetHealthStatus.WARNING, meta
     elif asset_materialization_health_state.health_status == AssetHealthStatus.UNKNOWN:
         return AssetHealthStatus.UNKNOWN, None
     else:

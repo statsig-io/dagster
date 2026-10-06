@@ -1,7 +1,7 @@
 import os
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional
 
 import click
 from dagster_dg_core.config import DgWorkspaceScaffoldProjectOptions, modify_dg_toml_config
@@ -13,7 +13,7 @@ from dagster_shared.scaffold import scaffold_subtree
 
 def scaffold_workspace(
     path: Path,
-    use_editable_dagster: Optional[str],
+    use_editable_dagster: bool,
 ) -> None:
     scaffold_subtree(
         path=path,
@@ -50,8 +50,8 @@ def scaffold_workspace(
 
 
 def get_dependencies_template_params(
-    use_editable_dagster: Optional[str],
-    scaffold_project_options: Optional[DgWorkspaceScaffoldProjectOptions],
+    use_editable_dagster: bool,
+    scaffold_project_options: DgWorkspaceScaffoldProjectOptions | None,
     *,
     editable_deps: list[str],
     editable_dev_deps: list[str],
@@ -64,16 +64,10 @@ def get_dependencies_template_params(
         "use_editable_dagster",
         scaffold_project_options.use_editable_dagster if scaffold_project_options else None,
     )
-
     if final_use_editable_dagster:
-        editable_dagster_root = (
-            _get_editable_dagster_from_env()
-            if final_use_editable_dagster is True
-            else final_use_editable_dagster
-        )
         deps = editable_deps
         dev_deps = editable_dev_deps
-        sources = _gather_dagster_packages(Path(editable_dagster_root))
+        sources = _gather_dagster_packages(Path(_get_editable_dagster_from_env()))
     else:
         dev_deps = pypi_dev_deps
         deps = pypi_deps
@@ -108,7 +102,7 @@ def _get_pypi_local_workspace_environment_deps() -> list[str]:
 def scaffold_project(
     path: Path,
     dg_context: DgContext,
-    use_editable_dagster: Optional[str],
+    use_editable_dagster: bool,
 ) -> None:
     import tomlkit
     import tomlkit.items
@@ -121,13 +115,21 @@ def scaffold_project(
         else None
     )
 
+    project_excludes = None
+    if dg_context.is_in_workspace:
+        project_excludes = [
+            ".gitignore",
+            "README.md.jinja",
+        ]
+
     scaffold_subtree(
         path=path,
         name_placeholder="PROJECT_NAME_PLACEHOLDER",
         project_template_path=Path(
             os.path.join(os.path.dirname(__file__), "templates", "PROJECT_NAME_PLACEHOLDER")
         ),
-        excludes=None,
+        excludes=project_excludes,
+        project_id=str(uuid.uuid4()),
         **get_dependencies_template_params(
             use_editable_dagster,
             scaffold_project_options,
@@ -178,23 +180,24 @@ def scaffold_project(
 # so any 2+-order Dagster dependency of our package needs to be listed as a direct dependency in the
 # editable case. See: https://github.com/astral-sh/uv/issues/9446
 EDITABLE_DAGSTER_DEPENDENCIES = [
-    "dagster",
     "dagster-pipes",
     "dagster-shared",
     "dagster-test",  # we include dagster-test for testing purposes
+    "dagster",
 ]
 EDITABLE_DAGSTER_DEV_DEPENDENCIES = [
-    "dagster-webserver",
-    "dagster-graphql",
-    "dagster-dg-core",
-    "dagster-dg-cli",
     "dagster-cloud-cli",
+    "dagster-dg-cli",
+    "dagster-dg-core",
+    "dagster-graphql",
+    "dagster-webserver",
+    "dagster-rest-resources",
 ]
 
 
 PYPI_DAGSTER_DEV_DEPENDENCIES = [
-    "dagster-webserver",
     "dagster-dg-cli",
+    "dagster-webserver",
 ]
 
 
@@ -238,11 +241,15 @@ def _get_pyproject_toml_uv_sources(lib_paths: list[Path]) -> str:
 
 
 def _gather_dagster_packages(editable_dagster_root: Path) -> list[Path]:
-    return [
-        p.parent
-        for p in (
-            *editable_dagster_root.glob("python_modules/dagster*/setup.py"),
-            *editable_dagster_root.glob("python_modules/libraries/dagster*/setup.py"),
-            *editable_dagster_root.glob("python_modules/libraries/create-dagster/setup.py"),
-        )
-    ]
+    package_dirs = set()
+    for pattern in [
+        "python_modules/dagster*/setup.py",
+        "python_modules/dagster*/pyproject.toml",
+        "python_modules/libraries/dagster*/setup.py",
+        "python_modules/libraries/dagster*/pyproject.toml",
+        "python_modules/libraries/create-dagster/setup.py",
+        "python_modules/libraries/create-dagster/pyproject.toml",
+    ]:
+        for p in editable_dagster_root.glob(pattern):
+            package_dirs.add(p.parent)
+    return sorted(package_dirs)

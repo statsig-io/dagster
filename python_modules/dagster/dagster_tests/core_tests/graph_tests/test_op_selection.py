@@ -573,9 +573,7 @@ def test_nested_op_selection_fan_in():
 
     @dg.graph
     def fan_in_graph():
-        fan_outs = []
-        for i in range(0, 10):
-            fan_outs.append(return_one.alias(f"return_one_{i}")())
+        fan_outs = [return_one.alias(f"return_one_{i}")() for i in range(0, 10)]
         return sum_fan_in(fan_outs)
 
     @dg.job
@@ -709,7 +707,7 @@ def test_op_selection_nested_unsatisfied_input_values():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Attempted to invoke execute_in_process for 'the_top_level_graph' without specifying an"
+            r"Attempted to invoke execute_in_process for 'the_top_level_graph' without specifying an"
             " input_value for input 'x', but downstream input x of op 'the_graph.ingest' has no"
             " other way of being loaded."
         ),

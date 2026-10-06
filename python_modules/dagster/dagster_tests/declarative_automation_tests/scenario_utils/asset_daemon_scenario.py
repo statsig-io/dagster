@@ -1,9 +1,9 @@
 import dataclasses
 import itertools
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Callable, NamedTuple, Optional, cast
+from typing import Any, NamedTuple, cast
 from unittest import mock
 
 import dagster as dg
@@ -32,10 +32,7 @@ from dagster._core.definitions.events import AssetKeyPartitionKey, CoercibleToAs
 from dagster._core.definitions.repository_definition.valid_definitions import (
     SINGLETON_REPOSITORY_NAME,
 )
-from dagster._core.remote_representation.origin import (
-    RemoteInstigatorOrigin,
-    RemoteRepositoryOrigin,
-)
+from dagster._core.remote_origin import RemoteInstigatorOrigin, RemoteRepositoryOrigin
 from dagster._core.scheduler.instigation import SensorInstigatorData, TickStatus
 from dagster._core.storage.tags import PARTITION_NAME_TAG
 from dagster._core.test_utils import freeze_time, wait_for_futures
@@ -72,8 +69,8 @@ class AssetRuleEvaluationSpec(NamedTuple):
     """
 
     rule: dg.AutoMaterializeRule
-    partitions: Optional[Sequence[str]] = None
-    rule_evaluation_data: Optional[AutoMaterializeRuleEvaluationData] = None
+    partitions: Sequence[str] | None = None
+    rule_evaluation_data: AutoMaterializeRuleEvaluationData | None = None
 
     def with_rule_evaluation_data(
         self, data_type: type[AutoMaterializeRuleEvaluationData], **kwargs
@@ -129,8 +126,8 @@ class AssetDaemonScenarioState(ScenarioState):
 
     # set by scenario runner
     is_daemon: bool = False
-    sensor_name: Optional[str] = None
-    threadpool_executor: Optional[ThreadPoolExecutor] = None
+    sensor_name: str | None = None
+    threadpool_executor: ThreadPoolExecutor | None = None
     request_backfills: bool = False
 
     def with_serialized_cursor(self, serialized_cursor: str) -> "AssetDaemonScenarioState":
@@ -286,7 +283,7 @@ class AssetDaemonScenarioState(ScenarioState):
 
     def evaluate_tick(
         self,
-        label: Optional[str] = None,
+        label: str | None = None,
         stop_mid_iteration: bool = False,
     ) -> "AssetDaemonScenarioState":
         self.logger.critical("********************************")
@@ -372,7 +369,7 @@ class AssetDaemonScenarioState(ScenarioState):
     def _assert_run_requests_lists_equal(
         self, actual: Sequence[dg.RunRequest], expected: Sequence[dg.RunRequest]
     ):
-        def sort_run_request_key_fn(run_request) -> tuple[dg.AssetKey, Optional[str]]:
+        def sort_run_request_key_fn(run_request) -> tuple[dg.AssetKey, str | None]:
             return (min(run_request.asset_selection), run_request.partition_key)
 
         sorted_actual_run_requests = sorted(actual, key=sort_run_request_key_fn)
@@ -492,7 +489,7 @@ class AssetDaemonScenarioState(ScenarioState):
         self,
         key: CoercibleToAssetKey,
         expected_evaluation_specs: Sequence[AssetRuleEvaluationSpec],
-        num_requested: Optional[int] = None,
+        num_requested: int | None = None,
     ) -> "AssetDaemonScenarioState":
         """Asserts that AutoMaterializeRuleEvaluations on the AutoMaterializeAssetEvaluation for the
         given asset key match the given expected_evaluation_specs.
@@ -593,7 +590,7 @@ class AssetDaemonScenario(NamedTuple):
         self.execution_fn(AssetDaemonScenarioState(self.initial_spec))
 
     def evaluate_daemon(
-        self, instance: DagsterInstance, sensor_name: Optional[str] = None, threadpool_executor=None
+        self, instance: DagsterInstance, sensor_name: str | None = None, threadpool_executor=None
     ) -> "AssetDaemonScenarioState":
         return self.execution_fn(
             AssetDaemonScenarioState(

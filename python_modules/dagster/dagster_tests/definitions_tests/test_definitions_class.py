@@ -1,8 +1,9 @@
 import re
+import traceback
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import Mock
 
 import dagster as dg
@@ -25,7 +26,8 @@ from dagster._core.definitions.metadata.metadata_value import MetadataValue
 from dagster._core.definitions.partitions.context import PartitionLoadingContext
 from dagster._core.types.pagination import PaginatedResults
 from dagster._utils.test.definitions import scoped_definitions_load_context
-from dagster.components.core.tree import ComponentTree
+from dagster.components.core.component_tree import ComponentTree
+from dagster_shared.error import SerializableErrorInfo
 
 
 def get_all_assets_from_defs(defs: Definitions):
@@ -247,7 +249,7 @@ def test_io_manager_coercion():
 def test_bad_executor():
     with pytest.raises(CheckError):
         # ignoring type to catch runtime error
-        dg.Definitions(executor="not an executor")  # pyright: ignore[reportArgumentType]
+        dg.Definitions(executor="not an executor")  # ty: ignore[invalid-argument-type]
 
 
 def test_custom_executor_in_definitions():
@@ -289,13 +291,13 @@ def test_bad_logger_key():
 
     with pytest.raises(CheckError):
         # ignore type to catch runtime error
-        dg.Definitions(loggers={1: a_logger})  # pyright: ignore[reportArgumentType]
+        dg.Definitions(loggers={1: a_logger})  # ty: ignore[invalid-argument-type]
 
 
 def test_bad_logger_value():
     with pytest.raises(CheckError):
         # ignore type to catch runtime error
-        dg.Definitions(loggers={"not_a_logger": "not_a_logger"})  # pyright: ignore[reportArgumentType]
+        dg.Definitions(loggers={"not_a_logger": "not_a_logger"})  # ty: ignore[invalid-argument-type]
 
 
 def test_kitchen_sink_on_create_helper_and_definitions():
@@ -317,13 +319,17 @@ def test_kitchen_sink_on_create_helper_and_definitions():
     def an_op():
         pass
 
+    @dg.op(required_resource_keys={"a_resource_key"})
+    def other_op():
+        pass
+
     @dg.job
     def a_job():
         an_op()
 
     @dg.job
     def sensor_target():
-        an_op()
+        other_op()
 
     @dg.job
     def schedule_target():
@@ -348,7 +354,12 @@ def test_kitchen_sink_on_create_helper_and_definitions():
     repo = dg.create_repository_using_definitions_args(
         name="foobar",
         assets=[an_asset, another_asset],
-        jobs=[a_job, another_asset_job],
+        jobs=[
+            a_job,
+            another_asset_job,
+            sensor_target,
+            schedule_target,
+        ],
         schedules=[a_schedule],
         sensors=[a_sensor],
         resources={"a_resource_key": "the resource"},
@@ -382,7 +393,12 @@ def test_kitchen_sink_on_create_helper_and_definitions():
     # test the kitchen sink since we have created it
     defs = dg.Definitions(
         assets=[an_asset, another_asset],
-        jobs=[a_job, another_asset_job],
+        jobs=[
+            a_job,
+            another_asset_job,
+            sensor_target,
+            schedule_target,
+        ],
         schedules=[a_schedule],
         sensors=[a_sensor],
         resources={"a_resource_key": "the resource"},
@@ -556,10 +572,10 @@ def test_bare_executor():
     def an_asset(): ...
 
     class DummyExecutor(dg.Executor):
-        def execute(self, plan_context, execution_plan): ...  # pyright: ignore[reportIncompatibleMethodOverride]
+        def execute(self, plan_context, execution_plan): ...
 
         @property
-        def retries(self): ...  # pyright: ignore[reportIncompatibleMethodOverride]
+        def retries(self): ...
 
     executor_inst = DummyExecutor()
 
@@ -569,7 +585,7 @@ def test_bare_executor():
     assert isinstance(job, dg.JobDefinition)
 
     # ignore typecheck because we know our implementation doesn't use the context
-    assert job.executor_def.executor_creation_fn(None) is executor_inst  # pyright: ignore[reportArgumentType,reportOptionalCall]
+    assert job.executor_def.executor_creation_fn(None) is executor_inst  # ty: ignore[call-non-callable,invalid-argument-type]
 
 
 def test_assets_with_io_manager():
@@ -590,7 +606,7 @@ def test_asset_missing_resources():
 
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
-        match="resource with key 'foo' required by op 'asset_foo' was not provided.",
+        match=r"resource with key 'foo' required by op 'asset_foo' was not provided.",
     ):
         Definitions.validate_loadable(dg.Definitions(assets=[asset_foo]))
 
@@ -633,7 +649,7 @@ def test_asset_missing_io_manager():
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
         match=(
-            "io manager with key 'blah' required by output 'result' of op 'asset_foo'' was not"
+            r"io manager with key 'blah' required by output 'result' of op 'asset_foo'' was not"
             " provided."
         ),
     ):
@@ -671,7 +687,7 @@ def test_conflicting_asset_resource_defs():
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
         match=(
-            "Conflicting versions of resource with key 'foo' were provided to "
+            r"Conflicting versions of resource with key 'foo' were provided to "
             "different assets. When constructing a job, all resource definitions "
             "provided to assets must match by reference equality for a given key."
         ),
@@ -709,7 +725,7 @@ def test_graph_backed_asset_resources():
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
         match=(
-            "Conflicting versions of resource with key 'foo' were provided to different assets."
+            r"Conflicting versions of resource with key 'foo' were provided to different assets."
             " When constructing a job, all resource definitions provided to assets must match by"
             " reference equality for a given key."
         ),
@@ -726,7 +742,7 @@ def test_job_with_reserved_name():
     with pytest.raises(
         dg.DagsterInvalidDefinitionError,
         match=(
-            "Attempted to provide job called __ASSET_JOB to repository, which is a reserved name."
+            r"Attempted to provide job called __ASSET_JOB to repository, which is a reserved name."
         ),
     ):
         Definitions.validate_loadable(dg.Definitions(jobs=[the_job]))
@@ -925,7 +941,7 @@ def test_merge_unbound_defs_err_resolved():
     defs1.resolve_all_asset_specs()
     with pytest.raises(
         CheckError,
-        match="Definitions object 0 has previously been resolved.",
+        match=r"Definitions object 0 has previously been resolved.",
     ):
         Definitions.merge_unbound_defs(defs1, defs2)
 
@@ -937,7 +953,7 @@ def test_executor_conflict_on_merge_same_value():
     assert Definitions.merge(defs1, defs2).executor == dg.in_process_executor
 
 
-def test_get_all_asset_specs():
+def test_resolve_all_asset_specs():
     @dg.asset(tags={"foo": "fooval"})
     def asset1(): ...
 
@@ -1000,7 +1016,7 @@ def test_invalid_partitions_subclass():
     class CustomPartitionsDefinition(dg.PartitionsDefinition):
         def get_partition_keys(
             self,
-            current_time: Optional[datetime] = None,
+            current_time: datetime | None = None,
             dynamic_partitions_store: Any = None,
         ) -> Sequence[str]:
             return ["a", "b", "c"]
@@ -1010,7 +1026,7 @@ def test_invalid_partitions_subclass():
             context: PartitionLoadingContext,
             limit: int,
             ascending: bool,
-            cursor: Optional[str] = None,
+            cursor: str | None = None,
         ) -> dg.PaginatedResults[str]:
             partition_keys = self.get_partition_keys(
                 current_time=context.temporal_context.effective_dt,
@@ -1070,10 +1086,12 @@ def test_definitions_failure_on_asset_job_resolve():
         jobs=[invalid_job],
     )
 
-    with pytest.raises(
-        dg.DagsterInvalidSubsetError, match="no AssetsDefinition objects supply these keys"
-    ):
+    with pytest.raises(dg.DagsterInvalidDefinitionError) as exc_info:
         Definitions.validate_loadable(defs)
+
+    tb_exc = traceback.TracebackException.from_exception(exc_info.value)
+    error_info = SerializableErrorInfo.from_traceback(tb_exc)
+    assert "no AssetsDefinition objects supply these keys" in str(error_info)
 
 
 def test_definitions_dedupe_reference_equality():
@@ -1128,11 +1146,11 @@ def test_definitions_dedupe_reference_equality():
     assert len(list(underlying_repo.schedule_defs)) == 1
 
     # properties on the definitions object do not dedupe
-    assert len(defs.assets) == 2  # pyright: ignore[reportArgumentType]
-    assert len(defs.asset_checks) == 2  # pyright: ignore[reportArgumentType]
-    assert len(defs.jobs) == 2  # pyright: ignore[reportArgumentType]
-    assert len(defs.sensors) == 2  # pyright: ignore[reportArgumentType]
-    assert len(defs.schedules) == 2  # pyright: ignore[reportArgumentType]
+    assert len(defs.assets) == 2  # ty: ignore[invalid-argument-type]
+    assert len(defs.asset_checks) == 2  # ty: ignore[invalid-argument-type]
+    assert len(defs.jobs) == 2  # ty: ignore[invalid-argument-type]
+    assert len(defs.sensors) == 2  # ty: ignore[invalid-argument-type]
+    assert len(defs.schedules) == 2  # ty: ignore[invalid-argument-type]
 
 
 def test_definitions_class_metadata():
@@ -1142,7 +1160,7 @@ def test_definitions_class_metadata():
 
 
 def test_assets_def_with_only_checks():
-    @dg.asset_check(asset="asset1")  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(asset="asset1")
     def check1():
         pass
 

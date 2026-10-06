@@ -1,112 +1,81 @@
-import os
-from typing import Any, NamedTuple, Optional
+from collections.abc import Mapping
+from typing import Any
 
 from dagster_shared import check
+from dagster_shared.record import IHaveNew, LegacyNamedTupleMixin, copy, record, record_custom
 from dagster_shared.serdes import whitelist_for_serdes
+from dagster_shared.serdes.objects.models.defs_state_info import DefsStateInfo
+from dagster_shared.serdes.serdes import serialize_value
 
 from dagster_cloud_cli.core.agent_queue import AgentQueue
 
-# Python 3.8 is EOL and support will be removed soon.
-# Dagster 1.9 onwards there is no support for 3.8 so we use an older base image.
-# Defaults to a base image tag for  1.8.13
-_PYTHON_38_BASE_IMAGE_TAG = os.getenv("PYTHON_38_BASE_IMAGE_TAG", "1be1105a-626d7d2a")
+
+@whitelist_for_serdes
+@record(kw_only=False)
+class GitMetadata:
+    commit_hash: str | None = None
+    url: str | None = None
 
 
 @whitelist_for_serdes
-class GitMetadata(
-    NamedTuple(
-        "_GitMetadata",
-        [("commit_hash", Optional[str]), ("url", Optional[str])],
-    )
-):
-    def __new__(cls, commit_hash=None, url=None):
-        return super().__new__(
-            cls,
-            check.opt_str_param(commit_hash, "commit_hash"),
-            check.opt_str_param(url, "url"),
-        )
-
-
-@whitelist_for_serdes
-class PexMetadata(
-    NamedTuple(
-        "_PexMetadata",
-        [
-            # pex_tag is a string like 'deps-234y4384.pex:source-39y3474.pex' that idenfies
-            # the pex files to execute
-            ("pex_tag", str),
-            # python_version determines which pex base docker image to use
-            # only one of PexMetadata.python_version or CodeLocationDeployData.image should be specified
-            ("python_version", Optional[str]),
-        ],
-    )
-):
-    def __new__(cls, pex_tag, python_version=None):
-        return super().__new__(
-            cls,
-            check.str_param(pex_tag, "pex_tag"),
-            check.opt_str_param(python_version, "python_version"),
-        )
-
-    def resolve_image(self) -> Optional[str]:
-        if not self.python_version:
-            return None
-        agent_image_tag = os.getenv("DAGSTER_CLOUD_AGENT_IMAGE_TAG")
-        serverless_service_name = os.getenv("SERVERLESS_SERVICE_NAME")
-        if not agent_image_tag or not serverless_service_name:
-            return None
-        image_tag = agent_image_tag if self.python_version != "3.8" else _PYTHON_38_BASE_IMAGE_TAG
-        if serverless_service_name in ["serverless-agents", "serverless-agents-public-demo"]:
-            return f"657821118200.dkr.ecr.us-west-2.amazonaws.com/dagster-cloud-serverless-base-py{self.python_version}:{image_tag}"
-        else:
-            return f"878483074102.dkr.ecr.us-west-2.amazonaws.com/dagster-cloud-serverless-base-py{self.python_version}:{image_tag}"
+@record(kw_only=False)
+class PexMetadata:
+    # pex_tag is a string like 'deps-234y4384.pex:source-39y3474.pex' that idenfies
+    # the pex files to execute
+    pex_tag: str
+    # python_version determines which pex base docker image to use
+    # only one of PexMetadata.python_version or CodeLocationDeployData.image should be specified
+    python_version: str | None = None
 
 
 # History of CodeLocationDeployData
 # 1. Removal of `enable_metrics` field
 # 2. Renamed from `CodeDeploymentMetadata` to `CodeLocationDeployData``
 @whitelist_for_serdes(storage_name="CodeDeploymentMetadata")
-class CodeLocationDeployData(
-    NamedTuple(
-        "_CodeDeploymentMetadata",
-        [
-            ("image", Optional[str]),
-            ("python_file", Optional[str]),
-            ("package_name", Optional[str]),
-            ("module_name", Optional[str]),
-            ("working_directory", Optional[str]),
-            ("executable_path", Optional[str]),
-            ("attribute", Optional[str]),
-            ("git_metadata", Optional[GitMetadata]),
-            ("container_context", dict[str, Any]),
-            ("cloud_context_env", dict[str, Any]),
-            ("pex_metadata", Optional[PexMetadata]),
-            ("agent_queue", Optional[AgentQueue]),
-            ("autoload_defs_module_name", Optional[str]),
-        ],
-    )
-):
+@record_custom
+class CodeLocationDeployData(IHaveNew, LegacyNamedTupleMixin):
+    image: str | None
+    python_file: str | None
+    package_name: str | None
+    module_name: str | None
+    working_directory: str | None
+    executable_path: str | None
+    attribute: str | None
+    git_metadata: GitMetadata | None
+    container_context: Mapping[str, Any]
+    cloud_context_env: Mapping[str, Any]
+    pex_metadata: PexMetadata | None
+    agent_queue: AgentQueue | None
+    autoload_defs_module_name: str | None
+    defs_state_info: DefsStateInfo | None
+
     def __new__(
         cls,
-        image=None,
-        python_file=None,
-        package_name=None,
-        module_name=None,
-        working_directory=None,
-        executable_path=None,
-        attribute=None,
-        git_metadata=None,
-        container_context=None,
-        cloud_context_env=None,
-        pex_metadata=None,
-        agent_queue=None,
-        autoload_defs_module_name=None,
+        image: str | None = None,
+        python_file: str | None = None,
+        package_name: str | None = None,
+        module_name: str | None = None,
+        working_directory: str | None = None,
+        executable_path: str | None = None,
+        attribute: str | None = None,
+        git_metadata: GitMetadata | None = None,
+        container_context: Mapping[str, Any] | None = None,
+        cloud_context_env: Mapping[str, Any] | None = None,
+        pex_metadata: PexMetadata | None = None,
+        agent_queue: AgentQueue | None = None,
+        autoload_defs_module_name: str | None = None,
+        defs_state_info: DefsStateInfo | None = None,
     ):
         check.invariant(
             len(
                 [
                     val
-                    for val in [python_file, package_name, module_name, autoload_defs_module_name]
+                    for val in [
+                        python_file,
+                        package_name,
+                        module_name,
+                        autoload_defs_module_name,
+                    ]
                     if val
                 ]
             )
@@ -116,28 +85,32 @@ class CodeLocationDeployData(
 
         return super().__new__(
             cls,
-            check.opt_str_param(image, "image"),
-            check.opt_str_param(python_file, "python_file"),
-            check.opt_str_param(package_name, "package_name"),
-            check.opt_str_param(module_name, "module_name"),
-            check.opt_str_param(working_directory, "working_directory"),
-            check.opt_str_param(executable_path, "executable_path"),
-            check.opt_str_param(attribute, "attribute"),
-            check.opt_inst_param(git_metadata, "git_metadata", GitMetadata),
-            check.opt_dict_param(container_context, "container_context", key_type=str),
-            check.opt_dict_param(cloud_context_env, "cloud_context_env", key_type=str),
-            check.opt_inst_param(pex_metadata, "pex_metadata", PexMetadata),
-            check.opt_str_param(agent_queue, "agent_queue"),
-            check.opt_str_param(autoload_defs_module_name, "autoload_defs_module_name"),
+            image=image,
+            python_file=python_file,
+            package_name=package_name,
+            module_name=module_name,
+            working_directory=working_directory,
+            executable_path=executable_path,
+            attribute=attribute,
+            git_metadata=git_metadata,
+            container_context=container_context or {},
+            cloud_context_env=cloud_context_env or {},
+            pex_metadata=pex_metadata,
+            agent_queue=agent_queue,
+            autoload_defs_module_name=autoload_defs_module_name,
+            defs_state_info=defs_state_info,
         )
 
-    def with_cloud_context_env(self, cloud_context_env: dict[str, Any]) -> "CodeLocationDeployData":
-        return self._replace(cloud_context_env=cloud_context_env)
+    def with_cloud_context_env(
+        self,
+        cloud_context_env: Mapping[str, Any],
+    ) -> "CodeLocationDeployData":
+        return copy(self, cloud_context_env=cloud_context_env)
 
     def get_multipex_server_command(
         self,
-        port: Optional[int],
-        socket: Optional[str] = None,
+        port: int | None,
+        socket: str | None = None,
         metrics_enabled: bool = False,
     ) -> list[str]:
         return (
@@ -159,4 +132,9 @@ class CodeLocationDeployData(
                 "grpc",
             ]
             + (["--enable-metrics"] if metrics_enabled else [])
+            + (
+                ["--defs-state-info", serialize_value(self.defs_state_info)]
+                if self.defs_state_info
+                else []
+            )
         )

@@ -5,13 +5,11 @@ from pathlib import Path
 import pytest
 from dagster_dg_core.utils import activate_venv
 
-from docs_snippets_tests.snippet_checks.guides.components.test_components_docs import (
-    DgTestPackageManager,
-)
 from docs_snippets_tests.snippet_checks.guides.components.utils import (
     DAGSTER_ROOT,
     EDITABLE_DIR,
     MASK_PLUGIN_CACHE_REBUILD,
+    DgTestPackageManager,
     format_multiline,
     get_editable_install_cmd_for_dg,
     get_editable_install_cmd_for_project,
@@ -74,8 +72,8 @@ def test_migrating_project(
 
             venv_snip_no = context.get_next_snip_number()
             get_letter = make_letter_iterator()
-            get_venv_snip_path = (
-                lambda: _SNIPPETS_DIR
+            get_venv_snip_path = lambda: (
+                _SNIPPETS_DIR
                 / f"{venv_snip_no}-{get_letter()}-{package_manager}-venv.txt"
             )
             if package_manager == "uv":
@@ -143,7 +141,9 @@ def test_migrating_project(
 
             # Add entry point to package metadata
             if package_manager == "uv":
-                pyproject_toml_content = Path("pyproject.toml").read_text()
+                pyproject_toml_content = Path("pyproject.toml").read_text(
+                    encoding="utf-8"
+                )
                 pyproject_toml_content = (
                     pyproject_toml_content
                     + "\n"
@@ -156,7 +156,9 @@ def test_migrating_project(
                     code_location_target_module = "my_existing_project.definitions"
                 """)
                 )
-                Path("pyproject.toml").write_text(pyproject_toml_content)
+                Path("pyproject.toml").write_text(
+                    pyproject_toml_content, encoding="utf-8"
+                )
                 context.check_file(
                     "pyproject.toml",
                     snippet_path=f"{context.get_next_snip_number()}-{package_manager}-config.toml",
@@ -171,7 +173,8 @@ def test_migrating_project(
                         [project]
                         root_module = "my_existing_project"
                         code_location_target_module = "my_existing_project.definitions"
-                    """)
+                    """),
+                    encoding="utf-8",
                 )
                 context.check_file(
                     "dg.toml",
@@ -191,7 +194,9 @@ def test_migrating_project(
 
             # Add dagster_dg_cli.registry_modules to pyproject.toml
             if package_manager == "uv":
-                pyproject_toml_content = Path("pyproject.toml").read_text()
+                pyproject_toml_content = Path("pyproject.toml").read_text(
+                    encoding="utf-8"
+                )
                 pyproject_toml_content = insert_before_matching_line(
                     pyproject_toml_content,
                     "\n"
@@ -201,7 +206,9 @@ def test_migrating_project(
                     """),
                     r"\[build-system\]",
                 )
-                Path("pyproject.toml").write_text(pyproject_toml_content)
+                Path("pyproject.toml").write_text(
+                    pyproject_toml_content, encoding="utf-8"
+                )
                 context.check_file(
                     "pyproject.toml",
                     snippet_path=f"{context.get_next_snip_number()}-{package_manager}-plugin-config.toml",
@@ -222,7 +229,7 @@ def test_migrating_project(
                     dagster_dg_cli.registry_modules =
                         my_existing_project = my_existing_project.components
                 """)
-                Path("setup.cfg").write_text(setup_cfg_content)
+                Path("setup.cfg").write_text(setup_cfg_content, encoding="utf-8")
                 context.check_file(
                     "setup.cfg",
                     snippet_path=f"{context.get_next_snip_number()}-{package_manager}-plugin-config.txt",

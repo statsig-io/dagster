@@ -15,16 +15,18 @@ from dagster._core.definitions.partitions.utils.base import (
     generate_partition_key_based_definition_id,
 )
 from dagster._core.errors import DagsterInvalidInvocationError, DagsterUnknownPartitionError
-from dagster._core.instance import DynamicPartitionsStore
 from dagster._core.storage.tags import PARTITION_NAME_TAG
 from dagster._core.types.pagination import PaginatedResults
 
 if TYPE_CHECKING:
     from dagster._core.definitions.partitions.subset.partitions_subset import PartitionsSubset
+    from dagster._core.instance import DynamicPartitionsStore
+
 
 T_str = TypeVar("T_str", bound=str, default=str, covariant=True)
 
 
+@public
 class PartitionsDefinition(ABC, Generic[T_str]):
     """Defines a set of partitions, which can be attached to a software-defined asset or job.
 
@@ -37,12 +39,15 @@ class PartitionsDefinition(ABC, Generic[T_str]):
 
         return DefaultPartitionsSubset
 
+    def validate_partition_definition(self) -> None:
+        pass
+
     @abstractmethod
     @public
     def get_partition_keys(
         self,
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None,
     ) -> Sequence[T_str]:
         """Returns a list of strings representing the partition keys of the PartitionsDefinition.
 
@@ -65,7 +70,7 @@ class PartitionsDefinition(ABC, Generic[T_str]):
         context: PartitionLoadingContext,
         limit: int,
         ascending: bool,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> PaginatedResults[str]:
         """Returns a connection object that contains a list of partition keys and all the necessary
         information to paginate through them.
@@ -85,11 +90,11 @@ class PartitionsDefinition(ABC, Generic[T_str]):
         joined_keys = ", ".join([f"'{key}'" for key in self.get_partition_keys()])
         return joined_keys
 
-    def get_last_partition_key(self) -> Optional[T_str]:
+    def get_last_partition_key(self) -> T_str | None:
         partition_keys = self.get_partition_keys()
         return partition_keys[-1] if partition_keys else None
 
-    def get_first_partition_key(self) -> Optional[T_str]:
+    def get_first_partition_key(self) -> T_str | None:
         partition_keys = self.get_partition_keys()
         return partition_keys[0] if partition_keys else None
 
@@ -135,8 +140,8 @@ class PartitionsDefinition(ABC, Generic[T_str]):
     def can_deserialize_subset(
         self,
         serialized: str,
-        serialized_partitions_def_unique_id: Optional[str],
-        serialized_partitions_def_class_name: Optional[str],
+        serialized_partitions_def_unique_id: str | None,
+        serialized_partitions_def_class_name: str | None,
     ) -> bool:
         return self.partitions_subset_class.can_deserialize(
             self,

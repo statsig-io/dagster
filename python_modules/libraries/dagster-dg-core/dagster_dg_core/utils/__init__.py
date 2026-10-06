@@ -11,12 +11,12 @@ import textwrap
 from collections.abc import Iterator, Mapping, Sequence
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional, TextIO, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Literal, TextIO, TypeAlias, TypeVar, Union, overload
 
 import click
 from click_aliases import ClickAliasedGroup
 from dagster_shared.utils import environ
-from typing_extensions import Never, TypeAlias
+from typing_extensions import Never
 
 from dagster_dg_core.error import DgError
 
@@ -32,6 +32,13 @@ CLI_CONFIG_KEY = "config"
 DG_CLI_MAX_OUTPUT_WIDTH = 120
 
 
+def show_dg_unlaunched_commands() -> bool:
+    """We hide cli commands that we have not launched yet. Override this by setting
+    the DG_SHOW_UNLAUNCHED_COMMANDS environment variable to any value.
+    """
+    return os.getenv("DG_SHOW_UNLAUNCHED_COMMANDS") is not None
+
+
 def is_windows() -> bool:
     return sys.platform == "win32"
 
@@ -44,7 +51,7 @@ def is_uv_installed() -> bool:
     return shutil.which("uv") is not None
 
 
-def get_activated_venv() -> Optional[Path]:
+def get_activated_venv() -> Path | None:
     """Returns the path to the activated virtual environment, or None if no virtual environment is active."""
     venv_path = os.environ.get("VIRTUAL_ENV")
     if venv_path:
@@ -52,7 +59,7 @@ def get_activated_venv() -> Optional[Path]:
     return None
 
 
-def resolve_local_venv(start_path: Path) -> Optional[Path]:
+def resolve_local_venv(start_path: Path) -> Path | None:
     path = start_path
     while path != path.parent:
         venv_path = path / ".venv"
@@ -128,12 +135,16 @@ def strip_activated_venv_from_env_vars(env: Mapping[str, str]) -> Mapping[str, s
     return {k: v for k, v in env.items() if not k == "VIRTUAL_ENV"}
 
 
-def discover_git_root(path: Path) -> Path:
+def discover_repo_root(path: Path) -> Path:
+    """Find the dagster repo root by looking for python_modules/dagster/.
+
+    This works even when dagster is a subfolder in a monorepo.
+    """
     while path != path.parent:
-        if (path / ".git").exists():
+        if (path / "python_modules" / "dagster").is_dir():
             return path
         path = path.parent
-    raise ValueError("Could not find git root")
+    raise ValueError("Could not find dagster repo root")
 
 
 def discover_venv(path: Path) -> Path:
@@ -145,7 +156,7 @@ def discover_venv(path: Path) -> Path:
 
 
 @contextlib.contextmanager
-def pushd(path: Union[str, Path]) -> Iterator[None]:
+def pushd(path: str | Path) -> Iterator[None]:
     old_cwd = os.getcwd()
     os.chdir(path)
     try:
@@ -164,10 +175,39 @@ def camelcase(string: str) -> str:
 
 
 def snakecase(string: str) -> str:
-    # Add an underscore before capital letters and lower the case
-    string = re.sub(r"(?<!^)(?=[A-Z])", "_", string).lower()
+    """Convert a string to snake_case.
+
+    This function handles consecutive uppercase letters more gracefully than the naive approach.
+    For example: "ACMEDatabricksJobComponent" -> "acme_databricks_job_component"
+    Rather than: "ACMEDatabricksJobComponent" -> "a_c_m_e_databricks_job_component"
+    """
+    if not string:
+        return string
+
+    # First, handle sequences of uppercase letters followed by lowercase letters
+    # This matches patterns like "ACME" in "ACMEDatabricks" -> "ACME_Databricks"
+    # The pattern (?<![A-Z])([A-Z]+)(?=[A-Z][a-z]) matches:
+    # - One or more uppercase letters ([A-Z]+)
+    # - That are followed by an uppercase letter then lowercase ((?=[A-Z][a-z]))
+    # - But not preceded by another uppercase letter ((?<![A-Z]))
+    string = re.sub(r"([A-Z]+)(?=[A-Z][a-z])", r"\1_", string)
+
+    # Add underscores before uppercase letters that follow lowercase letters or numbers
+    # This handles the transition from lowercase/numbers to uppercase
+    string = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", string)
+
+    # Convert to lowercase
+    string = string.lower()
+
     # Replace any non-alphanumeric characters with underscores
     string = re.sub(r"[^a-z0-9_]", "_", string)
+
+    # Clean up multiple consecutive underscores
+    string = re.sub(r"_+", "_", string)
+
+    # Remove leading/trailing underscores
+    string = string.strip("_")
+
     return string
 
 
@@ -185,9 +225,9 @@ def set_option_help_output_group(param: click.Parameter, group: str) -> None:
 def modify_toml(path: Path) -> Iterator["tomlkit.TOMLDocument"]:
     import tomlkit
 
-    toml = tomlkit.parse(path.read_text())
+    toml = tomlkit.parse(path.read_text(encoding="utf-8"))
     yield toml
-    path.write_text(tomlkit.dumps(toml))
+    path.write_text(tomlkit.dumps(toml), encoding="utf-8")
 
 
 @contextlib.contextmanager
@@ -204,23 +244,13 @@ def modify_toml_as_dict(path: Path) -> Iterator[dict[str, Any]]:  # unwrap gets 
 
     toml_dict = load_toml_as_dict(path)
     yield toml_dict
-    path.write_text(tomlkit.dumps(toml_dict))
-
-
-def ensure_dagster_dg_tests_import() -> None:
-    from dagster_dg_core import __file__ as dagster_dg_init_py
-
-    dagster_dg_package_root = (Path(dagster_dg_init_py) / ".." / "..").resolve()
-    assert (dagster_dg_package_root / "dagster_dg_core_tests").exists(), (
-        "Could not find dagster_dg_core_tests where expected"
-    )
-    sys.path.append(dagster_dg_package_root.as_posix())
+    path.write_text(tomlkit.dumps(toml_dict), encoding="utf-8")
 
 
 def hash_directory_metadata(
     hasher: Hash,
-    path: Union[str, Path],
-    includes: Optional[Sequence[str]],
+    path: str | Path,
+    includes: Sequence[str] | None,
     excludes: Sequence[str],
     error_on_missing: bool,
 ) -> None:
@@ -244,7 +274,7 @@ def hash_directory_metadata(
             hash_file_metadata(hasher, filepath, error_on_missing)
 
 
-def hash_file_metadata(hasher: Hash, path: Union[str, Path], error_on_missing) -> None:
+def hash_file_metadata(hasher: Hash, path: str | Path, error_on_missing) -> None:
     """Hashes the metadata of a file.
 
     Args:
@@ -265,7 +295,7 @@ def hash_file_metadata(hasher: Hash, path: Union[str, Path], error_on_missing) -
 T = TypeVar("T")
 
 
-def not_none(value: Optional[T]) -> T:
+def not_none(value: T | None) -> T:
     if value is None:
         raise DgError("Expected non-none value.")
     return value
@@ -299,7 +329,7 @@ def generate_missing_registry_object_error_message(registry_object_key: str) -> 
 
 def generate_project_and_activated_venv_mismatch_warning(
     project_venv_path: Path,
-    active_venv_path: Optional[Path],
+    active_venv_path: Path | None,
 ) -> str:
     return f"""
         The active virtual environment does not match the virtual environment found in the project
@@ -379,10 +409,30 @@ class DgClickHelpMixin:
         rich_format_help(obj=self, ctx=context, markup_mode="rich")
 
 
-class DgClickCommand(DgClickHelpMixin, click.Command): ...  # pyright: ignore[reportIncompatibleMethodOverride]
+class DgClickCommand(DgClickHelpMixin, click.Command):  # ty: ignore[invalid-method-override]
+    def __init__(self, *args, unlaunched: bool = False, **kwargs):
+        """DgClickCommand with conditional hiding for unlaunched features.
+
+        Args:
+            unlaunched: If True, the command will be hidden unless DG_SHOW_UNLAUNCHED_COMMANDS
+                environment variable is set.
+        """
+        if unlaunched:
+            kwargs["hidden"] = not show_dg_unlaunched_commands()
+        super().__init__(*args, **kwargs)
 
 
-class DgClickGroup(DgClickHelpMixin, ClickAliasedGroup): ...  # pyright: ignore[reportIncompatibleMethodOverride]
+class DgClickGroup(DgClickHelpMixin, ClickAliasedGroup):  # ty: ignore[invalid-method-override]
+    def __init__(self, *args, unlaunched: bool = False, **kwargs):
+        """DgClickGroup with conditional hiding for unlaunched features.
+
+        Args:
+            unlaunched: If True, the group will be hidden unless DG_SHOW_UNLAUNCHED_COMMANDS
+                environment variable is set.
+        """
+        if unlaunched:
+            kwargs["hidden"] = not show_dg_unlaunched_commands()
+        super().__init__(*args, **kwargs)
 
 
 # ########################
@@ -458,20 +508,20 @@ def parse_json_option(context: click.Context, param: click.Option, value: str):
 # ##### TOML MANIPULATION
 # ########################
 
-TomlPath: TypeAlias = tuple[Union[str, int], ...]
+TomlPath: TypeAlias = tuple[str | int, ...]
 TomlDoc: TypeAlias = Union["tomlkit.TOMLDocument", dict[str, Any]]
 
 
 def load_toml_as_dict(path: Path) -> dict[str, Any]:
     import tomlkit
 
-    return tomlkit.parse(path.read_text()).unwrap()
+    return tomlkit.parse(path.read_text(encoding="utf-8")).unwrap()
 
 
 def get_toml_node(
     doc: TomlDoc,
     path: TomlPath,
-    expected_type: Union[type[T], tuple[type[T], ...]],
+    expected_type: type[T] | tuple[type[T], ...],
 ) -> T:
     """Given a tomlkit-parsed document/table (`doc`),retrieve the nested value at `path` and ensure
     it is of type `expected_type`. Returns the value if so, or raises a KeyError / TypeError if not.
@@ -520,7 +570,7 @@ def set_toml_node(doc: TomlDoc, path: TomlPath, value: object) -> None:
     an error if the leading keys do not already lead to a TOML container node.
     """
     container = _gather_toml_nodes(doc, path[:-1])[-1] if len(path) > 1 else doc
-    key_or_index = path[-1]  # type: ignore  # pyright bug
+    key_or_index = path[-1]
     if isinstance(container, dict):
         if not isinstance(key_or_index, str):
             raise TypeError(f"Expected key to be a string, but got {type(key_or_index).__name__}")
@@ -542,12 +592,12 @@ def _gather_toml_nodes(
 @overload
 def _gather_toml_nodes(
     doc: TomlDoc, path: TomlPath, error_on_missing: Literal[False] = ...
-) -> Optional[list[Any]]: ...
+) -> list[Any] | None: ...
 
 
 def _gather_toml_nodes(
     doc: TomlDoc, path: TomlPath, error_on_missing: bool = True
-) -> Optional[list[Any]]:
+) -> list[Any] | None:
     nodes: list[Any] = []
     current: Any = doc
     for key in path:
@@ -609,7 +659,7 @@ def toml_path_from_str(path: str) -> TomlPath:
 
 def create_toml_node(
     doc: dict[str, Any],
-    path: tuple[Union[str, int], ...],
+    path: tuple[str | int, ...],
     value: object,
 ) -> None:
     """Set a toml node at a path that consists of a sequence of keys and integer indices.
@@ -656,8 +706,8 @@ def create_toml_node(
 
 
 def _get_new_container_node(
-    representative_key: Union[int, str],
-) -> Union[dict[str, Any], list[Any]]:
+    representative_key: int | str,
+) -> dict[str, Any] | list[Any]:
     return [] if isinstance(representative_key, int) else {}
 
 
@@ -674,7 +724,7 @@ def capture_stdout() -> Iterator[TextIO]:
 
 
 @contextlib.contextmanager
-def activate_venv(venv_path: Union[str, Path]) -> Iterator[None]:
+def activate_venv(venv_path: str | Path) -> Iterator[None]:
     """Simulated activation of the passed in virtual environment for the current process."""
     venv_path = (Path(venv_path) if isinstance(venv_path, str) else venv_path).absolute()
     with environ(

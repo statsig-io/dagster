@@ -1,19 +1,22 @@
 # CI/CD agnostic commands that work with the current CI/CD system
+import importlib.resources
 import json
 import logging
 import os
 import pathlib
 import shutil
 import sys
+import tempfile
 from collections import Counter
 from enum import Enum
-from typing import Annotated, Any, Optional, cast
+from typing import Annotated, Any, cast
 
 import click
 import typer
 import yaml
 from dagster_shared import check
 from dagster_shared.utils import remove_none_recursively
+from dagster_shared.yaml_utils import safe_load_yaml
 from jinja2 import TemplateSyntaxError
 from typer import Typer
 
@@ -89,12 +92,12 @@ def load_github_info(project_dir: str) -> dict[str, Any]:
 )
 def branch_deployment(
     project_dir: str,
-    organization: Optional[str] = ORGANIZATION_OPTION,
-    dagster_env: Optional[str] = DAGSTER_ENV_OPTION,
+    organization: str | None = ORGANIZATION_OPTION,
+    dagster_env: str | None = DAGSTER_ENV_OPTION,
     mark_closed: bool = False,
     read_only: bool = False,
-    base_deployment_name: Optional[str] = None,
-    snapshot_base_condition: Optional[SnapshotBaseDeploymentCondition] = None,
+    base_deployment_name: str | None = None,
+    snapshot_base_condition: SnapshotBaseDeploymentCondition | None = None,
 ):
     try:
         if organization:
@@ -127,10 +130,10 @@ def create_or_update_deployment_from_context(
     url,
     project_dir: str,
     mark_closed: bool,
-    base_deployment_name: Optional[str],
-    snapshot_base_condition: Optional[SnapshotBaseDeploymentCondition],
+    base_deployment_name: str | None,
+    snapshot_base_condition: SnapshotBaseDeploymentCondition | None,
     require_branch_deployment: bool = False,
-) -> Optional[str]:
+) -> str | None:
     source = metrics.get_source()
     api_token = check.not_none(get_user_token())
     if source == CliEventTags.source.github:
@@ -197,7 +200,7 @@ def create_or_update_deployment_from_context(
         raise ValueError(f"unsupported for {source}")
 
 
-def get_branch_deployment_name_from_context(url, project_dir: str) -> Optional[str]:
+def get_branch_deployment_name_from_context(url, project_dir: str) -> str | None:
     source = metrics.get_source()
     api_token = check.not_none(get_user_token())
     if source == CliEventTags.source.github:
@@ -242,13 +245,18 @@ def get_branch_deployment_name_from_context(url, project_dir: str) -> Optional[s
 
 @app.command(name="check", help="Validate configuration")
 def check_command(
-    organization: Optional[str] = ORGANIZATION_OPTION,
-    dagster_env: Optional[str] = DAGSTER_ENV_OPTION,
+    organization: str | None = ORGANIZATION_OPTION,
+    dagster_env: str | None = DAGSTER_ENV_OPTION,
     project_dir: str = typer.Option("."),
     dagster_cloud_yaml_path: str = "dagster_cloud.yaml",
     dagster_cloud_yaml_check: checks.Check = typer.Option("error"),
     dagster_cloud_connect_check: checks.Check = typer.Option("error"),
 ):
+    ui.warn(
+        "The 'dagster-cloud ci check' command is deprecated and will be removed in a future release. "
+        "Use 'dg plus deploy start' instead, which validates configuration during deployment initialization."
+    )
+
     project_path = pathlib.Path(project_dir)
 
     verdicts = []
@@ -263,7 +271,7 @@ def check_command(
                 success_message="Checked OK",
                 failure_message=(
                     "Invalid dagster_cloud.yaml, please see"
-                    " https://docs.dagster.io/dagster-cloud/managing-deployments/dagster-cloud-yaml"
+                    " https://docs.dagster.io/deployment/code-locations/dagster-cloud-yaml"
                 ),
             )
         )
@@ -303,7 +311,7 @@ def template(
     dagster_cloud_yaml_path: str = typer.Option(
         "dagster_cloud.yaml", help="Path to the dagster cloud configuration file"
     ),
-    values_file: Optional[str] = typer.Option(default=None, help="Path to a values file"),
+    values_file: str | None = typer.Option(default=None, help="Path to a values file"),
     value: list[str] = typer.Option(
         [],
         help="Key value pairs to override in the yaml file, value can be a str or a valid json representation",
@@ -347,9 +355,7 @@ def template(
     ui.print(yaml.dump(config_as_dict))
 
 
-def _create_context_from_values(
-    values_list: list[str], values_file: Optional[str]
-) -> dict[str, Any]:
+def _create_context_from_values(values_list: list[str], values_file: str | None) -> dict[str, Any]:
     """Creates a collection of values by loading values from a file then
     overlaying a value list to extend or override those values.
     """
@@ -359,11 +365,11 @@ def _create_context_from_values(
     values_file_path = pathlib.Path(values_file) if values_file else None
     if values_file_path:
         try:
-            with open(values_file_path) as f:
+            with open(values_file_path, encoding="utf-8") as f:
                 if values_file_path.suffix == ".json":
                     context.update(json.load(f))
                 elif values_file_path.suffix in [".yaml", ".yml"]:
-                    context.update(yaml.safe_load(f))
+                    context.update(safe_load_yaml(f))
                 else:
                     raise ui.error(f"Unsupported values file extension {values_file_path.suffix}")
         except Exception as err:
@@ -394,17 +400,17 @@ def _create_context_from_values(
 @dagster_cloud_options(allow_empty=False, allow_empty_deployment=True, requires_url=False)
 def init(
     organization: str,
-    deployment: Optional[str],
-    dagster_env: Optional[str] = DAGSTER_ENV_OPTION,
+    deployment: str | None,
+    dagster_env: str | None = DAGSTER_ENV_OPTION,
     project_dir: str = typer.Option("."),
     dagster_cloud_yaml_path: str = "dagster_cloud.yaml",
     statedir: str = STATEDIR_OPTION,
     clean_statedir: bool = typer.Option(True, help="Delete any existing files in statedir"),
     location_name: list[str] = typer.Option([]),
-    git_url: Optional[str] = None,
-    commit_hash: Optional[str] = None,
-    status_url: Optional[str] = None,
-    snapshot_base_condition: Optional[SnapshotBaseDeploymentCondition] = None,
+    git_url: str | None = None,
+    commit_hash: str | None = None,
+    status_url: str | None = None,
+    snapshot_base_condition: SnapshotBaseDeploymentCondition | None = None,
     require_branch_deployment: bool = typer.Option(
         None, help="Whether to require that a branch deployment be created"
     ),
@@ -428,17 +434,17 @@ def init(
 
 def init_impl(
     organization: str,
-    deployment: Optional[str],
-    dagster_env: Optional[str],
+    deployment: str | None,
+    dagster_env: str | None,
     project_dir: str,
     dagster_cloud_yaml_path: str,
     statedir: str,
     clean_statedir: bool,
     location_name: list[str],
-    git_url: Optional[str],
-    commit_hash: Optional[str],
-    status_url: Optional[str],
-    snapshot_base_condition: Optional[SnapshotBaseDeploymentCondition],
+    git_url: str | None,
+    commit_hash: str | None,
+    status_url: str | None,
+    snapshot_base_condition: SnapshotBaseDeploymentCondition | None,
     require_branch_deployment: bool,
 ):
     yaml_path = pathlib.Path(project_dir) / dagster_cloud_yaml_path
@@ -456,7 +462,12 @@ def init_impl(
         locations = [
             location for location in locations if location.location_name in selected_locations
         ]
-    url = get_org_url(organization, dagster_env)
+    # Check environment variable for URL first, fall back to constructing from org + env
+    env_url = os.getenv(URL_ENV_VAR_NAME)
+    if env_url:
+        url = env_url
+    else:
+        url = get_org_url(organization, dagster_env)
     # Deploy to the branch deployment for the current context. If there is no branch deployment
     # available (eg. if not in a PR) then we fallback to the --deployment flag.
 
@@ -511,10 +522,13 @@ def init_impl(
             location_name=location.location_name,
             is_branch_deployment=is_branch_deployment,
             build=state.BuildMetadata(
-                git_url=git_url, commit_hash=commit_hash, build_config=location.build
+                git_url=git_url,
+                commit_hash=commit_hash,
+                build_config=location.build,
             ),
             build_output=None,
             status_url=status_url,
+            project_dir=project_dir,
         )
         location_state.add_status_change(state.LocationStatus.pending, "initialized")
         state_store.save(location_state)
@@ -557,11 +571,13 @@ def notify(
     source = metrics.get_source()
     if source == CliEventTags.source.github:
         event = github_context.get_github_event(project_dir)
-        msg = f"Your pull request at commit `{event.github_sha}` is automatically being deployed to Dagster Cloud."
+        deployment_name = location_states[0].deployment_name if location_states else None
+        deployment_label = f" (`{deployment_name}`)" if deployment_name else ""
+        msg = f"Your pull request at commit `{event.github_sha}` is automatically being deployed to Dagster Cloud{deployment_label}."
         event.update_pr_comment(
             msg + "\n\n" + report.markdown_report(location_states),
             orig_author="github-actions[bot]",
-            orig_text="Dagster Cloud",  # used to identify original comment
+            orig_text=f"Dagster Cloud{deployment_label}",  # used to identify original comment
         )
     else:
         raise ui.error("'dagster-cloud ci notify' is only available within Github actions.")
@@ -617,13 +633,17 @@ def _get_selected_locations(
 class BuildStrategy(Enum):
     pex = "python-executable"
     docker = "docker"
+    # Internal strategy (not user-selectable): build the PEX artifacts, then bake them into a
+    # standard Docker image by unpacking into venvs at build time. Used to bridge fast-deploy (PEX)
+    # customers onto Serverless v2 (Kubernetes), which runs only Docker images and no PEX runtime.
+    pex_docker = "python-executable-image"
 
 
 @app.command(help="Build selected or requested locations")
 def build(
     statedir: str = STATEDIR_OPTION,
     location_name: list[str] = typer.Option([]),
-    build_directory: Optional[str] = typer.Option(
+    build_directory: str | None = typer.Option(
         None,
         help=(
             "Directory root for building this code location. Read from dagster_cloud.yaml by"
@@ -637,15 +657,15 @@ def build(
             " 'python-executable' builds a set of pex files."
         ),
     ),
-    docker_image_tag: Optional[str] = typer.Option(
+    docker_image_tag: str | None = typer.Option(
         None, help="Tag for built docker image. Auto-generated by default."
     ),
-    docker_base_image: Optional[str] = typer.Option(
+    docker_base_image: str | None = typer.Option(
         None,
         help="Base image used to build the docker image for --build-strategy=docker.",
     ),
     docker_env: list[str] = typer.Option([], help="Env vars for docker builds."),
-    dockerfile_path: Optional[str] = typer.Option(
+    dockerfile_path: str | None = typer.Option(
         None,
         help=(
             "Path to a Dockerfile to use for the docker build. If not provided, a default templated Dockerfile is used."
@@ -659,9 +679,9 @@ def build(
         ),
     ),
     pex_build_method: deps.BuildMethod = typer.Option("local"),
-    pex_deps_cache_from: Optional[str] = None,
-    pex_deps_cache_to: Optional[str] = None,
-    pex_base_image_tag: Optional[str] = typer.Option(
+    pex_deps_cache_from: str | None = None,
+    pex_deps_cache_to: str | None = None,
+    pex_base_image_tag: str | None = typer.Option(
         None,
         help="Base image used to run python executable for --build-strategy=python-executable.",
     ),
@@ -688,20 +708,66 @@ def build(
     )
 
 
+# So support can turn the redirect off mid-migration without pinning back a release.
+DISABLE_PEX_DOCKER_REDIRECT_ENV_VAR = "DAGSTER_CLOUD_DISABLE_PEX_DOCKER_REDIRECT"
+
+
+def _resolve_build_strategy(
+    build_strategy: BuildStrategy,
+    url: str,
+    deployment_name: str,
+) -> BuildStrategy:
+    """Redirect a PEX build to a Docker build when the target registry is Harbor.
+
+    Harbor is what routes a location to the Kubernetes serverless agent, which has no PEX
+    runtime. Keyed on the registry rather than on which agents are running, because those two
+    diverge during a rollback: the tenant and its agent are deliberately left up while the
+    registry moves back to ECR, and such a build should stay a python executable.
+    """
+    if build_strategy != BuildStrategy.pex:
+        return build_strategy
+
+    if os.getenv(DISABLE_PEX_DOCKER_REDIRECT_ENV_VAR):
+        ui.warn(
+            f"{DISABLE_PEX_DOCKER_REDIRECT_ENV_VAR} is set - skipping the registry check and"
+            " building a python executable as requested."
+        )
+        return build_strategy
+
+    try:
+        registry_info = utils.get_registry_info(url, deployment_name)
+    except Exception as e:
+        ui.warn(
+            f"Could not determine the target registry ({e}); building a python executable. If"
+            " this deployment runs Serverless on Kubernetes the result will not be runnable -"
+            " rerun the build, or pass --build-strategy=docker."
+        )
+        return build_strategy
+
+    if not registry_info.get("is_harbor"):
+        return build_strategy
+
+    ui.print(
+        "Serverless on Kubernetes does not run python executables - building a Docker image"
+        " from the same PEX artifacts instead."
+    )
+    return BuildStrategy.pex_docker
+
+
 def build_impl(
     statedir: str,
     location_name: list[str],
-    build_directory: Optional[str],
+    build_directory: str | None,
     build_strategy: BuildStrategy,
-    docker_image_tag: Optional[str],
-    docker_base_image: Optional[str],
+    docker_image_tag: str | None,
+    docker_base_image: str | None,
     docker_env: list[str],
-    dockerfile_path: Optional[str],
+    dockerfile_path: str | None,
     python_version: str,
     pex_build_method: deps.BuildMethod,
-    pex_deps_cache_from: Optional[str],
-    pex_deps_cache_to: Optional[str],
-    pex_base_image_tag: Optional[str],
+    pex_deps_cache_from: str | None,
+    pex_deps_cache_to: str | None,
+    pex_base_image_tag: str | None,
     use_editable_dagster: bool,
 ):
     if python_version:
@@ -725,7 +791,17 @@ def build_impl(
     for name in locations:
         ui.print(f"- {name}")
 
+    if locations:
+        # All locations in a session share a deployment, so resolve the strategy once.
+        first_location = next(iter(locations.values()))
+        build_strategy = _resolve_build_strategy(
+            build_strategy,
+            first_location.url,
+            first_location.deployment_name,
+        )
+
     for name, location_state in locations.items():
+        project_dir = location_state.project_dir
         try:
             configured_build_directory = (
                 location_state.build.build_config.directory
@@ -747,6 +823,9 @@ def build_impl(
                 location_build_dir = build_directory
             else:
                 location_build_dir = "."
+
+            if project_dir and not os.path.isabs(location_build_dir):
+                location_build_dir = str(pathlib.Path(project_dir) / location_build_dir)
 
             url = location_state.url
             api_token = get_user_token() or ""
@@ -783,6 +862,22 @@ def build_impl(
                     "Built and uploaded python executable"
                     f" {location_state.build_output.pex_tag} for location {name}"
                 )
+            elif build_strategy == BuildStrategy.pex_docker:
+                location_state.build_output = build_pex_docker_bundle(
+                    url=url,
+                    api_token=api_token,
+                    name=location_state.location_name,
+                    location_build_dir=location_build_dir,
+                    python_version=python_version,
+                    pex_build_method=pex_build_method,
+                    location_file=location_state.location_file,
+                    deployment_name=location_state.deployment_name,
+                    commit_hash=location_state.build.commit_hash,
+                    registry_info=utils.get_registry_info(
+                        location_state.url, location_state.deployment_name
+                    ),
+                )
+                state_store.save(location_state)
         except:
             location_state.add_status_change(state.LocationStatus.failed, "build failed")
             state_store.save(location_state)
@@ -806,15 +901,16 @@ def _build_docker(
     name: str,
     location_build_dir: str,
     python_version: str,
-    docker_base_image: Optional[str],
+    docker_base_image: str | None,
     docker_env: list[str],
     location_state: state.LocationState,
     use_editable_dagster: bool,
-    dockerfile_path: Optional[str] = None,
+    dockerfile_path: str | None = None,
 ) -> state.DockerBuildOutput:
     name = location_state.location_name
     docker_utils.verify_docker()
-    registry_info = utils.get_registry_info(url)
+    registry_info = utils.get_registry_info(url, location_state.deployment_name)
+    repo_location = name if registry_info.get("is_harbor") else None
 
     docker_image_tag = docker_utils.default_image_tag(
         location_state.deployment_name, name, location_state.build.commit_hash
@@ -836,15 +932,19 @@ def _build_docker(
         base_image=docker_base_image,
         dockerfile_path=dockerfile_path,
         use_editable_dagster=use_editable_dagster,
+        location_name=repo_location,
+        build_args=[],
     )
     if retval != 0:
         raise ui.error(f"Failed to build docker image for location {name}")
 
-    retval = docker_utils.upload_image(docker_image_tag, registry_info)
+    retval = docker_utils.upload_image(docker_image_tag, registry_info, location_name=repo_location)
     if retval != 0:
         raise ui.error(f"Failed to upload docker image for location {name}")
 
-    image = f"{registry_info['registry_url']}:{docker_image_tag}"
+    image = docker_utils.full_image_ref(
+        registry_info["registry_url"], repo_location, docker_image_tag
+    )
     ui.print(f"Built and uploaded image {image} for location {name}")
 
     return state.DockerBuildOutput(image=image)
@@ -862,9 +962,9 @@ def _build_pex(
     location_build_dir: str,
     python_version: str,
     pex_build_method: deps.BuildMethod,
-    pex_deps_cache_from: Optional[str],
-    pex_deps_cache_to: Optional[str],
-    pex_base_image_tag: Optional[str],
+    pex_deps_cache_from: str | None,
+    pex_deps_cache_to: str | None,
+    pex_base_image_tag: str | None,
     location_state: state.LocationState,
 ) -> state.PexBuildOutput:
     pex_location = parse_workspace.Location(
@@ -891,6 +991,102 @@ def _build_pex(
         image=location_kwargs.get("image"),
         pex_tag=location_kwargs["pex_tag"],
     )
+
+
+@metrics.instrument(
+    CliEventType.BUILD,
+    tags=[CliEventTags.subcommand.dagster_cloud_ci, CliEventTags.server_strategy.pex],
+)
+def build_pex_docker_bundle(
+    *,
+    url: str,
+    api_token: str,
+    name: str,
+    location_build_dir: str,
+    python_version: str,
+    pex_build_method: deps.BuildMethod,
+    location_file: str,
+    deployment_name: str,
+    commit_hash: str | None,
+    registry_info: dict[str, Any],
+) -> state.DockerBuildOutput:
+    """Serverless v2 bridge: build the PEX artifacts, then bake them into a standard Docker image
+    by unpacking them into venvs at build time. Reuses the customer's PEX dependency resolution
+    (no `pip` re-resolve), and produces an ordinary image v2 launches like any other.
+
+    Takes plain arguments rather than a ``LocationState`` so the serverless deploy commands, which
+    have no state store, can share it with the ci build path. ``registry_info`` is resolved by the
+    caller: the two paths hold differently scoped urls, and resolving it here would double the
+    deployment segment for one of them.
+    """
+    docker_utils.verify_docker()
+    parsed_python_version = pex_builder.util.parse_python_version(python_version)
+    version_tag = f"{parsed_python_version.major}.{parsed_python_version.minor}"
+
+    with tempfile.TemporaryDirectory() as build_folder:
+        pex_location = pex_builder.parse_workspace.Location(
+            name,
+            directory=location_build_dir,
+            build_folder=location_build_dir,
+            location_file=location_file,
+        )
+        builds = pex_builder.deploy.build_locations(
+            url,
+            api_token,
+            [pex_location],
+            build_folder,
+            upload_pex=False,
+            deps_cache_tags=pex_builder.deploy.DepsCacheTags(None, None),
+            python_version=parsed_python_version,
+            build_method=pex_build_method,
+        )
+        build = builds[0]
+        if not build.deps_pex_path or not build.source_pex_path:
+            raise ui.error(f"Failed to build PEX files for location {name}")
+
+        context_dir = pathlib.Path(build_folder) / "docker-context"
+        context_dir.mkdir()
+        shutil.copy(build.deps_pex_path, context_dir)
+        shutil.copy(build.source_pex_path, context_dir)
+        dockerfile_path = context_dir / "Dockerfile"
+        dockerfile_template = importlib.resources.files("dagster_cloud_cli").joinpath(
+            "commands/serverless/pex_bundle.Dockerfile"
+        )
+        dockerfile_path.write_text(
+            dockerfile_template.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
+        repo_location = name if registry_info.get("is_harbor") else None
+        docker_image_tag = docker_utils.default_image_tag(deployment_name, name, commit_hash)
+
+        ui.print(f"Baking PEX bundle into a docker image for location {name}")
+        if (
+            docker_utils.build_image(
+                str(context_dir),
+                docker_image_tag,
+                registry_info,
+                env_vars=[],
+                base_image=None,
+                dockerfile_path=str(dockerfile_path),
+                use_editable_dagster=False,
+                location_name=repo_location,
+                build_args=[f"PYTHON_VERSION={version_tag}"],
+            )
+            != 0
+        ):
+            raise ui.error(f"Failed to build docker image for location {name}")
+
+        if (
+            docker_utils.upload_image(docker_image_tag, registry_info, location_name=repo_location)
+            != 0
+        ):
+            raise ui.error(f"Failed to upload docker image for location {name}")
+
+        image = docker_utils.full_image_ref(
+            registry_info["registry_url"], repo_location, docker_image_tag
+        )
+        ui.print(f"Built and uploaded PEX-bundle image {image} for location {name}")
+        return state.DockerBuildOutput(image=image, pex_bundle=True)
 
 
 @app.command(help="Update the current build session for an externally built docker image.")
@@ -964,7 +1160,7 @@ def deploy_impl(
     statedir: str,
     location_name: list[str],
     location_load_timeout: int,
-    agent_heartbeat_timeout: Optional[int],
+    agent_heartbeat_timeout: int | None,
 ):
     state_store = state.FileStore(statedir=statedir)
     locations = _get_selected_locations(state_store, location_name)
@@ -1024,7 +1220,7 @@ def _deploy(
     api_token: str,
     built_locations: list[state.LocationState],
     location_load_timeout: int,
-    agent_heartbeat_timeout: Optional[int],
+    agent_heartbeat_timeout: int | None,
 ):
     locations_document = []
     for location_state in built_locations:
@@ -1037,13 +1233,20 @@ def _deploy(
             "location_file": location_state.location_file,
             "git_url": location_state.build.git_url,
             "commit_hash": location_state.build.commit_hash,
+            **(
+                {"defs_state_info": location_state.defs_state_info.model_dump()}
+                if location_state.defs_state_info
+                else {}
+            ),
         }
-        if build_output.strategy == "python-executable":
+        if isinstance(build_output, state.PexBuildOutput):
             metrics.instrument_add_tags([CliEventTags.server_strategy.pex])
             location_args["pex_tag"] = build_output.pex_tag
             location_args["python_version"] = build_output.python_version
         else:
             metrics.instrument_add_tags([CliEventTags.server_strategy.docker])
+            if isinstance(build_output, state.DockerBuildOutput) and build_output.pex_bundle:
+                location_args["pex_bundle"] = True
 
         locations_document.append(
             get_location_document(location_state.location_name, location_args)
@@ -1108,13 +1311,13 @@ dagster_dbt_app.add_typer(project_app, name="project", no_args_is_help=True)
 def manage_state_command(
     statedir: str = STATEDIR_OPTION,
     file: Annotated[
-        Optional[pathlib.Path],
+        pathlib.Path | None,
         typer.Option(
             help="The file containing DbtProject definitions to prepare.",
         ),
     ] = None,
     components: Annotated[
-        Optional[pathlib.Path],
+        pathlib.Path | None,
         typer.Option(
             help="The path to a dg project directory containing DbtProjectComponents.",
         ),
@@ -1155,7 +1358,7 @@ def manage_state_command(
     deployment_name = location.deployment_name
     is_branch = location.is_branch_deployment
     if file:
-        contents = load_python_file(file, None)
+        contents = load_python_file(file, None, add_uuid_suffix=True)
         projects = find_objects_in_module_of_types(contents, DbtProject)
     elif components:
         from dagster_dbt.components.dbt_project.component import get_projects_from_dbt_component

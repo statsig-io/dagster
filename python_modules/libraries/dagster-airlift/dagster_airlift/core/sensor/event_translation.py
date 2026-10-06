@@ -1,6 +1,6 @@
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from typing import AbstractSet, Any, Callable, Union, cast  # noqa: UP035
+from typing import AbstractSet, Any, Callable, TypeAlias, cast  # noqa: UP035
 
 from dagster import (
     AssetMaterialization,
@@ -25,7 +25,7 @@ from dagster_airlift.core.airflow_defs_data import AirflowDefinitionsData
 from dagster_airlift.core.runtime_representations import DagRun, TaskInstance
 from dagster_airlift.core.serialization.serialized_data import DagHandle
 
-AssetEvent = Union[AssetMaterialization, AssetObservation, AssetCheckEvaluation]
+AssetEvent: TypeAlias = AssetMaterialization | AssetObservation | AssetCheckEvaluation
 DagsterEventTransformerFn = Callable[
     [SensorEvaluationContext, AirflowDefinitionsData, Sequence[AssetMaterialization]],
     Iterable[AssetEvent],
@@ -176,13 +176,12 @@ def synthetic_mats_for_task_instance(
 def synthetic_mats_for_mapped_asset_keys(
     dag_run: DagRun, task_instance: TaskInstance, asset_keys: AbstractSet[AssetKey]
 ) -> Sequence[AssetMaterialization]:
-    mats = []
-    for asset_key in asset_keys:
-        mats.append(
-            AssetMaterialization(
-                asset_key=asset_key,
-                description=task_instance.note,
-                metadata=get_task_instance_metadata(dag_run, task_instance),
-            )
+    mats = [
+        AssetMaterialization(
+            asset_key=asset_key,
+            description=task_instance.note,
+            metadata=get_task_instance_metadata(dag_run, task_instance),
         )
+        for asset_key in asset_keys
+    ]
     return mats
