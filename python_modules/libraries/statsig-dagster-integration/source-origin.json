@@ -1,0 +1,24 @@
+{
+  "commit": "8c8a5b21139b840d8d8636ac21e07deb437fe222",
+  "repository": "statsig-io/kelp",
+  "source_files": {
+    "build-requirements.txt": "d8f1683fa5fe7b1eb09e0373310ed203a39016f195017a5402fbc733c6a05952",
+    "statsig_dagster_daemon/cli.py": "fd72fe226d08f1d1c78c561e057312a020f45b5dfc7eb92349e774cc5998ccef",
+    "statsig_dagster_daemon/compat.py": "cf2aaaf0eb7a11f2f1261a4dd8b85acbc46232c61eda29c6e2b46eacef52f541",
+    "statsig_dagster_daemon/retries.py": "f05f5b943455aec629b1b93f834d4e629d7501bd2e267c74223e6526ff293c3a",
+    "statsig_dagster_daemon/storage.py": "d6ed153e4cfd973d5da60b761d0179a450ff3c9b71585120a05afe7b4f0545a1",
+    "statsig_dagster_daemon/telemetry.py": "e5502830a0e9b286ea84096426d474c9e786b0f5b14dad08c53a313f1f9fec08",
+    "test-requirements.txt": "42b132760e8ac587f5b4ebb3b3d4bbea9bc12ebe357377c1a71e6c2b6f06da23",
+    "tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/conftest.py": "5670aa04828cc505c85ddfb58fdabcd6e36f0fbffa20aefd9610a2708d74ffb6",
+    "tests/run_fixture.py": "7574ef20c38b3a832118df47754f95b057a0d28a6b216cf87e64709926263374",
+    "tests/test_cli.py": "daf831c3e69c04de61dbc6457a8396d9c96ed6dda501bc78728449e794c5e8b6",
+    "tests/test_postgres.py": "f2be06d3f658fb68909833c997175972cc0f081bc28e95217a1eff201569db57",
+    "tests/test_runtime.py": "c4209d46980982904505697fda2aae9322f186d0b9af82d70e139d5c7af84915",
+    "tests/test_scheduler.py": "53fc5cf4dc5b2a159cb433ae496157a3b144e39d00ea8433735ed2cb77605628",
+    "tests/test_telemetry.py": "c3cc0901a4005c3e11fa1475a73cc931fb6d34e3acb91bea453418ffdcb46a5f",
+    "tests/test_webserver.py": "dcbd8175348a0a3a931df43129f0c859c29712ca5af406949966235dbd5d1a13"
+  },
+  "target_postgres": "0.29.25",
+  "target_sdk": "1.13.25"
+}
