@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Annotated, Optional
+from typing import TYPE_CHECKING, Annotated
 
 import pytest
 from dagster_shared.check import CheckError
@@ -21,9 +21,9 @@ def test_basic():
     bar(1)
     bar(i=1)
     with pytest.raises(CheckError):
-        bar("1")  # type: ignore
+        bar("1")
     with pytest.raises(CheckError):
-        bar(i="1")  # type: ignore
+        bar(i="1")
 
 
 class Thing: ...
@@ -36,13 +36,13 @@ def test_many():
         nick_names: list[str],
         age: int,
         cool: bool,
-        thing: Optional[Thing],
+        thing: Thing | None,
         other_thing: Thing,
         percent: float,
-        o_s: Optional[str],
-        o_n: Optional[int],
-        o_f: Optional[float],
-        o_b: Optional[bool],
+        o_s: str | None,
+        o_n: int | None,
+        o_f: float | None,
+        o_b: bool | None,
         foos: list[Annotated["TestType", ImportFrom("dagster_shared.utils.test")]],
     ):
         return True
@@ -81,7 +81,7 @@ def test_many():
             percent=0.5,
             o_s="x",
             o_n=3,
-            o_f="surprise_not_float",  # type: ignore
+            o_f="surprise_not_float",
             o_b=None,
             foos=[],
         )
@@ -105,7 +105,7 @@ def test_star():
 
     baz(i=1)
     with pytest.raises(CheckError):
-        baz(i="1")  # type: ignore
+        baz(i="1")
 
 
 def test_partial():
@@ -140,15 +140,15 @@ def test_class():
 
     f.yell("HI")
     with pytest.raises(CheckError):
-        f.yell(3)  # type: ignore
+        f.yell(3)
 
     Foo.holler("hi")
     with pytest.raises(CheckError):
-        Foo.holler(3)  # type: ignore
+        Foo.holler(3)
 
     Foo.scream("hi")
     with pytest.raises(CheckError):
-        Foo.scream(3)  # type: ignore
+        Foo.scream(3)
 
 
 def test_defaults():

@@ -1,5 +1,5 @@
 import time
-from typing import Union, cast
+from typing import cast
 
 import dagster._check as check
 import requests
@@ -14,17 +14,18 @@ from dagster._core.storage.dagster_run import DagsterRunStatus
 from dagster._time import get_current_timestamp
 
 
-def start_run_and_wait_for_completion(dag_id: str) -> None:
+def start_run_and_wait_for_completion(dag_id: str, timeout: int = 60) -> None:
     response = requests.post(
         f"http://localhost:8080/api/v1/dags/{dag_id}/dagRuns",
         auth=("admin", "admin"),
         json={},
     )
     assert response.status_code == 200, response.json()
-    # Wait until the run enters a terminal state
+    # Wait until the run enters a terminal state. Timeout is 60s (not 30s) to tolerate slow CI;
+    # see dagster-airlift kitchen-sink fixes that bumped these same polls from 30s to 60s.
     terminal_status = None
     start_time = get_current_timestamp()
-    while get_current_timestamp() - start_time < 30:
+    while get_current_timestamp() - start_time < timeout:
         response = requests.get(
             f"http://localhost:8080/api/v1/dags/{dag_id}/dagRuns",
             auth=("admin", "admin"),
@@ -44,7 +45,7 @@ def start_run_and_wait_for_completion(dag_id: str) -> None:
 
 def poll_for_materialization(
     instance: DagsterInstance,
-    target: Union[AssetKey, list[AssetKey]],
+    target: AssetKey | list[AssetKey],
     timeout: int = 60,
     poll_interval: int = 3,
 ) -> dict[AssetKey, EventLogEntry]:

@@ -32,7 +32,7 @@ def test_static_partition_string_input() -> None:
 
 
 def test_invalid_partition_key():
-    with pytest.raises(dg.DagsterInvalidDefinitionError, match="'...'"):
+    with pytest.raises(dg.DagsterInvalidDefinitionError, match=r"'...'"):
         dg.StaticPartitionsDefinition(["foo", "foo...bar"])
 
 
@@ -98,7 +98,7 @@ def test_unique_identifier():
         identifier1 = dynamic_def.get_serializable_unique_identifier(
             dynamic_partitions_store=instance
         )
-        instance.add_dynamic_partitions(dynamic_def.name, ["bar"])  # pyright: ignore[reportArgumentType]
+        instance.add_dynamic_partitions(dynamic_def.name, ["bar"])  # ty: ignore[invalid-argument-type]
         assert identifier1 != dynamic_def.get_serializable_unique_identifier(
             dynamic_partitions_store=instance
         )
@@ -108,7 +108,7 @@ def test_unique_identifier():
             {"a": dg.StaticPartitionsDefinition(["a", "b", "c"]), "b": dynamic_dimension_def}
         )
         serializable_unique_id = multipartitions_def.get_serializable_unique_identifier()
-        instance.add_dynamic_partitions(dynamic_dimension_def.name, ["apple"])  # pyright: ignore[reportArgumentType]
+        instance.add_dynamic_partitions(dynamic_dimension_def.name, ["apple"])  # ty: ignore[invalid-argument-type]
         assert serializable_unique_id != multipartitions_def.get_serializable_unique_identifier()
 
     assert (
@@ -148,10 +148,10 @@ def test_static_partitions_subset():
     assert len(subset) == 0
     assert "bar" not in subset
     with_some_partitions = subset.with_partition_keys(["foo", "bar"])
-    assert with_some_partitions.get_partition_keys_not_in_subset(partitions) == {"baz", "qux"}
+    assert with_some_partitions.get_partition_keys_not_in_subset(partitions) == ["baz", "qux"]
     serialized = with_some_partitions.serialize()
     deserialized = partitions.deserialize_subset(serialized)
-    assert deserialized.get_partition_keys_not_in_subset(partitions) == {"baz", "qux"}
+    assert deserialized.get_partition_keys_not_in_subset(partitions) == ["baz", "qux"]
     assert len(with_some_partitions) == 2
     assert len(deserialized) == 2
     assert "bar" in with_some_partitions
@@ -166,7 +166,7 @@ def test_static_partitions_subset_identical_serialization():
     reverse_order_subset = partitions.subset_with_partition_keys(reversed(subset))
 
     assert in_order_subset.serialize() == reverse_order_subset.serialize()
-    assert dg.serialize_value(in_order_subset) == dg.serialize_value(reverse_order_subset)  # pyright: ignore[reportArgumentType]
+    assert dg.serialize_value(in_order_subset) == dg.serialize_value(reverse_order_subset)  # ty: ignore[invalid-argument-type]
 
 
 def test_static_partitions_invalid_chars():

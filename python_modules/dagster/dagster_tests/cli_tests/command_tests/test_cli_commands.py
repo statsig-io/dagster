@@ -3,7 +3,7 @@ import string
 import sys
 import tempfile
 from contextlib import contextmanager
-from typing import Any, ContextManager, Iterator, NoReturn, Optional  # noqa: UP035
+from typing import Any, ContextManager, Iterator, NoReturn, TypeAlias  # noqa: UP035
 from unittest import mock
 
 import dagster as dg
@@ -24,7 +24,6 @@ from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._grpc.server import GrpcServerProcess
 from dagster._utils.merger import merge_dicts
 from dagster.version import __version__
-from typing_extensions import TypeAlias
 
 ParsedCliArgs: TypeAlias = dict[str, Any]
 
@@ -76,7 +75,7 @@ qux_job = qux.to_job(
 )
 
 
-@dg.job(executor_def=in_process_executor)
+@dg.job(executor_def=in_process_executor, name="quux")
 def quux_job():
     do_something_op()
 
@@ -157,7 +156,7 @@ def define_bar_sensors():
         run_config = {"foo": "FOO"}
         if context.last_tick_completion_time:
             run_config["since"] = context.last_tick_completion_time
-        return dg.RunRequest(run_key=None, run_config=run_config)
+        return dg.RunRequest(run_key="the_key", run_config=run_config)
 
     return {"foo_sensor": foo_sensor}
 
@@ -281,7 +280,7 @@ def args_with_default_cli_test_instance(*args):
 
 @contextmanager
 def grpc_server_bar_parsed_cli_args(
-    instance: DagsterInstance, job_name: Optional[str] = None
+    instance: DagsterInstance, job_name: str | None = None
 ) -> Iterator[ParsedCliArgs]:
     with GrpcServerProcess(
         instance_ref=instance.get_ref(),
@@ -375,7 +374,7 @@ def scheduler_instance(overrides=None):
             overrides=merge_dicts(
                 {
                     "scheduler": {
-                        "module": "dagster.utils.test",
+                        "module": "dagster._utils.test",
                         "class": "FilesystemTestScheduler",
                         "config": {"base_dir": temp_dir},
                     }

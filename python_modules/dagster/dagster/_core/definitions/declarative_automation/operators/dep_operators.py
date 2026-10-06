@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, AbstractSet, Any, Generic, Optional, Union  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Any, Generic  # noqa: UP035
 
 from dagster_shared.serdes import whitelist_for_serdes
 from typing_extensions import Self
@@ -8,7 +8,8 @@ from typing_extensions import Self
 import dagster._check as check
 from dagster._annotations import public
 from dagster._core.asset_graph_view.asset_graph_view import U_EntityKey
-from dagster._core.definitions.asset_key import AssetKey, T_EntityKey
+from dagster._core.asset_graph_view.timing_metadata import TimingMetadata
+from dagster._core.definitions.asset_key import AssetKey, EntityKey, T_EntityKey
 from dagster._core.definitions.assets.graph.base_asset_graph import BaseAssetGraph, BaseAssetNode
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
@@ -22,6 +23,7 @@ from dagster._record import copy, record
 from dagster._utils.security import non_secure_md5_hash_str
 
 if TYPE_CHECKING:
+    from dagster._core.asset_graph_view.entity_subset import EntitySubset
     from dagster._core.definitions.asset_selection import AssetSelection
 
 
@@ -35,27 +37,27 @@ class EntityMatchesCondition(
 
     @property
     def name(self) -> str:
-        return self.key.to_user_string()
+        return self.key.to_user_string()  # ty: ignore[invalid-argument-type]
 
     @property
     def children(self) -> Sequence[AutomationCondition]:
         return [self.operand]
 
-    async def evaluate(  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def evaluate(  # ty: ignore[invalid-method-override]
         self, context: AutomationContext[T_EntityKey]
     ) -> AutomationResult[T_EntityKey]:
         # if the key we're mapping to is a child of the key we're mapping from and is not
         # self-dependent, use the downstream mapping function, otherwise use upstream
         if (
-            self.key in context.asset_graph.get(context.key).child_entity_keys
+            self.key in context.asset_graph.get(context.key).child_entity_keys  # ty: ignore[no-matching-overload]
             and self.key != context.key
         ):
-            directions = ("down", "up")
+            to_direction, from_direction = "down", "up"
         else:
-            directions = ("up", "down")
+            to_direction, from_direction = "up", "down"
 
         to_candidate_subset = context.candidate_subset.compute_mapped_subset(
-            self.key, direction=directions[0]
+            self.key, direction=to_direction
         )
         to_context = context.for_child_condition(
             child_condition=self.operand,
@@ -66,17 +68,34 @@ class EntityMatchesCondition(
         to_result = await to_context.evaluate_async()
 
         true_subset = to_result.true_subset.compute_mapped_subset(
-            context.key, direction=directions[1]
+            context.key, direction=from_direction
         )
-        return AutomationResult(context=context, true_subset=true_subset, child_results=[to_result])
+
+        # Propagate timing metadata by mapping each timestamp's subset
+        child_timing = to_result.timing_metadata
+        mapped_timing = None
+        if child_timing:
+            mapped_timing = TimingMetadata(
+                timestamps={
+                    ts: sub.compute_mapped_subset(context.key, direction=from_direction)
+                    for ts, sub in child_timing.timestamps.items()
+                }
+            )
+
+        return AutomationResult(
+            context=context,
+            true_subset=true_subset,
+            child_results=[to_result],
+            timing_metadata=mapped_timing,
+        )
 
     @public
     def replace(
-        self, old: Union[AutomationCondition, str], new: T_AutomationCondition
-    ) -> Union[Self, T_AutomationCondition]:
+        self, old: AutomationCondition | str, new: T_AutomationCondition
+    ) -> Self | T_AutomationCondition:
         """Replaces all instances of ``old`` across any sub-conditions with ``new``.
 
-        If ``old`` is a string, then conditions with a label matching
+        If ``old`` is a string, then conditions with a label or name matching
         that string will be replaced.
 
         Args:
@@ -85,7 +104,7 @@ class EntityMatchesCondition(
         """
         return (
             new
-            if old in [self, self.get_label()]
+            if old in [self, self.name, self.get_label()]
             else copy(self, operand=self.operand.replace(old, new))
         )
 
@@ -95,8 +114,10 @@ class DepsAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
     operand: AutomationCondition
 
     # Should be AssetSelection, but this causes circular reference issues
-    allow_selection: Optional[Any] = None
-    ignore_selection: Optional[Any] = None
+    allow_selection: Any | None = None
+    ignore_selection: Any | None = None
+
+    resolves_virtual_deps: bool = False
 
     @property
     @abstractmethod
@@ -110,6 +131,8 @@ class DepsAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
             props.append(f"allow_selection={self.allow_selection}")
         if self.ignore_selection is not None:
             props.append(f"ignore_selection={self.ignore_selection}")
+        if self.resolves_virtual_deps:
+            props.append("resolves_virtual_deps=True")
 
         if props:
             name += f"({','.join(props)})"
@@ -123,16 +146,16 @@ class DepsAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
     def requires_cursor(self) -> bool:
         return False
 
-    def get_node_unique_id(self, *, parent_unique_id: Optional[str], index: Optional[int]) -> str:
+    def get_node_unique_id(
+        self,
+        *,
+        parent_unique_id: str | None,
+        index: int | None,
+        target_key: EntityKey | None,
+    ) -> str:
         """Ignore allow_selection / ignore_selection for the cursor hash."""
         parts = [str(parent_unique_id), str(index), self.base_name]
         return non_secure_md5_hash_str("".join(parts).encode())
-
-    def get_backcompat_node_unique_ids(
-        self, *, parent_unique_id: Optional[str] = None, index: Optional[int] = None
-    ) -> Sequence[str]:
-        # backcompat for previous cursors where the allow/ignore selection influenced the hash
-        return [super().get_node_unique_id(parent_unique_id=parent_unique_id, index=index)]
 
     @public
     def allow(self, selection: "AssetSelection") -> "DepsAutomationCondition":
@@ -160,23 +183,43 @@ class DepsAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
         )
         return copy(self, ignore_selection=ignore_selection)
 
+    def resolve_through_virtual(self, value: bool = True) -> "DepsAutomationCondition":
+        return copy(self, resolves_virtual_deps=value)
+
     def _get_dep_keys(
         self, key: T_EntityKey, asset_graph: BaseAssetGraph[BaseAssetNode]
     ) -> AbstractSet[AssetKey]:
-        dep_keys = asset_graph.get(key).parent_entity_keys
+        dep_keys = (
+            set(asset_graph.get_non_virtual_ancestor_keys(key))  # ty: ignore[invalid-argument-type]
+            if self.resolves_virtual_deps
+            else {k for k in asset_graph.get(key).parent_entity_keys if isinstance(k, AssetKey)}
+        )
         if self.allow_selection is not None:
             dep_keys &= self.allow_selection.resolve(asset_graph, allow_missing=True)
         if self.ignore_selection is not None:
             dep_keys -= self.ignore_selection.resolve(asset_graph, allow_missing=True)
         return dep_keys
 
+    def _merge_timing_metadata(
+        self,
+        results: Sequence[AutomationResult[T_EntityKey]],
+    ) -> TimingMetadata[T_EntityKey] | None:
+        """Merge timing metadata across multiple dep results by unioning subsets per timestamp."""
+        merged: dict[float, EntitySubset[T_EntityKey]] = {}
+        for result in results:
+            if not result.timing_metadata:
+                continue
+            for ts, sub in result.timing_metadata.timestamps.items():
+                merged[ts] = merged[ts].compute_union(sub) if ts in merged else sub
+        return TimingMetadata(timestamps=merged) if merged else None
+
     @public
     def replace(
-        self, old: Union[AutomationCondition, str], new: T_AutomationCondition
-    ) -> Union[Self, T_AutomationCondition]:
+        self, old: AutomationCondition | str, new: T_AutomationCondition
+    ) -> Self | T_AutomationCondition:
         """Replaces all instances of ``old`` across any sub-conditions with ``new``.
 
-        If ``old`` is a string, then conditions with a label matching
+        If ``old`` is a string, then conditions with a label or name matching
         that string will be replaced.
 
         Args:
@@ -185,7 +228,7 @@ class DepsAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
         """
         return (
             new
-            if old in [self, self.get_label()]
+            if old in [self, self.name, self.get_label()]
             else copy(self, operand=self.operand.replace(old, new))
         )
 
@@ -200,7 +243,7 @@ class AnyDepsCondition(DepsAutomationCondition[T_EntityKey]):
     def operator_type(self) -> OperatorType:
         return "or"
 
-    async def evaluate(  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def evaluate(  # ty: ignore[invalid-method-override]
         self, context: AutomationContext[T_EntityKey]
     ) -> AutomationResult[T_EntityKey]:
         dep_results = []
@@ -213,13 +256,19 @@ class AnyDepsCondition(DepsAutomationCondition[T_EntityKey]):
                     None,
                     i,
                 ],
-                candidate_subset=context.candidate_subset,
+                candidate_subset=context.candidate_subset,  # ty: ignore[invalid-argument-type]
             ).evaluate_async()
             dep_results.append(dep_result)
-            true_subset = true_subset.compute_union(dep_result.true_subset)
+            true_subset = true_subset.compute_union(dep_result.true_subset)  # ty: ignore[invalid-argument-type]
 
         true_subset = context.candidate_subset.compute_intersection(true_subset)
-        return AutomationResult(context, true_subset=true_subset, child_results=dep_results)
+
+        return AutomationResult(
+            context,
+            true_subset=true_subset,  # ty: ignore[invalid-argument-type]
+            child_results=dep_results,
+            timing_metadata=self._merge_timing_metadata(dep_results),  # ty: ignore[invalid-argument-type]
+        )
 
 
 @whitelist_for_serdes
@@ -232,7 +281,7 @@ class AllDepsCondition(DepsAutomationCondition[T_EntityKey]):
     def operator_type(self) -> OperatorType:
         return "and"
 
-    async def evaluate(  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def evaluate(  # ty: ignore[invalid-method-override]
         self, context: AutomationContext[T_EntityKey]
     ) -> AutomationResult[T_EntityKey]:
         dep_results = []
@@ -245,9 +294,9 @@ class AllDepsCondition(DepsAutomationCondition[T_EntityKey]):
                     None,
                     i,
                 ],
-                candidate_subset=context.candidate_subset,
+                candidate_subset=context.candidate_subset,  # ty: ignore[invalid-argument-type]
             ).evaluate_async()
             dep_results.append(dep_result)
-            true_subset = true_subset.compute_intersection(dep_result.true_subset)
+            true_subset = true_subset.compute_intersection(dep_result.true_subset)  # ty: ignore[invalid-argument-type]
 
-        return AutomationResult(context, true_subset=true_subset, child_results=dep_results)
+        return AutomationResult(context, true_subset=true_subset, child_results=dep_results)  # ty: ignore[invalid-argument-type]

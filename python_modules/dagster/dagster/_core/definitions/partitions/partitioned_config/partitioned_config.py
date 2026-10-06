@@ -1,9 +1,9 @@
 import copy
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Generic, TypeAlias, Union, cast
 
-from typing_extensions import TypeAlias, TypeVar
+from typing_extensions import TypeVar
 
 import dagster._check as check
 from dagster._annotations import deprecated, deprecated_param, public
@@ -20,7 +20,7 @@ from dagster._utils.tags import normalize_tags
 if TYPE_CHECKING:
     from dagster._core.definitions.run_config import RunConfig
 
-PartitionConfigFn: TypeAlias = "Callable[[str], Union[RunConfig, Mapping[str, Any]]]"
+PartitionConfigFn: TypeAlias = "Callable[[str], RunConfig | Mapping[str, Any]]"
 T_PartitionsDefinition = TypeVar(
     "T_PartitionsDefinition",
     bound="PartitionsDefinition",
@@ -29,6 +29,7 @@ T_PartitionsDefinition = TypeVar(
 )
 
 
+@public
 @deprecated_param(
     param="run_config_for_partition_fn",
     breaking_version="2.0",
@@ -50,11 +51,11 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
     def __init__(
         self,
         partitions_def: T_PartitionsDefinition,
-        run_config_for_partition_fn: Optional[Callable[[Partition], Mapping[str, Any]]] = None,
-        decorated_fn: Optional[Callable[..., Union["RunConfig", Mapping[str, Any]]]] = None,
-        tags_for_partition_fn: Optional[Callable[[Partition[Any]], Mapping[str, str]]] = None,
-        run_config_for_partition_key_fn: Optional[PartitionConfigFn] = None,
-        tags_for_partition_key_fn: Optional[Callable[[str], Mapping[str, str]]] = None,
+        run_config_for_partition_fn: Callable[[Partition], Mapping[str, Any]] | None = None,
+        decorated_fn: Callable[..., Union["RunConfig", Mapping[str, Any]]] | None = None,
+        tags_for_partition_fn: Callable[[Partition[Any]], Mapping[str, str]] | None = None,
+        run_config_for_partition_key_fn: "PartitionConfigFn | None" = None,
+        tags_for_partition_key_fn: Callable[[str], Mapping[str, str]] | None = None,
     ):
         self._partitions = check.inst_param(partitions_def, "partitions_def", PartitionsDefinition)
         self._decorated_fn = decorated_fn
@@ -98,7 +99,7 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
     @property
     def run_config_for_partition_fn(
         self,
-    ) -> Optional[Callable[[Partition], Mapping[str, Any]]]:
+    ) -> Callable[[Partition], Mapping[str, Any]] | None:
         """Optional[Callable[[Partition], Mapping[str, Any]]]: A function that accepts a partition
         and returns a dictionary representing the config to attach to runs for that partition.
         Deprecated as of 1.3.3.
@@ -109,7 +110,7 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
     @property
     def run_config_for_partition_key_fn(
         self,
-    ) -> Optional[PartitionConfigFn]:
+    ) -> "PartitionConfigFn | None":
         """Optional[Callable[[str], Union[RunConfig, Mapping[str, Any]]]]: A function that accepts a partition key
         and returns a dictionary representing the config to attach to runs for that partition.
         """
@@ -120,7 +121,7 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
     )
     @public
     @property
-    def tags_for_partition_fn(self) -> Optional[Callable[[Partition], Mapping[str, str]]]:
+    def tags_for_partition_fn(self) -> Callable[[Partition], Mapping[str, str]] | None:
         """Optional[Callable[[Partition], Mapping[str, str]]]: A function that
         accepts a partition and returns a dictionary of tags to attach to runs for
         that partition. Deprecated as of 1.3.3.
@@ -131,7 +132,7 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
     @property
     def tags_for_partition_key_fn(
         self,
-    ) -> Optional[Callable[[str], Mapping[str, str]]]:
+    ) -> Callable[[str], Mapping[str, str]] | None:
         """Optional[Callable[[str], Mapping[str, str]]]: A function that
         accepts a partition key and returns a dictionary of tags to attach to runs for
         that partition.
@@ -139,7 +140,7 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
         return self._tags_for_partition_key_fn
 
     @public
-    def get_partition_keys(self, current_time: Optional[datetime] = None) -> Sequence[str]:
+    def get_partition_keys(self, current_time: datetime | None = None) -> Sequence[str]:
         """Returns a list of partition keys, representing the full set of partitions that
         config can be applied to.
 
@@ -180,7 +181,7 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
     def get_tags_for_partition_key(
         self,
         partition_key: str,
-        job_name: Optional[str] = None,
+        job_name: str | None = None,
     ) -> Mapping[str, str]:
         from dagster._core.remote_representation.external_data import (
             partition_set_snap_name_for_job_name,
@@ -211,7 +212,7 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
     @classmethod
     def from_flexible_config(
         cls,
-        config: Optional[Union[ConfigMapping, Mapping[str, object], "PartitionedConfig"]],
+        config: Union[ConfigMapping, Mapping[str, object], "PartitionedConfig"] | None,
         partitions_def: PartitionsDefinition,
     ) -> "PartitionedConfig":
         check.invariant(
@@ -229,7 +230,7 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
         else:
             hardcoded_config = config if config else {}
             return cls(
-                partitions_def,  # type: ignore # ignored for update, fix me!
+                partitions_def,  # ignored for update, fix me!
                 run_config_for_partition_key_fn=lambda _: cast("Mapping", hardcoded_config),
             )
 
@@ -245,7 +246,7 @@ class PartitionedConfig(Generic[T_PartitionsDefinition]):
 
 def partitioned_config(
     partitions_def: PartitionsDefinition,
-    tags_for_partition_key_fn: Optional[Callable[[str], Mapping[str, str]]] = None,
+    tags_for_partition_key_fn: Callable[[str], Mapping[str, str]] | None = None,
 ) -> Callable[[PartitionConfigFn], PartitionedConfig]:
     """Creates a partitioned config for a job given a PartitionsDefinition.
 

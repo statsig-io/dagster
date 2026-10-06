@@ -9,7 +9,14 @@ import dagster._check as check
 from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView, TemporalContext
 from dagster._core.asset_graph_view.entity_subset import EntitySubset
 from dagster._core.definitions.asset_daemon_cursor import AssetDaemonCursor
-from dagster._core.definitions.asset_key import AssetCheckKey, AssetKey, EntityKey, T_EntityKey
+from dagster._core.definitions.asset_key import (
+    AssetCheckKey,
+    AssetJobKey,
+    AssetKey,
+    AssetOrCheckKey,
+    EntityKey,
+    T_EntityKey,
+)
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
     AutomationResult,
@@ -36,7 +43,9 @@ if TYPE_CHECKING:
 
 T_StructuredCursor = TypeVar("T_StructuredCursor", bound=StructuredCursor)
 
-U_EntityKey = TypeVar("U_EntityKey", AssetKey, AssetCheckKey)
+U_EntityKey = TypeVar(
+    "U_EntityKey", AssetKey, AssetCheckKey, AssetJobKey, AssetOrCheckKey, EntityKey
+)
 
 
 def _has_legacy_condition(condition: AutomationCondition):
@@ -49,6 +58,7 @@ def _has_legacy_condition(condition: AutomationCondition):
 
 @dataclass(frozen=True)
 class AutomationContext(Generic[T_EntityKey]):
+    evaluation_id: int
     condition: AutomationCondition
     condition_unique_ids: Sequence[str]
     candidate_subset: EntitySubset[T_EntityKey]
@@ -60,9 +70,9 @@ class AutomationContext(Generic[T_EntityKey]):
 
     parent_context: Optional["AutomationContext"]
 
-    _cursor: Optional[AutomationConditionCursor]
+    _cursor: AutomationConditionCursor | None
     _full_cursor: AssetDaemonCursor
-    _legacy_context: Optional[LegacyRuleEvaluationContext]
+    _legacy_context: LegacyRuleEvaluationContext | None
 
     _root_log: logging.Logger
 
@@ -72,7 +82,9 @@ class AutomationContext(Generic[T_EntityKey]):
         condition = check.not_none(
             evaluator.asset_graph.get(key).automation_condition or evaluator.default_condition
         )
-        unique_ids = condition.get_node_unique_ids(parent_unique_ids=[None], child_indices=[None])
+        unique_ids = condition.get_node_unique_ids(
+            parent_unique_ids=[None], child_indices=[None], target_key=None
+        )
 
         return AutomationContext(
             condition=condition,
@@ -82,6 +94,7 @@ class AutomationContext(Generic[T_EntityKey]):
             asset_graph_view=asset_graph_view,
             request_subsets_by_key=evaluator.request_subsets_by_key,
             parent_context=None,
+            evaluation_id=evaluator.evaluation_id,
             _cursor=evaluator.cursor.get_previous_condition_cursor(key),
             _full_cursor=evaluator.cursor,
             _legacy_context=LegacyRuleEvaluationContext.create(key, evaluator)
@@ -93,13 +106,17 @@ class AutomationContext(Generic[T_EntityKey]):
     def for_child_condition(
         self,
         child_condition: AutomationCondition[U_EntityKey],
-        child_indices: Sequence[Optional[int]],
+        child_indices: Sequence[int | None],
         candidate_subset: EntitySubset[U_EntityKey],
     ) -> "AutomationContext[U_EntityKey]":
         check.invariant(len(child_indices) > 0, "Must be at least one child index")
 
         unique_ids = child_condition.get_node_unique_ids(
-            parent_unique_ids=self.condition_unique_ids, child_indices=child_indices
+            parent_unique_ids=self.condition_unique_ids,
+            child_indices=child_indices,
+            target_key=candidate_subset.key
+            if candidate_subset.key != self.root_context.key
+            else None,
         )
         return AutomationContext(
             condition=child_condition,
@@ -109,6 +126,7 @@ class AutomationContext(Generic[T_EntityKey]):
             asset_graph_view=self.asset_graph_view,
             request_subsets_by_key=self.request_subsets_by_key,
             parent_context=self,
+            evaluation_id=self.evaluation_id,
             _cursor=self._cursor,
             _full_cursor=self._full_cursor,
             _legacy_context=self._legacy_context.for_child(
@@ -139,7 +157,7 @@ class AutomationContext(Generic[T_EntityKey]):
         return self.candidate_subset.key
 
     @property
-    def partitions_def(self) -> Optional[PartitionsDefinition]:
+    def partitions_def(self) -> PartitionsDefinition | None:
         """The partitions definition for the asset being evaluated, if it exists."""
         if isinstance(self.key, AssetKey):
             return self.asset_graph.get(self.key).partitions_def
@@ -152,7 +170,7 @@ class AutomationContext(Generic[T_EntityKey]):
         return self.parent_context.root_context if self.parent_context is not None else self
 
     @property
-    def _node_cursor(self) -> Optional[AutomationConditionNodeCursor]:
+    def _node_cursor(self) -> AutomationConditionNodeCursor | None:
         """Returns the evaluation node for this node from the previous evaluation, if this node
         was evaluated on the previous tick.
         """
@@ -172,12 +190,12 @@ class AutomationContext(Generic[T_EntityKey]):
         return None
 
     @property
-    def cursor(self) -> Optional[str]:
+    def cursor(self) -> str | None:
         """The cursor value returned on the previous evaluation for this condition, if any."""
         return self._node_cursor.get_structured_cursor(as_type=str) if self._node_cursor else None
 
     @property
-    def previous_true_subset(self) -> Optional[EntitySubset[T_EntityKey]]:
+    def previous_true_subset(self) -> EntitySubset[T_EntityKey] | None:
         """Returns the true subset for this node from the previous evaluation, if this node was
         evaluated on the previous tick.
         """
@@ -188,7 +206,7 @@ class AutomationContext(Generic[T_EntityKey]):
         )
 
     @property
-    def previous_metadata(self) -> Optional[MetadataMapping]:
+    def previous_metadata(self) -> MetadataMapping | None:
         """Returns the metadata for this node from the previous evaluation, if this node was
         evaluated on the previous tick.
         """
@@ -200,7 +218,7 @@ class AutomationContext(Generic[T_EntityKey]):
         return self.asset_graph_view.effective_dt
 
     @property
-    def max_storage_id(self) -> Optional[int]:
+    def max_storage_id(self) -> int | None:
         """A consistent maximum storage id to consider for all evaluations on this tick."""
         if self._legacy_context is not None:
             # legacy evaluations handle event log tailing in a different manner, and so need to
@@ -210,26 +228,19 @@ class AutomationContext(Generic[T_EntityKey]):
             return self.asset_graph_view.last_event_id
 
     @property
-    def previous_max_storage_id(self) -> Optional[int]:
+    def previous_max_storage_id(self) -> int | None:
         """The `max_storage_id` value used on the previous tick's evaluation."""
         return self._cursor.temporal_context.last_event_id if self._cursor else None
 
     @property
-    def previous_evaluation_time(self) -> Optional[datetime.datetime]:
+    def previous_evaluation_time(self) -> datetime.datetime | None:
         """The `evaluation_time` value used on the previous tick's evaluation."""
         return self._cursor.temporal_context.effective_dt if self._cursor else None
 
     @property
-    def previous_temporal_context(self) -> Optional[TemporalContext]:
+    def previous_temporal_context(self) -> TemporalContext | None:
         """The `temporal_context` value used on the previous tick's evaluation."""
         return self._cursor.temporal_context if self._cursor else None
-
-    @property
-    def evaluation_id(self) -> int:
-        """Returns the current evaluation ID. This ID is incremented for each tick
-        and is global across all conditions.
-        """
-        return self._full_cursor.evaluation_id
 
     @property
     def legacy_context(self) -> LegacyRuleEvaluationContext:
@@ -239,7 +250,7 @@ class AutomationContext(Generic[T_EntityKey]):
         )
 
     @property
-    def previous_candidate_subset(self) -> Optional[EntitySubset[T_EntityKey]]:
+    def previous_candidate_subset(self) -> EntitySubset[T_EntityKey] | None:
         """Returns the candidate subset for the previous evaluation. If this node has never been
         evaluated, returns None.
         """
@@ -253,9 +264,7 @@ class AutomationContext(Generic[T_EntityKey]):
                 else None
             )
 
-    def get_previous_requested_subset(
-        self, key: T_EntityKey
-    ) -> Optional[EntitySubset[T_EntityKey]]:
+    def get_previous_requested_subset(self, key: T_EntityKey) -> EntitySubset[T_EntityKey] | None:
         """Returns the requested subset for the previous evaluation. If the entity has never been
         evaluated, returns None.
         """
@@ -270,9 +279,7 @@ class AutomationContext(Generic[T_EntityKey]):
         """Returns an empty EntitySubset of the currently-evaluated key."""
         return self.asset_graph_view.get_empty_subset(key=self.key)
 
-    def get_structured_cursor(
-        self, as_type: type[T_StructuredCursor]
-    ) -> Optional[T_StructuredCursor]:
+    def get_structured_cursor(self, as_type: type[T_StructuredCursor]) -> T_StructuredCursor | None:
         return (
             self._node_cursor.get_structured_cursor(as_type=as_type) if self._node_cursor else None
         )

@@ -4,7 +4,9 @@ import sys
 import tempfile
 from time import sleep
 
+import pytest
 from dagster_pipes import (
+    DagsterPipesError,
     PipesDefaultLogWriter,
     PipesDefaultMessageWriter,
     PipesFileMessageWriterChannel,
@@ -41,7 +43,7 @@ def test_pipes_stdio_file_log_writer(capsys):
         assert set(os.listdir(tempdir)) == {"stderr", "stdout"}
 
         for stream in ["stdout", "stderr"]:
-            with open(os.path.join(tempdir, stream)) as stdout_file:
+            with open(os.path.join(tempdir, stream), encoding="utf-8") as stdout_file:
                 contents = stdout_file.read()
                 for i in range(1, 4):
                     assert f"Writing this to {stream} {i}" in contents
@@ -58,7 +60,7 @@ def test_pipes_default_log_writer(capsys):
         ):
             print("Writing this to stdout")  # noqa
             print("And this to stderr", file=sys.stderr)  # noqa
-        with open(file.name) as log_file:
+        with open(file.name, encoding="utf-8") as log_file:
             messages = log_file.read().splitlines()
 
             # it's hard to make exact assertions here
@@ -81,3 +83,9 @@ def test_pipes_default_log_writer(capsys):
 
             assert "Writing this to stdout" in stdout_text
             assert "And this to stderr" in stderr_text
+
+
+def test_default_writer_suggests_passing_a_writer_for_unknown_params():
+    with pytest.raises(DagsterPipesError, match="pass it as `message_writer`"):
+        with PipesDefaultMessageWriter().open({"bucket": "my-bucket"}):
+            pass

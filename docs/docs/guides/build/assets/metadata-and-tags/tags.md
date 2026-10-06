@@ -4,7 +4,7 @@ sidebar_position: 1000
 title: Tags
 ---
 
-**Tags** are the primary way to organize assets in Dagster. You can attach several tags to an asset when it's defined, and they will appear in the UI. You can also use tags to search and filter for assets in the [Asset catalog](/guides/build/assets/asset-catalog) in Dagster+. They're structured as key-value pairs of strings.
+**Tags** are the primary way to organize assets in Dagster. You can attach several tags to an asset when it's defined, and they will appear in the UI. You can also use tags to search and filter for assets in the [Asset catalog](/guides/observe/asset-catalog) in Dagster+. They're structured as key-value pairs of strings.
 
 Here's an example of some tags you might apply to an asset:
 
@@ -14,7 +14,7 @@ Here's an example of some tags you might apply to an asset:
 
 Like `owners`, just pass a dictionary of tags to the `tags` argument when defining an asset:
 
-<CodeExample path="docs_snippets/docs_snippets/guides/data-modeling/metadata/tags.py" language="python" title="src/<project_name>/defs/assets.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/build/assets/metadata/tags.py" language="python" title="src/<project_name>/defs/assets.py" />
 
 Keep in mind that tags must contain only strings as keys and values. Additionally, the Dagster UI will render tags with the empty string as a "label" rather than a key-value pair.
 
@@ -40,25 +40,13 @@ Tag values must:
 A label is a tag that only contains a key. To create a label, set the tag value to an empty string:
 
 ```python
-@dg.asset(
-    tags={"private":""}
-)
-def my_asset() -> None:
-    ...
+@dg.asset(tags={"private": ""})
+def my_asset() -> None: ...
 ```
 
 A label will look like the following in the UI:
 
 ![Label in UI](/images/guides/build/assets/metadata-tags/label-ui.png)
-
-### Customizing run execution with tags
-
-While tags are primarily used for labeling and organization, some run execution features are controlled using run tags:
-
-- [Customizing Kubernetes config](/deployment/oss/deployment-options/kubernetes/customizing-your-deployment)
-- [Specifying Celery config](/deployment/oss/deployment-options/kubernetes/kubernetes-and-celery)
-- [Setting concurrency limits when using the `QueuedRunCoordinator`](/guides/operate/managing-concurrency)
-- [Setting the priority of different runs](/deployment/execution/customizing-run-queue-priority)
 
 ### System tags
 
@@ -72,10 +60,12 @@ The following table lists tags which Dagster may automatically add to assets.
 
 ### Run tags
 
-The following table lists the tags Dagster will, on occasion, automatically add to runs.
+The following table lists the tags Dagster will automatically add to job runs when applicable:
 
 | Tag                     | Description                         |
 | ----------------------- | ----------------------------------- |
+| `dagster/code_location` | The code location of the run        |
+| `dagster/user`          | The user who executed the run.      |
 | `dagster/op_selection`  | The op selection for the run        |
 | `dagster/partition`     | The partition of the run            |
 | `dagster/schedule_name` | The schedule that triggered the run |
@@ -83,3 +73,12 @@ The following table lists the tags Dagster will, on occasion, automatically add 
 | `dagster/backfill`      | The backfill ID                     |
 | `dagster/parent_run_id` | The parent run of a re-executed run |
 | `dagster/image`         | The Docker image tag                |
+
+#### Customizing run execution with run tags
+
+While tags are primarily used for labeling and organization, some run execution features are controlled using run tags:
+
+- [Customizing Kubernetes config](/deployment/oss/deployment-options/kubernetes/customizing-your-deployment)
+- [Specifying Celery config](/deployment/oss/deployment-options/kubernetes/kubernetes-and-celery)
+- [Setting concurrency limits when using the `QueuedRunCoordinator`](/guides/operate/managing-concurrency)
+- [Setting the priority of different runs](/deployment/execution/customizing-run-queue-priority)

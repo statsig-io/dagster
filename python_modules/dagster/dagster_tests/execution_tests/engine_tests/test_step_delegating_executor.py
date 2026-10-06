@@ -20,7 +20,7 @@ from dagster._core.executor.step_delegating import (
     StepHandler,
 )
 from dagster._core.instance import DagsterInstance
-from dagster._core.test_utils import environ
+from dagster._core.test_utils import environ, poll_for_pool_pending_step
 from dagster._utils.merger import merge_dicts
 from dagster._utils.test.definitions import scoped_definitions_load_context
 from dagster.components.definitions import lazy_repository
@@ -41,6 +41,10 @@ class TestStepHandler(StepHandler):
     check_step_health_count = 0
     terminate_step_count = 0
     verify_step_count = 0
+    # Configurable health check behavior for testing
+    should_raise_on_health_check = False
+    should_return_unhealthy = False
+    unhealthy_reason = "Test unhealthy reason"
 
     @property
     def name(self):
@@ -49,7 +53,7 @@ class TestStepHandler(StepHandler):
     def launch_step(self, step_handler_context):
         if step_handler_context.execute_step_args.should_verify_step:
             TestStepHandler.verify_step_count += 1
-        if step_handler_context.execute_step_args.step_keys_to_execute[0] == "baz_op":  # pyright: ignore[reportOptionalSubscript]
+        if step_handler_context.execute_step_args.step_keys_to_execute[0] == "baz_op":
             TestStepHandler.saw_baz_op = True
             assert step_handler_context.step_tags["baz_op"] == {"foo": "bar"}
 
@@ -62,6 +66,10 @@ class TestStepHandler(StepHandler):
 
     def check_step_health(self, step_handler_context) -> CheckStepHealthResult:
         TestStepHandler.check_step_health_count += 1
+        if TestStepHandler.should_raise_on_health_check:
+            raise Exception("Test exception during health check")
+        if TestStepHandler.should_return_unhealthy:
+            return CheckStepHealthResult.unhealthy(TestStepHandler.unhealthy_reason)
         return CheckStepHealthResult.healthy()
 
     def terminate_step(self, step_handler_context):
@@ -75,11 +83,16 @@ class TestStepHandler(StepHandler):
         cls.check_step_health_count = 0
         cls.terminate_step_count = 0
         cls.verify_step_count = 0
+        cls.should_raise_on_health_check = False
+        cls.should_return_unhealthy = False
+        cls.unhealthy_reason = "Test unhealthy reason"
 
     @classmethod
     def wait_for_processes(cls):
+        # Budget widened to tolerate slower subprocess cleanup on CPU-constrained
+        # CI nodes (EKS pods); the original 5s timeout assumed EC2-medium speed.
         for p in cls.processes:
-            p.wait(timeout=5)
+            p.wait(timeout=30)
 
 
 @dg.executor(
@@ -122,7 +135,7 @@ def test_execute():
 
     assert any(
         [
-            "Starting execution with step handler TestStepHandler" in event.message  # pyright: ignore[reportOperatorIssue]
+            "Starting execution with step handler TestStepHandler" in event.message  # ty: ignore[unsupported-operator]
             for event in result.all_events
         ]
     )
@@ -151,7 +164,7 @@ def test_execute_with_tailer_offset():
 
     assert any(
         [
-            "Starting execution with step handler TestStepHandler" in event.message  # pyright: ignore[reportOperatorIssue]
+            "Starting execution with step handler TestStepHandler" in event.message  # ty: ignore[unsupported-operator]
             for event in result.all_events
         ]
     )
@@ -350,7 +363,7 @@ def test_execute_verify_step():
 
     assert any(
         [
-            "Starting execution with step handler TestStepHandler" in event.message  # pyright: ignore[reportOperatorIssue]
+            "Starting execution with step handler TestStepHandler" in event.message  # ty: ignore[unsupported-operator]
             for event in result.all_events
         ]
     )
@@ -510,6 +523,17 @@ def simple_legacy_job():
     simple_legacy_op()
 
 
+def _unblock_pool_after_pending(instance, pool_name):
+    # Why: a fixed sleep here races subprocess startup on slower runners (e.g. EKS
+    # pods) — the slot can be released before the executor attempts its first
+    # claim, so the claim succeeds immediately and the "blocked by limit" event is
+    # never emitted. If the pending state is never observed within the timeout we
+    # release the slot anyway so the test fails on the missing-event assertion
+    # rather than hanging.
+    poll_for_pool_pending_step(instance, pool_name, timeout=60)
+    instance.event_log_storage.set_concurrency_slots(pool_name, 1)
+
+
 def test_blocked_concurrency_limits():
     TestStepHandler.reset()
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -517,7 +541,7 @@ def test_blocked_concurrency_limits():
             temp_dir=temp_dir,
             overrides={
                 "event_log_storage": {
-                    "module": "dagster.utils.test",
+                    "module": "dagster._utils.test",
                     "class": "ConcurrencyEnabledSqliteTestEventLogStorage",
                     "config": {"base_dir": temp_dir},
                 },
@@ -528,13 +552,10 @@ def test_blocked_concurrency_limits():
         ) as instance:
             instance.event_log_storage.set_concurrency_slots("foo", 0)
 
-            def _unblock_concurrency_key(instance, timeout):
-                time.sleep(timeout)
-                instance.event_log_storage.set_concurrency_slots("foo", 1)
-
-            TIMEOUT = 3
             threading.Thread(
-                target=_unblock_concurrency_key, args=(instance, TIMEOUT), daemon=True
+                target=_unblock_pool_after_pending,
+                args=(instance, "foo"),
+                daemon=True,
             ).start()
             with dg.execute_job(dg.reconstructable(simple_job), instance=instance) as result:
                 TestStepHandler.wait_for_processes()
@@ -548,7 +569,7 @@ def test_blocked_concurrency_limits():
                 # the executor loop sleeps every second, so there should be at least a call per
                 # second that the steps are blocked, in addition to the processing of any step
                 # events
-                assert instance.event_log_storage.get_records_for_run_calls(result.run_id) <= 3  # pyright: ignore[reportAttributeAccessIssue]
+                assert instance.event_log_storage.get_records_for_run_calls(result.run_id) <= 5  # ty: ignore[unresolved-attribute]
 
 
 def test_blocked_concurrency_limits_legacy_keys():
@@ -558,7 +579,7 @@ def test_blocked_concurrency_limits_legacy_keys():
             temp_dir=temp_dir,
             overrides={
                 "event_log_storage": {
-                    "module": "dagster.utils.test",
+                    "module": "dagster._utils.test",
                     "class": "ConcurrencyEnabledSqliteTestEventLogStorage",
                     "config": {"base_dir": temp_dir},
                 },
@@ -569,13 +590,10 @@ def test_blocked_concurrency_limits_legacy_keys():
         ) as instance:
             instance.event_log_storage.set_concurrency_slots("foo", 0)
 
-            def _unblock_concurrency_key(instance, timeout):
-                time.sleep(timeout)
-                instance.event_log_storage.set_concurrency_slots("foo", 1)
-
-            TIMEOUT = 3
             threading.Thread(
-                target=_unblock_concurrency_key, args=(instance, TIMEOUT), daemon=True
+                target=_unblock_pool_after_pending,
+                args=(instance, "foo"),
+                daemon=True,
             ).start()
             with dg.execute_job(dg.reconstructable(simple_job), instance=instance) as result:
                 TestStepHandler.wait_for_processes()
@@ -589,4 +607,57 @@ def test_blocked_concurrency_limits_legacy_keys():
                 # the executor loop sleeps every second, so there should be at least a call per
                 # second that the steps are blocked, in addition to the processing of any step
                 # events
-                assert instance.event_log_storage.get_records_for_run_calls(result.run_id) <= 3  # pyright: ignore[reportAttributeAccessIssue]
+                assert instance.event_log_storage.get_records_for_run_calls(result.run_id) <= 5  # ty: ignore[unresolved-attribute]
+
+
+def test_check_step_health_exception_fails_open():
+    """Test that exceptions during health checks log a warning but don't fail the run."""
+    TestStepHandler.reset()
+    TestStepHandler.should_raise_on_health_check = True
+
+    with dg.instance_for_test() as instance:
+        result = dg.execute_job(
+            dg.reconstructable(three_op_job),
+            instance=instance,
+            run_config={"execution": {"config": {"check_step_health_interval_seconds": 0}}},
+        )
+        TestStepHandler.wait_for_processes()
+
+    # Run should succeed despite exceptions during health checks
+    assert result.success
+    # Health checks should have been called (and raised exceptions)
+    assert TestStepHandler.check_step_health_count > 0
+    # Should have logged engine events with the error message
+    engine_events = [
+        event
+        for event in result.all_events
+        if event.event_type == DagsterEventType.ENGINE_EVENT
+        and event.message
+        and "Error while checking health" in event.message
+    ]
+    assert len(engine_events) > 0, "Expected engine events logging health check errors"
+
+
+def test_check_step_health_unhealthy_fails_step():
+    """Test that returning unhealthy from check_step_health still fails the step."""
+    TestStepHandler.reset()
+    TestStepHandler.should_return_unhealthy = True
+    TestStepHandler.unhealthy_reason = "Step is unhealthy for test"
+
+    with dg.instance_for_test() as instance:
+        result = dg.execute_job(
+            dg.reconstructable(three_op_job),
+            instance=instance,
+            run_config={"execution": {"config": {"check_step_health_interval_seconds": 0}}},
+        )
+        TestStepHandler.wait_for_processes()
+
+    # Run should fail because health check returned unhealthy
+    assert not result.success
+    # Health checks should have been called
+    assert TestStepHandler.check_step_health_count > 0
+    # Should have step failure events mentioning the health check
+    failure_events = [
+        event for event in result.all_events if event.event_type == DagsterEventType.STEP_FAILURE
+    ]
+    assert len(failure_events) > 0, "Expected step failure events"

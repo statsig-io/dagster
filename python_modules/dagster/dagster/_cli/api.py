@@ -5,15 +5,20 @@ import os
 import sys
 import threading
 import zlib
-from collections.abc import Iterator, Mapping, Sequence
-from typing import Any, Callable, Optional, cast
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from typing import Any, cast
 
 import click
 import dagster_shared.seven as seven
 from dagster_shared.cli import python_pointer_options
+from dagster_shared.serdes.objects.models.defs_state_info import DefsStateInfo
 
 import dagster._check as check
-from dagster._cli.utils import assert_no_remaining_opts, get_instance_for_cli
+from dagster._cli.utils import (
+    assert_no_remaining_opts,
+    get_instance_for_cli,
+    resolve_serialized_defs_state_info,
+)
 from dagster._cli.workspace.cli_target import PythonPointerOpts
 from dagster._core.definitions.metadata import MetadataValue
 from dagster._core.errors import DagsterExecutionInterruptedError
@@ -66,10 +71,25 @@ def api_cli() -> None:
         "interactively."
     ),
 )
-@click.argument("input_json", type=click.STRING)
-def execute_run_command(input_json: str) -> None:
+@click.argument("input_json", type=click.STRING, envvar="DAGSTER_EXECUTE_RUN_ARGS", required=False)
+@click.option(
+    "compressed_input_json",
+    "--compressed-input-json",
+    type=click.STRING,
+    envvar="DAGSTER_COMPRESSED_EXECUTE_RUN_ARGS",
+)
+def execute_run_command(input_json: str | None, compressed_input_json: str | None) -> None:
     with capture_interrupts():
-        args = deserialize_value(input_json, ExecuteRunArgs)
+        if input_json and not compressed_input_json:
+            normalized_input_json = input_json
+        elif compressed_input_json and not input_json:
+            normalized_input_json = zlib.decompress(
+                base64.b64decode(compressed_input_json.encode())
+            ).decode()
+        else:
+            check.failed("Must provide one of input_json or compressed_input_json")
+
+        args = deserialize_value(normalized_input_json, ExecuteRunArgs)
 
         with get_instance_for_cli(instance_ref=args.instance_ref) as instance:
             buffer = []
@@ -97,7 +117,7 @@ def _enable_python_runtime_metrics(dagster_run: DagsterRun) -> bool:
 
 
 def _metrics_polling_interval(
-    dagster_run: DagsterRun, logger: Optional[logging.Logger] = None
+    dagster_run: DagsterRun, logger: logging.Logger | None = None
 ) -> float:
     try:
         return float(
@@ -191,10 +211,10 @@ def _execute_run_command_body(
 def _shutdown_threads(
     instance: DagsterInstance,
     dagster_run: DagsterRun,
-    metrics_thread: Optional[threading.Thread],
-    metrics_thread_shutdown_event: Optional[threading.Event],
-    cancellation_thread: Optional[threading.Thread],
-    cancellation_thread_shutdown_event: Optional[threading.Event],
+    metrics_thread: threading.Thread | None,
+    metrics_thread_shutdown_event: threading.Event | None,
+    cancellation_thread: threading.Thread | None,
+    cancellation_thread_shutdown_event: threading.Event | None,
 ):
     pid = os.getpid()
     if metrics_thread and metrics_thread_shutdown_event:
@@ -250,7 +270,7 @@ def resume_run_command(input_json: str) -> None:
 
 
 def _resume_run_command_body(
-    run_id: Optional[str],
+    run_id: str | None,
     instance: DagsterInstance,
     write_stream_fn: Callable[[DagsterEvent], Any],
     set_exit_code_on_failure: bool,
@@ -402,7 +422,7 @@ def verify_step(
     type=click.STRING,
     envvar="DAGSTER_COMPRESSED_EXECUTE_STEP_ARGS",
 )
-def execute_step_command(input_json: Optional[str], compressed_input_json: Optional[str]) -> None:
+def execute_step_command(input_json: str | None, compressed_input_json: str | None) -> None:
     with capture_interrupts():
         if input_json and not compressed_input_json:
             normalized_input_json = input_json
@@ -421,14 +441,14 @@ def execute_step_command(input_json: Optional[str], compressed_input_json: Optio
                 f"Run with id '{args.run_id}' not found for step execution",
             )
 
-            buff = []
-
-            for event in _execute_step_command_body(
-                args,
-                instance,
-                dagster_run,
-            ):
-                buff.append(serialize_value(event))
+            buff = [
+                serialize_value(event)
+                for event in _execute_step_command_body(
+                    args,
+                    instance,
+                    dagster_run,
+                )
+            ]
 
             if args.print_serialized_events:
                 for line in buff:
@@ -698,26 +718,33 @@ def _execute_step_command_body(
     help="[INTERNAL] Retrieves current utilization metrics from GRPC server.",
     envvar="DAGSTER_ENABLE_SERVER_METRICS",
 )
+@click.option(
+    "--defs-state-info",
+    type=click.STRING,
+    required=False,
+    help="[INTERNAL] Serialized DefsStateInfo to use for the server.",
+)
 @python_pointer_options
 def grpc_command(
-    port: Optional[int],
-    socket: Optional[str],
+    port: int | None,
+    socket: str | None,
     host: str,
-    max_workers: Optional[int],
+    max_workers: int | None,
     heartbeat: bool,
     heartbeat_timeout: int,
     lazy_load_user_code: bool,
     use_python_environment_entry_point: bool,
     empty_working_directory: bool,
-    fixed_server_id: Optional[str],
+    fixed_server_id: str | None,
     log_level: str,
     log_format: str,
-    container_image: Optional[str],
-    container_context: Optional[str],
+    container_image: str | None,
+    container_context: str | None,
     inject_env_vars_from_instance: bool,
-    location_name: Optional[str],
-    instance_ref: Optional[str],
+    location_name: str | None,
+    instance_ref: str | None,
     enable_metrics: bool = False,
+    defs_state_info: str | None = None,
     **other_opts: Any,
 ) -> None:
     # deferring for import perf
@@ -793,6 +820,8 @@ def grpc_command(
 
     logger.info("Starting %s", server_desc)
 
+    resolved_defs_state_info = resolve_serialized_defs_state_info(defs_state_info, logger)
+
     server_termination_event = threading.Event()
     threadpool_executor = FuturesAwareThreadPoolExecutor(max_workers=max_workers)
     api_servicer = DagsterApiServer(
@@ -817,6 +846,9 @@ def grpc_command(
         location_name=location_name,
         enable_metrics=enable_metrics,
         server_threadpool_executor=threadpool_executor,
+        defs_state_info=deserialize_value(resolved_defs_state_info, DefsStateInfo)
+        if resolved_defs_state_info
+        else None,
     )
 
     server = DagsterGrpcServer(
@@ -870,7 +902,7 @@ def grpc_command(
     help="Whether to connect to the gRPC server over SSL",
 )
 def grpc_health_check_command(
-    port: Optional[int], socket: Optional[str], host: str, use_ssl: bool
+    port: int | None, socket: str | None, host: str, use_ssl: bool
 ) -> None:
     # deferring for import perf
     from dagster._grpc.client import DagsterGrpcClient

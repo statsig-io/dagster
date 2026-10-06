@@ -23,7 +23,7 @@ def test_op_def():
 
     @dg.op(
         ins={"input_one": dg.In(dg.String)},
-        out=dg.Out(dg.Any),  # pyright: ignore[reportArgumentType]
+        out=dg.Out(dg.Any),
         config_schema={"another_field": dg.Int},
     )
     def op_one(_context, input_one):
@@ -111,7 +111,7 @@ def test_job_types():
 
     @dg.op(
         ins={"input_one": dg.In(dg.String)},
-        out=dg.Out(dg.Any),  # pyright: ignore[reportArgumentType]
+        out=dg.Out(dg.Any),
         config_schema={"another_field": dg.Int},
     )
     def op_one(_context, input_one):
@@ -286,10 +286,20 @@ def test_pool_mismatch():
 
 
 def test_pool_invalid():
-    illegal_pools = ["foo/bar", "foo bar", "foo:bar", "foo,bar", "foo|bar", "foo.bar", "foo-bar"]
+    illegal_pools = ["foo bar"]
     for pool in illegal_pools:
         with pytest.raises(dg.DagsterInvalidDefinitionError) as _:
 
             @dg.op(pool=pool)
             def my_op():
                 pass
+
+
+def test_pool_with_special_chars_valid():
+    for pool in ["foo/bar", "foo-bar", "foo:bar", "foo.bar", "foo|bar", "foo,bar"]:
+
+        @dg.op(pool=pool)
+        def my_op():
+            pass
+
+        assert my_op.pool == pool

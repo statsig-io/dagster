@@ -11,9 +11,7 @@ from collections.abc import Generator, Mapping
 from contextlib import AbstractContextManager, ExitStack
 from enum import Enum
 from threading import Event
-from typing import Any, Generic, Optional, TypeVar, Union
-
-from typing_extensions import TypeAlias
+from typing import Any, Generic, TypeAlias, TypeVar
 
 from dagster import (
     DagsterInstance,
@@ -59,14 +57,14 @@ class SpanMarker(Enum):
     END_SPAN = "END_SPAN"
 
 
-DaemonIterator: TypeAlias = Generator[Union[None, SerializableErrorInfo, SpanMarker], None, None]
+DaemonIterator: TypeAlias = Generator[SerializableErrorInfo | SpanMarker | None, None, None]
 
 TContext = TypeVar("TContext", bound=IWorkspaceProcessContext)
 
 
 class DagsterDaemon(AbstractContextManager, ABC, Generic[TContext]):
     _logger: logging.Logger
-    _last_heartbeat_time: Optional[datetime.datetime]
+    _last_heartbeat_time: datetime.datetime | None
 
     def __init__(self):
         self._logger = get_default_daemon_logger(type(self).__name__)
@@ -300,8 +298,8 @@ class SensorDaemon(DagsterDaemon):
     def __init__(self, settings: Mapping[str, Any]) -> None:
         super().__init__()
         self._exit_stack = ExitStack()
-        self._threadpool_executor: Optional[InheritContextThreadPoolExecutor] = None
-        self._submit_threadpool_executor: Optional[InheritContextThreadPoolExecutor] = None
+        self._threadpool_executor: InheritContextThreadPoolExecutor | None = None
+        self._submit_threadpool_executor: InheritContextThreadPoolExecutor | None = None
 
         if settings.get("use_threads"):
             self._threadpool_executor = self._exit_stack.enter_context(
@@ -320,7 +318,7 @@ class SensorDaemon(DagsterDaemon):
                 )
 
     def instrument_elapsed(
-        self, sensor: RemoteSensor, elapsed: Optional[float], min_interval: int
+        self, sensor: RemoteSensor, elapsed: float | None, min_interval: int
     ) -> None:
         pass
 
@@ -351,8 +349,8 @@ class BackfillDaemon(DagsterDaemon):
     def __init__(self, settings: Mapping[str, Any]) -> None:
         super().__init__()
         self._exit_stack = ExitStack()
-        self._threadpool_executor: Optional[InheritContextThreadPoolExecutor] = None
-        self._submit_threadpool_executor: Optional[InheritContextThreadPoolExecutor] = None
+        self._threadpool_executor: InheritContextThreadPoolExecutor | None = None
+        self._submit_threadpool_executor: InheritContextThreadPoolExecutor | None = None
 
         # Backfill daemon is enabled by default for reasons explained at:
         # https://github.com/dagster-io/dagster/pull/30189#issuecomment-2930805760

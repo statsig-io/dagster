@@ -10,6 +10,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import mlflow
+import pandas as pd
 import pytest
 from dagster import op
 from dagster._core.definitions.decorators.job_decorator import job
@@ -195,7 +196,7 @@ def test_cleanup_on_error(
         # Given: a context  passed into the __init__ for MlFlow
         mlf = MlFlow(context)
     # When: a run is started
-    mlf.start_run()  # pyright: ignore[reportAttributeAccessIssue]
+    mlf.start_run()  # ty: ignore[unresolved-attribute]
 
     with patch("sys.exc_info", return_value=[0, any_error]):
         # When: cleanup_on_error is called
@@ -233,34 +234,34 @@ def test_set_all_tags(mock_mlflow_set_tags, context):
     mock_mlflow_set_tags.assert_called_once_with(tags)
 
 
-@pytest.mark.parametrize("runs", [[], [MagicMock(info=MagicMock(run_id="100"))]])
+@pytest.mark.parametrize("run_df", [pd.DataFrame(), pd.DataFrame(data={"run_id": ["100"]})])
 @pytest.mark.parametrize(
     "experiment", [None, MagicMock(experiment_id="1"), MagicMock(experiment_id="lol")]
 )
-def test_get_current_run_id(context, experiment, runs):
+def test_get_current_run_id(context, experiment, run_df):
     with patch.object(MlFlow, "_setup"):
         # Given: an initialization of the mlflow object
         mlf = MlFlow(context)
 
-    with patch("mlflow.search_runs", return_value=runs):
+    with patch("mlflow.search_runs", return_value=run_df):
         # when: _get_current_run_id is called
         run_id = mlf._get_current_run_id(experiment=experiment)  # noqa: SLF001
     # Then: the run_id id provided is the same as what was provided
-    if runs:
-        assert run_id == runs[0].info.run_id
+    if not run_df.empty:
+        assert run_id == run_df.run_id.values[0]
     else:
         assert run_id is None
 
 
 def test_get_current_run_id_with_one_mlflow_error(context):
     experiment = MagicMock(experiment_id="1")
-    runs = [MagicMock(info=MagicMock(run_id="100"))]
+    run_df = pd.DataFrame(data={"run_id": ["100"]})
 
     with patch.object(MlFlow, "_setup"):
         # Given: an initialization of the mlflow object
         mlf = MlFlow(context)
 
-    # Simulate MlflowException being raised once, then return the runs
+    # Simulate MlflowException being raised once, then return the run_df
     with patch(
         "mlflow.search_runs",
         side_effect=[
@@ -268,14 +269,14 @@ def test_get_current_run_id_with_one_mlflow_error(context):
                 "Max retries exceeded with url: /api/2.0/mlflow/runs/search (Caused by ResponseError('too many 429 error "
                 "responses')"
             ),
-            runs,
+            run_df,
         ],
     ):
         # when: _get_current_run_id is called
         run_id = mlf._get_current_run_id(experiment=experiment)  # noqa: SLF001
 
     # Then: the run_id id provided is the same as what was provided
-    assert run_id == runs[0].info.run_id
+    assert run_id == run_df.run_id.values[0]
 
 
 @patch("atexit.unregister")
@@ -301,7 +302,7 @@ def test_setup(mock_atexit, context):
         # - _set_all_tags is called once
         mock_set_all_tags.assert_called_once()
     # - atexit.unregister is called with mlf.end_run as an argument
-    mock_atexit.assert_called_once_with(mlf.end_run)  # pyright: ignore[reportAttributeAccessIssue]
+    mock_atexit.assert_called_once_with(mlf.end_run)  # ty: ignore[unresolved-attribute]
 
 
 @patch("atexit.unregister")
@@ -330,7 +331,7 @@ def test_setup_with_passed_run_id(mock_atexit, context):
         # - _set_all_tags is called once
         mock_set_all_tags.assert_called_once()
     # - atexit.unregister is called with mlf.end_run as an argument
-    mock_atexit.assert_called_once_with(mlf.end_run)  # pyright: ignore[reportAttributeAccessIssue]
+    mock_atexit.assert_called_once_with(mlf.end_run)  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.parametrize("run_id", [None, 0, "12"])
@@ -419,15 +420,11 @@ def test_execute_op_with_mlflow_resource():
     @op(required_resource_keys={"mlflow"})
     def op1(_):
         mlflow.log_params(params)
-        active_run = mlflow.active_run()
-        assert active_run is not None
-        run_id_holder["op1_run_id"] = active_run.info.run_id
+        run_id_holder["op1_run_id"] = mlflow.active_run().info.run_id  # type: ignore
 
     @op(required_resource_keys={"mlflow"})
     def op2(_, _arg1):
-        active_run = mlflow.active_run()
-        assert active_run is not None
-        run_id_holder["op2_run_id"] = active_run.info.run_id
+        run_id_holder["op2_run_id"] = mlflow.active_run().info.run_id  # type: ignore
 
     @job(resource_defs={"mlflow": mlflow_tracking})
     def mlf_job():

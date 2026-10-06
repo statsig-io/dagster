@@ -1,15 +1,21 @@
 ---
-title: Dagster & Evidence
+title: Dagster & Evidence (Component)
 sidebar_label: Evidence
+sidebar_position: 1
 description: The Evidence library offers a component to easily generate dashboards from your Evidence project.
-tags: [community-supported, bi]
+tags: [community-supported, bi, component]
 source: https://github.com/dagster-io/community-integrations/tree/main/libraries/dagster-evidence
 pypi: https://pypi.org/project/dagster-evidence/
 sidebar_custom_props:
+  component: true
   logo: images/integrations/evidence.svg
   community: true
 partnerlink: https://evidence.dev/
 ---
+
+import CommunityIntegration from '@site/docs/partials/\_CommunityIntegration.md';
+
+<CommunityIntegration />
 
 <p>{frontMatter.description}</p>
 

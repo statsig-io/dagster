@@ -1,15 +1,17 @@
 import json
 import os
 import textwrap
+from collections.abc import Callable
 from contextlib import ExitStack
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import pytest
 import responses
 from dagster_dg_cli.utils.plus import gql
-from dagster_dg_core.utils import activate_venv, ensure_dagster_dg_tests_import
+from dagster_dg_cli_tests.cli_tests.plus_tests.utils import mock_gql_response
+from dagster_dg_core.utils import activate_venv
 from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
 
@@ -24,9 +26,6 @@ from docs_snippets_tests.snippet_checks.guides.components.utils import (
 from docs_snippets_tests.snippet_checks.utils import (
     isolated_snippet_generation_environment,
 )
-
-ensure_dagster_dg_tests_import()
-from dagster_dg_cli_tests.cli_tests.plus_tests.utils import mock_gql_response, responses
 
 MASK_VENV = (r"Using.*\.venv.*", "")
 REMOVE_EXCESS_DESCRIPTION_ROW = (r"\n│\s+│\s+│\s+│\s+│.*│\n", "\n")
@@ -73,7 +72,7 @@ def mock_graphql_server(httpserver: HTTPServer) -> str:
 def mock_gql_mutation(
     mutation: str,
     json_data: dict[str, Any],
-    expected_variables: Optional[dict[str, Any]] = None,
+    expected_variables: dict[str, Any] | None = None,
 ) -> None:
     def match(request: Request) -> bool:
         json_body = request.json or {}
@@ -238,7 +237,7 @@ def test_component_docs_using_env(
                     # we simulate the input we don't get the newline we get in terminal so we
                     # slide it in here.
                     (r"Running `uv sync`\.\.\.", "\nRunning `uv sync`..."),
-                    ("create-dagster", "uvx -U create-dagster"),
+                    ("create-dagster", "uvx create-dagster@latest"),
                 ],
                 input_str="y\n",
                 ignore_output=True,
@@ -333,7 +332,7 @@ def test_component_docs_using_env(
             )
 
             context.run_command_and_snippet_output(
-                cmd="dg check yaml",
+                cmd="dg check yaml --validate-requirements",
                 snippet_path=SNIPPETS_DIR
                 / f"{context.get_next_snip_number()}-dg-component-check.txt",
                 snippet_replace_regex=[
@@ -413,7 +412,8 @@ def test_component_docs_using_env(
                 url = "{mock_graphql_server}"
                 user_token = "test"
                 default_deployment = "prod"
-                """
+                """,
+                encoding="utf-8",
             )
 
             mock_gql_for_list_env(

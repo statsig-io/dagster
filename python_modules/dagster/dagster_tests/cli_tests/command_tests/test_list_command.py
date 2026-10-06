@@ -19,7 +19,7 @@ def no_print(_):
 def assert_correct_bar_repository_output(result):
     assert result.exit_code == 0
     assert (
-        result.output == "Repository bar\n"
+        result.stdout == "Repository bar\n"
         "**************\n"
         "Job: baz\n"
         "Description:\n"
@@ -41,8 +41,8 @@ def assert_correct_bar_repository_output(result):
         "Job: partitioned_job\n"
         "Ops: (Execution Order)\n"
         "    do_something\n"
-        "*************\n"
-        "Job: quux_job\n"
+        "*********\n"
+        "Job: quux\n"
         "Ops: (Execution Order)\n"
         "    do_something_op\n"
         "********\n"
@@ -56,7 +56,7 @@ def assert_correct_bar_repository_output(result):
 def assert_correct_extra_repository_output(result):
     assert result.exit_code == 0
     assert (
-        result.output == "Repository extra\n"
+        result.stdout == "Repository extra\n"
         "****************\n"
         "Job: extra_job\n"
         "Ops: (Execution Order)\n"
@@ -96,12 +96,12 @@ def test_list_command_grpc_socket():
                 print_fn=no_print,
             )
 
-            result = runner.invoke(job_list_command, ["--grpc-socket", api_client.socket])  # pyright: ignore[reportArgumentType]
+            result = runner.invoke(job_list_command, ["--grpc-socket", api_client.socket])
             assert_correct_bar_repository_output(result)
 
             result = runner.invoke(
                 job_list_command,
-                ["--grpc-socket", api_client.socket, "--grpc-host", api_client.host],  # pyright: ignore[reportArgumentType]
+                ["--grpc-socket", api_client.socket, "--grpc-host", api_client.host],
             )
             assert_correct_bar_repository_output(result)
 
@@ -122,21 +122,21 @@ def test_list_command_deployed_grpc():
         ) as server_process:
             api_client = server_process.create_client()
 
-            result = runner.invoke(job_list_command, ["--grpc-port", api_client.port])  # pyright: ignore[reportArgumentType]
+            result = runner.invoke(job_list_command, ["--grpc-port", api_client.port])
             assert_correct_bar_repository_output(result)
 
             result = runner.invoke(
                 job_list_command,
-                ["--grpc-port", api_client.port, "--grpc-host", api_client.host],  # pyright: ignore[reportArgumentType]
+                ["--grpc-port", api_client.port, "--grpc-host", api_client.host],
             )
             assert_correct_bar_repository_output(result)
 
-            result = runner.invoke(job_list_command, ["--grpc-port", api_client.port])  # pyright: ignore[reportArgumentType]
+            result = runner.invoke(job_list_command, ["--grpc-port", api_client.port])
             assert_correct_bar_repository_output(result)
 
             result = runner.invoke(
                 job_list_command,
-                ["--grpc-port", api_client.port, "--grpc-socket", "foonamedsocket"],  # pyright: ignore[reportArgumentType]
+                ["--grpc-port", api_client.port, "--grpc-socket", "foonamedsocket"],
             )
             assert result.exit_code != 0
 

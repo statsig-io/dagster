@@ -4,7 +4,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Optional, Union
+from typing import Any
 from urllib.parse import urlencode
 
 import requests
@@ -13,7 +13,7 @@ from dagster import (
     Definitions,
     _check as check,
 )
-from dagster._annotations import beta, deprecated, public
+from dagster._annotations import beta, public
 from dagster._config.pythonic_config.resource import ResourceDependency
 from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
 from dagster._core.definitions.definitions_load_context import StateBackedDefinitionsLoader
@@ -21,14 +21,12 @@ from dagster._core.definitions.events import Failure
 from dagster._time import get_current_timestamp
 from dagster._utils.cached_method import cached_method
 from dagster._utils.security import non_secure_md5_hash_str
-from dagster._utils.warnings import deprecation_warning
 from pydantic import Field, PrivateAttr
 
 from dagster_powerbi.translator import (
     DagsterPowerBITranslator,
     PowerBIContentData,
     PowerBIContentType,
-    PowerBITagSet,
     PowerBITranslatorData,
     PowerBIWorkspaceData,
 )
@@ -49,6 +47,7 @@ def generate_data_source_id(data_source: dict[str, Any]) -> str:
 
 class PowerBICredentials(ConfigurableResource, abc.ABC):
     @property
+    @abc.abstractmethod
     def api_token(self) -> str: ...
 
 
@@ -71,7 +70,7 @@ class PowerBIServicePrincipal(ConfigurableResource):
     tenant_id: str = Field(
         ..., description="The Entra tenant ID where service principal was created."
     )
-    _api_token: Optional[str] = PrivateAttr(default=None)
+    _api_token: str | None = PrivateAttr(default=None)
 
     def get_api_token(self) -> str:
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -123,7 +122,7 @@ class PowerBIWorkspace(ConfigurableResource):
         endpoint: str,
         method: str = "GET",
         json: Any = None,
-        params: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
         group_scoped: bool = True,
     ) -> requests.Response:
         """Fetch JSON data from the PowerBI API. Raises an exception if the request fails.
@@ -159,7 +158,7 @@ class PowerBIWorkspace(ConfigurableResource):
         endpoint: str,
         method: str = "GET",
         json: Any = None,
-        params: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
         group_scoped: bool = True,
     ) -> dict[str, Any]:
         return self._fetch(endpoint, method, json, group_scoped=group_scoped, params=params).json()
@@ -201,7 +200,7 @@ class PowerBIWorkspace(ConfigurableResource):
             time.sleep(self.refresh_poll_interval)
 
         if status == "Failed":
-            error = last_refresh.get("serviceExceptionJson")  # pyright: ignore[reportPossiblyUnboundVariable]
+            error = last_refresh.get("serviceExceptionJson")
             raise Failure(f"Refresh failed: {error}")
 
     @cached_method
@@ -260,14 +259,14 @@ class PowerBIWorkspace(ConfigurableResource):
             now = get_current_timestamp()
 
         if status != "Succeeded":
-            raise Failure(f"Scan not successful after {ADMIN_SCAN_TIMEOUT} seconds: {scan_details}")  # pyright: ignore[reportPossiblyUnboundVariable]
+            raise Failure(f"Scan not successful after {ADMIN_SCAN_TIMEOUT} seconds: {scan_details}")
 
         return self._fetch_json(
             endpoint=f"admin/workspaces/scanResult/{scan_id}", group_scoped=False
         )
 
     @cached_method
-    def _fetch_powerbi_workspace_data(self, use_workspace_scan: bool) -> PowerBIWorkspaceData:
+    def fetch_powerbi_workspace_data(self, use_workspace_scan: bool) -> PowerBIWorkspaceData:
         """Retrieves all Power BI content from the workspace and returns it as a PowerBIWorkspaceData object.
         Future work will cache this data to avoid repeated calls to the Power BI API.
 
@@ -333,12 +332,12 @@ class PowerBIWorkspace(ConfigurableResource):
                 for source in dataset_sources
             ]
             dataset["sources"] = [source["datasourceId"] for source in dataset_sources_with_id]
-            for data_source in dataset_sources_with_id:
-                data_sources.append(
-                    PowerBIContentData(
-                        content_type=PowerBIContentType.DATA_SOURCE, properties=data_source
-                    )
+            data_sources.extend(
+                PowerBIContentData(
+                    content_type=PowerBIContentType.DATA_SOURCE, properties=data_source
                 )
+                for data_source in dataset_sources_with_id
+            )
         semantic_models = [
             PowerBIContentData(content_type=PowerBIContentType.SEMANTIC_MODEL, properties=dataset)
             for dataset in semantic_models_data
@@ -348,60 +347,18 @@ class PowerBIWorkspace(ConfigurableResource):
             dashboards + reports + semantic_models + data_sources,
         )
 
-    @public
-    @deprecated(
-        breaking_version="1.9.0",
-        additional_warn_text="Use dagster_powerbi.load_powerbi_asset_specs instead",
-    )
-    def build_defs(
-        self,
-        dagster_powerbi_translator: type[DagsterPowerBITranslator] = DagsterPowerBITranslator,
-        enable_refresh_semantic_models: bool = False,
-    ) -> Definitions:
-        """Returns a Definitions object which will load Power BI content from
-        the workspace and translate it into assets, using the provided translator.
-
-        Args:
-            context (Optional[DefinitionsLoadContext]): The context to use when loading the definitions.
-                If not provided, retrieved contextually.
-            dagster_powerbi_translator (Type[DagsterPowerBITranslator]): The translator to use
-                to convert Power BI content into AssetSpecs. Defaults to DagsterPowerBITranslator.
-            enable_refresh_semantic_models (bool): Whether to enable refreshing semantic models
-                by materializing them in Dagster.
-
-        Returns:
-            Definitions: A Definitions object which will build and return the Power BI content.
-        """
-        from dagster_powerbi.assets import build_semantic_model_refresh_asset_definition
-
-        resource_key = f"power_bi_{self.workspace_id.replace('-', '_')}"
-
-        return Definitions(
-            assets=[
-                build_semantic_model_refresh_asset_definition(resource_key, spec)
-                if PowerBITagSet.extract(spec.tags).asset_type == "semantic_model"
-                else spec
-                for spec in load_powerbi_asset_specs(
-                    self, dagster_powerbi_translator(), use_workspace_scan=False
-                )
-            ],
-            resources={resource_key: self},
-        )
-
 
 @beta
 def load_powerbi_asset_specs(
     workspace: PowerBIWorkspace,
-    dagster_powerbi_translator: Optional[
-        Union[DagsterPowerBITranslator, type[DagsterPowerBITranslator]]
-    ] = None,
+    dagster_powerbi_translator: DagsterPowerBITranslator | None = None,
     use_workspace_scan: bool = True,
 ) -> Sequence[AssetSpec]:
     """Returns a list of AssetSpecs representing the Power BI content in the workspace.
 
     Args:
         workspace (PowerBIWorkspace): The Power BI workspace to load assets from.
-        dagster_powerbi_translator (Optional[Union[DagsterPowerBITranslator, Type[DagsterPowerBITranslator]]]):
+        dagster_powerbi_translator (Optional[DagsterPowerBITranslator]):
             The translator to use to convert Power BI content into :py:class:`dagster.AssetSpec`.
             Defaults to :py:class:`DagsterPowerBITranslator`.
         use_workspace_scan (bool): Whether to scan the entire workspace using admin APIs
@@ -410,15 +367,11 @@ def load_powerbi_asset_specs(
     Returns:
         List[AssetSpec]: The set of assets representing the Power BI content in the workspace.
     """
-    if isinstance(dagster_powerbi_translator, type):
-        deprecation_warning(
-            subject="Support of `dagster_powerbi_translator` as a Type[DagsterPowerBITranslator]",
-            breaking_version="1.10",
-            additional_warn_text=(
-                "Pass an instance of DagsterPowerBITranslator or subclass to `dagster_powerbi_translator` instead."
-            ),
-        )
-        dagster_powerbi_translator = dagster_powerbi_translator()
+    check.opt_inst_param(
+        dagster_powerbi_translator,
+        "dagster_powerbi_translator",
+        DagsterPowerBITranslator,
+    )
 
     with workspace.process_config_and_initialize_cm() as initialized_workspace:
         return check.is_list(
@@ -445,7 +398,7 @@ class PowerBIWorkspaceDefsLoader(StateBackedDefinitionsLoader[PowerBIWorkspaceDa
 
     def fetch_state(self) -> PowerBIWorkspaceData:
         with self.workspace.process_config_and_initialize_cm() as initialized_workspace:
-            return initialized_workspace._fetch_powerbi_workspace_data(  # noqa: SLF001
+            return initialized_workspace.fetch_powerbi_workspace_data(
                 use_workspace_scan=self.use_workspace_scan
             )
 

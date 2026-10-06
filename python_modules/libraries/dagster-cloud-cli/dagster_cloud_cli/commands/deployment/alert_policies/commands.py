@@ -1,7 +1,6 @@
 from pathlib import Path
-from typing import Optional
 
-import yaml
+from dagster_shared.yaml_utils import safe_load_yaml
 from typer import Option, Typer
 
 from dagster_cloud_cli import gql, ui
@@ -17,7 +16,7 @@ app = Typer(help="Interact with your alert policies.")
 def list_command(
     api_token: str,
     url: str,
-    deployment: Optional[str],
+    deployment: str | None,
 ):
     """List your alert policies, output in YAML format."""
     with gql.graphql_client_from_url(url, api_token, deployment_name=deployment) as client:
@@ -31,7 +30,7 @@ def list_command(
 def sync_command(
     api_token: str,
     url: str,
-    deployment: Optional[str],
+    deployment: str | None,
     alert_policies_file: Path = Option(
         DEFAULT_ALERT_POLICIES_YAML_FILENAME,
         "--alert-policies",
@@ -43,7 +42,7 @@ def sync_command(
     """Sync your YAML configured alert policies to Dagster Cloud."""
     with gql.graphql_client_from_url(url, api_token, deployment_name=deployment) as client:
         with open(str(alert_policies_file), encoding="utf8") as f:
-            config = yaml.load(f.read(), Loader=yaml.SafeLoader)
+            config = safe_load_yaml(f.read())
 
         try:
             alert_policies = gql.reconcile_alert_policies(client, config)

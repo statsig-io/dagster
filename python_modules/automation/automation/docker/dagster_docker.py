@@ -1,19 +1,22 @@
 import contextlib
 import os
-from collections.abc import Iterator
-from typing import Any, Callable, NamedTuple, Optional
+from collections.abc import Callable, Iterator
+from pathlib import Path
+from typing import Any, NamedTuple
 
 import dagster._check as check
 import yaml
+from dagster_shared.yaml_utils import safe_load_yaml
 
 from automation.docker.ecr import ecr_image, get_aws_account_id, get_aws_region
 from automation.docker.utils import (
     execute_docker_build,
+    execute_docker_buildx_build_and_push,
     execute_docker_push,
     execute_docker_tag,
     python_version_image_tag,
 )
-from automation.git import git_repo_root
+from automation.utils import discover_oss_root
 
 # Default repository prefix used for local images
 DEFAULT_LOCAL_PREFIX = "dagster"
@@ -29,7 +32,9 @@ def do_nothing(_cwd: str) -> Iterator[None]:
 
 def default_images_path():
     return os.path.join(
-        git_repo_root(),
+        # We need to use cwd here instead of __file__ because this file is not always
+        # part of the greater OSS codebase or even a git repo when it is run.
+        discover_oss_root(Path.cwd()),
         "python_modules",
         "automation",
         "automation",
@@ -60,7 +65,7 @@ class DagsterDockerImage(
     def __new__(
         cls,
         image: str,
-        images_path: Optional[str] = None,
+        images_path: str | None = None,
         build_cm: Callable[..., Any] = do_nothing,
     ):
         return super().__new__(
@@ -82,14 +87,14 @@ class DagsterDockerImage(
     def python_versions(self) -> list[str]:
         """List of Python versions supported for this image."""
         with open(os.path.join(self.path, "versions.yaml"), encoding="utf8") as f:
-            versions = yaml.safe_load(f.read())
+            versions = safe_load_yaml(f.read())
         return list(versions.keys())
 
     def _get_last_updated_for_python_version(self, python_version: str) -> str:
         """Retrieve the last_updated timestamp for a particular python_version of this image."""
         check.str_param(python_version, "python_version")
         with open(os.path.join(self.path, "last_updated.yaml"), encoding="utf8") as f:
-            last_updated = yaml.safe_load(f.read())
+            last_updated = safe_load_yaml(f.read())
             return last_updated[python_version]
 
     def _set_last_updated_for_python_version(self, timestamp: str, python_version: str) -> None:
@@ -102,7 +107,7 @@ class DagsterDockerImage(
         last_updated_path = os.path.join(self.path, "last_updated.yaml")
         if os.path.exists(last_updated_path):
             with open(last_updated_path, encoding="utf8") as f:
-                last_updated = yaml.safe_load(f.read())
+                last_updated = safe_load_yaml(f.read())
 
         last_updated[python_version] = timestamp
 
@@ -120,9 +125,7 @@ class DagsterDockerImage(
         tag = python_version_image_tag(python_version, last_updated)
         return f"{DEFAULT_LOCAL_PREFIX}/{self.image}:{tag}"
 
-    def aws_image(
-        self, python_version: Optional[str] = None, custom_tag: Optional[str] = None
-    ) -> str:
+    def aws_image(self, python_version: str | None = None, custom_tag: str | None = None) -> str:
         """Generates the AWS ECR image name, like:
         "1234567890.dkr.ecr.us-west-1.amazonaws.com/foo:some-tag".
         """
@@ -130,7 +133,7 @@ class DagsterDockerImage(
         check.opt_str_param(python_version, "python_version")
         check.opt_str_param(custom_tag, "custom_tag")
 
-        tag: Optional[str]
+        tag: str | None
         if python_version:
             last_updated = self._get_last_updated_for_python_version(python_version)
             tag = python_version_image_tag(python_version, last_updated)
@@ -153,7 +156,7 @@ class DagsterDockerImage(
         image.
         """
         with open(os.path.join(self.path, "versions.yaml"), encoding="utf8") as f:
-            versions = yaml.safe_load(f.read())
+            versions = safe_load_yaml(f.read())
             image_info = versions.get(python_version, {})
 
         docker_args = image_info.get("docker_args", {})
@@ -177,10 +180,17 @@ class DagsterDockerImage(
 
         # Set Dagster version
         docker_args["DAGSTER_VERSION"] = dagster_version
+
+        # Allow callers (e.g. CI) to override BASE_IMAGE without editing
+        # versions.yaml — used to route the build through a private registry
+        # mirror like an ECR pull-through cache.
+        if base_image_override := os.environ.get("BASE_IMAGE"):
+            docker_args["BASE_IMAGE"] = base_image_override
+
         return docker_args
 
     def build(
-        self, timestamp, dagster_version: str, python_version: str, platform: Optional[str] = None
+        self, timestamp, dagster_version: str, python_version: str, platform: str | None = None
     ) -> None:
         check.str_param(timestamp, "timestamp")
         check.str_param(python_version, "python_version")
@@ -195,7 +205,29 @@ class DagsterDockerImage(
                 platform=platform,
             )
 
-    def push(self, python_version: str, custom_tag: Optional[str] = None) -> None:
+    def build_and_push_multiplatform(
+        self,
+        dagster_version: str,
+        python_version: str,
+        tags: list[str],
+        platforms: list[str],
+    ) -> None:
+        """Build this image for several platforms and push it as one manifest list.
+
+        Unlike :py:meth:`build` followed by :py:meth:`push`, this publishes directly to
+        the registry. Leave last_updated.yaml unchanged because no local image is created.
+        """
+        check.str_param(python_version, "python_version")
+
+        with self.build_cm(self.path):
+            execute_docker_buildx_build_and_push(
+                tags=tags,
+                platforms=platforms,
+                docker_args=self._get_docker_args(dagster_version, python_version),
+                cwd=self.path,
+            )
+
+    def push(self, python_version: str, custom_tag: str | None = None) -> None:
         """Push this image to ECR."""
         if custom_tag:
             execute_docker_tag(

@@ -1,32 +1,32 @@
+import shutil
 from pathlib import Path
 
 import pytest
-from dagster_dg_core.utils import (
-    discover_git_root,
-    ensure_dagster_dg_tests_import,
-    is_windows,
-    pushd,
-)
-
-ensure_dagster_dg_tests_import()
-from dagster_dg_core_tests.utils import (
+from dagster_dg_core.utils import activate_venv, discover_repo_root, is_windows, pushd
+from dagster_shared.utils import environ
+from dagster_test.components.test_utils.test_cases import BASIC_INVALID_VALUE, BASIC_MISSING_VALUE
+from dagster_test.dg_utils.utils import (
     ProxyRunner,
     assert_runner_result,
     create_project_from_components,
+    install_editable_dg_dev_packages_to_venv,
     isolated_example_project_foo_bar,
     isolated_example_workspace,
 )
-from dagster_test.components.test_utils.test_cases import BASIC_INVALID_VALUE, BASIC_MISSING_VALUE
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(is_windows(), reason="Temporarily skipping (signal issues in CLI)..")
 def test_check_defs_workspace_context_success():
-    dagster_git_repo_dir = str(discover_git_root(Path(__file__)))
-    with ProxyRunner.test() as runner, isolated_example_workspace(runner, create_venv=True):
+    dagster_git_repo_dir = str(discover_repo_root(Path(__file__)))
+    with (
+        ProxyRunner.test() as runner,
+        isolated_example_workspace(runner, create_venv=True),
+        environ({"DAGSTER_GIT_REPO_DIR": dagster_git_repo_dir}),
+    ):
         result = runner.invoke_create_dagster(
             "project",
             "--use-editable-dagster",
-            dagster_git_repo_dir,
             "projects/project-1",
             "--uv-sync",
         )
@@ -34,7 +34,6 @@ def test_check_defs_workspace_context_success():
         result = runner.invoke_create_dagster(
             "project",
             "--use-editable-dagster",
-            dagster_git_repo_dir,
             "projects/project-2",
             "--uv-sync",
         )
@@ -65,6 +64,24 @@ def test_check_defs_project_context_failure():
         assert result.exit_code == 1
 
 
+@pytest.mark.skipif(is_windows(), reason="Temporarily skipping (signal issues in CLI)..")
+def test_check_defs_project_context_with_definitions_py():
+    """Test that dg check defs works when project uses definitions.py instead of defs/ directory."""
+    with ProxyRunner.test() as runner, isolated_example_project_foo_bar(runner):
+        # Remove the default defs/ directory and create definitions.py instead
+        defs_dir = Path("src") / "foo_bar" / "defs"
+        if defs_dir.exists():
+            shutil.rmtree(defs_dir)
+
+        definitions_file = Path("src") / "foo_bar" / "definitions.py"
+        definitions_file.write_text(
+            "from dagster import Definitions\ndefs = Definitions()\n", encoding="utf-8"
+        )
+
+        result = runner.invoke("check", "defs", "--no-check-yaml")
+        assert_runner_result(result)
+
+
 def test_implicit_yaml_check_from_dg_check_defs_in_project_context() -> None:
     with (
         ProxyRunner.test() as runner,
@@ -78,14 +95,14 @@ def test_implicit_yaml_check_from_dg_check_defs_in_project_context() -> None:
     ):
         with pushd(str(tmpdir)):
             result = runner.invoke("check", "defs", catch_exceptions=False)
-            assert result.exit_code != 0, str(result.stdout)
+            assert result.exit_code != 0, str(result.output)
 
             assert BASIC_INVALID_VALUE.check_error_msg and BASIC_MISSING_VALUE.check_error_msg
-            BASIC_INVALID_VALUE.check_error_msg(str(result.stdout))
-            BASIC_MISSING_VALUE.check_error_msg(str(result.stdout))
+            BASIC_INVALID_VALUE.check_error_msg(str(result.output))
+            BASIC_MISSING_VALUE.check_error_msg(str(result.output))
 
             # didn't make it to defs check
-            assert "Validation failed for code location foo-bar" not in str(result.stdout)
+            assert "Validation failed for code location foo-bar" not in str(result.output)
 
 
 def test_implicit_yaml_check_disabled_in_project_context() -> None:
@@ -101,10 +118,10 @@ def test_implicit_yaml_check_disabled_in_project_context() -> None:
     ):
         with pushd(str(tmpdir)):
             result = runner.invoke("check", "defs", "--no-check-yaml", catch_exceptions=False)
-            assert result.exit_code != 0, str(result.stdout)
+            assert result.exit_code != 0, str(result.output)
 
             # yaml check was skipped, defs check failed
-            assert "Validation failed for code location foo-bar" in str(result.stdout)
+            assert "Validation failed for code location foo-bar" in str(result.output)
 
 
 def test_no_implicit_yaml_check_from_dg_check_defs_in_workspace_context() -> None:
@@ -120,10 +137,10 @@ def test_no_implicit_yaml_check_from_dg_check_defs_in_workspace_context() -> Non
     ):
         with pushd(Path(tmpdir).parent):
             result = runner.invoke("check", "defs", catch_exceptions=False)
-            assert result.exit_code != 0, str(result.stdout)
+            assert result.exit_code != 0, str(result.output)
 
             # yaml check was skipped, defs check failed
-            assert "Validation failed for code location foo-bar" in str(result.stdout)
+            assert "Validation failed for code location foo-bar" in str(result.output)
 
 
 def test_implicit_yaml_check_from_dg_check_defs_disallowed_in_workspace_context() -> None:
@@ -139,17 +156,48 @@ def test_implicit_yaml_check_from_dg_check_defs_disallowed_in_workspace_context(
     ):
         with pushd(Path(tmpdir).parent):
             result = runner.invoke("check", "defs", "--check-yaml", catch_exceptions=False)
-            assert result.exit_code != 0, str(result.stdout)
+            assert result.exit_code != 0, str(result.output)
 
             assert "--check-yaml is not currently supported in a workspace context" in str(
-                result.stdout
+                result.output
             )
 
         # It is supported and is the default in a project context within a workspace
         with pushd(tmpdir):
             result = runner.invoke("check", "defs", "--check-yaml", catch_exceptions=False)
-            assert result.exit_code != 0, str(result.stdout)
+            assert result.exit_code != 0, str(result.output)
 
             assert BASIC_INVALID_VALUE.check_error_msg and BASIC_MISSING_VALUE.check_error_msg
-            BASIC_INVALID_VALUE.check_error_msg(str(result.stdout))
-            BASIC_MISSING_VALUE.check_error_msg(str(result.stdout))
+            BASIC_INVALID_VALUE.check_error_msg(str(result.output))
+            BASIC_MISSING_VALUE.check_error_msg(str(result.output))
+
+
+@pytest.mark.skipif(is_windows(), reason="Temporarily skipping (signal issues in CLI)..")
+def test_check_defs_uses_active_venv_when_flag_set():
+    """Test that check defs command logs the active venv Python when --use-active-venv is set."""
+    dagster_git_repo_dir = str(discover_repo_root(Path(__file__)))
+    with (
+        ProxyRunner.test() as runner,
+        isolated_example_workspace(runner, create_venv=True) as workspace_path,
+        environ({"DAGSTER_GIT_REPO_DIR": dagster_git_repo_dir}),
+    ):
+        venv_path = workspace_path / ".venv"
+        install_editable_dg_dev_packages_to_venv(venv_path)
+
+        with activate_venv(venv_path):
+            # Create a project
+            result = runner.invoke_create_dagster(
+                "project", "--use-editable-dagster", "test-project", "--uv-sync"
+            )
+            assert_runner_result(result)
+
+            # Run check defs with --use-active-venv flag
+            result = runner.invoke("check", "defs", "--use-active-venv")
+
+            # Verify the command succeeded
+            assert_runner_result(result)
+
+            # Verify the log message is present in output
+            assert "Using active Python environment:" in str(result.output), (
+                f"Expected log message about using active Python environment, but got:\n{result.output}"
+            )

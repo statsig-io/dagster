@@ -12,10 +12,10 @@ This tutorial focuses on creating and interacting with BigQuery tables using Dag
 
 The `dagster-gcp` library provides two ways to interact with BigQuery tables:
 
-- [Resource](/guides/build/external-resources): The resource allows you to directly run SQL queries against tables within an asset's compute function. Available resources: <PyObject section="libraries" module="dagster_gcp" object="BigQueryResource" />
-- [I/O manager](/guides/build/io-managers): The I/O manager transfers the responsibility of storing and loading DataFrames as BigQuery tables to Dagster. Available I/O managers: <PyObject section="libraries" module="dagster_gcp_pandas" object="BigQueryPandasIOManager" />, <PyObject section="libraries" module="dagster_gcp_pyspark" object="BigQueryPySparkIOManager" />
+- [Resource](/guides/build/external-resources): The resource allows you to directly run SQL queries against tables within an asset's compute function. Available resources: <PyObject section="libraries" integration="gcp" module="dagster_gcp" object="BigQueryResource" />
+- [I/O manager](/guides/build/io-managers): The I/O manager transfers the responsibility of storing and loading DataFrames as BigQuery tables to Dagster. Available I/O managers: <PyObject section="libraries" integration="gcp" module="dagster_gcp_pandas" object="BigQueryPandasIOManager" />, <PyObject section="libraries" integration="gcp" module="dagster_gcp_pyspark" object="BigQueryPySparkIOManager" />
 
-This tutorial is divided into two sections to demonstrate the differences between the BigQuery resource and the BigQuery I/O manager. Each section will create the same assets, but the first section will use the BigQuery resource to store data in BigQuery, whereas the second section will use the BigQuery I/O manager. When writing your own assets, you may choose one or the other (or both) approaches depending on your storage requirements. {/* See [When to use I/O managers](/guides/build/io-managers/#when-to-use-io-managers) to learn more about when to use I/O managers and when to use resources. */}
+This tutorial is divided into two sections to demonstrate the differences between the BigQuery resource and the BigQuery I/O manager. Each section will create the same assets, but the first section will use the BigQuery resource to store data in BigQuery, whereas the second section will use the BigQuery I/O manager. When writing your own assets, you may choose one or the other (or both) approaches depending on your storage requirements. {/* See [When to use I/O managers](/guides/build/io-managers#when-to-use-io-managers) to learn more about when to use I/O managers and when to use resources. */}
 
 In [Option 1](#option-1-using-the-bigquery-resource) you will:
 
@@ -67,6 +67,29 @@ You can also specify a `location` where computation should take place.
   startAfter="start_example"
   endBefore="end_example"
 />
+
+#### Configuring write modes
+
+By default, the BigQuery I/O manager truncates data when writing to an existing table. You can change this behavior using the `write_mode` configuration option:
+
+- `truncate` (default): Deletes all rows in the table but keeps the schema.
+- `replace`: Drops the table and creates a new one. Useful when the schema changes.
+- `append`: Appends data to the existing table without deleting rows.
+
+```python
+from dagster_gcp import BigQueryIOManager
+from dagster import Definitions, EnvVar
+
+defs = Definitions(
+    resources={
+        "io_manager": BigQueryIOManager(
+            project=EnvVar("GCP_PROJECT"),
+            dataset="my_dataset",
+            write_mode="replace",  # Change write mode here
+        )
+    }
+)
+```
 
 ### Step 2: Create tables in BigQuery
 
@@ -129,7 +152,7 @@ While using an I/O manager is not required, you may want to use an I/O manager t
 - You want your data to be loaded in memory so that you can interact with it using Python.
 - You'd like to have Dagster manage how you store the data and load it as an input in downstream assets.
 
-{/* TODO fix link: Using an I/O manager is not required, and you can reference [When to use I/O managers](/guides/build/io-managers/#when-to-use-io-managers) to learn more. */}
+{/* TODO fix link: Using an I/O manager is not required, and you can reference [When to use I/O managers](/guides/build/io-managers#when-to-use-io-managers) to learn more. */}
 
 This section of the guide focuses on storing and loading Pandas DataFrames in BigQuery, but Dagster also supports using PySpark DataFrames with BigQuery. The concepts from this guide apply to working with PySpark DataFrames, and you can learn more about setting up and using the BigQuery I/O manager with PySpark DataFrames in the [reference guide](/integrations/libraries/gcp/bigquery/reference).
 
@@ -150,9 +173,9 @@ You can also specify a `location` where data should be stored and processed and 
 
 With this configuration, if you materialized an asset called `iris_data`, the BigQuery I/O manager would store the data in the `IRIS.IRIS_DATA` table in the `my-gcp-project` project. The BigQuery instance would be located in `us-east5`.
 
-Finally, in the <PyObject section="definitions" module="dagster" object="Definitions" /> object, we assign the <PyObject section="libraries" module="dagster_gcp_pandas" object="BigQueryPandasIOManager" /> to the `io_manager` key. `io_manager` is a reserved key to set the default I/O manager for your assets.
+Finally, in the <PyObject section="definitions" module="dagster" object="Definitions" /> object, we assign the <PyObject section="libraries" integration="gcp" module="dagster_gcp_pandas" object="BigQueryPandasIOManager" /> to the `io_manager` key. `io_manager` is a reserved key to set the default I/O manager for your assets.
 
-For more info about each of the configuration values, refer to the <PyObject section="libraries" module="dagster_gcp_pandas" object="BigQueryPandasIOManager" /> API documentation.
+For more information about each of the configuration values, see the <PyObject section="libraries" integration="gcp" module="dagster_gcp_pandas" object="BigQueryPandasIOManager" /> API documentation.
 
 ### Step 2: Create tables in BigQuery \{#option-2-step-2}
 
@@ -211,7 +234,7 @@ When finished, your code should look like the following:
 
 ## Related
 
-For more BigQuery features, refer to the [BigQuery reference](/integrations/libraries/gcp/bigquery/reference).
+For more BigQuery features, see the [BigQuery reference](/integrations/libraries/gcp/bigquery/reference).
 
 For more information on asset definitions, see the [Assets documentation](/guides/build/assets).
 

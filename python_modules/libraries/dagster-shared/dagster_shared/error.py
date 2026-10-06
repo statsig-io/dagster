@@ -1,11 +1,13 @@
 # mypy does not support recursive types, so "cause" has to be typed `Any`
+import os
 import sys
 import traceback
-from collections.abc import Sequence
-from typing import Any, Callable, NamedTuple, Optional
+from collections.abc import Callable, Sequence
+from typing import Optional
 
 from typing_extensions import Self
 
+from dagster_shared.record import LegacyNamedTupleMixin, record
 from dagster_shared.serdes.serdes import whitelist_for_serdes
 
 
@@ -29,31 +31,19 @@ class DagsterUnresolvableSymbolError(DagsterError):
 # but that is a significant refactor. Currently we're just moving SerializableErrorInfo so that we
 # can use it with the dg packages`.
 @whitelist_for_serdes
-class SerializableErrorInfo(
-    NamedTuple(
-        "SerializableErrorInfo",
-        [
-            ("message", str),
-            ("stack", Sequence[str]),
-            ("cls_name", Optional[str]),
-            ("cause", Any),
-            ("context", Any),
-        ],
-    )
-):
+@record(
+    kw_only=False,
+    checked=False,
+)
+class SerializableErrorInfo(LegacyNamedTupleMixin):
     # serdes log
     # * added cause - default to None in constructor to allow loading old entries
     # * added context - default to None for similar reasons
-    #
-    def __new__(
-        cls,
-        message: str,
-        stack: Sequence[str],
-        cls_name: Optional[str],
-        cause: Optional["SerializableErrorInfo"] = None,
-        context: Optional["SerializableErrorInfo"] = None,
-    ):
-        return super().__new__(cls, message, stack, cls_name, cause, context)
+    message: str
+    stack: Sequence[str]
+    cls_name: str | None
+    cause: Optional["SerializableErrorInfo"] = None
+    context: Optional["SerializableErrorInfo"] = None
 
     def __str__(self) -> str:
         return self.to_string()
@@ -102,14 +92,14 @@ class SerializableErrorInfo(
 
 
 DAGSTER_FRAMEWORK_SUBSTRINGS = [
-    "/site-packages/dagster",
-    "/python_modules/dagster",
-    "/python_modules/libraries/dagster",
+    os.sep + os.path.join("site-packages", "dagster"),
+    os.sep + os.path.join("python_modules", "dagster"),
+    os.sep + os.path.join("python_modules", "libraries", "dagster"),
 ]
 
 IMPORT_MACHINERY_SUBSTRINGS = [
-    "importlib/__init__.py",
-    "importlib/metadata/__init__.py",
+    os.path.join("importlib", "__init__.py"),
+    os.path.join("importlib", "metadata", "__init__.py"),
     "importlib._bootstrap",
 ]
 
@@ -119,7 +109,7 @@ NO_HINT = lambda _, __: None
 
 def remove_system_frames_from_error(
     error_info: SerializableErrorInfo,
-    build_system_frame_removed_hint: Callable[[bool, int], Optional[str]] = NO_HINT,
+    build_system_frame_removed_hint: Callable[[bool, int], str | None] = NO_HINT,
 ) -> SerializableErrorInfo:
     """Remove system frames from a SerializableErrorInfo, including Dagster framework boilerplate
     and import machinery, which are generally not useful for users to debug their code.
@@ -132,9 +122,9 @@ def remove_system_frames_from_error(
 
 
 def make_simple_frames_removed_hint(
-    additional_first_hint_warning: Optional[str] = None,
-) -> Callable[[bool, int], Optional[str]]:
-    def frames_removed_hint(is_first_hidden_frame: bool, num_hidden_frames: int) -> Optional[str]:
+    additional_first_hint_warning: str | None = None,
+) -> Callable[[bool, int], str | None]:
+    def frames_removed_hint(is_first_hidden_frame: bool, num_hidden_frames: int) -> str | None:
         base_hint = f"{num_hidden_frames} dagster system frames hidden"
         if is_first_hidden_frame and additional_first_hint_warning:
             return f"  [{base_hint}, {additional_first_hint_warning}]\n"
@@ -147,7 +137,7 @@ def make_simple_frames_removed_hint(
 def remove_matching_lines_from_error_info(
     error_info: SerializableErrorInfo,
     match_substrs: Sequence[str],
-    build_system_frame_removed_hint: Callable[[bool, int], Optional[str]],
+    build_system_frame_removed_hint: Callable[[bool, int], str | None],
 ) -> SerializableErrorInfo:
     """Utility which truncates a stacktrace to drop lines which match the given strings.
     This is useful for e.g. removing Dagster framework lines from a stacktrace that
@@ -155,7 +145,9 @@ def remove_matching_lines_from_error_info(
 
     Args:
         error_info (SerializableErrorInfo): The error info to truncate
-        matching_lines (Sequence[str]): The lines to truncate from the stacktrace
+        match_substrs (Sequence[str]): The lines to truncate from the stacktrace
+        build_system_frame_removed_hint (Callable[[bool, int], str | None]): A callable that
+            returns a hint string for the removed frames
 
     Returns:
         SerializableErrorInfo: A new error info with the stacktrace truncated
@@ -184,7 +176,7 @@ def remove_matching_lines_from_error_info(
 def remove_matching_lines_from_stack_trace(
     stack: Sequence[str],
     matching_lines: Sequence[str],
-    build_system_frame_removed_hint: Callable[[bool, int], Optional[str]],
+    build_system_frame_removed_hint: Callable[[bool, int], str | None],
 ) -> Sequence[str]:
     ctr = 0
     out = []

@@ -1,6 +1,7 @@
 import sys
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Optional
+from functools import cached_property
+from typing import TYPE_CHECKING
 
 from dagster_shared.serdes import whitelist_for_serdes
 
@@ -9,7 +10,7 @@ from dagster._core.code_pointer import ModuleCodePointer
 from dagster._core.definitions.selector import JobSubsetSelector, RepositorySelector
 from dagster._core.errors import DagsterInvariantViolationError
 from dagster._core.origin import RepositoryPythonOrigin
-from dagster._core.remote_representation.origin import (
+from dagster._core.remote_origin import (
     CodeLocationOrigin,
     RegisteredCodeLocationOrigin,
     RemoteRepositoryOrigin,
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
 class RepositoryHandle:
     repository_name: str
     code_location_origin: CodeLocationOrigin
-    repository_python_origin: RepositoryPythonOrigin
+    repository_python_origin: RepositoryPythonOrigin | None
     display_metadata: Mapping[str, str]
 
     @classmethod
@@ -51,7 +52,13 @@ class RepositoryHandle:
         )
 
     def get_python_origin(self) -> RepositoryPythonOrigin:
-        return self.repository_python_origin
+        return check.not_none(
+            self.repository_python_origin, "Repository does not have a RepositoryPythonOrigin"
+        )
+
+    @cached_property
+    def selector_id(self) -> str:
+        return self.to_selector().selector_id
 
     def to_selector(self) -> RepositorySelector:
         return RepositorySelector(
@@ -70,7 +77,7 @@ class RepositoryHandle:
         *,
         location_name: str = "fake_location",
         repository_name: str = "fake_repository",
-        display_metadata: Optional[Mapping[str, str]] = None,
+        display_metadata: Mapping[str, str] | None = None,
     ) -> "RepositoryHandle":
         return RepositoryHandle(
             repository_name=repository_name,

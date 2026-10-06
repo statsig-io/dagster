@@ -1,7 +1,7 @@
 import os
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import IO, Any, Optional
+from typing import IO, Any
 
 import boto3
 import dagster_shared.seven as seven
@@ -78,7 +78,7 @@ class S3ComputeLogManager(TruncatingCloudStorageComputeLogManager, ConfigurableC
         self,
         bucket,
         local_dir=None,
-        inst_data: Optional[ConfigurableClassData] = None,
+        inst_data: ConfigurableClassData | None = None,
         prefix="dagster",
         use_ssl=True,
         verify=True,
@@ -150,7 +150,7 @@ class S3ComputeLogManager(TruncatingCloudStorageComputeLogManager, ConfigurableC
         return self._local_manager
 
     @property
-    def upload_interval(self) -> Optional[int]:
+    def upload_interval(self) -> int | None:
         return self._upload_interval if self._upload_interval else None
 
     def _clean_prefix(self, prefix):
@@ -186,7 +186,7 @@ class S3ComputeLogManager(TruncatingCloudStorageComputeLogManager, ConfigurableC
                 )
 
     def delete_logs(
-        self, log_key: Optional[Sequence[str]] = None, prefix: Optional[Sequence[str]] = None
+        self, log_key: Sequence[str] | None = None, prefix: Sequence[str] | None = None
     ):
         self.local_manager.delete_logs(log_key=log_key, prefix=prefix)
 
@@ -219,7 +219,7 @@ class S3ComputeLogManager(TruncatingCloudStorageComputeLogManager, ConfigurableC
             ClientMethod="get_object", Params={"Bucket": self._s3_bucket, "Key": s3_key}
         )
 
-    def display_path_for_type(self, log_key: Sequence[str], io_type: ComputeIOType):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def display_path_for_type(self, log_key: Sequence[str], io_type: ComputeIOType):
         if not self.is_capture_complete(log_key):
             return None
         s3_key = self._s3_key(log_key, io_type)
@@ -262,7 +262,7 @@ class S3ComputeLogManager(TruncatingCloudStorageComputeLogManager, ConfigurableC
 
     def get_log_keys_for_log_key_prefix(
         self, log_key_prefix: Sequence[str], io_type: ComputeIOType
-    ) -> Sequence[Sequence[str]]:
+    ) -> Sequence[list[str]]:
         directory = self._resolve_path_for_namespace(log_key_prefix)
         objects = self._s3_session.list_objects_v2(
             Bucket=self._s3_bucket, Prefix="/".join(directory)

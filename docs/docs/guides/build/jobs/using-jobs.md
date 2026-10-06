@@ -1,16 +1,12 @@
 ---
 title: Using jobs in Dagster projects
-sidebar_position: 250
+sidebar_position: 600
 description: Using jobs in Dagster dg projects for entities such as assets .
 ---
 
-import DgComponentsRc from '@site/docs/partials/\_DgComponentsRc.md';
-
-<DgComponentsRc />
-
 :::note Prerequisites
 
-Before following this guide, you will need to [create a project](/guides/build/projects/creating-a-new-project) with the [`create-dagster` CLI](/api/dg/create-dagster).
+Before following this guide, you will need to [create a project](/guides/build/projects/creating-projects) with the [`create-dagster` CLI](/api/clis/create-dagster).
 
 :::
 
@@ -39,6 +35,6 @@ dg scaffold defs dagster.job path/to/jobs.py
 
 which will create
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/automate/scaffolded-job-defs.py"  title="src/<project_name>/defs/jobs.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/automate/scaffolded-job-defs.py"  title="src/<project_name>/defs/jobs.py" />
 
 and you can fill out the job dictionary as needed.

@@ -8,11 +8,9 @@ import DgScaffoldDefsTip from '@site/docs/partials/\_DgScaffoldDefsTip.md';
 
 You can scaffold Dagster Component definitions in your project from the command line with the `dg scaffold defs` command, which will create a new directory inside your `defs/` folder that contains a `defs.yaml` file.
 
-:::note Prerequisites
+## Prerequisites
 
-Before scaffolding a component definition, you must either [create a components-ready Dagster project](/guides/build/projects/creating-a-new-project) or [migrate an existing project to `dg`](/guides/build/projects/moving-to-components/migrating-project).
-
-:::
+Before scaffolding a component definition, you must either [create a components-ready Dagster project](/guides/build/projects/creating-projects) or [migrate an existing project to `dg`](/guides/build/projects/moving-to-components/migrating-project).
 
 ## Viewing available components
 
@@ -65,7 +63,9 @@ To scaffold a component definition formatted in Python instead of YAML, you can 
 dg scaffold defs dagster_dbt.DbtProjectComponent jdbt --project-path dbt/jdbt --format python
 ```
 
-<CliInvocationExample path="docs_snippets/docs_snippets/guides/components/python-components/tree.txt" title="component.py" />
+<CliInvocationExample path="docs_snippets/docs_snippets/guides/components/python-components/tree.txt" />
+
+<CodeExample path="docs_snippets/docs_snippets/guides/components/python-components/python-component.py" title="component.py" language="python" />
 
 ## Configuration
 

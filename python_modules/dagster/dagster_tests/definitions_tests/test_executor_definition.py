@@ -15,6 +15,7 @@ from dagster._core.definitions.executor_definition import (
 )
 from dagster._core.events import DagsterEventType, RunFailureReason
 from dagster._core.execution.retries import RetryMode
+from dagster._core.execution.step_dependency_config import StepDependencyConfig
 from dagster._core.executor.multiprocess import MultiprocessExecutor
 from dagster._core.storage.tags import RUN_FAILURE_REASON_TAG
 from dagster._core.test_utils import environ
@@ -51,7 +52,7 @@ def primitive_config_executor_job():
 
         return InProcessExecutor(
             # shouldn't need to .get() here - issue with defaults in config setup
-            retries=RetryMode.from_config({"enabled": {}}),  # pyright: ignore[reportArgumentType]
+            retries=RetryMode.from_config({"enabled": {}}),  # ty: ignore[invalid-argument-type]
             marker_to_close=None,
         )
 
@@ -80,7 +81,7 @@ def dict_config_executor_job():
 
         return InProcessExecutor(
             # shouldn't need to .get() here - issue with defaults in config setup
-            retries=RetryMode.from_config({"enabled": {}}),  # pyright: ignore[reportArgumentType]
+            retries=RetryMode.from_config({"enabled": {}}),  # ty: ignore[invalid-argument-type]
             marker_to_close=None,
         )
 
@@ -109,7 +110,7 @@ def requirement_executor_job():
 
         return InProcessExecutor(
             # shouldn't need to .get() here - issue with defaults in config setup
-            retries=RetryMode.from_config({"enabled": {}}),  # pyright: ignore[reportArgumentType]
+            retries=RetryMode.from_config({"enabled": {}}),  # ty: ignore[invalid-argument-type]
             marker_to_close=None,
         )
 
@@ -148,7 +149,7 @@ def executor_dict_config_configured_job():
 
         return InProcessExecutor(
             # shouldn't need to .get() here - issue with defaults in config setup
-            retries=RetryMode.from_config({"enabled": {}}),  # pyright: ignore[reportArgumentType]
+            retries=RetryMode.from_config({"enabled": {}}),  # ty: ignore[invalid-argument-type]
             marker_to_close=None,
         )
 
@@ -156,7 +157,7 @@ def executor_dict_config_configured_job():
         {"value": "secret testing value!!"}, "configured_test_executor"
     )
 
-    assert test_executor_configured.get_requirements(None) == test_executor.get_requirements(None)  # pyright: ignore[reportArgumentType]
+    assert test_executor_configured.get_requirements(None) == test_executor.get_requirements(None)  # ty: ignore[invalid-argument-type]
 
     return get_job_for_executor(test_executor_configured)
 
@@ -174,14 +175,14 @@ def configured_executor_job():
 
         return InProcessExecutor(
             # shouldn't need to .get() here - issue with defaults in config setup
-            retries=RetryMode.from_config({"enabled": {}}),  # pyright: ignore[reportArgumentType]
+            retries=RetryMode.from_config({"enabled": {}}),  # ty: ignore[invalid-argument-type]
             marker_to_close=None,
         )
 
     test_executor_configured = test_executor.configured(
         {"value": "secret testing value!!"}, "configured_test_executor"
     )
-    assert test_executor_configured.get_requirements(None) == test_executor.get_requirements(None)  # pyright: ignore[reportArgumentType]
+    assert test_executor_configured.get_requirements(None) == test_executor.get_requirements(None)  # ty: ignore[invalid-argument-type]
 
     return get_job_for_executor(test_executor_configured)
 
@@ -224,7 +225,7 @@ def needs_config(_):
     from dagster._core.executor.in_process import InProcessExecutor
 
     return InProcessExecutor(
-        retries=RetryMode.from_config({"enabled": {}}),  # pyright: ignore[reportArgumentType]
+        retries=RetryMode.from_config({"enabled": {}}),  # ty: ignore[invalid-argument-type]
         marker_to_close=None,
     )
 
@@ -264,7 +265,7 @@ def test_failing_executor_initialization():
         assert event_records[0].dagster_event_type == DagsterEventType.RUN_FAILURE
 
         run = instance.get_run_by_id(result.run_id)
-        assert run.tags[RUN_FAILURE_REASON_TAG] == RunFailureReason.JOB_INITIALIZATION_FAILURE.value  # pyright: ignore[reportOptionalMemberAccess]
+        assert run.tags[RUN_FAILURE_REASON_TAG] == RunFailureReason.JOB_INITIALIZATION_FAILURE.value  # ty: ignore[unresolved-attribute]
 
 
 def test_multiprocess_executor_default():
@@ -306,6 +307,7 @@ def test_multiprocess_executor_config():
     assert executor._retries == RetryMode.DISABLED  # noqa: SLF001
     assert executor._max_concurrent == 2  # noqa: SLF001
     assert executor._tag_concurrency_limits == tag_concurrency_limits  # noqa: SLF001
+    assert executor._step_dependency_config == StepDependencyConfig.default()  # noqa: SLF001
 
 
 def test_multiprocess_executor_config_none_is_sentinel() -> None:
@@ -318,6 +320,7 @@ def test_multiprocess_executor_config_none_is_sentinel() -> None:
         }
     )
     assert executor._max_concurrent == multiprocessing.cpu_count()  # noqa: SLF001
+    assert executor._step_dependency_config == StepDependencyConfig.default()  # noqa: SLF001
 
 
 def test_multiprocess_executor_config_zero_is_sentinel() -> None:
@@ -330,3 +333,4 @@ def test_multiprocess_executor_config_zero_is_sentinel() -> None:
         }
     )
     assert executor._max_concurrent == multiprocessing.cpu_count()  # noqa: SLF001
+    assert executor._step_dependency_config == StepDependencyConfig.default()  # noqa: SLF001

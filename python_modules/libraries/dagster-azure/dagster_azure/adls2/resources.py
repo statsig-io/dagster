@@ -1,5 +1,6 @@
-from typing import Any, Union
+from typing import Any, Literal, Optional
 
+import dagster as dg
 from azure.identity import DefaultAzureCredential
 from azure.storage.filedatalake import DataLakeLeaseClient
 from dagster import (
@@ -15,33 +16,42 @@ from dagster._core.definitions.resource_definition import dagster_maintained_res
 from dagster._utils.cached_method import cached_method
 from dagster._utils.merger import merge_dicts
 from pydantic import Field
-from typing_extensions import Literal
 
+from dagster_azure._constants import DEFAULT_AZURE_STORAGE_ENDPOINT_SUFFIX
 from dagster_azure.adls2.file_manager import ADLS2FileManager
 from dagster_azure.adls2.io_manager import InitResourceContext
 from dagster_azure.adls2.utils import DataLakeServiceClient, create_adls2_client
 from dagster_azure.blob.utils import BlobServiceClient, create_blob_client
 
 
-class ADLS2SASToken(Config):
+class ADLS2SASToken(dg.Resolvable, Config):
     credential_type: Literal["sas"] = "sas"
-    token: str
+    token: Optional[str] = None  # noqa: UP045
 
 
-class ADLS2Key(Config):
+class ADLS2Key(dg.Resolvable, Config):
     credential_type: Literal["key"] = "key"
-    key: str
+    key: Optional[str] = None  # noqa: UP045
 
 
-class ADLS2DefaultAzureCredential(Config):
+class ADLS2DefaultAzureCredential(dg.Resolvable, Config):
     credential_type: Literal["default_azure_credential"] = "default_azure_credential"
     kwargs: dict[str, Any]
 
 
 class ADLS2BaseResource(ConfigurableResource):
     storage_account: str = Field(description="The storage account name.")
-    credential: Union[ADLS2SASToken, ADLS2Key, ADLS2DefaultAzureCredential] = Field(
+    credential: ADLS2SASToken | ADLS2Key | ADLS2DefaultAzureCredential = Field(
         discriminator="credential_type", description="The credentials with which to authenticate."
+    )
+    endpoint_suffix: str = Field(
+        default=DEFAULT_AZURE_STORAGE_ENDPOINT_SUFFIX,
+        description=(
+            "The endpoint suffix for the Azure storage account. "
+            f"Defaults to '{DEFAULT_AZURE_STORAGE_ENDPOINT_SUFFIX}' (commercial Azure). "
+            "Use 'core.usgovcloudapi.net' for Azure Government, "
+            "'core.chinacloudapi.cn' for Azure China, etc."
+        ),
     )
 
 
@@ -62,6 +72,12 @@ ADLS2_CLIENT_CONFIG = {
             }
         ),
         description="The credentials with which to authenticate.",
+    ),
+    "endpoint_suffix": DagsterField(
+        StringSource,
+        is_required=False,
+        default_value=DEFAULT_AZURE_STORAGE_ENDPOINT_SUFFIX,
+        description="The endpoint suffix for the Azure storage account.",
     ),
 }
 
@@ -148,12 +164,12 @@ class ADLS2Resource(ADLS2BaseResource):
     @property
     @cached_method
     def adls2_client(self) -> DataLakeServiceClient:
-        return create_adls2_client(self.storage_account, self._raw_credential)
+        return create_adls2_client(self.storage_account, self._raw_credential, self.endpoint_suffix)
 
     @property
     @cached_method
     def blob_client(self) -> BlobServiceClient:
-        return create_blob_client(self.storage_account, self._raw_credential)
+        return create_blob_client(self.storage_account, self._raw_credential, self.endpoint_suffix)
 
     @property
     def lease_client_constructor(self) -> Any:
@@ -250,6 +266,7 @@ def _adls2_resource_from_config(config) -> ADLS2Resource:
     Returns: An adls2 client.
     """
     storage_account = config["storage_account"]
+    endpoint_suffix = config.get("endpoint_suffix", DEFAULT_AZURE_STORAGE_ENDPOINT_SUFFIX)
     if "DefaultAzureCredential" in config["credential"]:
         credential = ADLS2DefaultAzureCredential(
             kwargs=config["credential"]["DefaultAzureCredential"]
@@ -259,4 +276,8 @@ def _adls2_resource_from_config(config) -> ADLS2Resource:
     else:
         credential = ADLS2Key(key=config["credential"]["key"])
 
-    return ADLS2Resource(storage_account=storage_account, credential=credential)
+    return ADLS2Resource(
+        storage_account=storage_account,
+        credential=credential,
+        endpoint_suffix=endpoint_suffix,
+    )

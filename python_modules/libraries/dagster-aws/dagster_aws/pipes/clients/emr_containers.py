@@ -1,5 +1,5 @@
 import time
-from typing import TYPE_CHECKING, Any, Literal, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import boto3
 import dagster._check as check
@@ -53,11 +53,11 @@ class PipesEMRContainersClient(PipesClient, TreatAsResourceParam):
     def __init__(
         self,
         client: Optional["EMRContainersClient"] = None,
-        context_injector: Optional[PipesContextInjector] = None,
-        message_reader: Optional[PipesMessageReader] = None,
+        context_injector: PipesContextInjector | None = None,
+        message_reader: PipesMessageReader | None = None,
         forward_termination: bool = True,
         pipes_params_bootstrap_method: Literal["args", "env"] = "env",
-        waiter_config: Optional[WaiterConfig] = None,
+        waiter_config: WaiterConfig | None = None,
     ):
         self._client = client or boto3.client("emr-containers")
         self._context_injector = context_injector or PipesEnvContextInjector()
@@ -83,19 +83,18 @@ class PipesEMRContainersClient(PipesClient, TreatAsResourceParam):
         return True
 
     @public
-    def run(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def run(  # ty: ignore[invalid-method-override]
         self,
         *,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         start_job_run_params: "StartJobRunRequestTypeDef",
-        extras: Optional[dict[str, Any]] = None,
+        extras: dict[str, Any] | None = None,
     ) -> PipesClientCompletedInvocation:
         """Run a workload on AWS EMR Containers, enriched with the pipes protocol.
 
         Args:
             context (Union[OpExecutionContext, AssetExecutionContext]): The context of the currently executing Dagster op or asset.
-            params (dict): Parameters for the ``start_job_run`` boto3 AWS EMR Containers client call.
-                See `Boto3 EMR Containers API Documentation <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/emr-containers/client/start_job_run.html>`_
+            start_job_run_params (dict): Parameters for the start_job_run boto3 AWS EMR Containers client call.
             extras (Optional[Dict[str, Any]]): Additional information to pass to the Pipes session in the external process.
 
         Returns:
@@ -127,7 +126,7 @@ class PipesEMRContainersClient(PipesClient, TreatAsResourceParam):
 
     def _enrich_start_params(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         session: PipesSession,
         params: "StartJobRunRequestTypeDef",
     ) -> "StartJobRunRequestTypeDef":
@@ -139,15 +138,15 @@ class PipesEMRContainersClient(PipesClient, TreatAsResourceParam):
 
         if self.pipes_params_bootstrap_method == "env":
             params["configurationOverrides"] = params.get("configurationOverrides", {})
-            params["configurationOverrides"]["applicationConfiguration"] = params[  # type: ignore
+            params["configurationOverrides"]["applicationConfiguration"] = params[  # ty: ignore[invalid-assignment]
                 "configurationOverrides"
             ].get("applicationConfiguration", [])
             # we can reuse the same method as in standard EMR
             # since configurations format is the same
-            params["configurationOverrides"]["applicationConfiguration"] = (  # type: ignore
+            params["configurationOverrides"]["applicationConfiguration"] = (
                 emr_inject_pipes_env_vars(
                     session,
-                    params["configurationOverrides"]["applicationConfiguration"],  # type: ignore
+                    params["configurationOverrides"]["applicationConfiguration"],
                     emr_flavor="containers",
                 )
             )
@@ -164,13 +163,13 @@ class PipesEMRContainersClient(PipesClient, TreatAsResourceParam):
                 for key, value in session.get_bootstrap_cli_arguments().items():
                     spark_submit_job_driver["sparkSubmitParameters"] += f" {key} {value}"
 
-            params["jobDriver"]["sparkSubmitJobDriver"] = spark_submit_job_driver  # type: ignore
+            params["jobDriver"]["sparkSubmitJobDriver"] = spark_submit_job_driver  # ty: ignore[invalid-assignment]
 
-        return cast("StartJobRunRequestTypeDef", params)
+        return params
 
     def _start(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         params: "StartJobRunRequestTypeDef",
     ) -> "StartJobRunResponseTypeDef":
         response = self.client.start_job_run(**params)
@@ -186,7 +185,7 @@ class PipesEMRContainersClient(PipesClient, TreatAsResourceParam):
 
     def _wait_for_completion(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         start_response: "StartJobRunResponseTypeDef",
     ) -> "DescribeJobRunResponseTypeDef":
         job_run_id = start_response["id"]
@@ -206,9 +205,9 @@ class PipesEMRContainersClient(PipesClient, TreatAsResourceParam):
 
             time.sleep(self.waiter_config.get("Delay", 6))
 
-        if state in ["FAILED", "CANCELLED"]:  # pyright: ignore[reportPossiblyUnboundVariable]
+        if state in ["FAILED", "CANCELLED"]:
             raise RuntimeError(
-                f"EMR Containers job run {job_run_id} failed with state {state}. Reason: {response['jobRun'].get('failureReason')}, details: {response['jobRun'].get('stateDetails')}"  # pyright: ignore[reportPossiblyUnboundVariable]
+                f"EMR Containers job run {job_run_id} failed with state {state}. Reason: {response['jobRun'].get('failureReason')}, details: {response['jobRun'].get('stateDetails')}"
             )
 
         return self.client.describe_job_run(virtualClusterId=virtual_cluster_id, id=job_run_id)
@@ -232,7 +231,7 @@ class PipesEMRContainersClient(PipesClient, TreatAsResourceParam):
 
     def _terminate(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         start_response: "StartJobRunResponseTypeDef",
     ):
         virtual_cluster_id = start_response["virtualClusterId"]

@@ -2,20 +2,19 @@ import re
 import urllib.parse
 from collections.abc import Sequence
 from enum import Enum
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from dagster import (
     UrlMetadataValue,
     _check as check,
 )
-from dagster._annotations import deprecated
 from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
 from dagster._core.definitions.metadata.metadata_set import NamespacedMetadataSet, TableMetadataSet
 from dagster._core.definitions.metadata.metadata_value import MetadataValue
 from dagster._core.definitions.metadata.table import TableColumn, TableSchema
 from dagster._core.definitions.tags.tag_set import NamespacedTagSet
-from dagster._core.definitions.utils import is_valid_asset_owner
+from dagster._core.definitions.utils import is_valid_owner
 from dagster._record import record
 from dagster._utils.names import clean_name
 from dagster_shared.serdes import whitelist_for_serdes
@@ -38,7 +37,7 @@ _clean_asset_name = clean_name
 PARSE_M_QUERY_OBJECT = re.compile(r'\[Name="(?P<name>[^"]+)",Kind="(?P<kind>[^"]+)"\]')
 
 
-def _attempt_parse_m_query_source(sources: list[dict[str, Any]]) -> Optional[AssetKey]:
+def _attempt_parse_m_query_source(sources: list[dict[str, Any]]) -> AssetKey | None:
     for source in sources:
         if "expression" in source:
             objects = PARSE_M_QUERY_OBJECT.findall(source["expression"])
@@ -140,7 +139,7 @@ class PowerBIWorkspaceData:
 
 
 class PowerBITagSet(NamespacedTagSet):
-    asset_type: Optional[Literal["dashboard", "report", "semantic_model", "data_source"]] = None
+    asset_type: Literal["dashboard", "report", "semantic_model", "data_source"] | None = None
 
     @classmethod
     def namespace(cls) -> str:
@@ -148,9 +147,9 @@ class PowerBITagSet(NamespacedTagSet):
 
 
 class PowerBIMetadataSet(NamespacedMetadataSet):
-    web_url: Optional[UrlMetadataValue] = None
-    id: Optional[str] = None
-    name: Optional[str] = None
+    web_url: UrlMetadataValue | None = None
+    id: str | None = None
+    name: str | None = None
 
     @classmethod
     def namespace(cls) -> str:
@@ -186,14 +185,6 @@ class DagsterPowerBITranslator:
             return self.get_data_source_spec(data)
         else:
             check.assert_never(data.content_type)
-
-    @deprecated(
-        breaking_version="1.10",
-        additional_warn_text="Use `DagsterPowerBITranslator.get_asset_spec(...).key` instead",
-    )
-    def get_dashboard_asset_key(self, data: PowerBITranslatorData) -> AssetKey:
-        data = check.inst(data, PowerBITranslatorData)
-        return self.get_dashboard_spec(data).key
 
     def get_dashboard_spec(self, data: PowerBITranslatorData) -> AssetSpec:
         data = check.inst(data, PowerBITranslatorData)
@@ -233,14 +224,6 @@ class DagsterPowerBITranslator:
             kinds={"powerbi", "dashboard"},
         )
 
-    @deprecated(
-        breaking_version="1.10",
-        additional_warn_text="Use `DagsterPowerBITranslator.get_asset_spec(...).key` instead",
-    )
-    def get_report_asset_key(self, data: PowerBITranslatorData) -> AssetKey:
-        data = check.inst(data, PowerBITranslatorData)
-        return self.get_report_spec(data).key
-
     def get_report_spec(self, data: PowerBITranslatorData) -> AssetSpec:
         data = check.inst(data, PowerBITranslatorData)
         report_id = data.properties["id"]
@@ -276,16 +259,8 @@ class DagsterPowerBITranslator:
             },
             tags={**PowerBITagSet(asset_type="report")},
             kinds={"powerbi", "report"},
-            owners=[owner] if owner and is_valid_asset_owner(owner) else None,
+            owners=[owner] if owner and is_valid_owner(owner) else None,
         )
-
-    @deprecated(
-        breaking_version="1.10",
-        additional_warn_text="Use `DagsterPowerBITranslator.get_asset_spec(...).key` instead",
-    )
-    def get_semantic_model_asset_key(self, data: PowerBITranslatorData) -> AssetKey:
-        data = check.inst(data, PowerBITranslatorData)
-        return self.get_semantic_model_spec(data).key
 
     def get_semantic_model_spec(self, data: PowerBITranslatorData) -> AssetSpec:
         data = check.inst(data, PowerBITranslatorData)
@@ -338,17 +313,9 @@ class DagsterPowerBITranslator:
                 **table_meta,
             },
             tags={**PowerBITagSet(asset_type="semantic_model")},
-            kinds={"powerbi", "semantic model"},
-            owners=[owner] if owner and is_valid_asset_owner(owner) else None,
+            kinds={"powerbi", "semantic_model"},
+            owners=[owner] if owner and is_valid_owner(owner) else None,
         )
-
-    @deprecated(
-        breaking_version="1.10",
-        additional_warn_text="Use `DagsterPowerBITranslator.get_asset_spec(...).key` instead",
-    )
-    def get_data_source_asset_key(self, data: PowerBITranslatorData) -> AssetKey:
-        data = check.inst(data, PowerBITranslatorData)
-        return self.get_data_source_spec(data).key
 
     def get_data_source_spec(self, data: PowerBITranslatorData) -> AssetSpec:
         data = check.inst(data, PowerBITranslatorData)

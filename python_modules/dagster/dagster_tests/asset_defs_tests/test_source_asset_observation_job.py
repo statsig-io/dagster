@@ -1,5 +1,3 @@
-from typing import Optional
-
 import dagster as dg
 import pytest
 from dagster._core.definitions.data_version import extract_data_version_from_entry
@@ -9,7 +7,7 @@ from dagster._core.definitions.resource_definition import ResourceDefinition
 from dagster._core.instance import DagsterInstance
 
 
-def _get_current_data_version(key: AssetKey, instance: DagsterInstance) -> Optional[dg.DataVersion]:
+def _get_current_data_version(key: AssetKey, instance: DagsterInstance) -> dg.DataVersion | None:
     record = instance.get_latest_data_version_record(key)
     assert record is not None
     return extract_data_version_from_entry(record.event_log_entry)
@@ -73,11 +71,11 @@ def test_partitioned_observable_source_asset():
         )
 
         # If the asset selection contains any materializable assets, source assets observations will not run
-        job_def.execute_in_process(partition_key="A", instance=instance)  # pyright: ignore[reportOptionalMemberAccess]
+        job_def.execute_in_process(partition_key="A", instance=instance)  # ty: ignore[unresolved-attribute]
         assert called == {"bar"}
 
         # If the asset selection contains only observable source assets, source assets are observed
-        job_def.execute_in_process(partition_key="A", asset_selection=[foo.key], instance=instance)  # pyright: ignore[reportOptionalMemberAccess]
+        job_def.execute_in_process(partition_key="A", asset_selection=[foo.key], instance=instance)  # ty: ignore[unresolved-attribute]
         assert called == {"bar", "foo"}
         record = instance.get_latest_data_version_record(dg.AssetKey(["foo"]))
         assert record and extract_data_version_from_entry(record.event_log_entry) == dg.DataVersion(

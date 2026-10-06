@@ -1,5 +1,4 @@
 import json
-import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 from unittest import mock
@@ -11,8 +10,13 @@ from click.testing import CliRunner
 from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
 from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
 from dagster._core.definitions.job_definition import JobDefinition
+from dagster._core.instance_for_test import instance_for_test
+from dagster._core.storage.defs_state.base import DefsStateStorage
 from dagster._core.test_utils import ensure_dagster_tests_import
-from dagster._utils import pushd
+from dagster._utils import alter_sys_path, pushd
+from dagster._utils.env import environ
+from dagster._utils.test.definitions import scoped_definitions_load_context
+from dagster.components.testing.utils import create_defs_folder_sandbox
 from dagster_airlift.constants import (
     DAG_MAPPING_METADATA_KEY,
     SOURCE_CODE_METADATA_KEY,
@@ -24,17 +28,31 @@ from dagster_airlift.test.test_utils import asset_spec, get_job_from_defs
 from dagster_dg_cli.cli import cli
 
 ensure_dagster_tests_import()
+from dagster_shared.yaml_utils import safe_load_yaml
 from dagster_tests.components_tests.utils import (
     build_component_defs_for_test,
     temp_code_location_bar,
 )
 
 
+@pytest.fixture(autouse=True)
+def _setup() -> Iterator:
+    with (
+        environ({"DAGSTER_IS_DEV_CLI": "1"}),
+        instance_for_test() as instance,
+        scoped_definitions_load_context(),
+    ):
+        yield instance
+
+
 @pytest.fixture
 def temp_cwd() -> Iterator[Path]:
-    with tempfile.TemporaryDirectory() as temp_dir:
-        with pushd(temp_dir):
-            yield Path.cwd()
+    with (
+        create_defs_folder_sandbox() as sandbox,
+        alter_sys_path(to_add=[str(sandbox.project_root / "src")], to_remove=[]),
+        pushd(str(sandbox.project_root)),
+    ):
+        yield Path.cwd()
 
 
 @pytest.fixture
@@ -67,6 +85,8 @@ def component_for_test(temp_cwd: Path):
 
 
 def test_load_dags_basic(component_for_test: type[AirflowInstanceComponent]) -> None:
+    state_storage = DefsStateStorage.get()
+    assert state_storage is not None
     defs = build_component_defs_for_test(
         component_type=component_for_test,
         attrs={
@@ -128,8 +148,8 @@ def test_scaffold_airlift_yaml():
     with temp_code_location_bar():
         _scaffold_airlift("yaml")
         assert Path("bar/defs/qux/defs.yaml").exists()
-        with open("bar/defs/qux/defs.yaml") as f:
-            assert yaml.safe_load(f) == {
+        with open("bar/defs/qux/defs.yaml", encoding="utf-8") as f:
+            assert safe_load_yaml(f) == {
                 "type": "dagster_airlift.core.components.AirflowInstanceComponent",
                 "attributes": {
                     "name": "qux",
@@ -147,14 +167,14 @@ def test_scaffold_airlift_python():
     with temp_code_location_bar():
         _scaffold_airlift("python")
         assert Path("bar/defs/qux/component.py").exists()
-        with open("bar/defs/qux/component.py") as f:
+        with open("bar/defs/qux/component.py", encoding="utf-8") as f:
             file_contents = f.read()
             assert file_contents == (
-                """from dagster import component, ComponentLoadContext
+                """import dagster as dg
 from dagster_airlift.core.components import AirflowInstanceComponent
 
-@component_instance
-def load(context: ComponentLoadContext) -> AirflowInstanceComponent: ...
+@dg.component_instance
+def load(context: dg.ComponentLoadContext) -> AirflowInstanceComponent: ...
 """
             )
 
@@ -163,7 +183,7 @@ def load(context: ComponentLoadContext) -> AirflowInstanceComponent: ...
 def test_mapped_assets(component_for_test: type[AirflowInstanceComponent], temp_cwd: Path):
     # Add a sub-dir with an asset that will be task mapped.
     (temp_cwd / "my_asset").mkdir()
-    with open(temp_cwd / "my_asset" / "defs.yaml", "w") as f:
+    with open(temp_cwd / "my_asset" / "defs.yaml", "w", encoding="utf-8") as f:
         f.write(
             yaml.dump(
                 {
@@ -177,7 +197,7 @@ def test_mapped_assets(component_for_test: type[AirflowInstanceComponent], temp_
 
     # Add a sub-dir with an asset that will be dag mapped.
     (temp_cwd / "my_asset_2").mkdir()
-    with open(temp_cwd / "my_asset_2" / "defs.yaml", "w") as f:
+    with open(temp_cwd / "my_asset_2" / "defs.yaml", "w", encoding="utf-8") as f:
         f.write(
             yaml.dump(
                 {

@@ -1,8 +1,8 @@
-from typing import Optional
+from typing import Any
 
 import dlt
 
-MOCK_REPOS = [
+MOCK_REPOS: list[dict[str, Any]] = [
     {
         "id": 1,
         "name": "example-repo-1",
@@ -41,7 +41,7 @@ MOCK_ISSUES = {
 
 
 @dlt.source
-def pipeline(month: Optional[str] = None):
+def pipeline(month: str | None = None):
     @dlt.resource(primary_key="id", write_disposition="merge")
     def repos():
         for d in MOCK_REPOS:

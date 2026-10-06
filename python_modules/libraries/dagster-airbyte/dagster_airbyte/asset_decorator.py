@@ -1,10 +1,11 @@
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from dagster import AssetsDefinition, multi_asset
 from dagster._annotations import beta
 from dagster._core.errors import DagsterInvariantViolationError
 
-from dagster_airbyte.resources import AirbyteCloudWorkspace
+from dagster_airbyte.resources import AirbyteCloudWorkspace, AirbyteWorkspace
 from dagster_airbyte.translator import AirbyteMetadataSet, DagsterAirbyteTranslator
 
 
@@ -12,16 +13,16 @@ from dagster_airbyte.translator import AirbyteMetadataSet, DagsterAirbyteTransla
 def airbyte_assets(
     *,
     connection_id: str,
-    workspace: AirbyteCloudWorkspace,
-    name: Optional[str] = None,
-    group_name: Optional[str] = None,
-    dagster_airbyte_translator: Optional[DagsterAirbyteTranslator] = None,
+    workspace: AirbyteWorkspace | AirbyteCloudWorkspace,
+    name: str | None = None,
+    group_name: str | None = None,
+    dagster_airbyte_translator: DagsterAirbyteTranslator | None = None,
 ) -> Callable[[Callable[..., Any]], AssetsDefinition]:
     """Create a definition for how to sync the tables of a given Airbyte connection.
 
     Args:
         connection_id (str): The Airbyte Connection ID.
-        workspace (AirbyteCloudWorkspace): The Airbyte workspace to fetch assets from.
+        workspace (Union[AirbyteWorkspace, AirbyteCloudWorkspace]): The Airbyte workspace to fetch assets from.
         name (Optional[str], optional): The name of the op.
         group_name (Optional[str], optional): The name of the asset group.
         dagster_airbyte_translator (Optional[DagsterAirbyteTranslator], optional): The translator to use

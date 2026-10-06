@@ -1,18 +1,24 @@
 import time
+from collections.abc import Callable
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 import dagster as dg
 import pytest
 from dagster import AssetsDefinition, AutomationCondition
+from dagster._core.definitions.asset_key import AssetJobKey
 from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
 from dagster._core.definitions.assets.graph.asset_graph_subset import AssetGraphSubset
 from dagster._core.definitions.assets.graph.base_asset_graph import (
     AssetCheckNode,
+    AssetJobNode,
     BaseAssetGraph,
     BaseAssetNode,
 )
-from dagster._core.definitions.assets.graph.remote_asset_graph import RemoteAssetGraph
+from dagster._core.definitions.assets.graph.remote_asset_graph import (
+    RemoteAssetGraph,
+    RemoteWorkspaceAssetGraph,
+)
 from dagster._core.definitions.events import AssetKeyPartitionKey
 from dagster._core.definitions.partitions.context import partition_loading_context
 from dagster._core.definitions.partitions.definition import PartitionsDefinition
@@ -224,11 +230,11 @@ def test_custom_unsupported_partition_mapping():
     class TrailingWindowPartitionMapping(dg.PartitionMapping):
         def get_upstream_mapped_partitions_result_for_partitions(
             self,
-            downstream_partitions_subset: Optional[PartitionsSubset],
-            downstream_partitions_def: Optional[dg.PartitionsDefinition],
+            downstream_partitions_subset: PartitionsSubset | None,
+            downstream_partitions_def: dg.PartitionsDefinition | None,
             upstream_partitions_def: PartitionsDefinition,
-            current_time: Optional[datetime] = None,
-            dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+            current_time: datetime | None = None,
+            dynamic_partitions_store: DynamicPartitionsStore | None = None,
         ) -> UpstreamPartitionsResult:
             assert downstream_partitions_subset
             assert upstream_partitions_def
@@ -247,7 +253,7 @@ def test_custom_unsupported_partition_mapping():
         def validate_partition_mapping(
             self,
             upstream_partitions_def: PartitionsDefinition,
-            downstream_partitions_def: Optional[dg.PartitionsDefinition],
+            downstream_partitions_def: dg.PartitionsDefinition | None,
         ):
             pass
 
@@ -256,8 +262,8 @@ def test_custom_unsupported_partition_mapping():
             upstream_partitions_subset: PartitionsSubset,
             upstream_partitions_def: PartitionsDefinition,
             downstream_partitions_def: PartitionsDefinition,
-            current_time: Optional[datetime] = None,
-            dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+            current_time: datetime | None = None,
+            dynamic_partitions_store: DynamicPartitionsStore | None = None,
         ) -> PartitionsSubset:
             raise NotImplementedError()
 
@@ -738,10 +744,10 @@ def test_required_assets_and_checks_by_key_check_decorator(
     @dg.asset
     def asset0(): ...
 
-    @dg.asset_check(asset=asset0)  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(asset=asset0)
     def check0(): ...
 
-    @dg.asset_check(  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(
         asset=asset0,
         blocking=True,
         automation_condition=AutomationCondition.cron_tick_passed("*/15 * * * *"),
@@ -778,10 +784,10 @@ def test_toposort(
     @dg.asset(deps=[A])
     def B(): ...
 
-    @dg.asset_check(asset=A)  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(asset=A)
     def Ac(): ...
 
-    @dg.asset_check(asset=B)  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(asset=B)
     def Bc(): ...
 
     asset_graph = asset_graph_from_assets([A, B, Ac, Bc])
@@ -789,9 +795,190 @@ def test_toposort(
     assert asset_graph.toposorted_asset_keys == [A.key, B.key]
     assert asset_graph.toposorted_entity_keys_by_level == [
         [A.key],
-        [Ac.check_key, B.key],
+        [B.key, Ac.check_key],
         [Bc.check_key],
     ]
+
+
+def test_with_job_nodes() -> None:
+    @dg.asset
+    def A(): ...
+
+    @dg.asset(deps=[A])
+    def B(): ...
+
+    @dg.asset_check(asset=A)
+    def Ac(): ...
+
+    condition = AutomationCondition.all_job_root_assets_match(AutomationCondition.eager())
+    daily = dg.DailyPartitionsDefinition(start_date="2024-01-01")
+    job_node = AssetJobNode(
+        key=AssetJobKey("my_job"),
+        asset_keys={A.key, B.key},
+        partitions_def=daily,
+        automation_condition=condition,
+    )
+    asset_graph = AssetGraph.from_assets([A, B, Ac]).with_job_nodes([job_node])
+
+    assert asset_graph.has(AssetJobKey("my_job"))
+    assert not asset_graph.has(AssetJobKey("other_job"))
+
+    node = asset_graph.get(AssetJobKey("my_job"))
+    assert node is job_node
+    assert node.asset_keys == {A.key, B.key}
+    assert node.partitions_def == daily
+    assert node.automation_condition == condition
+
+    assert list(asset_graph.asset_job_nodes) == [job_node]
+    assert job_node in list(asset_graph.nodes)
+
+    # asset and check addressing is unaffected
+    assert asset_graph.has(A.key)
+    assert asset_graph.has(Ac.check_key)
+
+
+def test_toposort_with_job_nodes() -> None:
+    @dg.asset
+    def A(): ...
+
+    @dg.asset(deps=[A])
+    def B(): ...
+
+    @dg.asset_check(asset=A)
+    def Ac(): ...
+
+    def job_node(name: str) -> AssetJobNode:
+        return AssetJobNode(
+            key=AssetJobKey(name),
+            asset_keys={A.key},
+            partitions_def=None,
+            automation_condition=AutomationCondition.all_job_root_assets_match(
+                AutomationCondition.eager()
+            ),
+        )
+
+    asset_graph = AssetGraph.from_assets([A, B, Ac]).with_job_nodes(
+        [job_node("zebra_job"), job_node("alpha_job")]
+    )
+
+    # job nodes have no dep-graph edges, so they land at the root level; within a level
+    # keys sort by their db string (assets, then checks/jobs), deterministically
+    assert asset_graph.toposorted_entity_keys_by_level == [
+        [A.key, AssetJobKey("alpha_job"), AssetJobKey("zebra_job")],
+        [B.key, Ac.check_key],
+    ]
+
+
+def _local_repo_graph(defs: dg.Definitions) -> BaseAssetGraph:
+    return defs.get_repository_def().asset_graph
+
+
+def _remote_repo_graph(defs: dg.Definitions) -> BaseAssetGraph:
+    remote_repo = RemoteRepository(
+        RepositorySnap.from_def(defs.get_repository_def()),
+        repository_handle=RepositoryHandle.for_test(location_name="fake", repository_name="repo"),
+        auto_materialize_use_sensors=True,
+    )
+    return remote_repo.asset_graph
+
+
+# the same project seen from the user-code process (local) and reconstructed from its
+# snapshot on the host side (remote); conditioned jobs must surface identically in both
+@pytest.mark.parametrize(
+    "graph_from_defs", [_local_repo_graph, _remote_repo_graph], ids=["local", "remote"]
+)
+def test_conditioned_jobs_become_graph_nodes(
+    graph_from_defs: Callable[[dg.Definitions], BaseAssetGraph],
+) -> None:
+    @dg.asset
+    def A(): ...
+
+    conditioned_job = dg.define_asset_job(
+        name="conditioned_job",
+        selection=[A],
+        automation_condition=AutomationCondition.all_job_root_assets_match(
+            AutomationCondition.eager()
+        ),
+    )
+    unconditioned_job = dg.define_asset_job(name="unconditioned_job", selection=[A])
+    defs = dg.Definitions(assets=[A], jobs=[conditioned_job, unconditioned_job])
+
+    asset_graph = graph_from_defs(defs)
+
+    assert asset_graph.has(AssetJobKey("conditioned_job"))
+    assert not asset_graph.has(AssetJobKey("unconditioned_job"))
+    assert asset_graph.get(AssetJobKey("conditioned_job")).automation_condition is not None
+    assert asset_graph.automatable_asset_job_keys == {AssetJobKey("conditioned_job")}
+
+
+def test_asset_job_node_properties() -> None:
+    # direct construction of the local node: verify its stored fields and the constant stubs
+    key = AssetJobKey("my_job")
+    asset_keys = frozenset({dg.AssetKey("a"), dg.AssetKey("b")})
+    condition = AutomationCondition.all_job_root_assets_match(AutomationCondition.eager())
+    node = AssetJobNode(
+        key=key,
+        asset_keys=asset_keys,
+        partitions_def=None,
+        automation_condition=condition,
+    )
+
+    assert node.key == key
+    assert node.asset_keys == asset_keys
+    assert node.automation_condition is condition
+    assert node.description is None
+    assert node.partitions_def is None
+    assert node.partition_mappings == {}
+    # job nodes have no dep-graph edges
+    assert node.parent_entity_keys == frozenset()
+    assert node.child_entity_keys == frozenset()
+
+
+def test_asset_job_node_without_automation_condition() -> None:
+    # a node can be constructed without a condition (though the graph only builds nodes for
+    # conditioned jobs); the field and the description stub are both None
+    node = AssetJobNode(
+        key=AssetJobKey("j"),
+        asset_keys=frozenset(),
+        partitions_def=None,
+        automation_condition=None,
+    )
+    assert node.automation_condition is None
+    assert node.description is None
+
+
+# the local builder must derive the node's asset_keys and partitions_def from the resolved
+# job. partitions_def covers the unpartitioned, time-window, and static cases; asset_keys is
+# a local-only field (the remote node does not carry it).
+@pytest.mark.parametrize(
+    "partitions_def",
+    [
+        None,
+        dg.DailyPartitionsDefinition(start_date="2024-01-01"),
+        dg.StaticPartitionsDefinition(["p", "q"]),
+    ],
+    ids=["unpartitioned", "daily", "static"],
+)
+def test_local_conditioned_job_node_fields(partitions_def) -> None:
+    @dg.asset(partitions_def=partitions_def)
+    def asset_a(): ...
+
+    @dg.asset(partitions_def=partitions_def)
+    def asset_b(): ...
+
+    job = dg.define_asset_job(
+        name="the_job",
+        selection=[asset_a, asset_b],
+        automation_condition=AutomationCondition.all_job_root_assets_match(
+            AutomationCondition.eager()
+        ),
+    )
+    defs = dg.Definitions(assets=[asset_a, asset_b], jobs=[job])
+
+    node = defs.get_repository_def().asset_graph.get(AssetJobKey("the_job"))
+    assert isinstance(node, AssetJobNode)
+    assert node.asset_keys == {asset_a.key, asset_b.key}
+    assert node.partitions_def == partitions_def
 
 
 def test_required_assets_and_checks_by_key_asset_decorator(
@@ -803,7 +990,7 @@ def test_required_assets_and_checks_by_key_asset_decorator(
     @dg.asset(check_specs=[foo_check, bar_check])
     def asset0(): ...
 
-    @dg.asset_check(asset=asset0)  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(asset=asset0)
     def check0(): ...
 
     asset_graph = asset_graph_from_assets([asset0, check0])
@@ -990,7 +1177,7 @@ def test_serdes() -> None:
     @dg.asset
     def a(): ...
 
-    @dg.asset_check(asset=a)  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(asset=a)
     def c(): ...
 
     @dg.repository
@@ -1003,3 +1190,49 @@ def test_serdes() -> None:
 
     check = next(iter(asset_graph.get_checks_for_asset(dg.AssetKey("a"))))
     assert check == dg.deserialize_value(dg.serialize_value(check))
+
+
+def test_get_assets_for_same_storage_address() -> None:
+    @dg.asset(metadata={"dagster/table_name": "db.schema.table_a"})
+    def asset1(): ...
+
+    @dg.asset(
+        metadata={"dagster/table_name": "DB.SCHEMA.TABLE_A"}
+    )  # uppercase, should match asset1
+    def asset2(): ...
+
+    @dg.asset(metadata={"dagster/table_name": "db.schema.table_b"})
+    def asset3(): ...
+
+    @dg.asset  # no table_name metadata
+    def asset4(): ...
+
+    assets = [asset1, asset2, asset3, asset4]
+
+    @dg.repository
+    def repo():
+        return assets
+
+    workspace = mock_workspace_from_repos([repo])
+    asset_graph = workspace.asset_graph
+    assert isinstance(asset_graph, RemoteWorkspaceAssetGraph)
+
+    # Test: asset1 should find asset2 (same table, case-insensitive), not itself or others
+    result = asset_graph.get_assets_for_same_storage_address(asset1.key)
+    assert result == {asset_graph.get(asset2.key)}
+
+    # Test: asset2 (uppercase) should find asset1 (lowercase)
+    result = asset_graph.get_assets_for_same_storage_address(asset2.key)
+    assert result == {asset_graph.get(asset1.key)}
+
+    # Test: asset3 has unique table, should return empty
+    result = asset_graph.get_assets_for_same_storage_address(asset3.key)
+    assert result == set()
+
+    # Test: asset4 has no table_name, should return empty
+    result = asset_graph.get_assets_for_same_storage_address(asset4.key)
+    assert result == set()
+
+    # Test: non-existent key should return empty
+    result = asset_graph.get_assets_for_same_storage_address(dg.AssetKey("nonexistent"))
+    assert result == set()

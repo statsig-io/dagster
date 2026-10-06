@@ -3,9 +3,13 @@ description: Add these Dagster+ Serverless IP addresses to an allowlist for outb
 sidebar_label: IP addresses
 sidebar_position: 3000
 title: Dagster+ Serverless IP addresses
+tags: [dagster-plus-feature]
 ---
 
 Dagster+ Serverless code will make requests from one of the following IP addresses. You may need to whitelist / allowlist them for services your code interacts with.
+
+<Tabs>
+  <TabItem value="us-region" label="US region">
 
 ```plain
 34.216.9.66
@@ -25,8 +29,23 @@ Dagster+ Serverless code will make requests from one of the following IP address
 54.71.18.84
 ```
 
+  </TabItem>
+  <TabItem value="eu-region" label="EU region">
+
+```plain
+16.170.24.133
+13.62.119.65
+56.228.54.244
+13.61.215.41
+13.50.153.40
+51.21.242.187
+```
+
+  </TabItem>
+</Tabs>
+
 :::note
 
-Additional IP addresses may be added over time. This list was last updated on **October 24, 2024**.
+Additional IP addresses may be added over time. This list was last updated on **May 15, 2026**.
 
 :::

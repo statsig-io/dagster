@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from enum import Enum
-from typing import Union
+from typing import TypeAlias
 
 import dagster._check as check
 from dagster._config.config_type import ConfigTypeKind
@@ -82,18 +82,18 @@ class SelectorTypeErrorData(IHaveNew):
         )
 
 
-ERROR_DATA_UNION = Union[
-    FieldNotDefinedErrorData,
-    FieldsNotDefinedErrorData,
-    MissingFieldErrorData,
-    MissingFieldsErrorData,
-    RuntimeMismatchErrorData,
-    SelectorTypeErrorData,
-    SerializableErrorInfo,
-    FieldAliasCollisionErrorData,
-]
+ERROR_DATA_UNION: TypeAlias = (
+    FieldNotDefinedErrorData
+    | FieldsNotDefinedErrorData
+    | MissingFieldErrorData
+    | MissingFieldsErrorData
+    | RuntimeMismatchErrorData
+    | SelectorTypeErrorData
+    | SerializableErrorInfo
+    | FieldAliasCollisionErrorData
+)
 
-ERROR_DATA_TYPES = ERROR_DATA_UNION.__args__  # type: ignore
+ERROR_DATA_TYPES = ERROR_DATA_UNION.__args__
 
 
 @record
@@ -275,8 +275,8 @@ def create_missing_required_field_error(
         stack=context.stack,
         reason=DagsterEvaluationErrorReason.MISSING_REQUIRED_FIELD,
         message=(
-            'Missing required config entry "{expected}" {path_msg}. Sample config for missing'
-            " entry: {minimal_config}"
+            'Missing required config entry "{expected}" {path_msg}. You must provide this value in your'
+            " run config. Example config for the missing entry: {minimal_config}"
         ).format(
             expected=expected_field,
             path_msg=get_friendly_path_msg(context.stack),
@@ -305,8 +305,8 @@ def create_missing_required_fields_error(
         stack=context.stack,
         reason=DagsterEvaluationErrorReason.MISSING_REQUIRED_FIELDS,
         message=(
-            "Missing required config entries {missing_fields} {path_msg}. Sample config for missing"
-            " entries: {minimal_config}".format(
+            "Missing required config entries {missing_fields} {path_msg}. You must provide these values in your"
+            " run config. Example config for the missing entries: {minimal_config}".format(
                 missing_fields=missing_fields,
                 path_msg=get_friendly_path_msg(context.stack),
                 minimal_config={
@@ -342,7 +342,7 @@ def create_scalar_error(context: ContextData, config_value: object) -> Evaluatio
 
 
 def create_pydantic_env_var_error(
-    context: ContextData, config_value: Union[EnvVar, IntEnvVar]
+    context: ContextData, config_value: EnvVar | IntEnvVar
 ) -> EvaluationError:
     env_var_name = config_value.env_var_name
 

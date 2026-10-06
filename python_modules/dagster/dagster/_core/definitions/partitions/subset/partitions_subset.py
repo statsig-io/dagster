@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
-from typing import Generic, Optional
+from typing import Generic
 
 from typing_extensions import TypeVar
 
@@ -18,7 +18,7 @@ class PartitionsSubset(ABC, Generic[T_str]):
 
     @property
     def is_empty(self) -> bool:
-        return len(list(self.get_partition_keys())) == 0
+        return len(self) == 0
 
     @abstractmethod
     def get_partition_keys_not_in_subset(
@@ -100,8 +100,8 @@ class PartitionsSubset(ABC, Generic[T_str]):
         cls,
         partitions_def: PartitionsDefinition,
         serialized: str,
-        serialized_partitions_def_unique_id: Optional[str],
-        serialized_partitions_def_class_name: Optional[str],
+        serialized_partitions_def_unique_id: str | None,
+        serialized_partitions_def_class_name: str | None,
     ) -> bool: ...
 
     @abstractmethod
@@ -110,12 +110,13 @@ class PartitionsSubset(ABC, Generic[T_str]):
     @abstractmethod
     def __contains__(self, value) -> bool: ...
 
+    @abstractmethod
     def empty_subset(self) -> "PartitionsSubset[T_str]": ...
 
     @classmethod
     @abstractmethod
     def create_empty_subset(
-        cls, partitions_def: Optional[PartitionsDefinition] = None
+        cls, partitions_def: PartitionsDefinition | None = None
     ) -> "PartitionsSubset[T_str]": ...
 
     def to_serializable_subset(self) -> "PartitionsSubset":

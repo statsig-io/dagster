@@ -1,6 +1,5 @@
 import datetime
 from collections.abc import Mapping
-from typing import Optional
 
 import pendulum
 from airflow.models.dag import DAG
@@ -10,7 +9,7 @@ from dagster import (
     DagsterRun,
     _check as check,
 )
-from dagster._core.instance import AIRFLOW_EXECUTION_DATE_STR
+from dagster._core.instance.utils import AIRFLOW_EXECUTION_DATE_STR
 
 from dagster_airflow.utils import is_airflow_2_loaded_in_environment
 
@@ -24,13 +23,13 @@ else:
 class AirflowDatabase:
     """Airflow database Dagster resource."""
 
-    def __init__(self, dagster_run: DagsterRun, dag_run_config: Optional[dict] = None):
+    def __init__(self, dagster_run: DagsterRun, dag_run_config: dict | None = None):
         self.dagster_run = dagster_run
         self.dag_run_config = dag_run_config
 
     def _parse_execution_date_for_job(
         self, dag: DAG, run_tags: Mapping[str, str]
-    ) -> Optional[datetime.datetime]:
+    ) -> datetime.datetime | None:
         execution_date_str = run_tags.get(AIRFLOW_EXECUTION_DATE_STR)
         if not execution_date_str:
             raise DagsterInvariantViolationError(
@@ -50,16 +49,16 @@ class AirflowDatabase:
             raise DagsterInvariantViolationError(
                 f'Date "{execution_date_str}" exceeds the largest valid C integer on the system.'
             )
-        return execution_date  # pyright: ignore[reportReturnType]
+        return execution_date  # ty: ignore[invalid-return-type]
 
     def _parse_execution_date_for_asset(
         self, dag: DAG, run_tags: Mapping[str, str]
-    ) -> Optional[datetime.datetime]:
+    ) -> datetime.datetime | None:
         execution_date_str = run_tags.get("dagster/partition")
         if not execution_date_str:
             raise DagsterInvariantViolationError("dagster/partition is not set")
         execution_date = pendulum.parse(execution_date_str, tz=pendulum.timezone(dag.timezone.name))
-        return execution_date  # pyright: ignore[reportReturnType]
+        return execution_date  # ty: ignore[invalid-return-type]
 
     def get_dagrun(self, dag: DAG) -> DagRun:
         run_tags = self.dagster_run.tags if self.dagster_run else {}
@@ -76,9 +75,9 @@ class AirflowDatabase:
         if not dagrun:
             if is_airflow_2_loaded_in_environment():
                 dagrun = dag.create_dagrun(
-                    state=DagRunState.RUNNING,  # pyright: ignore[reportPossiblyUnboundVariable]
+                    state=DagRunState.RUNNING,
                     execution_date=execution_date,
-                    run_type=DagRunType.MANUAL,  # pyright: ignore[reportPossiblyUnboundVariable]
+                    run_type=DagRunType.MANUAL,
                     conf=self.dag_run_config,
                 )
             else:

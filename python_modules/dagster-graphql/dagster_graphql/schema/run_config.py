@@ -1,9 +1,9 @@
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import dagster._check as check
 import graphene
-from dagster._core.remote_representation import RepresentedJob
 from dagster._core.remote_representation.external_data import DEFAULT_MODE_NAME
+from dagster._core.remote_representation.represented import RepresentedJob
 from dagster._core.snap.snap_to_yaml import default_values_yaml_from_type_snap
 
 from dagster_graphql.implementation.run_config_schema import resolve_is_run_config_valid
@@ -84,7 +84,7 @@ class GrapheneRunConfigSchema(graphene.ObjectType):
     def resolve_rootConfigType(self, _graphene_info: ResolveInfo):
         return to_config_type(
             self._represented_job.config_schema_snapshot.get_config_snap,
-            self._represented_job.get_mode_def_snap(  # type: ignore  # (possible none)
+            self._represented_job.get_mode_def_snap(
                 self._mode or DEFAULT_MODE_NAME
             ).root_config_key,
         )
@@ -93,13 +93,13 @@ class GrapheneRunConfigSchema(graphene.ObjectType):
     def resolve_isRunConfigValid(
         self,
         graphene_info: ResolveInfo,
-        runConfigData: Optional[Any] = None,  # custom scalar (GrapheneRunConfigData)
+        runConfigData: Any | None = None,  # custom scalar (GrapheneRunConfigData)
     ):
         return resolve_is_run_config_valid(
             graphene_info,
             self._represented_job,
             self._mode,
-            parse_run_config_input(runConfigData or {}, raise_on_error=False),  # type: ignore
+            parse_run_config_input(runConfigData or {}, raise_on_error=False),
         )
 
     def resolve_rootDefaultYaml(self, _graphene_info) -> str:

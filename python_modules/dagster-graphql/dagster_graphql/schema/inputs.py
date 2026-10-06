@@ -6,6 +6,7 @@ from dagster._core.storage.dagster_run import DagsterRunStatus, RunsFilter
 from dagster._time import datetime_from_timestamp
 from dagster._utils import check
 
+from dagster_graphql.schema.asset_checks import GrapheneAssetCheckSeverity
 from dagster_graphql.schema.pipelines.status import GrapheneRunStatus
 from dagster_graphql.schema.runs import GrapheneRunConfigData
 from dagster_graphql.schema.util import non_null_list
@@ -27,6 +28,13 @@ class GrapheneAssetCheckHandleInput(graphene.InputObjectType):
 
     class Meta:
         name = "AssetCheckHandleInput"
+
+
+class GrapheneAssetJobKeyInput(graphene.InputObjectType):
+    jobName = graphene.NonNull(graphene.String)
+
+    class Meta:
+        name = "AssetJobKeyInput"
 
 
 class GrapheneExecutionTag(graphene.InputObjectType):
@@ -61,7 +69,7 @@ class GrapheneRunsFilter(graphene.InputObjectType):
             tags = None
 
         if self.statuses:
-            statuses = [DagsterRunStatus[status.value] for status in self.statuses]
+            statuses = [DagsterRunStatus[status.value] for status in self.statuses]  # ty: ignore[not-iterable]
         else:
             statuses = None
 
@@ -207,6 +215,7 @@ class GrapheneLaunchBackfillParams(graphene.InputObjectType):
     forceSynchronousSubmission = graphene.Boolean()
     title = graphene.String()
     description = graphene.String()
+    runConfigData = graphene.InputField(GrapheneRunConfigData)
 
     class Meta:
         name = "LaunchBackfillParams"
@@ -238,6 +247,19 @@ class GrapheneReportRunlessAssetEventsParams(graphene.InputObjectType):
 
     class Meta:
         name = "ReportRunlessAssetEventsParams"
+
+
+class GrapheneReportAssetCheckEvaluationsParams(graphene.InputObjectType):
+    assetKey = graphene.NonNull(GrapheneAssetKeyInput)
+    checkName = graphene.NonNull(graphene.String)
+    passed = graphene.NonNull(graphene.Boolean)
+    severity = graphene.InputField(GrapheneAssetCheckSeverity)
+    serializedMetadata = graphene.InputField(graphene.String)
+    partitionKeys = graphene.InputField(graphene.List(graphene.String))
+    description = graphene.InputField(graphene.String)
+
+    class Meta:
+        name = "ReportAssetCheckEvaluationsParams"
 
 
 class GrapheneSensorSelector(graphene.InputObjectType):
@@ -393,6 +415,7 @@ class GrapheneBulkActionsFilter(graphene.InputObjectType):
     )
     createdBefore = graphene.InputField(graphene.Float)
     createdAfter = graphene.InputField(graphene.Float)
+    selectorId = graphene.InputField(graphene.String)
 
     class Meta:
         description = """This type represents a filter on Dagster Bulk Actions (backfills)."""
@@ -400,7 +423,7 @@ class GrapheneBulkActionsFilter(graphene.InputObjectType):
 
     def to_selector(self):
         statuses = (
-            [BulkActionStatus[status.value] for status in self.statuses] if self.statuses else None
+            [BulkActionStatus[status.value] for status in self.statuses] if self.statuses else None  # ty: ignore[not-iterable]
         )
         created_before = datetime_from_timestamp(self.createdBefore) if self.createdBefore else None
         created_after = datetime_from_timestamp(self.createdAfter) if self.createdAfter else None
@@ -409,6 +432,7 @@ class GrapheneBulkActionsFilter(graphene.InputObjectType):
             statuses=statuses,
             created_before=created_before,
             created_after=created_after,
+            selector_id=self.selectorId,
         )
 
 

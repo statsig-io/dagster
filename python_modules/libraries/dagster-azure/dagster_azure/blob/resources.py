@@ -1,31 +1,32 @@
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, Literal, Union
+from typing import Any, Literal, Optional
 
+import dagster as dg
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from dagster import Config, ConfigurableResource
 from pydantic import Field
 
 
-class AzureBlobStorageSASTokenCredential(Config):
+class AzureBlobStorageSASTokenCredential(dg.Resolvable, Config):
     """Authentication using an azure SAS token."""
 
     credential_type: Literal["sas"] = "sas"
 
-    token: str
+    token: Optional[str] = None  # noqa: UP045
     "an azure SAS token"
 
 
-class AzureBlobStorageKeyCredential(Config):
+class AzureBlobStorageKeyCredential(dg.Resolvable, Config):
     """Authentication using an azure shared-key."""
 
     credential_type: Literal["key"] = "key"
-    key: str
+    key: Optional[str] = None  # noqa: UP045
     "an azure shared-key"
 
 
-class AzureBlobStorageDefaultCredential(Config):
+class AzureBlobStorageDefaultCredential(dg.Resolvable, Config):
     """Authenticate using azure.identity.DefaultAzureCredential."""
 
     credential_type: Literal["default_azure_credential"] = "default_azure_credential"
@@ -35,7 +36,7 @@ class AzureBlobStorageDefaultCredential(Config):
     ' e.g. AzureBlobStorageDefaultCredential(kwargs={"exclude_environment_credential": True})'
 
 
-class AzureBlobStorageAnonymousCredential(Config):
+class AzureBlobStorageAnonymousCredential(dg.Resolvable, Config):
     """For anonymous access to azure blob storage."""
 
     credential_type: Literal["anonymous"] = "anonymous"
@@ -81,12 +82,12 @@ class AzureBlobStorageResource(ConfigurableResource):
         ),
     )
 
-    credential: Union[
-        AzureBlobStorageKeyCredential,
-        AzureBlobStorageSASTokenCredential,
-        AzureBlobStorageDefaultCredential,
-        AzureBlobStorageAnonymousCredential,
-    ] = Field(
+    credential: (
+        AzureBlobStorageKeyCredential
+        | AzureBlobStorageSASTokenCredential
+        | AzureBlobStorageDefaultCredential
+        | AzureBlobStorageAnonymousCredential
+    ) = Field(
         discriminator="credential_type",
         description=(
             "The credential used to authenticate to the storage account. One of:"
@@ -103,11 +104,11 @@ class AzureBlobStorageResource(ConfigurableResource):
 
     def _raw_credential(self) -> Any:
         if self.credential.credential_type == "sas":
-            return self.credential.token
+            return self.credential.token  # ty: ignore[unresolved-attribute]
         if self.credential.credential_type == "key":
-            return self.credential.key
+            return self.credential.key  # ty: ignore[unresolved-attribute]
         if self.credential.credential_type == "default_azure_credential":
-            return DefaultAzureCredential(**self.credential.kwargs)
+            return DefaultAzureCredential(**self.credential.kwargs)  # ty: ignore[unresolved-attribute]
         if self.credential.credential_type == "anonymous":
             return None
         raise Exception(

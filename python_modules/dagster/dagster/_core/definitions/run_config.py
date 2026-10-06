@@ -4,13 +4,10 @@ from typing import (  # noqa: UP035
     AbstractSet,
     Any,
     NamedTuple,
-    Optional,
+    TypeAlias,
     TypeVar,
-    Union,
     cast,
 )
-
-from typing_extensions import TypeAlias
 
 from dagster._annotations import public
 from dagster._config import ALL_CONFIG_BUILTINS, ConfigType, Field, Permissive, Selector, Shape
@@ -49,7 +46,8 @@ if TYPE_CHECKING:
 def define_resource_dictionary_cls(
     resource_defs: Mapping[str, ResourceDefinition],
     required_resources: AbstractSet[str],
-) -> Shape:
+    is_permissive: bool,
+) -> Permissive | Shape:
     fields = {}
     for resource_name, resource_def in resource_defs.items():
         if resource_def.config_schema:
@@ -65,7 +63,7 @@ def define_resource_dictionary_cls(
                 description=resource_def.description,
             )
 
-    return Shape(fields=fields)
+    return Permissive(fields=fields) if is_permissive else Shape(fields=fields)
 
 
 def remove_none_entries(ddict: Mapping[Any, Any]) -> dict:
@@ -74,8 +72,8 @@ def remove_none_entries(ddict: Mapping[Any, Any]) -> dict:
 
 def def_config_field(
     configurable_def: ConfigurableDefinition,
-    is_required: Optional[bool] = None,
-    description: Optional[str] = None,
+    is_required: bool | None = None,
+    description: str | None = None,
 ) -> Field:
     return Field(
         Shape(
@@ -134,6 +132,8 @@ def define_single_execution_field(executor_def: ExecutorDefinition, description:
 
 
 def define_run_config_schema_type(creation_data: RunConfigSchemaCreationData) -> ConfigType:
+    from dagster._core.remote_representation.code_location import is_implicit_asset_job_name
+
     execution_field = define_single_execution_field(
         creation_data.executor_def,
         "Configure how steps are executed within a run.",
@@ -155,6 +155,7 @@ def define_run_config_schema_type(creation_data: RunConfigSchemaCreationData) ->
             define_resource_dictionary_cls(
                 creation_data.resource_defs,
                 creation_data.required_resources,
+                is_permissive=is_implicit_asset_job_name(creation_data.job_name),
             ),
             description="Configure how shared resources are implemented within a run.",
         ),
@@ -178,13 +179,14 @@ def define_run_config_schema_type(creation_data: RunConfigSchemaCreationData) ->
         )
     else:
         nodes_field = Field(
-            define_node_shape(
+            define_node_config(
                 nodes=creation_data.nodes,
                 ignored_nodes=creation_data.ignored_nodes,
                 dependency_structure=creation_data.dependency_structure,
                 resource_defs=creation_data.resource_defs,
                 asset_layer=creation_data.asset_layer,
                 input_assets=creation_data.graph_def.input_assets,
+                permissive=is_implicit_asset_job_name(creation_data.job_name),
             ),
             description="Configure runtime parameters for ops or assets.",
         )
@@ -210,8 +212,8 @@ def get_inputs_field(
     node_ignored: bool,
     asset_layer: AssetLayer,
     input_assets: Mapping[str, "AssetsDefinition"],
-    direct_inputs: Optional[Mapping[str, Any]] = None,
-) -> Optional[Field]:
+    direct_inputs: Mapping[str, Any] | None = None,
+) -> Field | None:
     direct_inputs = check.opt_mapping_param(direct_inputs, "direct_inputs")
     inputs_field_fields = {}
     for name, inp in node.definition.input_dict.items():
@@ -269,7 +271,7 @@ def get_input_manager_input_field(
     node: Node,
     input_def: InputDefinition,
     resource_defs: Mapping[str, ResourceDefinition],
-) -> Optional[Field]:
+) -> Field | None:
     if input_def.input_manager_key:
         if input_def.input_manager_key not in resource_defs:
             raise DagsterInvalidDefinitionError(
@@ -305,7 +307,7 @@ def get_type_loader_input_field(node: Node, input_name: str, input_def: InputDef
 def get_outputs_field(
     node: Node,
     resource_defs: Mapping[str, ResourceDefinition],
-) -> Optional[Field]:
+) -> Field | None:
     output_manager_fields = {}
     for name, output_def in node.definition.output_dict.items():
         output_manager_output_field = get_output_manager_output_field(
@@ -319,7 +321,7 @@ def get_outputs_field(
 
 def get_output_manager_output_field(
     node: Node, output_def: OutputDefinition, resource_defs: Mapping[str, ResourceDefinition]
-) -> Optional[ConfigType]:
+) -> ConfigType | None:
     if output_def.io_manager_key not in resource_defs:
         raise DagsterInvalidDefinitionError(
             f'Output "{output_def.name}" for {node.describe_node()} requires io_manager_key '
@@ -343,7 +345,7 @@ def get_output_manager_output_field(
     return None
 
 
-def node_config_field(fields: Mapping[str, Optional[Field]], ignored: bool) -> Optional[Field]:
+def node_config_field(fields: Mapping[str, Field | None], ignored: bool) -> Field | None:
     trimmed_fields = remove_none_entries(fields)
     if trimmed_fields:
         if ignored:
@@ -365,12 +367,12 @@ def construct_leaf_node_config(
     node: Node,
     handle: NodeHandle,
     dependency_structure: DependencyStructure,
-    config_schema: Optional[IDefinitionConfigSchema],
+    config_schema: IDefinitionConfigSchema | None,
     resource_defs: Mapping[str, ResourceDefinition],
     ignored: bool,
     asset_layer: AssetLayer,
     input_assets: Mapping[str, "AssetsDefinition"],
-) -> Optional[Field]:
+) -> Field | None:
     return node_config_field(
         {
             "inputs": get_inputs_field(
@@ -397,7 +399,7 @@ def define_node_field(
     ignored: bool,
     asset_layer: AssetLayer,
     input_assets: Mapping[str, "AssetsDefinition"],
-) -> Optional[Field]:
+) -> Field | None:
     # All nodes regardless of compositing status get the same inputs and outputs
     # config. The only thing the varies is on extra element of configuration
     # 1) Vanilla op definition: a 'config' key with the config_schema as the value
@@ -453,7 +455,7 @@ def define_node_field(
             ),
             "outputs": get_outputs_field(node, resource_defs),
             "ops": Field(
-                define_node_shape(
+                define_node_config(
                     nodes=graph_def.nodes,
                     ignored_nodes=None,
                     dependency_structure=graph_def.dependency_structure,
@@ -468,15 +470,16 @@ def define_node_field(
         return node_config_field(fields, ignored=ignored)
 
 
-def define_node_shape(
+def define_node_config(
     nodes: Sequence[Node],
-    ignored_nodes: Optional[Sequence[Node]],
+    ignored_nodes: Sequence[Node] | None,
     dependency_structure: DependencyStructure,
     resource_defs: Mapping[str, ResourceDefinition],
     asset_layer: AssetLayer,
     input_assets: Mapping[str, Mapping[str, "AssetsDefinition"]],
-    parent_handle: Optional[NodeHandle] = None,
-) -> Shape:
+    permissive: bool = False,
+    parent_handle: NodeHandle | None = None,
+) -> Permissive | Shape:
     """Examples of what this method is used to generate the schema for:
     1.
         inputs: ...
@@ -495,6 +498,27 @@ def define_node_shape(
 
 
     """
+    fields = _define_node_fields(
+        nodes,
+        ignored_nodes,
+        dependency_structure,
+        resource_defs,
+        asset_layer,
+        input_assets,
+        parent_handle,
+    )
+    return Permissive(fields=fields) if permissive else Shape(fields=fields)
+
+
+def _define_node_fields(
+    nodes: Sequence[Node],
+    ignored_nodes: Sequence[Node] | None,
+    dependency_structure: DependencyStructure,
+    resource_defs: Mapping[str, ResourceDefinition],
+    asset_layer: AssetLayer,
+    input_assets: Mapping[str, Mapping[str, "AssetsDefinition"]],
+    parent_handle: NodeHandle | None = None,
+) -> Mapping[str, Field | None]:
     ignored_nodes = check.opt_sequence_param(ignored_nodes, "ignored_nodes", of_type=Node)
 
     fields = {}
@@ -525,7 +549,7 @@ def define_node_shape(
         if node_field:
             fields[node.name] = node_field
 
-    return Shape(fields)
+    return fields
 
 
 def iterate_node_def_config_types(node_def: NodeDefinition) -> Iterator[ConfigType]:
@@ -602,6 +626,7 @@ def _convert_config_classes(configs: dict[str, Any]) -> dict[str, Any]:
     return _convert_config_classes_inner(configs)
 
 
+@public
 class RunConfig:
     """Container for all the configuration that can be passed to a run. Accepts Pythonic definitions
     for op and asset config and resources and converts them under the hood to the appropriate config dictionaries.
@@ -628,10 +653,10 @@ class RunConfig:
 
     def __init__(
         self,
-        ops: Optional[dict[str, Any]] = None,
-        resources: Optional[dict[str, Any]] = None,
-        loggers: Optional[dict[str, Any]] = None,
-        execution: Optional[dict[str, Any]] = None,
+        ops: dict[str, Any] | None = None,
+        resources: dict[str, Any] | None = None,
+        loggers: dict[str, Any] | None = None,
+        execution: dict[str, Any] | None = None,
     ):
         self.ops = check.opt_dict_param(ops, "ops")
         self.resources = check.opt_dict_param(resources, "resources")
@@ -658,13 +683,15 @@ class RunConfig:
 
         return self.to_config_dict() == other.to_config_dict()
 
+    __hash__ = None
 
-CoercibleToRunConfig: TypeAlias = Union[dict[str, Any], RunConfig]
+
+CoercibleToRunConfig: TypeAlias = dict[str, Any] | RunConfig
 
 T = TypeVar("T")
 
 
-def convert_config_input(inp: Union[CoercibleToRunConfig, T]) -> Union[T, Mapping[str, Any]]:
+def convert_config_input(inp: CoercibleToRunConfig | T) -> T | Mapping[str, Any]:
     if isinstance(inp, RunConfig):
         return inp.to_config_dict()
     else:

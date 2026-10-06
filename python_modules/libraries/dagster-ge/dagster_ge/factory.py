@@ -1,6 +1,6 @@
 import datetime
 from collections.abc import Mapping
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import great_expectations as ge
 from dagster import (
@@ -30,7 +30,7 @@ from pydantic import Field
 
 @beta
 class GEContextResource(ConfigurableResource, IAttachDifferentObjectToOpContext):
-    ge_root_dir: Optional[str] = Field(
+    ge_root_dir: str | None = Field(
         default=None,
         description="The root directory for your Great Expectations project.",
     )
@@ -61,9 +61,9 @@ def ge_validation_op_factory(
     batch_identifiers: dict,
     input_dagster_type: DagsterType = DataFrame,  # default to pandas support
     runtime_method_type: Literal["batch_data", "path", "query"] = "batch_data",
-    extra_kwargs: Optional[Mapping[str, Any]] = None,
+    extra_kwargs: Mapping[str, Any] | None = None,
 ) -> OpDefinition:
-    """Generates ops for interacting with Great Expectations.
+    """Generates ops for interacting with `Great Expectations <https://greatexpectations.io/>`_.
 
     Args:
         name (str): the name of the op
@@ -73,9 +73,9 @@ def ge_validation_op_factory(
             https://docs.greatexpectations.io/docs/guides/connecting_to_your_data/how_to_create_a_batch_of_data_from_an_in_memory_spark_or_pandas_dataframe
         data_asset_name (str): the name of the data asset that this op will be validating.
         suite_name (str): the name of your expectation suite, see your great_expectations.yml
-        batch_identifier_fn (dict): A dicitonary of batch identifiers to uniquely identify this
-            batch of data. To learn more about batch identifiers, see:
-            https://docs.greatexpectations.io/docs/reference/datasources#batches.
+        batch_identifiers (dict): a dictionary of batch identifiers to uniquely identify this
+            batch of data, see:
+            https://docs.greatexpectations.io/docs/guides/connecting_to_your_data/how_to_create_a_batch_of_data_from_an_in_memory_spark_or_pandas_dataframe
         input_dagster_type (DagsterType): the Dagster type used to type check the input to the op.
             Defaults to `dagster_pandas.DataFrame`.
         runtime_method_type (str): how GE should interperet the op input. One of ("batch_data",

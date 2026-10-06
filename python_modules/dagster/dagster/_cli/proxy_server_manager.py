@@ -3,20 +3,20 @@ import os
 import threading
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import Self
 
 import dagster._check as check
 from dagster._core.errors import DagsterUserCodeUnreachableError
 from dagster._core.instance import DagsterInstance
+from dagster._core.remote_origin import (
+    GrpcServerCodeLocationOrigin,
+    ManagedGrpcPythonEnvCodeLocationOrigin,
+)
 from dagster._core.remote_representation.grpc_server_registry import (
     GrpcServerRegistry,
     ServerRegistryEntry,
-)
-from dagster._core.remote_representation.origin import (
-    GrpcServerCodeLocationOrigin,
-    ManagedGrpcPythonEnvCodeLocationOrigin,
 )
 from dagster._core.workspace.context import WEBSERVER_GRPC_SERVER_HEARTBEAT_TTL
 from dagster._core.workspace.load_target import WorkspaceLoadTarget
@@ -46,7 +46,7 @@ class ProxyServerManager(AbstractContextManager):
             workspace_load_target, "workspace_load_target", WorkspaceLoadTarget
         )
         self._origins = cast(
-            "Sequence[Union[GrpcServerCodeLocationOrigin, ManagedGrpcPythonEnvCodeLocationOrigin]]",
+            "Sequence[GrpcServerCodeLocationOrigin | ManagedGrpcPythonEnvCodeLocationOrigin]",
             self._workspace_load_target.create_origins(),
         )
 

@@ -78,7 +78,19 @@ def test_in_airflow_package_implicit_requirements(temp_venv: Path):
 
     # Install Airflow
     airflow_install_result = subprocess.run(
-        [*uv_entrypoint, "pip", "install", "apache-airflow"],
+        [
+            *uv_entrypoint,
+            "pip",
+            "install",
+            "apache-airflow",
+            # https://github.com/apache/airflow/discussions/57769#discussioncomment-14861217
+            "fastapi<0.118",
+            # https://github.com/apache/airflow/issues/57419
+            "structlog<25.5.0",
+            # sqlalchemy-utils, which airflow pulls in, subclasses names SQLAlchemy
+            # 2.1 made private (ScalarAttributeImpl).
+            "sqlalchemy<2.1",
+        ],
         check=True,
         capture_output=True,
         text=True,

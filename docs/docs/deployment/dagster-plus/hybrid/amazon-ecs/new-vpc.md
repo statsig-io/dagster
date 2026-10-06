@@ -3,10 +3,13 @@ description: Set up and deploy a Dagster+ Amazon ECS agent in a new VPC using Cl
   with Dagster+.
 sidebar_position: 3100
 title: New VPC setup
+tags: [dagster-plus-feature]
 ---
 
 :::note
+
 This guide is applicable to Dagster+.
+
 :::
 
 In this guide, you'll set up and deploy an Amazon Elastic Container Service (ECS) agent in a new VPC using CloudFormation. Amazon ECS agents are used to launch user code in ECS tasks.
@@ -31,7 +34,7 @@ To complete the steps in this guide, you'll need:
 
 - **In Amazon Web Services (AWS), you'll need an account**:
 
-  - **Under its VPC quota limit in the region where you're spinning up the agent.** By default, AWS allows **five VPCs per region**. If you're already at your limit, refer to the [AWS VPC quotas documentation](https://docs.aws.amazon.com/vpc/latest/userguide/amazon-vpc-limits.html) for info on requesting a quota increase.
+  - **Under its VPC quota limit in the region where you're spinning up the agent.** By default, AWS allows **five VPCs per region**. If you're already at your limit, see the [AWS VPC quotas documentation](https://docs.aws.amazon.com/vpc/latest/userguide/amazon-vpc-limits.html) for information on requesting a quota increase.
 
   - **With an ECS service-linked IAM role**. This role is required to complete the setup in ECS. AWS will automatically create the role in your account the first time you create an ECS cluster in the console. However, the IAM role isn't automatically created when ECS clusters are created via CloudFormation.
 
@@ -60,9 +63,13 @@ Click the **Launch Stack** button to install the CloudFormation stack in your AW
 
 [<img src="https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png"/>](https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?templateURL=https://s3.amazonaws.com/dagster.cloud/cloudformation/ecs-agent-vpc.yaml)
 
-**Note**: Creating the CloudFormation stack may take a few minutes. Refresh the [AWS console **Stacks** page](https://console.aws.amazon.com/cloudformation/home#/stacks) to check the status.
+:::note
+
+Creating the CloudFormation stack may take a few minutes. Refresh the [AWS console **Stacks** page](https://console.aws.amazon.com/cloudformation/home#/stacks) to check the status.
 
 If the installation fails, verify that your AWS account [meets the requirements listed above](#prerequisites).
+
+:::
 
 ## Step 3: Configure the agent
 
@@ -70,8 +77,10 @@ After the stack is installed, you'll be prompted to configure it. In the ECS wiz
 
 - **Dagster+ Organization**: Enter the name of your Dagster+ organization.
 - **Dagster+ Deployment**: Enter the name of the Dagster+ deployment you want to use. Leave this field empty if the agent will only serve Branch deployments.
-- **Enable Branch Deployments**: Whether to have this agent serve your ephemeral [Branch deployments](/deployment/dagster-plus/ci-cd/branch-deployments). Only a single agent should have this setting enabled.
+- **Enable Branch Deployments**: Whether to have this agent serve your ephemeral [Branch deployments](/deployment/dagster-plus/deploying-code/branch-deployments). Only a single agent should have this setting enabled.
 - **Agent Token**: Paste the agent token you generated in [Step 1](#step-1-generate-a-dagster-agent-token).
+- **AgentCPU**: The amount of AWS CPU to allocate to the agent. Defaults to 256 CPU units.
+- **AgentMemory**: The amount of memory to allocate to the agent. Defaults to 1024 MiB.
 
 The page should look similar to the following image. In this example, our organization name is `hooli` and our deployment is `prod`:
 
@@ -83,10 +92,6 @@ After you've finished configuring the stack in AWS, you can view the agent in Da
 
 ## Next steps
 
-Now that you've got your agent running, what's next?
+Now that you've got your agent running, you can follow the steps in [Creating Dagster projects](/guides/build/projects/creating-projects) to create and deploy a project to Dagster+.
 
-- **If you're getting Dagster+ set up**, the next step is to [add a code location](/deployment/code-locations) using the agent.
-
-- **If you're ready to load your Dagster code**, refer to the [Adding Code to Dagster+](/deployment/code-locations) guide for more info.
-
-If you need to upgrade your ECS agent's CloudFormation template, refer to the [upgrade guide](/deployment/dagster-plus/hybrid/amazon-ecs/upgrading-cloudformation) for more info.
+If you need to upgrade your ECS agent's CloudFormation template, see [Upgrading CloudFormation for an Amazon ECS agent](/deployment/dagster-plus/hybrid/amazon-ecs/upgrading-cloudformation).

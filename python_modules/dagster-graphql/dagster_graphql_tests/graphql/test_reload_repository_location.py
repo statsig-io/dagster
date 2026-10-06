@@ -4,7 +4,7 @@ from unittest import mock
 
 from dagster import file_relative_path, repository
 from dagster._core.code_pointer import CodePointer
-from dagster._core.remote_representation import ManagedGrpcPythonEnvCodeLocationOrigin
+from dagster._core.remote_origin import ManagedGrpcPythonEnvCodeLocationOrigin
 from dagster._core.remote_representation.external_data import RepositorySnap
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._core.workspace.load import location_origins_from_yaml_paths
@@ -155,7 +155,7 @@ class TestReloadWorkspace(MultiLocationTestSuite):
 
             # Simulate adding an origin with an error, reload
 
-            original_origins.append(  # pyright: ignore[reportAttributeAccessIssue]
+            original_origins.append(  # ty: ignore[unresolved-attribute]
                 ManagedGrpcPythonEnvCodeLocationOrigin(
                     location_name="error_location",
                     loadable_target_origin=LoadableTargetOrigin(
@@ -196,7 +196,7 @@ class TestReloadWorkspace(MultiLocationTestSuite):
 
             # Add another origin without an error, reload
 
-            original_origins.append(original_origins[0]._replace(location_name="location_copy"))  # pyright: ignore[reportAttributeAccessIssue]
+            original_origins.append(original_origins[0]._replace(location_name="location_copy"))  # ty: ignore[unresolved-attribute]
             origins_mock.return_value = original_origins
 
             result = execute_dagster_graphql(graphql_context, RELOAD_WORKSPACE_QUERY)
@@ -224,7 +224,7 @@ class TestReloadWorkspace(MultiLocationTestSuite):
 
             # Finally, update one of the origins' location names
 
-            original_origins[0] = original_origins[0]._replace(location_name="new_location_name")  # pyright: ignore[reportIndexIssue,reportAttributeAccessIssue]
+            original_origins[0] = original_origins[0]._replace(location_name="new_location_name")  # ty: ignore[invalid-assignment]
 
             result = execute_dagster_graphql(graphql_context, RELOAD_WORKSPACE_QUERY)
 
@@ -297,7 +297,7 @@ class TestReloadRepositoriesOutOfProcess(OutOfProcessTestSuite):
                 # note it where the function is *used* that needs to mocked, not
                 # where it is defined.
                 # see https://docs.python.org/3/library/unittest.mock.html#where-to-patch
-                "dagster._api.snapshot_repository.sync_get_streaming_external_repositories_data_grpc"
+                "dagster._api.snapshot_repository.sync_get_external_repositories_data_grpc"
             ) as remote_repository_mock:
 
                 @repository
@@ -306,7 +306,12 @@ class TestReloadRepositoriesOutOfProcess(OutOfProcessTestSuite):
 
                 new_repo_data = RepositorySnap.from_def(new_repo)
 
-                remote_repository_mock.return_value = {"new_repo": new_repo_data}
+                remote_repository_mock.return_value = {
+                    "new_repo": (
+                        new_repo_data,
+                        {},
+                    )
+                }
 
                 cli_command_mock.return_value = ListRepositoriesResponse(
                     repository_symbols=[],

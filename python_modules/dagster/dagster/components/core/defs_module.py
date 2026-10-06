@@ -3,9 +3,9 @@ import inspect
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Any, TypeVar, Union
 
-from dagster_shared.record import record
+from dagster_shared.record import record, replace
 from dagster_shared.yaml_utils.source_position import SourcePosition
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
@@ -24,7 +24,10 @@ from dagster._core.definitions.module_loaders.load_defs_from_module import (
 from dagster._core.definitions.module_loaders.utils import find_objects_in_module_of_types
 from dagster._core.errors import DagsterInvalidDefinitionError
 from dagster.components.component.component import Component
-from dagster.components.component.template_vars import find_inline_template_vars_in_module
+from dagster.components.component.template_vars import (
+    find_inline_template_vars_in_module,
+    get_context_aware_static_template_vars,
+)
 from dagster.components.core.context import ComponentDeclLoadContext, ComponentLoadContext
 from dagster.components.definitions import LazyDefinitions
 from dagster.components.resolved.base import Resolvable
@@ -37,25 +40,28 @@ if TYPE_CHECKING:
 
 T = TypeVar("T", bound=BaseModel)
 
+ResolvableToComponentPath = Union[Path, "ComponentPath", str]
+ResolvableToComponentLoc = Union[Path, "ComponentLoc", str]
+
 
 class ComponentRequirementsModel(BaseModel):
     """Describes dependencies for a component to load."""
 
-    env: Optional[list[str]] = None
+    env: list[str] | None = None
 
 
 class ComponentPostProcessingModel(Resolvable, Model):
-    assets: Optional[Sequence[AssetPostProcessor]] = None
+    assets: Sequence[AssetPostProcessor] | None = None
 
 
 class ComponentFileModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: str
-    attributes: Optional[Mapping[str, Any]] = None
-    template_vars_module: Optional[str] = None
-    requirements: Optional[ComponentRequirementsModel] = None
-    post_processing: Optional[Mapping[str, Any]] = None
+    attributes: Mapping[str, Any] | None = None
+    template_vars_module: str | None = None
+    requirements: ComponentRequirementsModel | None = None
+    post_processing: Mapping[str, Any] | None = None
 
 
 def _add_defs_yaml_metadata(
@@ -129,7 +135,7 @@ class CompositeYamlComponent(Component):
         ):
             defs_list.append(
                 post_process_defs(
-                    context.build_defs_at_path(component_decl.path).with_definition_metadata_update(
+                    context.build_defs(component_decl.loc).with_definition_metadata_update(
                         lambda metadata: _add_defs_yaml_metadata(
                             component_yaml_path=component_yaml,
                             load_context=context,
@@ -146,14 +152,66 @@ class CompositeYamlComponent(Component):
 
 
 @record
-class ComponentPath:
+class ComponentLoc:
+    """Base class for component location identifiers.
+
+    All component locations -- whether filesystem-based or synthetic root --
+    inherit from this class so they can be used uniformly as cache and
+    dependency-graph keys in the ComponentTreeStateTracker.
+    """
+
+    def without_instance_key(self) -> "ComponentLoc":
+        """Return a version of this loc without any instance-level qualifier.
+        Subclasses that support instance keys should override.
+        """
+        return self
+
+    def get_display_key(self, root_path: Path) -> str:
+        """Return a human-readable key for error messages and tree display."""
+        return repr(self)
+
+
+@record
+class ComponentRootLoc(ComponentLoc):
+    """Synthetic location for the canonical root of the component tree.
+
+    This loc serves as the cache and dependency-graph key for the merged
+    definitions produced by the tree.
+    """
+
+    def get_display_key(self, root_path: Path) -> str:
+        return "<root>"
+
+
+@record
+class ComponentPath(ComponentLoc):
     """Identifier for where a Component instance was defined:
-    file_path: The Path to the file or directory relative to the root defs module.
+    file_path_posix: The absolute path to the file or directory.
     instance_key: The optional identifier to distinguish instances originating from the same file.
     """
 
-    file_path: Path
-    instance_key: Optional[Union[int, str]] = None
+    file_path_posix: str
+    instance_key: int | str | None = None
+
+    @property
+    def file_path(self) -> Path:
+        return Path(self.file_path_posix)
+
+    @staticmethod
+    def from_resolvable(root_path: Path, path: ResolvableToComponentPath) -> "ComponentPath":
+        if isinstance(path, ComponentPath):
+            return path
+        path = Path(path)
+        normalized_path = (root_path / path) if not path.is_absolute() else path
+        return ComponentPath.from_path(path=normalized_path, instance_key=None)
+
+    @staticmethod
+    def from_path(path: Path, instance_key: int | str | None = None) -> "ComponentPath":
+        check.param_invariant(path.is_absolute(), "Path must be absolute")
+        return ComponentPath(file_path_posix=path.as_posix(), instance_key=instance_key)
+
+    def without_instance_key(self) -> "ComponentPath":
+        return replace(self, instance_key=None)
 
     def get_relative_key(self, parent_path: Path):
         key = self.file_path.relative_to(parent_path).as_posix()
@@ -163,17 +221,80 @@ class ComponentPath:
 
         return key
 
+    def get_display_key(self, root_path: Path) -> str:
+        return self.get_relative_key(root_path)
 
-def get_component(context: ComponentLoadContext) -> Optional[Component]:
+
+@record
+class AppManagedDefinitionsLoc(ComponentLoc):
+    """Location for the UI-definitions subtree.
+
+    With ``instance_key=None`` this identifies the aggregate container
+    (``AppManagedDefinitionsDecl``) — analogous to ``YamlFileDecl``'s loc for a
+    yaml file containing several components. With an ``instance_key``
+    set it identifies a single app-managed component, analogous to a
+    yaml document's loc.
+    """
+
+    instance_key: str | None = None
+
+    def without_instance_key(self) -> "AppManagedDefinitionsLoc":
+        return AppManagedDefinitionsLoc()
+
+    def get_display_key(self, root_path: Path) -> str:
+        return self.instance_key or "APP_ROOT"
+
+
+class AppManagedDefinitionsComponent(Component):
+    """Aggregate component for app-managed components at a code location.
+
+    Functionally minimal — its ``build_defs`` just merges children's defs,
+    same as ``ComponentRootComponent`` does at the next level up. The
+    point of this layer is structural: it gives the UI subtree a single
+    named node under the root, parallel to the filesystem subtree, so
+    additions to the "things hanging off the root" are easy to reason
+    about by analogy.
+    """
+
+    def build_defs(self, context: ComponentLoadContext) -> Definitions:
+        child_defs = [
+            context.build_defs(child_decl.loc)
+            for child_decl in context.component_decl.iterate_child_component_decls()
+        ]
+        return Definitions.merge(*child_defs)
+
+
+@dataclass
+class ComponentRootComponent(Component):
+    """The root component of the unified component tree.
+
+    Merges definitions from all child decls together with library-enriched
+    definitions.
+    """
+
+    components: Sequence[Component]
+
+    def build_defs(self, context: ComponentLoadContext) -> Definitions:
+        from dagster.components.core.load_defs import get_library_json_enriched_defs
+
+        child_defs = [
+            context.build_defs(child_decl.loc)
+            for child_decl in context.component_decl.iterate_child_component_decls()
+        ]
+        library_defs = get_library_json_enriched_defs(context.component_tree)
+        return Definitions.merge(*child_defs, library_defs)
+
+
+def get_component(context: ComponentLoadContext) -> Component | None:
     """Attempts to load a component from the given context. Iterates through potential component
     type matches, prioritizing more specific types: YAML, Python, plain Dagster defs, and component
     folder.
     """
-    from dagster.components.core.decl import build_component_decl_from_context
+    from dagster.components.core.decl import build_filesystem_component_decl_from_context
 
-    component_decl = build_component_decl_from_context(context)
+    component_decl = build_filesystem_component_decl_from_context(context)
     if component_decl:
-        return context.load_structural_component_at_path(component_decl.path)
+        return context.load_structural_component_at_loc(component_decl.loc)
     return None
 
 
@@ -297,7 +418,7 @@ class DefsFolderComponent(Component):
 
     def build_defs(self, context: ComponentLoadContext) -> Definitions:
         child_defs = [
-            context.build_defs_at_path(child_decl.path)
+            context.build_defs(child_decl.loc)
             for child_decl in context.component_decl.iterate_child_component_decls()
         ]
         return Definitions.merge(*child_defs)
@@ -317,18 +438,18 @@ class DefsFolderComponent(Component):
 
     def iterate_path_component_pairs(self) -> Iterator[tuple[ComponentPath, Component]]:
         for path, component in self.children.items():
-            yield ComponentPath(file_path=path), component
+            yield ComponentPath.from_path(path), component
 
             if isinstance(component, DefsFolderComponent):
                 yield from component.iterate_path_component_pairs()
 
             if isinstance(component, CompositeYamlComponent):
                 for idx, inner_comp in enumerate(component.components):
-                    yield ComponentPath(file_path=path, instance_key=idx), inner_comp
+                    yield ComponentPath.from_path(path, idx), inner_comp
 
             if isinstance(component, PythonFileComponent):
                 for attr, inner_comp in component.components.items():
-                    yield ComponentPath(file_path=path, instance_key=attr), inner_comp
+                    yield ComponentPath.from_path(path, attr), inner_comp
 
 
 EXPLICITLY_IGNORED_GLOB_PATTERNS = [
@@ -337,13 +458,17 @@ EXPLICITLY_IGNORED_GLOB_PATTERNS = [
 ]
 
 
-def find_components_from_context(context: ComponentLoadContext) -> Mapping[Path, Component]:
+def find_components_from_context(
+    context: ComponentLoadContext,
+) -> Mapping[Path, Component]:
     found = {}
     for subpath in sorted(context.path.iterdir()):
         relative_subpath = subpath.relative_to(context.path)
         if any(relative_subpath.match(pattern) for pattern in EXPLICITLY_IGNORED_GLOB_PATTERNS):
             continue
-        component = get_component(context.for_path(subpath))
+        component = get_component(
+            context.for_component_loc(ComponentPath(file_path_posix=subpath.absolute().as_posix()))
+        )
         if component:
             found[subpath] = component
     return found
@@ -368,7 +493,8 @@ class PythonFileComponent(Component):
             list(find_objects_in_module_of_types(module, Definitions)), Definitions
         )
         lazy_def_objects = check.is_list(
-            list(find_objects_in_module_of_types(module, LazyDefinitions)), LazyDefinitions
+            list(find_objects_in_module_of_types(module, LazyDefinitions)),
+            LazyDefinitions,
         )
 
         if lazy_def_objects and def_objects:
@@ -396,7 +522,7 @@ class PythonFileComponent(Component):
         decl = check.inst(context.component_decl, PythonFileDecl)
         return Definitions.merge(
             *[
-                context.build_defs_at_path(child_decl.path).with_definition_metadata_update(
+                context.build_defs(child_decl.loc).with_definition_metadata_update(
                     lambda metadata: _add_defs_py_metadata(
                         component=self.components[attr],
                         metadata=metadata,
@@ -422,29 +548,35 @@ def load_yaml_component_from_path(context: ComponentLoadContext, component_def_p
     from dagster.components.core.decl import build_component_decl_from_yaml_file
 
     decl = build_component_decl_from_yaml_file(context, component_def_path)
-    return context.load_structural_component_at_path(decl.path)
+    return context.load_structural_component_at_loc(decl.loc)
 
 
 # When we remove component.yaml, we can remove this function for just a defs.yaml check
-def find_defs_or_component_yaml(path: Path) -> Optional[Path]:
-    # Check for defs.yaml has precedence, component.yaml is deprecated
+def find_defs_or_component_yaml(path: Path) -> Path | None:
+    # Check for defs.yaml/.yml has precedence, component.yaml is deprecated
     return next(
-        (p for p in (path / "defs.yaml", path / "component.yaml") if p.exists()),
+        (p for p in (path / "defs.yaml", path / "defs.yml", path / "component.yaml") if p.exists()),
         None,
     )
 
 
-T = TypeVar("T", bound=ComponentDeclLoadContext)
+T_LoadContext = TypeVar("T_LoadContext", bound=ComponentDeclLoadContext)
 
 
 def context_with_injected_scope(
-    context: T,
+    context: T_LoadContext,
     component_cls: type[Component],
-    template_vars_module: Optional[str],
-) -> T:
-    context = context.with_rendering_scope(
-        component_cls.get_additional_scope(),
-    )
+    template_vars_module: str | None,
+) -> T_LoadContext:
+    # Merge backward-compatible get_additional_scope with context-aware static template vars
+
+    legacy_scope = component_cls.get_additional_scope()
+    context_aware_scope = get_context_aware_static_template_vars(component_cls, context)
+
+    # Merge scopes, with context-aware taking precedence
+    merged_scope = {**legacy_scope, **context_aware_scope}
+
+    context = context.with_rendering_scope(merged_scope)
 
     if not template_vars_module:
         return context
@@ -475,7 +607,7 @@ def context_with_injected_scope(
 
 
 def asset_post_processor_list_from_post_processing_dict(
-    resolution_context: ResolutionContext, post_processing: Optional[Mapping[str, Any]]
+    resolution_context: ResolutionContext, post_processing: Mapping[str, Any] | None
 ) -> list[AssetPostProcessor]:
     if not post_processing:
         return []

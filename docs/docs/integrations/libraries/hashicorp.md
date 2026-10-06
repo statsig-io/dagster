@@ -1,6 +1,7 @@
 ---
 title: Dagster & HashiCorp Vault
 sidebar_label: HashiCorp Vault
+sidebar_position: 1
 description: A package for integrating HashiCorp Vault into Dagster so that you can securely manage tokens and passwords.
 tags: [community-supported]
 source: https://github.com/silentsokolov/dagster-hashicorp
@@ -10,6 +11,10 @@ sidebar_custom_props:
   community: true
 partnerlink: https://www.vaultproject.io/
 ---
+
+import CommunityIntegration from '@site/docs/partials/\_CommunityIntegration.md';
+
+<CommunityIntegration />
 
 <p>{frontMatter.description}</p>
 

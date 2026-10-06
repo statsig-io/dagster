@@ -1,8 +1,18 @@
 import inspect
+import re
 from collections.abc import Iterator, Mapping, Sequence, Set
-from typing import TYPE_CHECKING, AbstractSet, Any, Callable, Optional, Union, cast  # noqa: UP035
-
-from typing_extensions import TypeAlias, get_args, get_origin
+from typing import (  # noqa: UP035
+    TYPE_CHECKING,
+    AbstractSet,
+    Any,
+    Callable,
+    Optional,
+    TypeAlias,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+)
 
 import dagster._check as check
 from dagster._annotations import deprecated, deprecated_param, public
@@ -27,7 +37,7 @@ from dagster._core.definitions.resource_requirement import (
     ResourceRequirement,
 )
 from dagster._core.definitions.result import MaterializeResult, ObserveResult
-from dagster._core.definitions.utils import DEFAULT_IO_MANAGER_KEY, check_valid_chars
+from dagster._core.definitions.utils import DEFAULT_IO_MANAGER_KEY
 from dagster._core.errors import (
     DagsterInvalidDefinitionError,
     DagsterInvalidInvocationError,
@@ -46,6 +56,7 @@ if TYPE_CHECKING:
 OpComputeFunction: TypeAlias = Callable[..., Any]
 
 
+@public
 @deprecated_param(
     param="version",
     breaking_version="2.0",
@@ -103,24 +114,24 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
     _compute_fn: Union[Callable[..., Any], "DecoratedOpFunction"]
     _config_schema: IDefinitionConfigSchema
     _required_resource_keys: AbstractSet[str]
-    _version: Optional[str]
-    _retry_policy: Optional[RetryPolicy]
-    _pool: Optional[str]
+    _version: str | None
+    _retry_policy: RetryPolicy | None
+    _pool: str | None
 
     def __init__(
         self,
         compute_fn: Union[Callable[..., Any], "DecoratedOpFunction"],
         name: str,
-        ins: Optional[Mapping[str, In]] = None,
-        outs: Optional[Mapping[str, Out]] = None,
-        description: Optional[str] = None,
-        config_schema: Optional[Union[UserConfigSchema, IDefinitionConfigSchema]] = None,
-        required_resource_keys: Optional[AbstractSet[str]] = None,
-        tags: Optional[Mapping[str, Any]] = None,
-        version: Optional[str] = None,
-        retry_policy: Optional[RetryPolicy] = None,
-        code_version: Optional[str] = None,
-        pool: Optional[str] = None,
+        ins: Mapping[str, In] | None = None,
+        outs: Mapping[str, Out] | None = None,
+        description: str | None = None,
+        config_schema: UserConfigSchema | IDefinitionConfigSchema | None = None,
+        required_resource_keys: AbstractSet[str] | None = None,
+        tags: Mapping[str, Any] | None = None,
+        version: str | None = None,
+        retry_policy: RetryPolicy | None = None,
+        code_version: str | None = None,
+        pool: str | None = None,
     ):
         from dagster._core.definitions.decorators.op_decorator import (
             DecoratedOpFunction,
@@ -129,14 +140,15 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
 
         ins = check.opt_mapping_param(ins, "ins")
         input_defs = [
-            inp.to_definition(name) for name, inp in sorted(ins.items(), key=lambda inp: inp[0])
+            inp if isinstance(inp, InputDefinition) else inp.to_definition(name)
+            for name, inp in sorted(ins.items(), key=lambda inp: inp[0])
         ]  # sort so that input definition order is deterministic
 
         if isinstance(compute_fn, DecoratedOpFunction):
             resolved_input_defs: Sequence[InputDefinition] = resolve_checked_op_fn_inputs(
                 decorator_name="@op",
                 fn_name=name,
-                compute_fn=cast("DecoratedOpFunction", compute_fn),
+                compute_fn=compute_fn,
                 explicit_input_defs=input_defs,
                 exclude_nothing=True,
             )
@@ -187,16 +199,16 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
         *,
         compute_fn: Union[Callable[..., Any], "DecoratedOpFunction"],
         name: str,
-        ins: Optional[Mapping[str, In]],
-        outs: Optional[Mapping[str, Out]],
-        description: Optional[str],
-        config_schema: Optional[Union[UserConfigSchema, IDefinitionConfigSchema]],
-        required_resource_keys: Optional[AbstractSet[str]],
-        tags: Optional[Mapping[str, Any]],
-        version: Optional[str],
-        retry_policy: Optional[RetryPolicy],
-        code_version: Optional[str],
-        pool: Optional[str],
+        ins: Mapping[str, In] | None,
+        outs: Mapping[str, Out] | None,
+        description: str | None,
+        config_schema: UserConfigSchema | IDefinitionConfigSchema | None,
+        required_resource_keys: AbstractSet[str] | None,
+        tags: Mapping[str, Any] | None,
+        version: str | None,
+        retry_policy: RetryPolicy | None,
+        code_version: str | None,
+        pool: str | None,
     ) -> "OpDefinition":
         return OpDefinition(
             compute_fn=compute_fn,
@@ -258,7 +270,7 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
     @public
     @deprecated(breaking_version="2.0", additional_warn_text="Use `code_version` instead.")
     @property
-    def version(self) -> Optional[str]:
+    def version(self) -> str | None:
         """str: Version of the code encapsulated by the op. If set, this is used as a
         default code version for all outputs.
         """
@@ -266,7 +278,7 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
 
     @public
     @property
-    def retry_policy(self) -> Optional[RetryPolicy]:
+    def retry_policy(self) -> RetryPolicy | None:
         """Optional[RetryPolicy]: The RetryPolicy for this op."""
         return self._retry_policy
 
@@ -282,7 +294,7 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
         return super().alias(name)
 
     @public
-    def tag(self, tags: Optional[Mapping[str, str]]) -> "PendingNodeInvocation":
+    def tag(self, tags: Mapping[str, str] | None) -> "PendingNodeInvocation":
         """Creates a copy of this op with the given tags."""
         return super().tag(tags)
 
@@ -297,7 +309,7 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
         return super().with_retry_policy(retry_policy)
 
     @property
-    def pool(self) -> Optional[str]:
+    def pool(self) -> str | None:
         """Optional[str]: The concurrency pool for this op."""
         return self._pool
 
@@ -329,15 +341,15 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
         yield self
 
     def resolve_output_to_origin(
-        self, output_name: str, handle: Optional[NodeHandle]
-    ) -> tuple[OutputDefinition, Optional[NodeHandle]]:
+        self, output_name: str, handle: NodeHandle | None
+    ) -> tuple[OutputDefinition, NodeHandle | None]:
         return self.output_def_named(output_name), handle
 
     def resolve_output_to_origin_op_def(self, output_name: str) -> "OpDefinition":
         return self
 
     def get_inputs_must_be_resolved_top_level(
-        self, asset_layer: "AssetLayer", handle: Optional[NodeHandle] = None
+        self, asset_layer: "AssetLayer", handle: NodeHandle | None = None
     ) -> Sequence[InputDefinition]:
         handle = cast("NodeHandle", check.inst_param(handle, "handle", NodeHandle))
         unresolveable_input_defs = []
@@ -369,10 +381,10 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
     def with_replaced_properties(
         self,
         name: str,
-        ins: Optional[Mapping[str, In]] = None,
-        outs: Optional[Mapping[str, Out]] = None,
-        config_schema: Optional[IDefinitionConfigSchema] = None,
-        description: Optional[str] = None,
+        ins: Mapping[str, In] | None = None,
+        outs: Mapping[str, Out] | None = None,
+        config_schema: IDefinitionConfigSchema | None = None,
+        description: str | None = None,
     ) -> "OpDefinition":
         return OpDefinition.dagster_internal_init(
             name=name,
@@ -398,7 +410,7 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
     def copy_for_configured(
         self,
         name: str,
-        description: Optional[str],
+        description: str | None,
         config_schema: IDefinitionConfigSchema,
     ) -> "OpDefinition":
         return self.with_replaced_properties(
@@ -409,7 +421,7 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
 
     def get_resource_requirements(
         self,
-        handle: Optional[NodeHandle],
+        handle: NodeHandle | None,
         asset_layer: Optional["AssetLayer"],
     ) -> Iterator[ResourceRequirement]:
         node_description = f"{self.node_type_str} '{handle or self.name}'"
@@ -453,7 +465,7 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
         return [input_handle]
 
     def resolve_output_to_destinations(
-        self, output_name: str, handle: Optional[NodeHandle]
+        self, output_name: str, handle: NodeHandle | None
     ) -> Sequence[NodeInputHandle]:
         return []
 
@@ -468,7 +480,7 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
     def get_op_handles(self, parent: NodeHandle) -> AbstractSet[NodeHandle]:
         return {parent}
 
-    def get_op_output_handles(self, parent: Optional[NodeHandle]) -> AbstractSet[NodeOutputHandle]:
+    def get_op_output_handles(self, parent: NodeHandle | None) -> AbstractSet[NodeOutputHandle]:
         return {
             NodeOutputHandle(node_handle=parent, output_name=output_def.name)
             for output_def in self.output_defs
@@ -477,8 +489,8 @@ class OpDefinition(NodeDefinition, IHasInternalInit):
 
 def _resolve_output_defs_from_outs(
     compute_fn: Union[Callable[..., Any], "DecoratedOpFunction"],
-    outs: Optional[Mapping[str, Out]],
-    default_code_version: Optional[str],
+    outs: Mapping[str, Out] | None,
+    default_code_version: str | None,
 ) -> Sequence[OutputDefinition]:
     from dagster._core.definitions.decorators.op_decorator import DecoratedOpFunction
 
@@ -601,12 +613,19 @@ def _is_result_object_type(ttype):
     return ttype in (MaterializeResult, ObserveResult, AssetCheckResult)
 
 
+VALID_POOL_NAME_REGEX_STR = r"^\S+$"  # any non-whitespace characters
+VALID_POOL_NAME_REGEX = re.compile(VALID_POOL_NAME_REGEX_STR)
+
+
 def _validate_pool(pool, tags):
     check.opt_str_param(pool, "pool")
     if not pool:
         return None
 
-    check_valid_chars(pool)
+    if not VALID_POOL_NAME_REGEX.match(pool):
+        raise DagsterInvalidDefinitionError(
+            f'Pool "{pool}" is not a valid pool name. It must match the regex {VALID_POOL_NAME_REGEX_STR}.'
+        )
 
     tags = check.opt_mapping_param(tags, "tags")
     tag_concurrency_key = tags.get(GLOBAL_CONCURRENCY_TAG)

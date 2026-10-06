@@ -1,9 +1,10 @@
+import copy
 import multiprocessing
 import os
 from collections.abc import Mapping, Sequence
 from functools import partial
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from dagster import (
@@ -15,7 +16,6 @@ from dagster import (
     Definitions,
     DependencyDefinition,
     Jitter,
-    LegacyFreshnessPolicy,
     NodeInvocation,
     OpDefinition,
     PartitionMapping,
@@ -47,13 +47,14 @@ from dagster_dbt.asset_utils import (
     DBT_DEFAULT_SELECT,
     DUPLICATE_ASSET_KEY_ERROR_MESSAGE,
 )
+from dagster_dbt.compat import DBT_PYTHON_VERSION
 from dagster_dbt.core.resource import DbtCliResource
 from dagster_dbt.dagster_dbt_translator import DagsterDbtTranslator, DagsterDbtTranslatorSettings
-from dbt.version import __version__ as dbt_version
 from packaging import version
 
 from dagster_dbt_tests.dbt_projects import (
     test_dbt_alias_path,
+    test_dbt_functions_path,
     test_dbt_model_versions_path,
     test_dbt_python_interleaving_path,
     test_dbt_semantic_models_path,
@@ -217,8 +218,8 @@ def test_manifest_argument(
 )
 def test_selections(
     test_jaffle_shop_manifest: dict[str, Any],
-    select: Optional[str],
-    exclude: Optional[str],
+    select: str | None,
+    exclude: str | None,
     expected_dbt_resource_names: set[str],
 ) -> None:
     select = select or DBT_DEFAULT_SELECT
@@ -250,7 +251,9 @@ def _get_snapshot_id(manifest, _):
     )
     def my_dbt_assets(): ...
 
-    job = Definitions(assets=[my_dbt_assets]).resolve_implicit_global_asset_job_def()
+    defs = Definitions(assets=[my_dbt_assets])
+    job = defs.get_implicit_global_asset_job_def()
+
     return job.get_job_snapshot_id()
 
 
@@ -259,14 +262,19 @@ def test_snapshot_id(
 ):
     # we dont make strong guarantees about stable ids, but try to have the basic case stable
 
-    with multiprocessing.Pool(1) as pool:
+    # spawn rather than fork: forked children inherit pytest process state, which can
+    # include dead DagsterInstance weakrefs that fail snapshot resolution
+    with multiprocessing.get_context("spawn").Pool(1) as pool:
         results = pool.map(partial(_get_snapshot_id, test_jaffle_shop_manifest), range(5))
 
     assert len(set(results)) == 1
 
+    # this should only update if the dbt project or asset producing code changes
+    assert results[0] == "78112ce4276eb84a307025227c30985b5f78b206"
+
 
 @pytest.mark.parametrize("name", [None, "custom"])
-def test_with_custom_name(test_jaffle_shop_manifest: dict[str, Any], name: Optional[str]) -> None:
+def test_with_custom_name(test_jaffle_shop_manifest: dict[str, Any], name: str | None) -> None:
     @dbt_assets(manifest=test_jaffle_shop_manifest, name=name)
     def my_dbt_assets(): ...
 
@@ -279,7 +287,7 @@ def test_with_custom_name(test_jaffle_shop_manifest: dict[str, Any], name: Optio
     "partitions_def", [None, DailyPartitionsDefinition(start_date="2023-01-01")]
 )
 def test_partitions_def(
-    test_jaffle_shop_manifest: dict[str, Any], partitions_def: Optional[PartitionsDefinition]
+    test_jaffle_shop_manifest: dict[str, Any], partitions_def: PartitionsDefinition | None
 ) -> None:
     @dbt_assets(manifest=test_jaffle_shop_manifest, partitions_def=partitions_def)
     def my_dbt_assets(): ...
@@ -289,7 +297,7 @@ def test_partitions_def(
 
 @pytest.mark.parametrize("io_manager_key", [None, "my_io_manager_key"])
 def test_io_manager_key(
-    test_jaffle_shop_manifest: dict[str, Any], io_manager_key: Optional[str]
+    test_jaffle_shop_manifest: dict[str, Any], io_manager_key: str | None
 ) -> None:
     @dbt_assets(manifest=test_jaffle_shop_manifest, io_manager_key=io_manager_key)
     def my_dbt_assets(): ...
@@ -342,16 +350,10 @@ def test_backfill_policy(
     backfill_policy: BackfillPolicy,
     expected_backfill_policy: BackfillPolicy,
 ) -> None:
-    class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_freshness_policy(self, _: Mapping[str, Any]) -> Optional[LegacyFreshnessPolicy]:  # pyright: ignore[reportIncompatibleMethodOverride]
-            # Disable freshness policies when using static partitions
-            return None
-
     @dbt_assets(
         manifest=test_jaffle_shop_manifest,
         partitions_def=partitions_def,
         backfill_policy=backfill_policy,
-        dagster_dbt_translator=CustomDagsterDbtTranslator(),
     )
     def my_dbt_assets(): ...
 
@@ -373,7 +375,7 @@ def test_backfill_policy(
 )
 def test_retry_policy(
     test_jaffle_shop_manifest: dict[str, Any],
-    retry_policy: Optional[RetryPolicy],
+    retry_policy: RetryPolicy | None,
 ) -> None:
     @dbt_assets(
         manifest=test_jaffle_shop_manifest,
@@ -523,7 +525,7 @@ def test_with_asset_key_replacements(test_jaffle_shop_manifest: dict[str, Any]) 
     ],
 )
 def test_with_partition_mappings(
-    test_meta_config_manifest: dict[str, Any], partition_mapping: Optional[PartitionMapping]
+    test_meta_config_manifest: dict[str, Any], partition_mapping: PartitionMapping | None
 ) -> None:
     expected_self_dependency_partition_mapping = TimeWindowPartitionMapping(
         start_offset=-8, end_offset=-9
@@ -534,7 +536,7 @@ def test_with_partition_mappings(
             self,
             dbt_resource_props: Mapping[str, Any],
             dbt_parent_resource_props: Mapping[str, Any],
-        ) -> Optional[PartitionMapping]:
+        ) -> PartitionMapping | None:
             is_self_dependency = dbt_resource_props == dbt_parent_resource_props
             if is_self_dependency:
                 return expected_self_dependency_partition_mapping
@@ -587,7 +589,7 @@ def test_with_description_replacements(test_jaffle_shop_manifest: dict[str, Any]
     expected_description = "customized description"
 
     class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_description(self, _: Mapping[str, Any]) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
+        def get_description(self, _: Mapping[str, Any]) -> str:  # ty: ignore[invalid-method-override]
             return expected_description
 
     expected_specs_by_key = {
@@ -627,7 +629,7 @@ def test_with_metadata_replacements(test_jaffle_shop_manifest: dict[str, Any]) -
     expected_metadata = {"customized": "metadata"}
 
     class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_metadata(self, _: Mapping[str, Any]) -> Mapping[str, Any]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        def get_metadata(self, _: Mapping[str, Any]) -> Mapping[str, Any]:  # ty: ignore[invalid-method-override]
             return expected_metadata
 
     expected_specs_by_key = {
@@ -652,7 +654,7 @@ def test_with_tag_replacements(test_jaffle_shop_manifest: dict[str, Any]) -> Non
     expected_tags = {"customized": "tag"}
 
     class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_tags(self, _: Mapping[str, Any]) -> Mapping[str, str]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        def get_tags(self, _: Mapping[str, Any]) -> Mapping[str, str]:  # ty: ignore[invalid-method-override]
             return expected_tags
 
     expected_specs_by_key = {
@@ -677,7 +679,7 @@ def test_with_owner_replacements(test_jaffle_shop_manifest: dict[str, Any]) -> N
     expected_owners = ["custom@custom.com"]
 
     class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_owners(self, _: Mapping[str, Any]) -> Optional[Sequence[str]]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        def get_owners(self, _: Mapping[str, Any]) -> Sequence[str] | None:  # ty: ignore[invalid-method-override]
             return expected_owners
 
     expected_specs_by_key = {
@@ -702,7 +704,7 @@ def test_with_group_replacements(test_jaffle_shop_manifest: dict[str, Any]) -> N
     expected_group = "customized_group"
 
     class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_group_name(self, _: Mapping[str, Any]) -> Optional[str]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        def get_group_name(self, _: Mapping[str, Any]) -> str | None:  # ty: ignore[invalid-method-override]
             return expected_group
 
     expected_specs_by_key = {
@@ -728,7 +730,7 @@ def test_with_code_version_replacements(test_jaffle_shop_manifest: dict[str, Any
     expected_code_version = "customized_code_version"
 
     class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_code_version(self, _: Mapping[str, Any]) -> Optional[str]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        def get_code_version(self, _: Mapping[str, Any]) -> str | None:  # ty: ignore[invalid-method-override]
             return expected_code_version
 
     @dbt_assets(
@@ -752,40 +754,15 @@ def test_all_assets_have_a_distinct_code_version(test_jaffle_shop_manifest: dict
     assert len(code_versions) == len(set(code_versions))
 
 
-def test_with_freshness_policy_replacements(test_jaffle_shop_manifest: dict[str, Any]) -> None:
-    expected_freshness_policy = LegacyFreshnessPolicy(maximum_lag_minutes=60)
-
-    class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_freshness_policy(self, _: Mapping[str, Any]) -> Optional[LegacyFreshnessPolicy]:  # pyright: ignore[reportIncompatibleMethodOverride]
-            return expected_freshness_policy
-
-    expected_specs_by_key = {
-        spec.key: spec
-        for spec in build_dbt_asset_specs(
-            manifest=test_jaffle_shop_manifest,
-            dagster_dbt_translator=CustomDagsterDbtTranslator(),
-        )
-    }
-
-    @dbt_assets(
-        manifest=test_jaffle_shop_manifest, dagster_dbt_translator=CustomDagsterDbtTranslator()
-    )
-    def my_dbt_assets(): ...
-
-    for asset_key, freshness_policy in my_dbt_assets.legacy_freshness_policies_by_key.items():
-        assert freshness_policy == expected_freshness_policy
-        assert expected_specs_by_key[asset_key].legacy_freshness_policy == expected_freshness_policy
-
-
 def test_with_auto_materialize_policy_replacements(
     test_jaffle_shop_manifest: dict[str, Any],
 ) -> None:
     expected_auto_materialize_policy = AutoMaterializePolicy.eager()
 
     class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_auto_materialize_policy(  # pyright: ignore[reportIncompatibleMethodOverride]
+        def get_auto_materialize_policy(  # ty: ignore[invalid-method-override]
             self, _: Mapping[str, Any]
-        ) -> Optional[AutoMaterializePolicy]:
+        ) -> AutoMaterializePolicy | None:
             return expected_auto_materialize_policy
 
     expected_specs_by_key = {
@@ -816,7 +793,7 @@ def test_with_automation_condition_replacements(test_jaffle_shop_manifest: dict[
     expected_automation_condition = AutomationCondition.eager()
 
     class CustomDagsterDbtTranslator(DagsterDbtTranslator):
-        def get_automation_condition(self, _: Mapping[str, Any]) -> Optional[AutomationCondition]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        def get_automation_condition(self, _: Mapping[str, Any]) -> AutomationCondition | None:  # ty: ignore[invalid-method-override]
             return expected_automation_condition
 
     expected_specs_by_key = {
@@ -846,7 +823,7 @@ def test_with_varying_partitions_defs(test_jaffle_shop_manifest: dict[str, Any])
     class CustomDagsterDbtTranslator(DagsterDbtTranslator):
         def get_partitions_def(
             self, dbt_resource_props: Mapping[str, Any]
-        ) -> Optional[PartitionsDefinition]:
+        ) -> PartitionsDefinition | None:
             asset_key = super().get_asset_key(dbt_resource_props)
             if asset_key in override_keys:
                 return daily_partitions
@@ -886,25 +863,6 @@ def test_dbt_meta_auto_materialize_policy(test_meta_config_manifest: dict[str, A
             expected_specs_by_key[asset_key].auto_materialize_policy
             == expected_auto_materialize_policy
         )
-
-
-def test_dbt_meta_freshness_policy(test_meta_config_manifest: dict[str, Any]) -> None:
-    expected_freshness_policy = LegacyFreshnessPolicy(
-        maximum_lag_minutes=60.0, cron_schedule="* * * * *"
-    )
-    expected_specs_by_key = {
-        spec.key: spec for spec in build_dbt_asset_specs(manifest=test_meta_config_manifest)
-    }
-
-    @dbt_assets(manifest=test_meta_config_manifest)
-    def my_dbt_assets(): ...
-
-    freshness_policies = my_dbt_assets.legacy_freshness_policies_by_key.items()
-    assert freshness_policies
-
-    for asset_key, freshness_policy in freshness_policies:
-        assert freshness_policy == expected_freshness_policy
-        assert expected_specs_by_key[asset_key].legacy_freshness_policy == expected_freshness_policy
 
 
 def test_dbt_meta_asset_key(test_meta_config_manifest: dict[str, Any]) -> None:
@@ -1207,7 +1165,7 @@ def test_dbt_with_semantic_models_and_saved_queries(
 
 
 @pytest.mark.skipif(
-    version.parse(dbt_version) < version.parse("1.8.0"),
+    DBT_PYTHON_VERSION is not None and DBT_PYTHON_VERSION < version.parse("1.8.0"),
     reason="dbt unit test support is only available in `dbt-core>=1.8.0`",
 )
 @pytest.mark.parametrize("select", ["fqn:*", "tag:test"])
@@ -1222,6 +1180,30 @@ def test_dbt_with_unit_tests(test_dbt_unit_tests_manifest: dict[str, Any], selec
     result = materialize(
         [my_dbt_assets],
         resources={"dbt": DbtCliResource(project_dir=os.fspath(test_dbt_unit_tests_path))},
+    )
+    assert result.success
+
+
+@pytest.mark.skipif(
+    DBT_PYTHON_VERSION is not None and DBT_PYTHON_VERSION < version.parse("1.11.0"),
+    reason="dbt udf support is only available in `dbt-core>=1.11.0`",
+)
+@pytest.mark.parametrize("select", ["fqn:*", "tag:test"])
+def test_dbt_with_functions(test_dbt_functions_manifest: dict[str, Any], select: str) -> None:
+    @dbt_assets(
+        manifest=test_dbt_functions_manifest,
+        select=select,
+    )
+    def my_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
+        # duckdb does not support building functions, so we exclude them here
+        # we only want to test a manifest with function nodes works
+        yield from dbt.cli(
+            ["build", "--exclude", "resource_type:function"], context=context
+        ).stream()
+
+    result = materialize(
+        [my_dbt_assets],
+        resources={"dbt": DbtCliResource(project_dir=os.fspath(test_dbt_functions_path))},
     )
     assert result.success
 
@@ -1344,3 +1326,170 @@ def test_dbt_with_duplicate_source_asset_keys(
         AssetKey(["customers"]),
         AssetKey(["orders"]),
     }
+
+
+def test_dbt_enable_source_metadata_with_multiple_assets_defs(
+    test_asset_checks_manifest: dict[str, Any],
+) -> None:
+
+    @dbt_assets(
+        manifest=test_asset_checks_manifest,
+        select="stg_customers",
+        dagster_dbt_translator=DagsterDbtTranslator(),
+    )
+    def stg_customers_assets(): ...
+
+    @dbt_assets(
+        manifest=test_asset_checks_manifest,
+        select="stg_customers_again",
+        dagster_dbt_translator=DagsterDbtTranslator(),
+    )
+    def stg_customers_again_assets(): ...
+
+    asset_graph = Definitions(
+        assets=[stg_customers_assets, stg_customers_again_assets],
+    ).resolve_asset_graph()
+
+    # The shared source resolves to a single stub node referenced by both models.
+    raw_customers_key = AssetKey(["jaffle_shop", "raw_customers"])
+    assert raw_customers_key in asset_graph.get_all_asset_keys()
+    assert {AssetKey(["stg_customers"]), AssetKey(["stg_customers_again"])} <= {
+        child for child in asset_graph.get(raw_customers_key).child_keys
+    }
+
+
+def with_renamed_dbt_project(manifest: dict[str, Any], new_project: str) -> dict[str, Any]:
+    """Copy a manifest as if its sources belonged to a different dbt project.
+
+    The source AssetKeys are unchanged (they derive from source name + table) but each source
+    unique_id embeds the new project name, mirroring a single source referenced by two distinct
+    dbt projects.
+    """
+    renamed = copy.deepcopy(manifest)
+    old_project = renamed["metadata"]["project_name"]
+    unique_id_remap: dict[str, str] = {}
+
+    renamed_sources: dict[str, Any] = {}
+    for unique_id, source_props in renamed["sources"].items():
+        new_unique_id = unique_id.replace(f"source.{old_project}.", f"source.{new_project}.", 1)
+        unique_id_remap[unique_id] = new_unique_id
+        source_props["unique_id"] = new_unique_id
+        source_props["package_name"] = new_project
+        renamed_sources[new_unique_id] = source_props
+    renamed["sources"] = renamed_sources
+
+    for node_props in renamed["nodes"].values():
+        depends_on = node_props.get("depends_on", {}).get("nodes")
+        if depends_on:
+            node_props["depends_on"]["nodes"] = [
+                unique_id_remap.get(dep, dep) for dep in depends_on
+            ]
+
+    # dbt's node selector resolves the graph from parent_map/child_map, so remap those too.
+    for graph_key in ("parent_map", "child_map"):
+        graph = renamed.get(graph_key)
+        if graph:
+            renamed[graph_key] = {
+                unique_id_remap.get(node, node): [unique_id_remap.get(edge, edge) for edge in edges]
+                for node, edges in graph.items()
+            }
+
+    renamed["metadata"]["project_name"] = new_project
+    renamed["metadata"]["project_id"] = f"project_id_{new_project}"
+    return renamed
+
+
+def test_dbt_enable_source_metadata_across_distinct_manifests(
+    test_asset_checks_manifest: dict[str, Any],
+) -> None:
+    # A single source can be referenced by models built from two different dbt projects (e.g. one
+    # feeding a model and another feeding a snapshot). Each project's manifest gives that source a
+    # different unique_id and project_id, since the project identity is embedded in them. Such
+    # dbt-namespaced dep metadata must be omitted from source deps so the two projects produce
+    # identical metadata and the shared stub asset resolves instead of raising a conflict.
+    manifest_a = test_asset_checks_manifest
+    manifest_b = with_renamed_dbt_project(manifest_a, "other_project")
+
+    @dbt_assets(manifest=manifest_a, select="stg_customers")
+    def project_a_assets(): ...
+
+    @dbt_assets(manifest=manifest_b, select="stg_customers_again")
+    def project_b_assets(): ...
+
+    # Resolves without raising "Conflicting metadata found on AssetDeps".
+    asset_graph = Definitions(
+        assets=[project_a_assets, project_b_assets],
+    ).resolve_asset_graph()
+
+    raw_customers_key = AssetKey(["jaffle_shop", "raw_customers"])
+    assert {AssetKey(["stg_customers"]), AssetKey(["stg_customers_again"])} <= set(
+        asset_graph.get(raw_customers_key).child_keys
+    )
+
+    # Value-stable source metadata survives on the deps; dbt-namespaced metadata (which differs
+    # per project) does not.
+    for assets_def in (project_a_assets, project_b_assets):
+        for spec in assets_def.specs:
+            for dep in spec.deps:
+                if dep.asset_key == raw_customers_key:
+                    assert "dagster/table_name" in dep.metadata
+                    assert not any(key.startswith("dagster_dbt/") for key in dep.metadata)
+
+
+def test_dbt_enable_source_metadata_dedupes_collapsed_sources(
+    test_duplicate_source_asset_key_manifest: dict[str, Any],
+) -> None:
+
+    manifest = copy.deepcopy(test_duplicate_source_asset_key_manifest)
+    # Make stg_customers reference all three sources, exercising the per-spec case.
+    stg_customers_id = "model.test_dagster_duplicate_source_asset_key.stg_customers"
+    manifest["nodes"][stg_customers_id]["depends_on"]["nodes"] = [
+        "source.test_dagster_duplicate_source_asset_key.jaffle_shop.raw_customers",
+        "source.test_dagster_duplicate_source_asset_key.jaffle_shop.raw_orders",
+        "source.test_dagster_duplicate_source_asset_key.jaffle_shop.raw_payments",
+    ]
+
+    class CollapseSourcesTranslator(DagsterDbtTranslator):
+        def get_asset_key(self, dbt_resource_props: Mapping[str, Any]) -> AssetKey:
+            if dbt_resource_props["resource_type"] == "source":
+                return AssetKey(["raw_data"])
+            return super().get_asset_key(dbt_resource_props)
+
+    @dbt_assets(
+        manifest=manifest,
+        dagster_dbt_translator=CollapseSourcesTranslator(
+            settings=DagsterDbtTranslatorSettings(
+                enable_duplicate_source_asset_keys=True,
+                enable_source_metadata=True,
+            )
+        ),
+    )
+    def my_dbt_assets(): ...
+
+    raw_data_key = AssetKey(["raw_data"])
+
+    # (a) The three collapsed source deps within stg_customers's spec are deduped to one.
+    stg_customers_spec = next(
+        spec for spec in my_dbt_assets.specs if spec.key == AssetKey(["stg_customers"])
+    )
+    stg_customers_parents = [dep.asset_key for dep in stg_customers_spec.deps]
+    assert stg_customers_parents.count(raw_data_key) == 1
+
+    # All deps to the colliding key carry no source-specific metadata, regardless of
+    # which source produced them.
+    for spec in my_dbt_assets.specs:
+        for dep in spec.deps:
+            if dep.asset_key == raw_data_key:
+                assert not dep.metadata, (
+                    f"Expected empty metadata on dep to colliding key for spec {spec.key}, "
+                    f"got {dep.metadata}"
+                )
+
+    # (b) The full graph resolves without conflicting stub metadata across specs.
+    asset_graph = Definitions(assets=[my_dbt_assets]).resolve_asset_graph()
+    raw_data_node = asset_graph.get(raw_data_key)
+    assert {
+        AssetKey(["stg_customers"]),
+        AssetKey(["stg_orders"]),
+        AssetKey(["stg_payments"]),
+    } <= set(raw_data_node.child_keys)

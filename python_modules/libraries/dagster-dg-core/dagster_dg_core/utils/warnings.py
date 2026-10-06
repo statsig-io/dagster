@@ -1,14 +1,12 @@
 import textwrap
 from collections.abc import Sequence
-from typing import Literal, Optional
+from typing import Literal, TypeAlias
 
 import click
-from typing_extensions import TypeAlias
 
 from dagster_dg_core.utils import format_multiline_str
 
 DgWarningIdentifier: TypeAlias = Literal[
-    "autoload_defs_with_definitions_py",
     "cli_config_in_workspace_project",
     "deprecated_user_config_location",
     "deprecated_python_environment",
@@ -23,7 +21,7 @@ DgWarningIdentifier: TypeAlias = Literal[
 def emit_warning(
     warning_id: DgWarningIdentifier,
     msg: str,
-    suppress_warnings: Optional[Sequence[DgWarningIdentifier]],
+    suppress_warnings: Sequence[DgWarningIdentifier] | None,
     include_suppression_instruction: bool = True,
 ) -> None:
     if warning_id not in (suppress_warnings or []):

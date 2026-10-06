@@ -1,5 +1,5 @@
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from dagster import (
     AssetsDefinition,
@@ -42,9 +42,7 @@ def airlift_mapped_kind_dict() -> dict:
 
 
 def spec_iterator(
-    assets: Optional[
-        Iterable[Union[AssetsDefinition, AssetSpec, SourceAsset, CacheableAssetsDefinition]]
-    ],
+    assets: Iterable[AssetsDefinition | AssetSpec | SourceAsset | CacheableAssetsDefinition] | None,
 ) -> Iterator[AssetSpec]:
     for asset in assets or []:
         if isinstance(asset, AssetsDefinition):
@@ -85,11 +83,10 @@ def task_handles_for_spec(spec: AssetSpec) -> set["TaskHandle"]:
     from dagster_airlift.core.serialization.serialized_data import TaskHandle
 
     check.param_invariant(is_task_mapped_asset_spec(spec), "spec", "Must be mapped spec")
-    task_handles = []
-    for task_handle_dict in spec.metadata[TASK_MAPPING_METADATA_KEY]:
-        task_handles.append(
-            TaskHandle(dag_id=task_handle_dict["dag_id"], task_id=task_handle_dict["task_id"])
-        )
+    task_handles = [
+        TaskHandle(dag_id=task_handle_dict["dag_id"], task_id=task_handle_dict["task_id"])
+        for task_handle_dict in spec.metadata[TASK_MAPPING_METADATA_KEY]
+    ]
     return set(task_handles)
 
 
@@ -122,7 +119,7 @@ def get_producing_dag_ids(spec: AssetSpec) -> set[str]:
         return {task_handle.dag_id for task_handle in task_handles_for_spec(spec)}
 
 
-MappedAsset = Union[AssetSpec, AssetsDefinition]
+MappedAsset: TypeAlias = AssetSpec | AssetsDefinition
 
 
 def _type_check_asset(asset: Any) -> MappedAsset:

@@ -4,15 +4,14 @@ import logging.config
 import sys
 import traceback
 import warnings
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, Union
+from collections.abc import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, NamedTuple, TextIO, TypeAlias
 
 import coloredlogs
 import dagster_shared.seven as seven
-from typing_extensions import TypeAlias
 
 import dagster._check as check
-from dagster._annotations import deprecated
+from dagster._annotations import deprecated, public
 from dagster._core.definitions.logger_definition import LoggerDefinition, logger
 from dagster._core.utils import coerce_valid_log_level
 
@@ -113,7 +112,7 @@ class StructuredLoggerHandler(logging.Handler):
 
 
 def construct_single_handler_logger(
-    name: str, level: Union[str, int], handler: logging.Handler
+    name: str, level: str | int, handler: logging.Handler
 ) -> LoggerDefinition:
     check.str_param(name, "name")
     check.inst_param(handler, "handler", logging.Handler)
@@ -135,7 +134,8 @@ def construct_single_handler_logger(
 BASE_DAGSTER_LOGGER = logging.getLogger(name="dagster")
 
 
-def get_dagster_logger(name: Optional[str] = None) -> logging.Logger:
+@public
+def get_dagster_logger(name: str | None = None) -> logging.Logger:
     """Creates a python logger whose output messages will be captured and converted into Dagster log
     messages. This means they will have structured information such as the step_key, run_id, etc.
     embedded into them, and will show up in the Dagster event log.
@@ -173,7 +173,7 @@ def get_dagster_logger(name: Optional[str] = None) -> logging.Logger:
 
 
 def define_structured_logger(
-    name: str, callback: StructuredLoggerCallback, level: Union[str, int]
+    name: str, callback: StructuredLoggerCallback, level: str | int
 ) -> LoggerDefinition:
     check.str_param(name, "name")
     check.callable_param(callback, "callback")
@@ -182,7 +182,7 @@ def define_structured_logger(
     return construct_single_handler_logger(name, level, StructuredLoggerHandler(callback))
 
 
-def define_json_file_logger(name: str, json_path: str, level: Union[str, int]) -> LoggerDefinition:
+def define_json_file_logger(name: str, json_path: str, level: str | int) -> LoggerDefinition:
     check.str_param(name, "name")
     check.str_param(json_path, "json_path")
     level = coerce_valid_log_level(level)
@@ -249,7 +249,7 @@ def get_structlog_json_formatter() -> "structlog.stdlib.ProcessorFormatter":
     emit_runtime_warning=False,
 )
 def configure_loggers(
-    handler: str = "default", formatter: str = "colored", log_level: Union[str, int] = "INFO"
+    handler: str = "default", formatter: str = "colored", log_level: str | int = "INFO"
 ) -> None:
     # Deferred for import perf
     import structlog
@@ -324,14 +324,21 @@ def configure_loggers(
 
     # override the default warnings handler as per https://docs.python.org/3/library/warnings.html#warnings.showwarning
     # to use the same formatting
-    def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
+    def custom_warning_handler(
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        file: TextIO | None = None,
+        line: str | None = None,
+    ) -> None:
         log_message = warnings.formatwarning(message, category, filename, lineno, line)
         logging.getLogger("dagster").warning(log_message)
 
-    warnings.showwarning = custom_warning_handler
+    warnings.showwarning = custom_warning_handler  # ty: ignore[invalid-assignment]
 
 
-def create_console_logger(name: str, level: Union[str, int]) -> logging.Logger:
+def create_console_logger(name: str, level: str | int) -> logging.Logger:
     klass = logging.getLoggerClass()
     logger = klass(name, level=level)
     coloredlogs.install(

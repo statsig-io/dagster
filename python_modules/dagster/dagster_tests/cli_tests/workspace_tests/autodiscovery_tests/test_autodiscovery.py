@@ -144,7 +144,7 @@ def test_single_pending_repository():
 
 def test_single_repository_in_module() -> None:
     loadable_targets = loadable_targets_from_python_module(
-        "dagster.utils.test.toys.single_repository",
+        "dagster._utils.test.toys.single_repository",
         working_directory=None,
     )
     assert len(loadable_targets) == 1
@@ -152,7 +152,7 @@ def test_single_repository_in_module() -> None:
     assert symbol == "single_repository"
 
     repo_def = CodePointer.from_module(
-        "dagster.utils.test.toys.single_repository", symbol, working_directory=None
+        "dagster._utils.test.toys.single_repository", symbol, working_directory=None
     ).load_target()
     assert isinstance(repo_def, dg.RepositoryDefinition)
     assert repo_def.name == "single_repository"
@@ -160,7 +160,7 @@ def test_single_repository_in_module() -> None:
 
 def test_single_repository_in_package() -> None:
     loadable_targets = loadable_targets_from_python_package(
-        "dagster.utils.test.toys.single_repository",
+        "dagster._utils.test.toys.single_repository",
         working_directory=None,
     )
     assert len(loadable_targets) == 1
@@ -168,7 +168,7 @@ def test_single_repository_in_package() -> None:
     assert symbol == "single_repository"
 
     repo_def = CodePointer.from_python_package(
-        "dagster.utils.test.toys.single_repository", symbol, working_directory=None
+        "dagster._utils.test.toys.single_repository", symbol, working_directory=None
     ).load_target()
     assert isinstance(repo_def, dg.RepositoryDefinition)
     assert repo_def.name == "single_repository"
@@ -202,7 +202,7 @@ def test_double_defs_in_file() -> None:
     dagster_defs_path = dg.file_relative_path(__file__, "double_defs.py")
     with pytest.raises(
         dg.DagsterInvariantViolationError,
-        match="Cannot have more than one Definitions object defined at module scope. Found Definitions objects: double_defs.defs, double_defs.double_defs",
+        match=r"Cannot have more than one Definitions object defined at module scope. Found Definitions objects: double_defs.defs, double_defs.double_defs",
     ):
         loadable_targets_from_python_file(dagster_defs_path)
 
@@ -221,7 +221,7 @@ def test_local_directory_module_multiple_defs() -> None:
 
     with pytest.raises(
         dg.DagsterInvariantViolationError,
-        match="Cannot have more than one Definitions object defined at module scope. Found Definitions objects: autodiscover_in_module_multiple.defs, autodiscover_in_module_multiple.defs1, autodiscover_in_module_multiple.defs2",
+        match=r"Cannot have more than one Definitions object defined at module scope. Found Definitions objects: autodiscover_in_module_multiple.defs, autodiscover_in_module_multiple.defs1, autodiscover_in_module_multiple.defs2",
     ):
         loadable_targets_from_python_module(
             "autodiscover_in_module_multiple",

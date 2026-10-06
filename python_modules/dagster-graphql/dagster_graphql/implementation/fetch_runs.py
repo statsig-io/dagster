@@ -1,7 +1,7 @@
 import datetime
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, AbstractSet, Any, Optional, Union  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Any, Union  # noqa: UP035
 
 from dagster import (
     AssetKey,
@@ -19,10 +19,14 @@ from dagster._time import datetime_from_timestamp
 from dagster._utils.warnings import disable_dagster_warnings
 
 from dagster_graphql.implementation.external import ensure_valid_config, get_remote_job_or_raise
+from dagster_graphql.implementation.utils import get_query_limit_with_default
 
 if TYPE_CHECKING:
     from dagster_graphql.schema.asset_graph import GrapheneAssetLatestInfo
-    from dagster_graphql.schema.errors import GrapheneRunNotFoundError
+    from dagster_graphql.schema.errors import (
+        GrapheneRunGroupNotFoundError,
+        GrapheneRunNotFoundError,
+    )
     from dagster_graphql.schema.execution import GrapheneExecutionPlan
     from dagster_graphql.schema.logs.events import GrapheneRunStepStats
     from dagster_graphql.schema.pipelines.config import GraphenePipelineConfigValidationValid
@@ -64,8 +68,8 @@ def get_run_tag_keys(graphene_info: "ResolveInfo") -> "GrapheneRunTagKeys":
 def get_run_tags(
     graphene_info: "ResolveInfo",
     tag_keys: list[str],
-    value_prefix: Optional[str] = None,
-    limit: Optional[int] = None,
+    value_prefix: str | None = None,
+    limit: int | None = None,
 ) -> "GrapheneRunTags":
     from dagster_graphql.schema.runs import GrapheneRunTags
     from dagster_graphql.schema.tags import GraphenePipelineTagAndValues
@@ -82,7 +86,9 @@ def get_run_tags(
     )
 
 
-def get_run_group(graphene_info: "ResolveInfo", run_id: str) -> "GrapheneRunGroup":
+def get_run_group(
+    graphene_info: "ResolveInfo", run_id: str
+) -> "GrapheneRunGroup | GrapheneRunGroupNotFoundError":
     from dagster_graphql.schema.errors import GrapheneRunGroupNotFoundError
     from dagster_graphql.schema.pipelines.pipeline import GrapheneRun
     from dagster_graphql.schema.runs import GrapheneRunGroup
@@ -106,11 +112,25 @@ def get_run_group(graphene_info: "ResolveInfo", run_id: str) -> "GrapheneRunGrou
     )
 
 
+def get_default_run_records_limit(
+    instance: DagsterInstance, filters: RunsFilter | None, limit: int | None
+) -> int | None:
+    """Apply the instance's default run-records page size unless the caller already
+    asked for a specific page or supplied an explicit ``run_ids`` list (so the result
+    is bounded by their input).
+    """
+    if limit is not None:
+        return limit
+    if filters is not None and filters.run_ids:
+        return None
+    return instance.get_default_graphql_run_records_limit()
+
+
 def get_runs(
     graphene_info: "ResolveInfo",
-    filters: Optional[RunsFilter],
-    cursor: Optional[str] = None,
-    limit: Optional[int] = None,
+    filters: RunsFilter | None,
+    cursor: str | None = None,
+    limit: int | None = None,
 ) -> Sequence["GrapheneRun"]:
     from dagster_graphql.schema.pipelines.pipeline import GrapheneRun
 
@@ -119,6 +139,7 @@ def get_runs(
     check.opt_int_param(limit, "limit")
 
     instance = graphene_info.context.instance
+    limit = get_default_run_records_limit(instance, filters, limit)
 
     return [
         GrapheneRun(record)
@@ -128,9 +149,9 @@ def get_runs(
 
 def get_run_ids(
     graphene_info: "ResolveInfo",
-    filters: Optional[RunsFilter],
-    cursor: Optional[str] = None,
-    limit: Optional[int] = None,
+    filters: RunsFilter | None,
+    cursor: str | None = None,
+    limit: int | None = None,
 ) -> Sequence[str]:
     check.opt_inst_param(filters, "filters", RunsFilter)
     check.opt_str_param(cursor, "cursor")
@@ -166,7 +187,7 @@ def _get_latest_planned_run_id(instance: DagsterInstance, asset_record: AssetRec
 
 
 def get_assets_latest_info(
-    graphene_info: "ResolveInfo", step_keys_by_asset: Mapping[AssetKey, Sequence[str]]
+    graphene_info: "ResolveInfo", asset_keys: AbstractSet[AssetKey]
 ) -> Sequence["GrapheneAssetLatestInfo"]:
     from dagster_graphql.schema.asset_graph import GrapheneAssetLatestInfo
     from dagster_graphql.schema.logs.events import GrapheneMaterializationEvent
@@ -174,14 +195,8 @@ def get_assets_latest_info(
 
     instance = graphene_info.context.instance
 
-    asset_keys = list(step_keys_by_asset.keys())
-
     if not asset_keys:
         return []
-
-    asset_nodes = {
-        asset_key: graphene_info.context.asset_graph.get(asset_key) for asset_key in asset_keys
-    }
 
     asset_records = [
         record
@@ -193,7 +208,7 @@ def get_assets_latest_info(
         asset_record.asset_entry.asset_key: (
             GrapheneMaterializationEvent(event=asset_record.asset_entry.last_materialization)
             if asset_record.asset_entry.last_materialization
-            and asset_record.asset_entry.asset_key in step_keys_by_asset
+            and asset_record.asset_entry.asset_key in asset_keys
             else None
         )
         for asset_record in asset_records
@@ -202,11 +217,11 @@ def get_assets_latest_info(
     # Build a lookup table of asset keys to last materialization run IDs. We will filter these
     # run IDs out of the "in progress" run lists that are generated below since they have already
     # emitted an output for the run.
-    latest_materialization_run_id_by_asset: dict[AssetKey, Optional[str]] = {
+    latest_materialization_run_id_by_asset: dict[AssetKey, str | None] = {
         asset_record.asset_entry.asset_key: (
             asset_record.asset_entry.last_materialization.run_id
             if asset_record.asset_entry.last_materialization
-            and asset_record.asset_entry.asset_key in step_keys_by_asset
+            and asset_record.asset_entry.asset_key in asset_keys
             else None
         )
         for asset_record in asset_records
@@ -245,17 +260,8 @@ def get_assets_latest_info(
     from dagster_graphql.implementation.fetch_assets import get_unique_asset_id
 
     latest_infos = []
-    for asset_key in step_keys_by_asset.keys():
-        asset_node = asset_nodes[asset_key]
-        if asset_node:
-            handle = asset_node.resolve_to_singular_repo_scoped_node().repository_handle
-            node_id = get_unique_asset_id(
-                asset_key,
-                handle.repository_name,
-                handle.location_name,
-            )
-        else:
-            node_id = get_unique_asset_id(asset_key)
+    for asset_key in asset_keys:
+        node_id = get_unique_asset_id(asset_key)
 
         latest_infos.append(
             GrapheneAssetLatestInfo(
@@ -280,7 +286,7 @@ def get_assets_latest_info(
 
 def _get_in_progress_runs_for_assets(
     run_records_by_run_id: Mapping[str, RunRecord],
-    latest_materialization_run_id_by_asset: dict[AssetKey, Optional[str]],
+    latest_materialization_run_id_by_asset: dict[AssetKey, str | None],
     latest_run_ids_by_asset: dict[AssetKey, str],
 ) -> tuple[Mapping[AssetKey, AbstractSet[str]], Mapping[AssetKey, AbstractSet[str]]]:
     in_progress_run_ids_by_asset = defaultdict(set)
@@ -307,25 +313,25 @@ def _get_in_progress_runs_for_assets(
     return in_progress_run_ids_by_asset, unstarted_run_ids_by_asset
 
 
-def get_runs_count(graphene_info: "ResolveInfo", filters: Optional[RunsFilter]) -> int:
+def get_runs_count(graphene_info: "ResolveInfo", filters: RunsFilter | None) -> int:
     return graphene_info.context.instance.get_runs_count(filters)
 
 
-def validate_pipeline_config(
+async def validate_pipeline_config(
     graphene_info: "ResolveInfo",
     selector: JobSubsetSelector,
-    run_config: Union[str, Mapping[str, object]],
+    run_config: str | Mapping[str, object],
 ) -> "GraphenePipelineConfigValidationValid":
     from dagster_graphql.schema.pipelines.config import GraphenePipelineConfigValidationValid
 
     check.inst_param(selector, "selector", JobSubsetSelector)
 
-    remote_job = get_remote_job_or_raise(graphene_info, selector)
+    remote_job = await get_remote_job_or_raise(graphene_info, selector)
     ensure_valid_config(remote_job, run_config)
     return GraphenePipelineConfigValidationValid(pipeline_name=remote_job.name)
 
 
-def get_execution_plan(
+async def get_execution_plan(
     graphene_info: "ResolveInfo",
     selector: JobSubsetSelector,
     run_config: Mapping[str, Any],
@@ -334,7 +340,7 @@ def get_execution_plan(
 
     check.inst_param(selector, "selector", JobSubsetSelector)
 
-    remote_job = get_remote_job_or_raise(graphene_info, selector)
+    remote_job = await get_remote_job_or_raise(graphene_info, selector)
     ensure_valid_config(remote_job, run_config)
     return GrapheneExecutionPlan(
         graphene_info.context.get_execution_plan(
@@ -355,7 +361,7 @@ def get_stats(graphene_info: "ResolveInfo", run_id: str) -> "GrapheneRunStatsSna
 
 
 def get_step_stats(
-    graphene_info: "ResolveInfo", run_id: str, step_keys: Optional[Sequence[str]] = None
+    graphene_info: "ResolveInfo", run_id: str, step_keys: Sequence[str] | None = None
 ) -> Sequence["GrapheneRunStepStats"]:
     from dagster_graphql.schema.logs.events import GrapheneRunStepStats
 
@@ -366,8 +372,8 @@ def get_step_stats(
 def get_logs_for_run(
     graphene_info: "ResolveInfo",
     run_id: str,
-    cursor: Optional[str] = None,
-    limit: Optional[int] = None,
+    cursor: str | None = None,
+    limit: int | None = None,
 ) -> Union["GrapheneRunNotFoundError", "GrapheneEventConnection"]:
     from dagster_graphql.implementation.events import get_graphene_events_from_records_connection
     from dagster_graphql.schema.errors import GrapheneRunNotFoundError
@@ -377,6 +383,10 @@ def get_logs_for_run(
     run = instance.get_run_by_id(run_id)
     if not run:
         return GrapheneRunNotFoundError(run_id)
+
+    default_limit = graphene_info.context.records_for_run_default_limit
+    if default_limit:
+        limit = get_query_limit_with_default(limit, default_limit)
 
     conn = instance.get_records_for_run(run_id, cursor=cursor, limit=limit)
 
@@ -405,15 +415,15 @@ class RunsFeedCursor:
     previous page.
     """
 
-    run_cursor: Optional[str]
-    backfill_cursor: Optional[str]
-    timestamp: Optional[float]
+    run_cursor: str | None
+    backfill_cursor: str | None
+    timestamp: float | None
 
     def to_string(self) -> str:
         return f"{self.run_cursor if self.run_cursor else ''}{_DELIMITER}{self.backfill_cursor if self.backfill_cursor else ''}{_DELIMITER}{self.timestamp if self.timestamp else ''}"
 
     @staticmethod
-    def from_string(serialized: Optional[str]):
+    def from_string(serialized: str | None):
         if serialized is None:
             return RunsFeedCursor(
                 run_cursor=None,
@@ -433,9 +443,9 @@ class RunsFeedCursor:
 
 def _fetch_runs_not_in_backfill(
     instance: DagsterInstance,
-    cursor: Optional[str],
+    cursor: str | None,
     limit: int,
-    filters: Optional[RunsFilter],
+    filters: RunsFilter | None,
 ) -> Sequence[RunRecord]:
     """Fetches limit RunRecords that are not part of a backfill and were created before a given timestamp."""
     runs = []
@@ -512,7 +522,7 @@ def _bulk_action_filters_from_run_filters(filters: RunsFilter) -> BulkActionsFil
 
 
 def _replace_created_before_with_cursor(
-    filters: RunsFilter, created_before_cursor: Optional[datetime.datetime]
+    filters: RunsFilter, created_before_cursor: datetime.datetime | None
 ):
     """After the first page of results is returned, created_before_cursor will be less than
     filters.created_before. For pagination of results to work, we need to ensure that the
@@ -533,9 +543,9 @@ def _replace_created_before_with_cursor(
 def get_runs_feed_entries(
     graphene_info: "ResolveInfo",
     limit: int,
-    filters: Optional[RunsFilter],
+    filters: RunsFilter | None,
     view: "GrapheneRunsFeedView",
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
 ) -> "GrapheneRunsFeedConnection":
     """Returns a GrapheneRunsFeedConnection, which contains a merged list of backfills and
     single runs (runs that are not part of a backfill), the cursor to fetch the next page,
@@ -667,7 +677,7 @@ def get_runs_feed_entries(
 
 
 def get_runs_feed_count(
-    graphene_info: "ResolveInfo", filters: Optional[RunsFilter], view: "GrapheneRunsFeedView"
+    graphene_info: "ResolveInfo", filters: RunsFilter | None, view: "GrapheneRunsFeedView"
 ) -> int:
     from dagster_graphql.schema.runs_feed import GrapheneRunsFeedView
 
