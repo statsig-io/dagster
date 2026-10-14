@@ -17,6 +17,29 @@ from dagster_mlflow.resources import MlFlow, mlflow_tracking
 from mlflow.exceptions import MlflowException
 
 
+@pytest.fixture(autouse=True)
+def local_tracking(tmp_path, monkeypatch):
+    assert mlflow.active_run() is None
+    tracking_uri = mlflow.get_tracking_uri()
+    registry_uri = mlflow.get_registry_uri()
+    local_uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", local_uri)
+    monkeypatch.setenv("MLFLOW_REGISTRY_URI", local_uri)
+    monkeypatch.setenv("MLFLOW_DISABLE_TELEMETRY", "true")
+    for name in ("MLFLOW_RUN_ID", "MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_NAME"):
+        monkeypatch.delenv(name, raising=False)
+    mlflow.set_tracking_uri(local_uri)
+    mlflow.set_registry_uri(local_uri)
+    try:
+        yield
+    finally:
+        while mlflow.active_run():
+            mlflow.end_run()
+        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_registry_uri(registry_uri)
+
+
 @pytest.fixture
 def string_maker():
     class Dummy:
@@ -69,7 +92,7 @@ def basic_context(mlflow_run_config, dagster_run):
         resource_config=mlflow_run_config["resources"]["mlflow"]["config"],
         log=logging.getLogger(),
         run_id=str(uuid.uuid4()),
-        job_run=dagster_run,
+        dagster_run=dagster_run,
     )
 
 
@@ -81,7 +104,7 @@ def child_context(basic_context, mlflow_run_config):
         resource_config=resource_config,
         log=basic_context.log,
         run_id=str(uuid.uuid4()),
-        dagster_run=basic_context.dagster_ryn,
+        dagster_run=basic_context.dagster_run,
         extra_tags={"wala": "lala"},
     )
 
@@ -181,6 +204,103 @@ def test_start_run(mock_start_run, context):
 
     # And when start run is called with the same run_id no excpetion is raised
     mlf._start_run(run_id=run_id_1)  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    "kwargs, active_run_id, message, reuse",
+    [
+        ({"run_id": "requested"}, "requested", "Run is already active", True),
+        ({"run_id": "requested"}, "foreign", "Run is already active", False),
+        ({"run_id": "requested"}, None, "Run is already active", False),
+        ({"run_id": None}, "foreign", "Run is already active", False),
+        ({}, "foreign", "Run is already active", False),
+        ({"run_id": "requested"}, "requested", "Tracking server unavailable", False),
+    ],
+)
+def test_start_run_existing_run_ownership(kwargs, active_run_id, message, reuse):
+    mlf = MlFlow.__new__(MlFlow)
+    mlf.log = MagicMock()
+    error = RuntimeError(message)
+    active_run = MagicMock(info=MagicMock(run_id=active_run_id)) if active_run_id else None
+    with (
+        patch("mlflow.start_run", side_effect=error) as mock_start_run,
+        patch("mlflow.active_run", return_value=active_run),
+        patch("mlflow.end_run") as mock_end_run,
+    ):
+        if reuse:
+            mlf._start_run(**kwargs)  # noqa: SLF001
+        else:
+            with pytest.raises(RuntimeError) as exc_info:
+                mlf._start_run(**kwargs)  # noqa: SLF001
+            assert exc_info.value is error
+        mock_start_run.assert_called_once_with(**kwargs)
+        mock_end_run.assert_not_called()
+
+
+def test_setup_does_not_tag_foreign_run():
+    mlf = MlFlow.__new__(MlFlow)
+    mlf.log = MagicMock()
+    mlf.run_name = "test"
+    mlf.parent_run_id = None
+    mlf.mlflow_run_id = "requested"
+    error = RuntimeError("Run is already active")
+    with (
+        patch("mlflow.start_run", side_effect=error),
+        patch("mlflow.active_run", return_value=MagicMock(info=MagicMock(run_id="foreign"))),
+        patch.object(MlFlow, "_set_all_tags") as mock_set_all_tags,
+        patch("mlflow.end_run") as mock_end_run,
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        mlf._setup()  # noqa: SLF001
+    assert exc_info.value is error
+    mock_set_all_tags.assert_not_called()
+    mock_end_run.assert_not_called()
+
+
+def test_initialize_reuses_matching_active_run(basic_context):
+    mlflow.set_experiment("testing")
+    with mlflow.start_run() as active_run:
+        basic_context.resource_config["mlflow_run_id"] = active_run.info.run_id
+        MlFlow(basic_context)
+        assert mlflow.active_run() is active_run
+        assert (
+            mlflow.get_run(active_run.info.run_id).data.tags["dagster_run_id"]
+            == basic_context.run_id
+        )
+
+
+@pytest.mark.parametrize("explicit_run_id", [True, False])
+def test_initialize_preserves_foreign_active_run(basic_context, explicit_run_id):
+    mlflow.set_experiment("testing")
+    if explicit_run_id:
+        with mlflow.start_run() as requested_run:
+            basic_context.resource_config["mlflow_run_id"] = requested_run.info.run_id
+    with mlflow.start_run(tags={"owner": "foreign"}) as foreign_run:
+        tags_before = mlflow.get_run(foreign_run.info.run_id).data.tags
+        with pytest.raises(Exception, match="is already active"):
+            MlFlow(basic_context)
+        assert mlflow.active_run() is foreign_run
+        persisted_run = mlflow.get_run(foreign_run.info.run_id)
+        assert persisted_run.info.status == "RUNNING"
+        assert persisted_run.data.tags == tags_before
+    if explicit_run_id:
+        assert "dagster_run_id" not in mlflow.get_run(requested_run.info.run_id).data.tags
+
+
+def test_initialize_starts_nested_run(basic_context):
+    mlflow.set_experiment("testing")
+    with mlflow.start_run() as parent_run:
+        basic_context.resource_config["parent_run_id"] = parent_run.info.run_id
+        MlFlow(basic_context)
+        child_run = mlflow.active_run()
+        assert child_run is not None
+        assert child_run.info.run_id != parent_run.info.run_id
+        child_tags = mlflow.get_run(child_run.info.run_id).data.tags
+        assert child_tags["mlflow.parentRunId"] == parent_run.info.run_id
+        assert child_tags["dagster_run_id"] == basic_context.run_id
+        assert "dagster_run_id" not in mlflow.get_run(parent_run.info.run_id).data.tags
+        mlflow.end_run()
+        assert mlflow.active_run() is parent_run
 
 
 @patch("mlflow.end_run")
