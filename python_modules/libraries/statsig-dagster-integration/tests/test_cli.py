@@ -5,7 +5,11 @@ from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
-from dagster._daemon import cli as upstream_cli
+from dagster._core.remote_representation.code_location import GrpcServerCodeLocation
+from dagster._daemon import (
+    cli as upstream_cli,
+    sensor as daemon_sensor,
+)
 from dagster._grpc.client import DagsterGrpcClient
 from dagster_postgres.run_storage import PostgresRunStorage
 from sqlalchemy.pool import QueuePool
@@ -22,9 +26,19 @@ def test_both_image_components_use_adapters_without_emission(
     command: str, settings: PoolSettings
 ) -> None:
     original_query = DagsterGrpcClient._query
+    original_sensor = (
+        GrpcServerCodeLocation.get_sensor_execution_data,
+        daemon_sensor._evaluate_sensor,
+    )
 
     def official_main() -> None:
         assert DagsterGrpcClient._query is not original_query
+        patched_sensor = (
+            GrpcServerCodeLocation.get_sensor_execution_data,
+            daemon_sensor._evaluate_sensor,
+        )
+        # Only the daemon opts into the bounded sensor UNAVAILABLE retry and skip.
+        assert (patched_sensor != original_sensor) is (command == "daemon")
         store = PostgresRunStorage(
             "postgresql://synthetic@/fixture", should_autocreate_tables=False
         )
@@ -52,6 +66,10 @@ def test_both_image_components_use_adapters_without_emission(
         main.assert_called_once()
         profiler.assert_not_called()
     assert DagsterGrpcClient._query is original_query
+    assert (
+        GrpcServerCodeLocation.get_sensor_execution_data,
+        daemon_sensor._evaluate_sensor,
+    ) == original_sensor
 
 
 def test_fresh_import_does_not_activate_framework_adapters() -> None:
@@ -59,13 +77,17 @@ def test_fresh_import_does_not_activate_framework_adapters() -> None:
 from dagster._grpc.client import DagsterGrpcClient
 from dagster._core.workspace.context import WorkspaceProcessContext
 from dagster._daemon.cli import run_command
+from dagster._daemon import sensor as daemon_sensor
+from dagster._core.remote_representation.code_location import GrpcServerCodeLocation
 from dagster_postgres.run_storage import run_storage
 original = (DagsterGrpcClient._query, WorkspaceProcessContext._load_location,
-            run_command.callback, run_storage.create_pg_engine)
+            run_command.callback, run_storage.create_pg_engine,
+            GrpcServerCodeLocation.get_sensor_execution_data, daemon_sensor._evaluate_sensor)
 import statsig_dagster_integration
 from statsig_dagster_integration import cli, retries, storage, telemetry
 assert original == (DagsterGrpcClient._query, WorkspaceProcessContext._load_location,
-                    run_command.callback, run_storage.create_pg_engine)
+                    run_command.callback, run_storage.create_pg_engine,
+                    GrpcServerCodeLocation.get_sensor_execution_data, daemon_sensor._evaluate_sensor)
 """
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=20, check=False
