@@ -1,7 +1,7 @@
 # Statsig Dagster integration
 
 Private, explicit integration for official Dagster 1.13.25, webserver 1.13.25 and
-Postgres 0.29.25. Distribution version 1.13.25.1 identifies this integration
+Postgres 0.29.25. Distribution version 1.13.25.2 identifies this integration
 revision; it does not change SDK distribution versions. Importing the package
 never activates adapters. No console scripts shadow upstream entrypoints.
 
@@ -42,6 +42,28 @@ snapshots and optional deferred-job batches add RPC work, followed by parsing an
 cleanup. Repository snapshots use `DAGSTER_REPOSITORY_GRPC_TIMEOUT_SECONDS`,
 defaulting to `max(180,T)`. These additional calls are outside the ListRepositories
 allowance; no retry increase or broad RPC retry is added.
+
+## Sensor evaluation: bounded UNAVAILABLE retry and skip
+
+The daemon (never the webserver, and never merely by importing the package) also
+opts into `retries.sensor_unavailable_skip()`, which ports STADI-830 from the 1.4.16
+sensor overlay. It is the only retry of sensor evaluation; run submission and
+schedule evaluation have none, and no other RPC gains one. Two pinned methods are
+adapted and restored on exit:
+
+- `GrpcServerCodeLocation.get_sensor_execution_data` retries only
+  `DagsterUserCodeUnreachableError` whose message contains `UNAVAILABLE`: three
+  attempts with 2s then 4s delays. Other errors, including other unreachable and
+  timeout errors, are raised immediately. When all three attempts are UNAVAILABLE it
+  raises `SensorUserCodeUnavailableError`, a subclass carrying the same message.
+- `dagster._daemon.sensor._evaluate_sensor` is wrapped so that only that marked error,
+  raised before the evaluation's first yield (the evaluation call itself), marks the tick
+  SKIPPED with the reason "Unable to reach the user code server. Sensor will resume once
+  the server is available.", logs a warning, and passes the sensor's existing cursor
+  from instigator state. Upstream 1.13 writes the tick cursor on SKIPPED and a new tick
+  has none, so the cursor must be passed explicitly. Errors after a successful
+  evaluation, such as run launch, and UNAVAILABLE from the code-location lookup before
+  the call propagate unchanged and fail the tick as before.
 
 Upstream daemon workspace refresh is attempted after 60s; its 300s freshness
 tolerance handles raised refresh failures and does not interrupt blocked RPCs.

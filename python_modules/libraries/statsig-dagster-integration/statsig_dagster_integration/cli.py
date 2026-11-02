@@ -11,7 +11,7 @@ from dagster._daemon.cli import (
 from dagster_webserver.cli import main as webserver_main
 
 from statsig_dagster_integration.compat import require_supported_versions
-from statsig_dagster_integration.retries import workspace_retries
+from statsig_dagster_integration.retries import sensor_unavailable_skip, workspace_retries
 from statsig_dagster_integration.storage import DEFAULT_POOL_SETTINGS, PoolSettings, daemon_pools
 from statsig_dagster_integration.telemetry import daemon_telemetry
 
@@ -53,7 +53,7 @@ def main(
         if command == "webserver":
             webserver_main()
         else:
-            with run_telemetry():
+            with run_telemetry(), sensor_unavailable_skip():
                 daemon_main()
 
 
