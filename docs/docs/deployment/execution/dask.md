@@ -1,10 +1,10 @@
 ---
-description: Use the dagster-dask module to execute Dagster jobs on Dask clusters.
+description: Use the dagster-dask library to execute Dagster jobs on Dask clusters.
 sidebar_position: 800
 title: Executing Dagster on Dask
 ---
 
-The [dagster-dask](https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-dask) module makes a **`dask_executor`** available, which can target either a local Dask cluster or a distributed cluster. Computation is distributed across the cluster at the execution step level -- that is, we use Dask to orchestrate execution of the steps in a job, not to parallelize computation within those steps.
+The [`dagster-dask`](/integrations/libraries/dask/dagster-dask) library makes a <PyObject section="libraries" integration="dask" module="dagster_dask" object="dask_executor" /> available, which can target either a local Dask cluster or a distributed cluster. Computation is distributed across the cluster at the execution step level -- that is, we use Dask to orchestrate execution of the steps in a job, not to parallelize computation within those steps.
 
 This executor takes the compiled execution plan, and converts each execution step into a [Dask Future](https://docs.dask.org/en/latest/futures.html) configured with the appropriate task dependencies to ensure tasks are properly sequenced. When the job is executed, these futures are generated and then awaited by the parent Dagster process.
 
@@ -12,45 +12,66 @@ Data is passed between step executions via [IO Managers](/guides/build/io-manage
 
 Note that, when using this executor, the compute function of a single op is still executed in a single process on a single machine. If your goal is to distribute execution of workloads _within_ the logic of a single op, you may find that invoking Dask or PySpark directly from within the body of an op's compute function is a better fit than the engine layer covered in this documentation.
 
-## Requirements
+## Prerequisites
 
-Install [dask.distributed](https://distributed.readthedocs.io/en/latest/install.html).
+Before following the steps in this guide, you will need to install [dask.distributed](https://distributed.readthedocs.io/en/latest/install.html).
 
 ## Local execution
 
-It is relatively straightforward to set up and run a Dagster job on local Dask. This can be useful for testing.
+Setting up and running a Dagster job on local Dask can be useful for testing.
 
-First, run `pip install dagster-dask`.
+### Step 1: Install `dagster-dask`
 
-Then, create a job with the dask executor:
+<Tabs>
+<TabItem value="uv" label="uv">
+
+```shell
+uv add dagster-dask
+```
+
+</TabItem>
+<TabItem value="pip" label="pip">
+
+```shell
+
+pip install dagster-dask
+```
+
+</TabItem>
+</Tabs>
+
+### Step 2: Create a job with the `dask` executor
 
 <CodeExample
-  path="docs_snippets/docs_snippets/deploying/dask_hello_world.py"
+  path="docs_snippets/docs_snippets/deployment/execution/dask_hello_world.py"
   startAfter="start_local_job_marker"
   endBefore="end_local_job_marker"
+  title="src/my_project/assets.py"
 />
 
-Now you can run this job with a config block such as the following:
+### Step 3: Run the job
 
-<CodeExample path="docs_snippets/docs_snippets/deploying/dask_hello_world.yaml" />
+Now you can run the job you created in step 2 with a config block like the following:
 
-Executing this job will spin up local Dask execution, run the job, and exit.
+<CodeExample path="docs_snippets/docs_snippets/deployment/execution/dask_hello_world.yaml" />
+
+Executing this job will start local Dask execution, run the job, and exit.
 
 ## Distributed execution
 
 If you want to use a Dask cluster for distributed execution, you will first need to [set up a Dask cluster](https://distributed.readthedocs.io/en/latest/quickstart.html#setup-dask-distributed-the-hard-way). Note that the machine running the Dagster parent process must be able to connect to the host/port on which the Dask scheduler is running.
 
-You'll also need an IO manager that uses persistent shared storage, which should be attached to the job along with any resources on which it depends. Here, we use the <PyObject section="libraries" module="dagster_aws" object="s3.s3_pickle_io_manager"/>:
+You'll also need an IO manager that uses persistent shared storage, which should be attached to the job along with any resources on which it depends. Here, we use the <PyObject section="libraries" integration="aws" module="dagster_aws" object="s3.s3_pickle_io_manager"/>:
 
 <CodeExample
-  path="docs_snippets/docs_snippets/deploying/dask_hello_world_distributed.py"
+  path="docs_snippets/docs_snippets/deployment/execution/dask_hello_world_distributed.py"
   startAfter="start_distributed_job_marker"
   endBefore="end_distributed_job_marker"
 />
 
 For distributing task execution on a Dask cluster, you must provide a config block that includes the address/port of the Dask scheduler:
 
-<CodeExample path="docs_snippets/docs_snippets/deploying/dask_remote.yaml" />
+<CodeExample path="docs_snippets/docs_snippets/deployment/execution/dask_remote.yaml" />
 
 Since Dask will invoke your job code on the cluster workers, you must ensure that the latest version of your Python code is available to all of the Dask workers. Ideally, you'll package this as a Python module, and target your `workspace.yaml` at this module.
 
@@ -67,7 +88,7 @@ dask-worker scheduler:8786 --resources "GPU=2"
 and then when submitting tasks to the Dask cluster, specifying resource requirements in the Python API:
 
 ```python
-client.submit(task, resources={'GPU': 1})
+client.submit(task, resources={"GPU": 1})
 ```
 
 Dagster has simple support for Dask resource specification at the op level for ops that will be executed on Dask clusters. In your op definition, just add _tags_ as follows:
@@ -87,4 +108,4 @@ The dict passed to `dagster-dask/resource_requirements` will be passed through a
 
 Dagster logs are not yet retrieved from Dask workers; this will be addressed in follow-up work.
 
-While this library is still nascent, we're working to improve it, and we are happy to accept contributions.
+While the `dagster-dask` library is still nascent, we're working to improve it, and we are happy to accept [contributions](/about/contributing).

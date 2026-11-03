@@ -2,12 +2,11 @@ import logging
 import os
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Union
 
-import yaml
 from dagster._annotations import public
 from dagster._record import IHaveNew, record_custom
 from dagster._utils import run_with_concurrent_update_guard
+from dagster_shared.yaml_utils import safe_load_yaml
 
 from dagster_dbt.errors import (
     DagsterDbtManifestNotFoundError,
@@ -50,18 +49,18 @@ class DbtProjectPreparer:
 class DagsterDbtProjectPreparer(DbtProjectPreparer):
     def __init__(
         self,
-        generate_cli_args: Optional[Sequence[str]] = None,
+        prepare_project_cli_args: Sequence[str] | None = None,
     ):
         """The default DbtProjectPreparer, this handler provides an experience of:
             * During development, reload the manifest at run time to pick up any changes.
             * When deploying, expect a manifest that was created at build time to reduce start-up time.
 
         Args:
-            generate_cli_args (Sequence[str]):
+            prepare_project_cli_args (Sequence[str]):
                 The arguments to pass to the dbt cli to generate a manifest.json.
                 Default: ["parse", "--quiet"]
         """
-        self._generate_cli_args = generate_cli_args or ["parse", "--quiet"]
+        self._prepare_project_cli_args = prepare_project_cli_args or ["parse", "--quiet"]
 
     @public
     def prepare_if_dev(self, project: "DbtProject"):
@@ -97,10 +96,18 @@ class DagsterDbtProjectPreparer(DbtProjectPreparer):
             project (DbtProject):
                 The dbt project to be prepared.
         """
-        # guard against multiple Dagster processes trying to update this at the same time
-        if project.has_uninstalled_deps:
+        # Always run dbt deps when dependency files exist, not just when
+        # packages appear uninstalled. The has_uninstalled_deps check uses a
+        # heuristic (dbt_packages dir existence) that can incorrectly skip
+        # deps when dependencies have changed but the directory still exists.
+        # dbt deps itself is fast when packages are already up-to-date.
+        has_deps_files = (
+            project.project_dir.joinpath("dependencies.yml").exists()
+            or project.project_dir.joinpath("packages.yml").exists()
+        )
+        if has_deps_files:
             run_with_concurrent_update_guard(
-                project.project_dir.joinpath("package-lock.yml"),
+                Path(project.project_dir).joinpath("package-lock.yml"),
                 self._prepare_packages,
                 project=project,
             )
@@ -126,11 +133,53 @@ class DagsterDbtProjectPreparer(DbtProjectPreparer):
         (
             DbtCliResource(project_dir=project)
             .cli(
-                self._generate_cli_args,
+                self._prepare_project_cli_args,
                 target_path=project.target_path,
             )
             .wait()
         )
+
+        # Remove seed entries from partial_parse to force re-parsing at runtime.
+        # This ensures seeds get correct root_path based on current project location.
+        self._invalidate_seeds_in_partial_parse(project)
+
+    def _invalidate_seeds_in_partial_parse(self, project: "DbtProject") -> None:
+        """Force dbt to re-parse seeds by invalidating their partial-parse cache entry.
+
+        Seeds contain root_path which is an absolute path from build time. When state
+        is generated in one environment (e.g., CI/CD) and used in another (e.g., deployed
+        container), the root_path points to the wrong location and seed loading fails.
+
+        To force a re-parse we overwrite the saved checksum of each seed file entry with
+        a sentinel value that can never match the on-disk file. On the next parse, dbt's
+        partial-parser sees the checksum mismatch and treats the seed as a normally-changed
+        file, re-parsing it through its standard code path and refreshing root_path. Models
+        keep their cached data for fast loading.
+
+        We deliberately key off ``parse_file_type == "seed"`` rather than the ``.csv``
+        extension: dbt unit-test fixtures are also ``.csv`` files, and removing their file
+        entries while leaving the corresponding fixture objects in the saved manifest causes
+        dbt to re-add them on the next parse, raising a duplicate-resource compile error.
+        See https://github.com/dagster-io/dagster/issues/33471.
+        """
+        import msgpack
+
+        partial_parse_path = project.project_dir / project.target_path / "partial_parse.msgpack"
+        if not partial_parse_path.exists():
+            return
+
+        with open(partial_parse_path, "rb") as f:
+            data = msgpack.unpack(f, raw=False, strict_map_key=False)
+
+        # Sentinel checksum that cannot match any real file, forcing dbt to re-parse
+        # the seed (and only the seed) on the next invocation.
+        invalid_checksum = {"name": "sha256", "checksum": "0" * 64}
+        for file_entry in data.get("files", {}).values():
+            if file_entry.get("parse_file_type") == "seed":
+                file_entry["checksum"] = invalid_checksum
+
+        with open(partial_parse_path, "wb") as f:
+            msgpack.pack(data, f)
 
 
 @record_custom
@@ -210,28 +259,31 @@ class DbtProject(IHaveNew):
     project_dir: Path
     target_path: Path
     profiles_dir: Path
-    profile: Optional[str]
-    target: Optional[str]
+    profile: str | None
+    target: str | None
     manifest_path: Path
-    packaged_project_dir: Optional[Path]
-    state_path: Optional[Path]
+    packaged_project_dir: Path | None
+    state_path: Path | None
     has_uninstalled_deps: bool
     preparer: DbtProjectPreparer
 
     def __new__(
         cls,
-        project_dir: Union[Path, str],
+        project_dir: Path | str,
         *,
-        target_path: Union[Path, str] = Path("target"),
-        profiles_dir: Optional[Union[Path, str]] = None,
-        profile: Optional[str] = None,
-        target: Optional[str] = None,
-        packaged_project_dir: Optional[Union[Path, str]] = None,
-        state_path: Optional[Union[Path, str]] = None,
+        target_path: Path | str = Path("target"),
+        profiles_dir: Path | str | None = None,
+        profile: str | None = None,
+        target: str | None = None,
+        packaged_project_dir: Path | str | None = None,
+        state_path: Path | str | None = None,
+        prepare_project_cli_args: Sequence[str] | None = None,
     ) -> "DbtProject":
         project_dir = Path(project_dir)
         if not project_dir.exists():
             raise DagsterDbtProjectNotFoundError(f"project_dir {project_dir} does not exist.")
+
+        target_path = Path(target_path)
 
         packaged_project_dir = Path(packaged_project_dir) if packaged_project_dir else None
         if not using_dagster_dev() and packaged_project_dir and packaged_project_dir.exists():
@@ -244,7 +296,7 @@ class DbtProject(IHaveNew):
                 f"profiles {profiles_dir} does not exist."
             )
 
-        preparer = DagsterDbtProjectPreparer()
+        preparer = DagsterDbtProjectPreparer(prepare_project_cli_args=prepare_project_cli_args)
 
         manifest_path = project_dir.joinpath(target_path, "manifest.json")
 
@@ -257,8 +309,8 @@ class DbtProject(IHaveNew):
                 f"Did not find dbt_project.yml at expected path {dbt_project_yml_path}. "
                 f"Ensure the specified project directory respects all dbt project requirements."
             )
-        with open(project_dir.joinpath("dbt_project.yml")) as file:
-            dbt_project_yml = yaml.safe_load(file)
+        with open(project_dir.joinpath("dbt_project.yml"), encoding="utf-8") as file:
+            dbt_project_yml = safe_load_yaml(file)
         packages_install_path = project_dir.joinpath(
             dbt_project_yml.get("packages-install-path", "dbt_packages")
         )

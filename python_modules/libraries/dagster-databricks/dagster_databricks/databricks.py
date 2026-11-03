@@ -15,6 +15,7 @@ from dagster._annotations import public
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.core import (
     Config,
+    CredentialsStrategy,
     DefaultCredentials,
     azure_service_principal,
     oauth_service_principal,
@@ -38,19 +39,21 @@ class AuthTypeEnum(Enum):
     OAUTH_M2M = "oauth-m2m"
     PAT = "pat"
     AZURE_CLIENT_SECRET = "azure-client-secret"
+    CUSTOM = "custom"
     DEFAULT = "default"
 
 
 class WorkspaceClientFactory:
     def __init__(
         self,
-        host: Optional[str],
-        token: Optional[str],
-        oauth_client_id: Optional[str],
-        oauth_client_secret: Optional[str],
-        azure_client_id: Optional[str],
-        azure_client_secret: Optional[str],
-        azure_tenant_id: Optional[str],
+        host: str | None,
+        token: str | None,
+        oauth_client_id: str | None,
+        oauth_client_secret: str | None,
+        azure_client_id: str | None,
+        azure_client_secret: str | None,
+        azure_tenant_id: str | None,
+        credentials_strategy: Optional[CredentialsStrategy] = None,  # noqa: UP045
     ):
         """Initialize the Databricks Workspace client. Users may provide explicit credentials for a PAT, databricks
         service principal oauth credentials, or azure service principal credentials. If no credentials are provided,
@@ -66,6 +69,7 @@ class WorkspaceClientFactory:
             azure_client_id=azure_client_id,
             azure_client_secret=azure_client_secret,
             azure_tenant_id=azure_tenant_id,
+            credentials_strategy=credentials_strategy,
         )
         self._assert_valid_credentials_combos(
             oauth_client_id=oauth_client_id,
@@ -81,6 +85,7 @@ class WorkspaceClientFactory:
             azure_client_id,
             azure_client_secret,
             azure_tenant_id,
+            credentials_strategy,
         )
         product_info = {"product": "dagster-databricks", "product_version": __version__}
 
@@ -88,14 +93,21 @@ class WorkspaceClientFactory:
         # provided, then fallback to the default credentials provider, which will attempt to read credentials from
         # the environment or from a `~/.databrickscfg` file, if it exists.
 
-        if auth_type == AuthTypeEnum.OAUTH_M2M:
+        if auth_type == AuthTypeEnum.CUSTOM:
+            host = self._resolve_host(host)
+            c = Config(
+                host=host,
+                credentials_strategy=credentials_strategy,
+                **product_info,  # ty: ignore[invalid-argument-type]
+            )
+        elif auth_type == AuthTypeEnum.OAUTH_M2M:
             host = self._resolve_host(host)
             c = Config(
                 host=host,
                 client_id=oauth_client_id,
                 client_secret=oauth_client_secret,
                 credentials_strategy=oauth_service_principal,
-                **product_info,  # pyright: ignore[reportArgumentType]
+                **product_info,  # ty: ignore[invalid-argument-type]
             )
         elif auth_type == AuthTypeEnum.PAT:
             host = self._resolve_host(host)
@@ -103,7 +115,7 @@ class WorkspaceClientFactory:
                 host=host,
                 token=token,
                 credentials_strategy=pat_auth,
-                **product_info,  # pyright: ignore[reportArgumentType]
+                **product_info,  # ty: ignore[invalid-argument-type]
             )
         elif auth_type == AuthTypeEnum.AZURE_CLIENT_SECRET:
             host = self._resolve_host(host)
@@ -113,7 +125,7 @@ class WorkspaceClientFactory:
                 azure_client_secret=azure_client_secret,
                 azure_tenant_id=azure_tenant_id,
                 credentials_strategy=azure_service_principal,
-                **product_info,  # pyright: ignore[reportArgumentType]
+                **product_info,  # ty: ignore[invalid-argument-type]
             )
         elif auth_type == AuthTypeEnum.DEFAULT:
             # Can be used to automatically read credentials from environment or ~/.databrickscfg file. This is common
@@ -123,16 +135,16 @@ class WorkspaceClientFactory:
                 # environment or ~/.databrickscfg file
                 c = Config(
                     host=host,
-                    credentials_strategy=DefaultCredentials(),
-                    **product_info,  # pyright: ignore[reportArgumentType]
+                    credentials_strategy=DefaultCredentials(),  # type: ignore
+                    **product_info,  # ty: ignore[invalid-argument-type]
                 )
             else:
                 # The initialization machinery in the Config object will look for the host and other auth info in the
                 # environment, as long as no values are provided for those attributes (including None)
                 c = Config(
                     host=host,
-                    credentials_strategy=DefaultCredentials(),
-                    **product_info,  # pyright: ignore[reportArgumentType]
+                    credentials_strategy=DefaultCredentials(),  # type: ignore
+                    **product_info,  # ty: ignore[invalid-argument-type]
                 )
         else:
             raise ValueError(f"Unexpected auth type {auth_type}")
@@ -140,12 +152,13 @@ class WorkspaceClientFactory:
 
     def _raise_if_multiple_auth_types(
         self,
-        token: Optional[str] = None,
-        oauth_client_id: Optional[str] = None,
-        oauth_client_secret: Optional[str] = None,
-        azure_client_id: Optional[str] = None,
-        azure_client_secret: Optional[str] = None,
-        azure_tenant_id: Optional[str] = None,
+        token: str | None = None,
+        oauth_client_id: str | None = None,
+        oauth_client_secret: str | None = None,
+        azure_client_id: str | None = None,
+        azure_client_secret: str | None = None,
+        azure_tenant_id: str | None = None,
+        credentials_strategy: Optional[CredentialsStrategy] = None,  # noqa: UP045
     ):
         more_than_one_auth_type_provided = (
             sum(
@@ -155,6 +168,7 @@ class WorkspaceClientFactory:
                         token,
                         (oauth_client_id and oauth_client_secret),
                         (azure_client_id and azure_client_secret and azure_tenant_id),
+                        credentials_strategy,
                     ]
                     if _
                 ]
@@ -163,20 +177,23 @@ class WorkspaceClientFactory:
         )
         if more_than_one_auth_type_provided:
             raise ValueError(
-                "Can only provide one of token, oauth credentials, or azure credentials"
+                "Can only provide one of token, oauth credentials, azure credentials, or credentials_strategy"
             )
 
     @staticmethod
     def _get_auth_type(
-        token: Optional[str],
-        oauth_client_id: Optional[str],
-        oauth_client_secret: Optional[str],
-        azure_client_id: Optional[str],
-        azure_client_secret: Optional[str],
-        azure_tenant_id: Optional[str],
+        token: str | None,
+        oauth_client_id: str | None,
+        oauth_client_secret: str | None,
+        azure_client_id: str | None,
+        azure_client_secret: str | None,
+        azure_tenant_id: str | None,
+        credentials_strategy: Optional[CredentialsStrategy] = None,  # noqa: UP045
     ) -> AuthTypeEnum:
         """Get the type of authentication used to initialize the WorkspaceClient."""
-        if oauth_client_id and oauth_client_secret:
+        if credentials_strategy is not None:
+            auth_type = AuthTypeEnum.CUSTOM
+        elif oauth_client_id and oauth_client_secret:
             auth_type = AuthTypeEnum.OAUTH_M2M
         elif token:
             auth_type = AuthTypeEnum.PAT
@@ -188,11 +205,11 @@ class WorkspaceClientFactory:
 
     @staticmethod
     def _assert_valid_credentials_combos(
-        oauth_client_id: Optional[str] = None,
-        oauth_client_secret: Optional[str] = None,
-        azure_client_id: Optional[str] = None,
-        azure_client_secret: Optional[str] = None,
-        azure_tenant_id: Optional[str] = None,
+        oauth_client_id: str | None = None,
+        oauth_client_secret: str | None = None,
+        azure_client_id: str | None = None,
+        azure_client_secret: str | None = None,
+        azure_tenant_id: str | None = None,
     ):
         """Ensure that all required credentials are provided for the given auth type."""
         if (oauth_client_id and not oauth_client_secret) or (
@@ -216,7 +233,7 @@ class WorkspaceClientFactory:
         return WorkspaceClient(config=self.config)
 
     @staticmethod
-    def _resolve_host(host: Optional[str]) -> str:
+    def _resolve_host(host: str | None) -> str:
         host = host if host else os.getenv("DATABRICKS_HOST")
         if host is None:
             raise ValueError(
@@ -231,14 +248,15 @@ class DatabricksClient:
 
     def __init__(
         self,
-        host: Optional[str] = None,
-        token: Optional[str] = None,
-        oauth_client_id: Optional[str] = None,
-        oauth_client_secret: Optional[str] = None,
-        azure_client_id: Optional[str] = None,
-        azure_client_secret: Optional[str] = None,
-        azure_tenant_id: Optional[str] = None,
-        workspace_id: Optional[str] = None,
+        host: str | None = None,
+        token: str | None = None,
+        oauth_client_id: str | None = None,
+        oauth_client_secret: str | None = None,
+        azure_client_id: str | None = None,
+        azure_client_secret: str | None = None,
+        azure_tenant_id: str | None = None,
+        workspace_id: str | None = None,
+        credentials_strategy: Optional[CredentialsStrategy] = None,  # noqa: UP045
     ):
         self.host = host
         self.workspace_id = workspace_id
@@ -251,6 +269,7 @@ class DatabricksClient:
             azure_tenant_id=azure_tenant_id,
             token=token,
             host=host,
+            credentials_strategy=credentials_strategy,
         )
         self._workspace_client = workspace_client_factory.get_workspace_client()
 
@@ -415,13 +434,13 @@ class DatabricksJobRunner:
 
     def __init__(
         self,
-        host: Optional[str] = None,
-        token: Optional[str] = None,
-        oauth_client_id: Optional[str] = None,
-        oauth_client_secret: Optional[str] = None,
-        azure_client_id: Optional[str] = None,
-        azure_client_secret: Optional[str] = None,
-        azure_tenant_id: Optional[str] = None,
+        host: str | None = None,
+        token: str | None = None,
+        oauth_client_id: str | None = None,
+        oauth_client_secret: str | None = None,
+        azure_client_id: str | None = None,
+        azure_client_secret: str | None = None,
+        azure_tenant_id: str | None = None,
         poll_interval_sec: float = 5,
         max_wait_time_sec: float = DEFAULT_RUN_MAX_WAIT_TIME_SEC,
     ):
@@ -579,7 +598,7 @@ class DatabricksJobRunner:
 
     def retrieve_logs_for_run_id(
         self, log: logging.Logger, databricks_run_id: int
-    ) -> Optional[tuple[Optional[str], Optional[str]]]:
+    ) -> tuple[str | None, str | None] | None:
         """Retrieve the stdout and stderr logs for a run."""
         run = self.client.workspace_client.jobs.get_run(databricks_run_id)
         # Run.cluster_instance can be None. In that case, fall back to cluster instance on first
@@ -623,7 +642,7 @@ class DatabricksJobRunner:
         filename: str,
         waiter_delay: int = 10,
         waiter_max_attempts: int = 10,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Attempt up to `waiter_max_attempts` attempts to get logs from DBFS."""
         path = "/".join([prefix, cluster_id, "driver", filename])
         log.info(f"Retrieving logs from {path}")

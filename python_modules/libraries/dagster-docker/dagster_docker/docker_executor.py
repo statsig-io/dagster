@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 import dagster._check as check
 import docker
@@ -9,6 +9,10 @@ from dagster._annotations import beta
 from dagster._core.definitions.executor_definition import multiple_process_executor_requirements
 from dagster._core.events import DagsterEvent, EngineEventData
 from dagster._core.execution.retries import RetryMode, get_retries_config
+from dagster._core.execution.step_dependency_config import (
+    StepDependencyConfig,
+    get_step_dependency_config_field,
+)
 from dagster._core.execution.tags import get_tag_concurrency_limits_config
 from dagster._core.executor.base import Executor
 from dagster._core.executor.init import InitExecutorContext
@@ -44,6 +48,7 @@ if TYPE_CHECKING:
                 ),
             ),
             "tag_concurrency_limits": get_tag_concurrency_limits_config(),
+            "step_dependency_config": get_step_dependency_config_field(),
         },
     ),
     requirements=multiple_process_executor_requirements(),
@@ -101,13 +106,16 @@ def docker_executor(init_context: InitExecutorContext) -> Executor:
         retries=check.not_none(RetryMode.from_config(retries)),
         max_concurrent=max_concurrent,
         tag_concurrency_limits=tag_concurrency_limits,
+        step_dependency_config=StepDependencyConfig.from_config(
+            config.get("step_dependency_config")  # type: ignore
+        ),
     )
 
 
 class DockerStepHandler(StepHandler):
     def __init__(
         self,
-        image: Optional[str],
+        image: str | None,
         container_context: DockerContainerContext,
     ):
         super().__init__()
@@ -279,7 +287,7 @@ class DockerStepHandler(StepHandler):
             return CheckStepHealthResult.healthy()
 
         try:
-            container_info = container.wait(timeout=0.1)
+            container_info = container.wait(timeout=5)
         except Exception as e:
             raise Exception(
                 f"Container status is {container.status}. Raised exception attempting to get its"

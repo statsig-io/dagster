@@ -8,9 +8,8 @@ from typing import (  # noqa: UP035
     Callable,
     Generic,
     NamedTuple,
-    Optional,
+    TypeAlias,
     TypeVar,
-    Union,
     cast,
 )
 
@@ -54,7 +53,7 @@ class AssetKeyPartitionKey(NamedTuple):
     """
 
     asset_key: AssetKey
-    partition_key: Optional[str] = None
+    partition_key: str | None = None
 
 
 # This is currently used only for the asset partition wipe codepath. In the future, we can rename
@@ -63,17 +62,17 @@ class AssetPartitionWipeRange(NamedTuple):
     """An AssetKey with a partition range."""
 
     asset_key: AssetKey
-    partition_range: Optional[PartitionKeyRange]
+    partition_range: PartitionKeyRange | None
 
 
-DynamicAssetKey = Callable[["OutputContext"], Optional[AssetKey]]
+DynamicAssetKey = Callable[["OutputContext"], AssetKey | None]
 
 
 @whitelist_for_serdes
 class AssetLineageInfo(
     NamedTuple("_AssetLineageInfo", [("asset_key", AssetKey), ("partitions", AbstractSet[str])])
 ):
-    def __new__(cls, asset_key: AssetKey, partitions: Optional[AbstractSet[str]] = None):
+    def __new__(cls, asset_key: AssetKey, partitions: AbstractSet[str] | None = None):
         asset_key = check.inst_param(asset_key, "asset_key", AssetKey)
         partitions = check.opt_set_param(partitions, "partitions", str)
         return super().__new__(cls, asset_key=asset_key, partitions=partitions)
@@ -81,7 +80,7 @@ class AssetLineageInfo(
 
 class EventWithMetadata(ABC):
     @abstractmethod
-    def with_metadata(self, metadata: Optional[Mapping[str, RawMetadataValue]]) -> Self:
+    def with_metadata(self, metadata: Mapping[str, RawMetadataValue] | None) -> Self:
         """Returns a new instance of the event with the same properties as the original,
         but with metadata replaced by the provided value.
         """
@@ -91,6 +90,7 @@ T = TypeVar("T")
 
 
 @beta_param(param="data_version")
+@public
 class Output(Generic[T], EventWithMetadata):
     """Event corresponding to one of an op's outputs.
 
@@ -119,10 +119,10 @@ class Output(Generic[T], EventWithMetadata):
         self,
         value: T,
         output_name: str = DEFAULT_OUTPUT,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-        data_version: Optional[DataVersion] = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
+        data_version: DataVersion | None = None,
         *,
-        tags: Optional[Mapping[str, str]] = None,
+        tags: Mapping[str, str] | None = None,
     ):
         self._value = value
         self._output_name = check.str_param(output_name, "output_name")
@@ -137,7 +137,7 @@ class Output(Generic[T], EventWithMetadata):
         return self._metadata
 
     @property
-    def tags(self) -> Optional[Mapping[str, str]]:
+    def tags(self) -> Mapping[str, str] | None:
         return self._tags
 
     @public
@@ -154,7 +154,7 @@ class Output(Generic[T], EventWithMetadata):
 
     @public
     @property
-    def data_version(self) -> Optional[DataVersion]:
+    def data_version(self) -> DataVersion | None:
         """Optional[DataVersion]: A data version that was manually set on the `Output`."""
         return self._data_version
 
@@ -167,7 +167,7 @@ class Output(Generic[T], EventWithMetadata):
             and self.tags == other.tags
         )
 
-    def with_metadata(self, metadata: Optional[Mapping[str, RawMetadataValue]]) -> "Output":
+    def with_metadata(self, metadata: Mapping[str, RawMetadataValue] | None) -> "Output":
         """Returns a new Output with the same value and output_name,
         but with the provided metadata.
         """
@@ -178,6 +178,8 @@ class Output(Generic[T], EventWithMetadata):
             data_version=self.data_version,
             tags=self.tags,
         )
+
+    __hash__ = None
 
 
 class DynamicOutput(Generic[T]):
@@ -208,8 +210,8 @@ class DynamicOutput(Generic[T]):
         self,
         value: T,
         mapping_key: str,
-        output_name: Optional[str] = DEFAULT_OUTPUT,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
+        output_name: str | None = DEFAULT_OUTPUT,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
     ):
         self._mapping_key = check_valid_name(check.str_param(mapping_key, "mapping_key"))
         self._output_name = check.str_param(output_name, "output_name")
@@ -249,6 +251,8 @@ class DynamicOutput(Generic[T]):
             and self.metadata == other.metadata
         )
 
+    __hash__ = None
+
 
 @whitelist_for_serdes
 class AssetMaterializationFailureReason(Enum):
@@ -280,12 +284,13 @@ class AssetMaterializationFailureType(Enum):
 @record_custom
 class AssetMaterializationFailure(EventWithMetadata, IHaveNew):
     asset_key: AssetKey
-    description: Optional[str]
+    description: str | None
     metadata: Mapping[str, MetadataValue]
-    partition: Optional[str]
+    partition: str | None
     tags: Mapping[str, str]
     failure_type: AssetMaterializationFailureType
     reason: AssetMaterializationFailureReason
+    will_retry: bool | None = None
 
     """Event that indicates that an asset failed to materialize.
 
@@ -300,6 +305,9 @@ class AssetMaterializationFailure(EventWithMetadata, IHaveNew):
         failure_type: (AssetMaterializationFailureType): An enum indicating the type of failure.
         reason: (AssetMaterializationFailureReason): An enum indicating why the asset failed to
             materialize.
+        will_retry (Optional[bool]): Whether the run that produced this failure will be
+            automatically retried, derived from the run's ``WILL_RETRY_TAG`` at emit time. None
+            when unknown or not applicable (e.g. an asset skipped in a successful run).
     """
 
     def __new__(
@@ -307,10 +315,11 @@ class AssetMaterializationFailure(EventWithMetadata, IHaveNew):
         asset_key: CoercibleToAssetKey,
         failure_type: AssetMaterializationFailureType,
         reason: AssetMaterializationFailureReason,
-        description: Optional[str] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-        partition: Optional[str] = None,
-        tags: Optional[Mapping[str, str]] = None,
+        description: str | None = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
+        partition: str | None = None,
+        tags: Mapping[str, str] | None = None,
+        will_retry: bool | None = None,
     ):
         if isinstance(asset_key, AssetKey):
             check.inst_param(asset_key, "asset_key", AssetKey)
@@ -335,6 +344,7 @@ class AssetMaterializationFailure(EventWithMetadata, IHaveNew):
             partition=partition,
             failure_type=failure_type,
             reason=reason,
+            will_retry=will_retry,
         )
 
     @property
@@ -342,11 +352,11 @@ class AssetMaterializationFailure(EventWithMetadata, IHaveNew):
         return " ".join(self.asset_key.path)
 
     @property
-    def data_version(self) -> Optional[str]:
+    def data_version(self) -> str | None:
         return self.tags.get(DATA_VERSION_TAG)
 
     def with_metadata(
-        self, metadata: Optional[Mapping[str, RawMetadataValue]]
+        self, metadata: Mapping[str, RawMetadataValue] | None
     ) -> "AssetMaterializationFailure":
         return AssetMaterializationFailure(
             asset_key=self.asset_key,
@@ -356,6 +366,7 @@ class AssetMaterializationFailure(EventWithMetadata, IHaveNew):
             tags=self.tags,
             reason=self.reason,
             failure_type=self.failure_type,
+            will_retry=self.will_retry,
         )
 
 
@@ -363,14 +374,15 @@ class AssetMaterializationFailure(EventWithMetadata, IHaveNew):
     storage_field_names={"metadata": "metadata_entries"},
     field_serializers={"metadata": MetadataFieldSerializer},
 )
+@public
 class AssetObservation(
     NamedTuple(
         "_AssetObservation",
         [
             ("asset_key", PublicAttr[AssetKey]),
-            ("description", PublicAttr[Optional[str]]),
+            ("description", PublicAttr[str | None]),
             ("metadata", PublicAttr[Mapping[str, MetadataValue]]),
-            ("partition", PublicAttr[Optional[str]]),
+            ("partition", PublicAttr[str | None]),
             ("tags", PublicAttr[Mapping[str, str]]),
         ],
     ),
@@ -392,10 +404,10 @@ class AssetObservation(
     def __new__(
         cls,
         asset_key: CoercibleToAssetKey,
-        description: Optional[str] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-        partition: Optional[str] = None,
-        tags: Optional[Mapping[str, str]] = None,
+        description: str | None = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
+        partition: str | None = None,
+        tags: Mapping[str, str] | None = None,
     ):
         if isinstance(asset_key, AssetKey):
             check.inst_param(asset_key, "asset_key", AssetKey)
@@ -425,12 +437,10 @@ class AssetObservation(
         return " ".join(self.asset_key.path)
 
     @property
-    def data_version(self) -> Optional[str]:
+    def data_version(self) -> str | None:
         return self.tags.get(DATA_VERSION_TAG)
 
-    def with_metadata(
-        self, metadata: Optional[Mapping[str, RawMetadataValue]]
-    ) -> "AssetObservation":
+    def with_metadata(self, metadata: Mapping[str, RawMetadataValue] | None) -> "AssetObservation":
         return AssetObservation(
             asset_key=self.asset_key,
             description=self.description,
@@ -460,15 +470,16 @@ class AssetMaterializationSerializer(NamedTupleSerializer):
     storage_field_names={"metadata": "metadata_entries"},
     field_serializers={"metadata": MetadataFieldSerializer},
 )
+@public
 class AssetMaterialization(
     NamedTuple(
         "_AssetMaterialization",
         [
             ("asset_key", PublicAttr[AssetKey]),
-            ("description", PublicAttr[Optional[str]]),
+            ("description", PublicAttr[str | None]),
             ("metadata", PublicAttr[Mapping[str, MetadataValue]]),
-            ("partition", PublicAttr[Optional[str]]),
-            ("tags", Optional[Mapping[str, str]]),
+            ("partition", PublicAttr[str | None]),
+            ("tags", Mapping[str, str] | None),
         ],
     ),
     EventWithMetadata,
@@ -500,10 +511,10 @@ class AssetMaterialization(
     def __new__(
         cls,
         asset_key: CoercibleToAssetKey,
-        description: Optional[str] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-        partition: Optional[str] = None,
-        tags: Optional[Mapping[str, str]] = None,
+        description: str | None = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
+        partition: str | None = None,
+        tags: Mapping[str, str] | None = None,
     ):
         from dagster._core.definitions.partitions.utils import MultiPartitionKey
 
@@ -551,8 +562,8 @@ class AssetMaterialization(
     @staticmethod
     def file(
         path: str,
-        description: Optional[str] = None,
-        asset_key: Optional[Union[str, Sequence[str], AssetKey]] = None,
+        description: str | None = None,
+        asset_key: str | Sequence[str] | AssetKey | None = None,
     ) -> "AssetMaterialization":
         """Static constructor for standard materializations corresponding to files on disk.
 
@@ -564,13 +575,13 @@ class AssetMaterialization(
             asset_key = path
 
         return AssetMaterialization(
-            asset_key=cast("Union[str, AssetKey, list[str]]", asset_key),
+            asset_key=cast("str | AssetKey | list[str]", asset_key),
             description=description,
             metadata={"path": MetadataValue.path(path)},
         )
 
     def with_metadata(
-        self, metadata: Optional[Mapping[str, RawMetadataValue]]
+        self, metadata: Mapping[str, RawMetadataValue] | None
     ) -> "AssetMaterialization":
         return AssetMaterialization(
             asset_key=self.asset_key,
@@ -589,13 +600,14 @@ class AssetMaterialization(
     storage_field_names={"metadata": "metadata_entries"},
     field_serializers={"metadata": MetadataFieldSerializer},
 )
+@public
 class ExpectationResult(
     NamedTuple(
         "_ExpectationResult",
         [
             ("success", PublicAttr[bool]),
-            ("label", PublicAttr[Optional[str]]),
-            ("description", PublicAttr[Optional[str]]),
+            ("label", PublicAttr[str | None]),
+            ("description", PublicAttr[str | None]),
             ("metadata", PublicAttr[Mapping[str, MetadataValue]]),
         ],
     )
@@ -619,9 +631,9 @@ class ExpectationResult(
     def __new__(
         cls,
         success: bool,
-        label: Optional[str] = None,
-        description: Optional[str] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
+        label: str | None = None,
+        description: str | None = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
     ):
         normed_metadata = normalize_metadata(
             check.opt_mapping_param(metadata, "metadata", key_type=str),
@@ -645,7 +657,7 @@ class TypeCheck(
         "_TypeCheck",
         [
             ("success", PublicAttr[bool]),
-            ("description", PublicAttr[Optional[str]]),
+            ("description", PublicAttr[str | None]),
             ("metadata", PublicAttr[Mapping[str, MetadataValue]]),
         ],
     )
@@ -671,8 +683,8 @@ class TypeCheck(
     def __new__(
         cls,
         success: bool,
-        description: Optional[str] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
+        description: str | None = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
     ):
         normed_metadata = normalize_metadata(
             check.opt_mapping_param(metadata, "metadata", key_type=str),
@@ -686,6 +698,7 @@ class TypeCheck(
         )
 
 
+@public
 class Failure(Exception):
     """Event indicating op failure.
 
@@ -706,9 +719,9 @@ class Failure(Exception):
 
     def __init__(
         self,
-        description: Optional[str] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-        allow_retries: Optional[bool] = None,
+        description: str | None = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
+        allow_retries: bool | None = None,
     ):
         super().__init__(description)
         self.description = check.opt_str_param(description, "description")
@@ -718,6 +731,7 @@ class Failure(Exception):
         self.allow_retries = check.opt_bool_param(allow_retries, "allow_retries", True)
 
 
+@public
 class RetryRequested(Exception):
     """An exception to raise from an op to indicate that it should be retried.
 
@@ -739,9 +753,7 @@ class RetryRequested(Exception):
                     raise RetryRequested(max_retries=3) from e
     """
 
-    def __init__(
-        self, max_retries: Optional[int] = 1, seconds_to_wait: Optional[Union[float, int]] = None
-    ):
+    def __init__(self, max_retries: int | None = 1, seconds_to_wait: float | int | None = None):
         super().__init__()
         self.max_retries = check.int_param(max_retries, "max_retries")
         self.seconds_to_wait = check.opt_numeric_param(seconds_to_wait, "seconds_to_wait")
@@ -760,13 +772,13 @@ class ObjectStoreOperation(
         [
             ("op", ObjectStoreOperationType),
             ("key", str),
-            ("dest_key", Optional[str]),
+            ("dest_key", str | None),
             ("obj", Any),
-            ("serialization_strategy_name", Optional[str]),
-            ("object_store_name", Optional[str]),
-            ("value_name", Optional[str]),
-            ("version", Optional[str]),
-            ("mapping_key", Optional[str]),
+            ("serialization_strategy_name", str | None),
+            ("object_store_name", str | None),
+            ("value_name", str | None),
+            ("version", str | None),
+            ("mapping_key", str | None),
         ],
     )
 ):
@@ -793,13 +805,13 @@ class ObjectStoreOperation(
         cls,
         op: ObjectStoreOperationType,
         key: str,
-        dest_key: Optional[str] = None,
+        dest_key: str | None = None,
         obj: Any = None,
-        serialization_strategy_name: Optional[str] = None,
-        object_store_name: Optional[str] = None,
-        value_name: Optional[str] = None,
-        version: Optional[str] = None,
-        mapping_key: Optional[str] = None,
+        serialization_strategy_name: str | None = None,
+        object_store_name: str | None = None,
+        value_name: str | None = None,
+        version: str | None = None,
+        mapping_key: str | None = None,
     ):
         return super().__new__(
             cls,
@@ -819,8 +831,8 @@ class ObjectStoreOperation(
     @classmethod
     def serializable(cls, inst, **kwargs):
         return cls(
-            **dict(
-                {  # pyright: ignore[reportArgumentType]
+            **dict(  # ty: ignore[invalid-argument-type]
+                {
                     "op": inst.op.value,
                     "key": inst.key,
                     "dest_key": inst.dest_key,
@@ -846,18 +858,18 @@ class HookExecutionResult(
         is_skipped (bool): ``False`` if the hook_fn is executed, ``True`` otheriwse.
     """
 
-    def __new__(cls, hook_name: str, is_skipped: Optional[bool] = None):
+    def __new__(cls, hook_name: str, is_skipped: bool | None = None):
         return super().__new__(
             cls,
             hook_name=check.str_param(hook_name, "hook_name"),
-            is_skipped=cast("bool", check.opt_bool_param(is_skipped, "is_skipped", default=False)),
+            is_skipped=check.opt_bool_param(is_skipped, "is_skipped", default=False),
         )
 
 
-UserEvent = Union[AssetMaterialization, AssetObservation, ExpectationResult]
+UserEvent: TypeAlias = AssetMaterialization | AssetObservation | ExpectationResult
 
 
-def validate_asset_event_tags(tags: Optional[Mapping[str, str]]) -> Optional[Mapping[str, str]]:
+def validate_asset_event_tags(tags: Mapping[str, str] | None) -> Mapping[str, str] | None:
     from dagster._utils.tags import normalize_tags
 
     if tags is None:

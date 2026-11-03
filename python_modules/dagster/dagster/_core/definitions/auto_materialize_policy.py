@@ -37,7 +37,7 @@ class AutoMaterializePolicySerializer(NamedTupleSerializer):
         # determine if this namedtuple was serialized with the old format (booleans for rules)
         if any(backcompat_key in unpacked_dict for backcompat_key in backcompat_map):
             # all old policies had these rules by default
-            rules = {
+            rules: set[AutoMaterializeRule] = {
                 AutoMaterializeRule.skip_on_parent_outdated(),
                 AutoMaterializeRule.skip_on_parent_missing(),
                 AutoMaterializeRule.skip_on_required_but_nonexistent_parents(),
@@ -46,7 +46,7 @@ class AutoMaterializePolicySerializer(NamedTupleSerializer):
             for backcompat_key, rule in backcompat_map.items():
                 if unpacked_dict.get(backcompat_key):
                     rules.add(rule)
-            unpacked_dict["rules"] = frozenset(rules)
+            unpacked_dict["rules"] = frozenset(rules)  # ty: ignore[invalid-assignment]
 
         return unpacked_dict
 
@@ -60,13 +60,20 @@ class AutoMaterializePolicyType(Enum):
     old_fields={"time_window_partition_scope_minutes": 1e-6},
     serializer=AutoMaterializePolicySerializer,
 )
-@deprecated(breaking_version="1.10.0")
+@deprecated(
+    breaking_version="1.10.0",
+    additional_warn_text=(
+        "This type remains in Dagster for backwards compatibility because older serialized code "
+        "locations and automation state may still reference it. New code should use "
+        "`AutomationCondition` APIs instead."
+    ),
+)
 class AutoMaterializePolicy(
     NamedTuple(
         "_AutoMaterializePolicy",
         [
             ("rules", frozenset["AutoMaterializeRule"]),
-            ("max_materializations_per_minute", Optional[int]),
+            ("max_materializations_per_minute", int | None),
             ("asset_condition", Optional["AutomationCondition"]),
         ],
     )
@@ -121,15 +128,16 @@ class AutoMaterializePolicy(
 
     **Warning:**
 
-    Constructing an AutoMaterializePolicy directly is not recommended as the API is subject to change.
-    AutoMaterializePolicy.eager() and AutoMaterializePolicy.lazy() are the recommended API.
+    This API is deprecated and retained for backwards compatibility with older serialized code
+    locations and automation state. New code should use `AutomationCondition` APIs instead of
+    constructing an AutoMaterializePolicy directly.
 
     """
 
     def __new__(
         cls,
         rules: AbstractSet["AutoMaterializeRule"],
-        max_materializations_per_minute: Optional[int] = 1,
+        max_materializations_per_minute: int | None = 1,
         asset_condition: Optional["AutomationCondition"] = None,
     ):
         from dagster._core.definitions.auto_materialize_rule import AutoMaterializeRule
@@ -201,7 +209,7 @@ class AutoMaterializePolicy(
         breaking_version="1.10.0",
         additional_warn_text="Use `AutomationCondition.eager()` instead.",
     )
-    def eager(max_materializations_per_minute: Optional[int] = 1) -> "AutoMaterializePolicy":
+    def eager(max_materializations_per_minute: int | None = 1) -> "AutoMaterializePolicy":
         """Constructs an eager AutoMaterializePolicy.
 
         Args:
@@ -233,7 +241,7 @@ class AutoMaterializePolicy(
         breaking_version="1.10.0",
         additional_warn_text="Use `AutomationCondition.any_downstream_conditions()` instead.",
     )
-    def lazy(max_materializations_per_minute: Optional[int] = 1) -> "AutoMaterializePolicy":
+    def lazy(max_materializations_per_minute: int | None = 1) -> "AutoMaterializePolicy":
         """(Deprecated) Constructs a lazy AutoMaterializePolicy.
 
         Args:
@@ -280,7 +288,7 @@ class AutoMaterializePolicy(
         """
         new_rule_types = {type(rule) for rule in rules_to_add}
         return self._replace(
-            rules=set(rules_to_add).union(
+            rules=frozenset(rules_to_add).union(
                 {rule for rule in self.rules if type(rule) not in new_rule_types}
             )
         )
@@ -341,3 +349,5 @@ class AutoMaterializePolicy(
             super().__eq__(other)
             or self.to_automation_condition() == other.to_automation_condition()
         )
+
+    __hash__ = None

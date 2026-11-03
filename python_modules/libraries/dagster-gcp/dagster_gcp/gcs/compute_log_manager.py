@@ -3,7 +3,7 @@ import json
 import os
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import IO, Any, Optional
+from typing import IO, Any
 
 import dagster_shared.seven as seven
 from dagster import (
@@ -44,7 +44,7 @@ class GCSComputeLogManager(TruncatingCloudStorageComputeLogManager, Configurable
             prefix: "dagster-test-"
             upload_interval: 30
 
-    There are more configuration examples in the instance documentation guide: https://docs.dagster.io/guides/deploy/dagster-instance-configuration#compute-log-storage
+    There are more configuration examples in the instance documentation guide: https://docs.dagster.io/deployment/oss/oss-instance-configuration#compute-log-storage
 
     Args:
         bucket (str): The name of the GCS bucket to which to log.
@@ -64,7 +64,7 @@ class GCSComputeLogManager(TruncatingCloudStorageComputeLogManager, Configurable
         self,
         bucket,
         local_dir=None,
-        inst_data: Optional[ConfigurableClassData] = None,
+        inst_data: ConfigurableClassData | None = None,
         prefix="dagster",
         json_credentials_envvar=None,
         upload_interval=None,
@@ -123,7 +123,7 @@ class GCSComputeLogManager(TruncatingCloudStorageComputeLogManager, Configurable
         return self._local_manager
 
     @property
-    def upload_interval(self) -> Optional[int]:
+    def upload_interval(self) -> int | None:
         return self._upload_interval if self._upload_interval else None
 
     def _clean_prefix(self, prefix):
@@ -161,7 +161,7 @@ class GCSComputeLogManager(TruncatingCloudStorageComputeLogManager, Configurable
                 )
 
     def delete_logs(
-        self, log_key: Optional[Sequence[str]] = None, prefix: Optional[Sequence[str]] = None
+        self, log_key: Sequence[str] | None = None, prefix: Sequence[str] | None = None
     ):
         self._local_manager.delete_logs(log_key, prefix)
         if log_key:
@@ -177,7 +177,7 @@ class GCSComputeLogManager(TruncatingCloudStorageComputeLogManager, Configurable
             # add the trailing '/' to make sure that ['a'] does not match ['apple']
             delete_prefix = "/".join([self._prefix, "storage", *prefix, ""])
             to_delete = self._bucket.list_blobs(prefix=delete_prefix)
-            self._bucket.delete_blobs(list(to_delete))
+            self._bucket.delete_blobs(list(to_delete), on_error=lambda _: None)
         else:
             check.failed("Must pass in either `log_key` or `prefix` argument to delete_logs")
 
@@ -232,7 +232,7 @@ class GCSComputeLogManager(TruncatingCloudStorageComputeLogManager, Configurable
 
     def get_log_keys_for_log_key_prefix(
         self, log_key_prefix: Sequence[str], io_type: ComputeIOType
-    ) -> Sequence[Sequence[str]]:
+    ) -> Sequence[list[str]]:
         directory = self._resolve_path_for_namespace(log_key_prefix)
         blobs = self._client.list_blobs(self._bucket, prefix="/".join(directory))
         results = []

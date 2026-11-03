@@ -4,19 +4,15 @@ sidebar_position: 20
 description: The dagster-airlift library provides an AirflowInstanceComponent, which you can use to peer a Dagster project with an Airflow instance.
 ---
 
-import DgComponentsRc from '@site/docs/partials/\_DgComponentsRc.md';
-
-<DgComponentsRc />
-
 The [dagster-airlift](/integrations/libraries/airlift) library provides an `AirflowInstanceComponent` which can be used to represent Airflow DAGs in Dagster, allowing easy interoperability between Airflow and Dagster.
 
 ## Setup and peering
 
-### 1. Prepare a Dagster project
+### Step 1: Prepare a Dagster project
 
 To begin, you'll need a Dagster project. You can use an [existing components-ready project](/guides/build/projects/moving-to-components/migrating-project) or create a new one:
 
-uvx -U create-dagster project my-project && cd my-project
+uvx create-dagster@latest project my-project && cd my-project
 
 Activate the project virtual environment:
 
@@ -30,7 +26,7 @@ Finally, add the `dagster-airlift` library to the project:
 uv add 'dagster-airlift[core]'
 ```
 
-### 2. Scaffold an AirflowInstanceComponent
+### Step 2: Scaffold an AirflowInstanceComponent
 
 :::note
 
@@ -46,7 +42,7 @@ This will create a component definition file called `defs.yaml` in your project 
 
 <CliInvocationExample path="docs_snippets/docs_snippets/integrations/airlift_v2/setup/basic_auth/2-tree.txt" />
 
-### 4. Update `defs.yaml` with Airflow configuration
+### Step 3: Update `defs.yaml` with Airflow configuration
 
 By default, the Airlift component reads values from the environment variables `AIRFLOW_WEBSERVER_URL`, `AIRFLOW_USERNAME`, and `AIRFLOW_PASSWORD`. While you should never include your password directly in this file, you can update `defs.yaml` to add the webserver URL and username:
 
@@ -74,4 +70,3 @@ You can manually define which assets are produced by a given Airflow DAG by edit
 If you have a more specific mapping from a task within the dag to a set of assets, you can also set these mappings at the task level:
 
 <CodeExample path="docs_snippets/docs_snippets/integrations/airlift_v2/represent_airflow_dags_in_dagster/component_task_mappings.yaml" />
-

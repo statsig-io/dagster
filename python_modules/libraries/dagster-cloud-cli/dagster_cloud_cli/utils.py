@@ -3,17 +3,21 @@ import functools
 import inspect
 import math
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import typer
-from typer.models import OptionInfo
+if TYPE_CHECKING:
+    from typer import Typer
+    from typer.models import OptionInfo
 
-from dagster_cloud_cli import ui
 
 DEFAULT_PYTHON_VERSION = "3.11"
 
+SUPPORTED_PYTHON_VERSIONS = ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
 
-def create_stub_app(package_name: str) -> typer.Typer:
+
+def create_stub_app(package_name: str) -> "Typer":
+    import typer
+
     return typer.Typer(
         help=f"This command is not available unless you install the {package_name} package.",
         hidden=True,
@@ -21,6 +25,8 @@ def create_stub_app(package_name: str) -> typer.Typer:
 
 
 def create_stub_command(package_name: str):
+    from dagster_cloud_cli import ui
+
     def fn():
         ui.print(f"This command is not available unless you install the {package_name} package.")
 
@@ -48,7 +54,7 @@ def without_params(signature: inspect.Signature, to_remove: list[str]) -> inspec
     return signature.replace(parameters=list(params.values()))
 
 
-def add_options(options: dict[str, tuple[Any, OptionInfo]]):
+def add_options(options: dict[str, tuple[Any, "OptionInfo"]]):
     """Decorator to add Options to a particular command."""
 
     def decorator(to_wrap):
@@ -81,8 +87,8 @@ def add_options(options: dict[str, tuple[Any, OptionInfo]]):
                 }
             return to_wrap(*args, **modified_kwargs)
 
-        wrap_function.__signature__ = sig  # pyright: ignore[reportAttributeAccessIssue]
-        wrap_function.modified_options = True  # pyright: ignore[reportAttributeAccessIssue]
+        wrap_function.__signature__ = sig  # ty: ignore[unresolved-attribute]
+        wrap_function.modified_options = True  # ty: ignore[unresolved-attribute]
         return wrap_function
 
     return decorator

@@ -1,9 +1,9 @@
-import asyncio
-from collections.abc import Hashable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from functools import wraps
-from typing import Any, Callable, TypeVar, cast
+from inspect import iscoroutinefunction
+from typing import Any, Concatenate, TypeVar, cast
 
-from typing_extensions import Concatenate, ParamSpec
+from typing_extensions import ParamSpec
 
 from dagster_shared.seven import get_arg_names
 
@@ -93,7 +93,7 @@ def cached_method(method: Callable[Concatenate[S, P], T]) -> Callable[Concatenat
 
         return canonical_kwargs
 
-    if asyncio.iscoroutinefunction(method):
+    if iscoroutinefunction(method):
 
         @wraps(method)
         async def _async_cached_method_wrapper(self: S, *args: P.args, **kwargs: P.kwargs) -> T:
@@ -101,13 +101,16 @@ def cached_method(method: Callable[Concatenate[S, P], T]) -> Callable[Concatenat
                 setattr(self, CACHED_METHOD_CACHE_FIELD, {})
 
             cache_dict = getattr(self, CACHED_METHOD_CACHE_FIELD)
-            if method.__name__ not in cache_dict:
-                cache_dict[method.__name__] = {}
+            method_name = method.__name__  # ty: ignore[unresolved-attribute]
+            if method_name not in cache_dict:
+                cache_dict[method_name] = {}
 
-            cache = cache_dict[method.__name__]
-
-            canonical_kwargs = get_canonical_kwargs(*args, **kwargs)
-            key = make_cached_method_cache_key(canonical_kwargs)
+            cache = cache_dict[method_name]
+            if not args and not kwargs:
+                key = NO_ARGS_HASH_VALUE
+            else:
+                canonical_kwargs = get_canonical_kwargs(*args, **kwargs)
+                key = make_cached_method_cache_key(canonical_kwargs)
 
             if key not in cache:
                 result = await method(self, *args, **kwargs)
@@ -124,13 +127,17 @@ def cached_method(method: Callable[Concatenate[S, P], T]) -> Callable[Concatenat
                 setattr(self, CACHED_METHOD_CACHE_FIELD, {})
 
             cache_dict = getattr(self, CACHED_METHOD_CACHE_FIELD)
-            if method.__name__ not in cache_dict:
-                cache_dict[method.__name__] = {}
+            method_name = method.__name__  # ty: ignore[unresolved-attribute]
+            if method_name not in cache_dict:
+                cache_dict[method_name] = {}
 
-            cache = cache_dict[method.__name__]
+            cache = cache_dict[method_name]
+            if not args and not kwargs:
+                key = NO_ARGS_HASH_VALUE
+            else:
+                canonical_kwargs = get_canonical_kwargs(*args, **kwargs)
+                key = make_cached_method_cache_key(canonical_kwargs)
 
-            canonical_kwargs = get_canonical_kwargs(*args, **kwargs)
-            key = make_cached_method_cache_key(canonical_kwargs)
             if key not in cache:
                 result = method(self, *args, **kwargs)
                 cache[key] = result
@@ -153,7 +160,7 @@ class _HashedSeq(list):
         self[:] = tup
         self.hashvalue = hash(tup)
 
-    def __hash__(self) -> int:  # pyright: ignore[reportIncompatibleVariableOverride]
+    def __hash__(self) -> int:
         return self.hashvalue
 
 

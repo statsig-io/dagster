@@ -1,6 +1,6 @@
 import copy
 from collections.abc import Iterator, Mapping, Sequence, Set
-from typing import Any, Union
+from typing import Any
 
 import yaml
 
@@ -12,7 +12,7 @@ JSON_SCHEMA_EXTRA_REQUIRED_SCOPE_KEY = "dagster_required_scope"
 
 
 def _subschemas_on_path(
-    valpath: Sequence[Union[str, int]], json_schema: Mapping[str, Any], subschema: Mapping[str, Any]
+    valpath: Sequence[str | int], json_schema: Mapping[str, Any], subschema: Mapping[str, Any]
 ) -> Iterator[Mapping[str, Any]]:
     """Given a valpath and the json schema of a given target type, returns the subschemas at each step of the path."""
     # List[ComplexType] (e.g.) will contain a reference to the complex type schema in the
@@ -56,9 +56,7 @@ def _get_additional_required_scope(subschema: Mapping[str, Any]) -> Set[str]:
     return set(raw) if raw else set()
 
 
-def get_required_scope(
-    valpath: Sequence[Union[str, int]], json_schema: Mapping[str, Any]
-) -> Set[str]:
+def get_required_scope(valpath: Sequence[str | int], json_schema: Mapping[str, Any]) -> Set[str]:
     """Given a valpath and the json schema of a given target type, determines the available rendering scope."""
     required_scope = set()
     for subschema in _subschemas_on_path(valpath, json_schema, json_schema):
@@ -112,7 +110,7 @@ class ComponentDumper(yaml.SafeDumper):
         # makes the output somewhat prettier by forcing lists to be indented
         return super().increase_indent(flow=flow, indentless=False)
 
-    def write_line_break(self) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def write_line_break(self) -> None:  # ty: ignore[invalid-method-override]
         # add an extra line break between top-level keys
         if self.indent == 0:
             super().write_line_break()
@@ -120,7 +118,7 @@ class ComponentDumper(yaml.SafeDumper):
 
 
 def _get_source_position_comments(
-    valpath: Sequence[Union[str, int]], tree: SourcePositionTree, json_schema: Mapping[str, Any]
+    valpath: Sequence[str | int], tree: SourcePositionTree, json_schema: Mapping[str, Any]
 ) -> Iterator[tuple[int, str]]:
     available_scope = get_required_scope(valpath[1:], json_schema)
     if available_scope:

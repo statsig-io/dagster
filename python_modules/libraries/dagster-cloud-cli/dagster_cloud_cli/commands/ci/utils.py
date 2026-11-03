@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Any
 
 from dagster_shared import check
 
@@ -8,7 +8,7 @@ from dagster_cloud_cli.config_utils import get_user_token
 
 
 @contextmanager
-def client_from_env(url: str, deployment: Optional[str] = None):
+def client_from_env(url: str, deployment: str | None = None):
     if deployment:
         url = url + "/" + deployment
     with gql.graphql_client_from_url(
@@ -17,6 +17,6 @@ def client_from_env(url: str, deployment: Optional[str] = None):
         yield client
 
 
-def get_registry_info(url: str) -> dict[str, Any]:
-    with client_from_env(url) as client:
+def get_registry_info(url: str, deployment: str) -> dict[str, Any]:
+    with client_from_env(url, deployment=deployment) as client:
         return gql.get_ecr_info(client)

@@ -1,6 +1,6 @@
 import re
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Union, cast
+from typing import TYPE_CHECKING, cast
 
 import dagster as dg
 import pytest
@@ -48,7 +48,7 @@ def check_auto_materialize_policy(assets, auto_materialize_policy):
 
 
 def assert_assets_have_prefix(
-    prefix: Union[str, Sequence[str]], assets: Sequence[dg.AssetsDefinition]
+    prefix: str | Sequence[str], assets: Sequence[dg.AssetsDefinition]
 ) -> None:
     for a in assets:
         if isinstance(a, dg.AssetsDefinition):
@@ -61,7 +61,7 @@ def assert_assets_have_prefix(
 
 
 def get_assets_def_with_key(
-    assets: Sequence[Union[dg.AssetsDefinition, dg.SourceAsset]], key: AssetKey
+    assets: Sequence[dg.AssetsDefinition | dg.SourceAsset], key: AssetKey
 ) -> dg.AssetsDefinition:
     assets_by_key = {
         key: assets_def
@@ -73,7 +73,7 @@ def get_assets_def_with_key(
 
 
 def get_source_asset_with_key(
-    assets: Sequence[Union[dg.AssetsDefinition, dg.SourceAsset]], key: AssetKey
+    assets: Sequence[dg.AssetsDefinition | dg.SourceAsset], key: AssetKey
 ) -> dg.SourceAsset:
     source_assets_by_key = {
         source_asset.key: source_asset
@@ -280,10 +280,10 @@ def test_prefix(prefix):
     from dagster_tests.definitions_tests.module_loader_tests.asset_package import module_with_assets
 
     assets = dg.load_assets_from_modules([asset_package, module_with_assets], key_prefix=prefix)
-    assert_assets_have_prefix(prefix, assets)  # pyright: ignore[reportArgumentType]
+    assert_assets_have_prefix(prefix, assets)  # ty: ignore[invalid-argument-type]
 
     assets = dg.load_assets_from_package_module(asset_package, key_prefix=prefix)
-    assert_assets_have_prefix(prefix, assets)  # pyright: ignore[reportArgumentType]
+    assert_assets_have_prefix(prefix, assets)  # ty: ignore[invalid-argument-type]
 
 
 def _load_assets_from_module_with_assets(**kwargs):

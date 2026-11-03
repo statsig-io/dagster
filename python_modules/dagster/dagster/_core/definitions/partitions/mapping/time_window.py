@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from datetime import datetime, timedelta
-from typing import NamedTuple, Optional, cast
+from typing import TYPE_CHECKING, NamedTuple, Optional, cast
 
 import dagster._check as check
 from dagster._annotations import PublicAttr, beta_param
@@ -18,9 +18,11 @@ from dagster._core.definitions.partitions.subset.partitions_subset import Partit
 from dagster._core.definitions.partitions.subset.time_window import TimeWindowPartitionsSubset
 from dagster._core.definitions.partitions.utils.time_window import TimeWindow
 from dagster._core.errors import DagsterInvalidDefinitionError
-from dagster._core.instance import DynamicPartitionsStore
 from dagster._serdes import whitelist_for_serdes
 from dagster._time import add_absolute_time
+
+if TYPE_CHECKING:
+    from dagster._core.instance import DynamicPartitionsStore
 
 
 @whitelist_for_serdes
@@ -129,7 +131,7 @@ class TimeWindowPartitionMapping(
         return description_str
 
     def _validated_input_partitions_subset(
-        self, param_name: str, subset: Optional[PartitionsSubset]
+        self, param_name: str, subset: PartitionsSubset | None
     ) -> TimeWindowPartitionsSubset:
         if isinstance(subset, AllPartitionsSubset):
             return TimeWindowPartitionsSubset.from_all_partitions_subset(subset)
@@ -141,7 +143,7 @@ class TimeWindowPartitionMapping(
             )
 
     def _validated_input_partitions_def(
-        self, param_name: str, partitions_def: Optional[PartitionsDefinition]
+        self, param_name: str, partitions_def: PartitionsDefinition | None
     ) -> TimeWindowPartitionsDefinition:
         return check.inst_param(
             cast("TimeWindowPartitionsDefinition", partitions_def),
@@ -151,11 +153,11 @@ class TimeWindowPartitionMapping(
 
     def get_upstream_mapped_partitions_result_for_partitions(
         self,
-        downstream_partitions_subset: Optional[PartitionsSubset],
-        downstream_partitions_def: Optional[PartitionsDefinition],
+        downstream_partitions_subset: PartitionsSubset | None,
+        downstream_partitions_def: PartitionsDefinition | None,
         upstream_partitions_def: PartitionsDefinition,
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None,
     ) -> UpstreamPartitionsResult:
         with partition_loading_context(current_time, dynamic_partitions_store):
             return self._map_partitions(
@@ -176,7 +178,7 @@ class TimeWindowPartitionMapping(
     def validate_partition_mapping(
         self,
         upstream_partitions_def: PartitionsDefinition,
-        downstream_partitions_def: Optional[PartitionsDefinition],
+        downstream_partitions_def: PartitionsDefinition | None,
     ):
         if not isinstance(downstream_partitions_def, TimeWindowPartitionsDefinition):
             raise DagsterInvalidDefinitionError(
@@ -188,11 +190,6 @@ class TimeWindowPartitionMapping(
                 "Upstream partitions definition must be a TimeWindowPartitionsDefinition",
             )
 
-        upstream_partitions_def = cast("TimeWindowPartitionsDefinition", upstream_partitions_def)
-        downstream_partitions_def = cast(
-            "TimeWindowPartitionsDefinition", downstream_partitions_def
-        )
-
         if upstream_partitions_def.timezone != downstream_partitions_def.timezone:
             raise DagsterInvalidDefinitionError(
                 f"Timezones {upstream_partitions_def.timezone} and {downstream_partitions_def.timezone} don't match"
@@ -202,9 +199,9 @@ class TimeWindowPartitionMapping(
         self,
         upstream_partitions_subset: PartitionsSubset,
         upstream_partitions_def: PartitionsDefinition,
-        downstream_partitions_def: Optional[PartitionsDefinition],
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        downstream_partitions_def: PartitionsDefinition | None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None,
     ) -> PartitionsSubset:
         """Returns the partitions in the downstream asset that map to the given upstream partitions.
 
@@ -418,7 +415,7 @@ class TimeWindowPartitionMapping(
         from_partitions_subset: TimeWindowPartitionsSubset,
         start_offset: int,
         end_offset: int,
-    ) -> Optional[UpstreamPartitionsResult]:
+    ) -> UpstreamPartitionsResult | None:
         """The main partition-mapping logic relies heavily on expensive cron iteration operations.
 
         This method covers a set of easy cases where these operations aren't required. It returns
@@ -516,7 +513,7 @@ def _offsetted_datetime_with_bounds(
     partitions_def: TimeWindowPartitionsDefinition,
     dt: datetime,
     offset: int,
-    bounds_window: Optional[TimeWindow],
+    bounds_window: TimeWindow | None,
 ) -> datetime:
     offsetted_dt = _offsetted_datetime(partitions_def, dt, offset)
 

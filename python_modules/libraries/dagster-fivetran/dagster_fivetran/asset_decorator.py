@@ -1,4 +1,5 @@
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from dagster import AssetsDefinition, multi_asset
 from dagster._core.errors import DagsterInvariantViolationError
@@ -15,10 +16,10 @@ def fivetran_assets(
     *,
     connector_id: str,
     workspace: FivetranWorkspace,
-    name: Optional[str] = None,
-    group_name: Optional[str] = None,
-    dagster_fivetran_translator: Optional[DagsterFivetranTranslator] = None,
-    connector_selector_fn: Optional[ConnectorSelectorFn] = None,
+    name: str | None = None,
+    group_name: str | None = None,
+    dagster_fivetran_translator: DagsterFivetranTranslator | None = None,
+    connector_selector_fn: ConnectorSelectorFn | None = None,
 ) -> Callable[[Callable[..., Any]], AssetsDefinition]:
     """Create a definition for how to sync the tables of a given Fivetran connector.
 

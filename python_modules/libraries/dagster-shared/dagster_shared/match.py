@@ -1,14 +1,25 @@
 from collections.abc import Sequence
-from typing import Any, ForwardRef, Literal, NamedTuple, TypeVar, Union, get_args, get_origin
+from types import UnionType
+from typing import (
+    Any,
+    ForwardRef,
+    Literal,
+    NamedTuple,
+    TypeGuard,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
 
-from typing_extensions import TypeGuard
+from typing_extensions import NotRequired, Required, is_typeddict
 
 T = TypeVar("T", bound=Any)
 
 
 # Use Any for type_ because there isn't a good static type that can handle all the cases listed
 # here.
-def match_type(obj: object, type_: Union[type[T], tuple[type[T]]]) -> TypeGuard[T]:
+def match_type(obj: object, type_: type[T] | tuple[type[T]]) -> TypeGuard[T]:
     if isinstance(type_, tuple):
         return any(match_type(obj, t) for t in type_)
 
@@ -24,11 +35,41 @@ def match_type(obj: object, type_: Union[type[T], tuple[type[T]]]) -> TypeGuard[
             raise NotImplementedError(
                 f"Got ForwardRef {type_}. ForwardRef is not supported by `match_type`"
             )
+        elif is_typeddict(type_):
+            if not isinstance(obj, dict):
+                return False
+            annotations = type_.__annotations__
+            # Trust __required_keys__ as the baseline (handles per-class `total`
+            # for inherited keys correctly), but override for any field whose
+            # annotation is explicitly wrapped in Required/NotRequired: on
+            # Python 3.10, typing.TypedDict does not honor typing_extensions
+            # Required/NotRequired wrappers when populating __required_keys__.
+            required_keys = getattr(type_, "__required_keys__", set())
+            for k, ann in annotations.items():
+                ann_origin = get_origin(ann)
+                if ann_origin is Required:
+                    required = True
+                elif ann_origin is NotRequired:
+                    required = False
+                else:
+                    required = k in required_keys
+                if required and k not in obj:
+                    return False
+            for k, v in obj.items():
+                if k in annotations:
+                    if not match_type(v, annotations[k]):
+                        return False
+            return True
         else:
             return isinstance(obj, type_)
 
+    # Handle Required/NotRequired wrappers (e.g. Required[str], NotRequired[int])
+    if origin in (Required, NotRequired):
+        (inner_type,) = get_args(type_)
+        return match_type(obj, inner_type)
+
     # Handle Union (e.g. Union[int, str])
-    if origin is Union:
+    if origin in (Union, UnionType):
         subtypes = get_args(type_)  # e.g. (int, str)
         return any(match_type(obj, st) for st in subtypes)
 

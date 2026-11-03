@@ -1,7 +1,6 @@
+from assets_smoke_test.assets import pure_python_assets
 from dagster import InMemoryIOManager, TableSchema, load_assets_from_modules, materialize
 from pandas import DataFrame, Series
-
-from assets_smoke_test.assets import pure_python_assets
 
 
 def empty_dataframe_from_column_schema(column_schema: TableSchema) -> DataFrame:
@@ -20,4 +19,4 @@ class SmokeIOManager(InMemoryIOManager):
 def test_smoke_all():
     assets = load_assets_from_modules([pure_python_assets])
 
-    materialize(assets, resources={"io_manager": SmokeIOManager()})
+    materialize(assets, resources={"io_manager": SmokeIOManager()})  # ty: ignore[invalid-argument-type]

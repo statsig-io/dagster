@@ -1,6 +1,7 @@
 ---
 title: Dagster & Not Diamond
 sidebar_label: Not Diamond
+sidebar_position: 1
 description: Leverage the Not Diamond resource to easily determine which LLM provider is most appropriate for your use case.
 tags: [community-supported, ai]
 source: https://github.com/dagster-io/community-integrations/tree/main/libraries/dagster-notdiamond
@@ -10,6 +11,10 @@ sidebar_custom_props:
   community: true
 partnerlink: https://www.notdiamond.ai/
 ---
+
+import CommunityIntegration from '@site/docs/partials/\_CommunityIntegration.md';
+
+<CommunityIntegration />
 
 <p>{frontMatter.description}</p>
 
@@ -56,9 +61,7 @@ def book_review_data(context: dg.AssetExecutionContext) -> dict:
     return data
 
 
-@dg.asset(
-    kinds={"openai", "notdiamond"}, automation_condition=dg.AutomationCondition.eager()
-)
+@dg.asset(kinds={"openai", "notdiamond"}, automation_condition=dg.AutomationCondition.eager())
 def book_reviews_summary(
     context: dg.AssetExecutionContext,
     notdiamond: nd.NotDiamondResource,
@@ -68,7 +71,7 @@ def book_reviews_summary(
     prompt = f"""
     Given the book reviews for {book_review_data["title"]}, provide a detailed summary:
 
-    {'|'.join([r['content'] for r in book_review_data["reviews"]])}
+    {"|".join([r["content"] for r in book_review_data["reviews"]])}
     """
 
     with notdiamond.get_client(context) as client:

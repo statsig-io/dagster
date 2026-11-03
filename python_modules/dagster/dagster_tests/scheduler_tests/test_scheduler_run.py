@@ -5,27 +5,34 @@ import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from typing import Optional, cast
+from typing import cast
 
 import dagster as dg
 import pytest
-from dagster import AssetExecutionContext, DefaultScheduleStatus, schedule
+from dagster import (
+    AssetExecutionContext,
+    AssetKey,
+    DefaultScheduleStatus,
+    DefaultSensorStatus,
+    schedule,
+)
+from dagster._core.definitions.run_request import RunRequest
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation import (
-    CodeLocation,
-    GrpcServerCodeLocation,
+from dagster._core.remote_origin import (
     GrpcServerCodeLocationOrigin,
+    ManagedGrpcPythonEnvCodeLocationOrigin,
     RemoteInstigatorOrigin,
     RemoteRepositoryOrigin,
 )
+from dagster._core.remote_representation.code_location import CodeLocation, GrpcServerCodeLocation
 from dagster._core.remote_representation.external import RemoteRepository, RemoteSchedule
-from dagster._core.remote_representation.origin import ManagedGrpcPythonEnvCodeLocationOrigin
 from dagster._core.scheduler.instigation import (
     InstigatorState,
     InstigatorStatus,
     InstigatorTick,
     InstigatorType,
     ScheduleInstigatorData,
+    SensorInstigatorData,
     TickData,
     TickStatus,
 )
@@ -94,14 +101,14 @@ FUTURES_TIMEOUT = 75
 
 def evaluate_schedules(
     workspace_context: WorkspaceProcessContext,
-    executor: Optional[ThreadPoolExecutor],
+    executor: ThreadPoolExecutor | None,
     end_datetime_utc: datetime.datetime,
     max_tick_retries: int = 0,
     max_catchup_runs: int = DEFAULT_MAX_CATCHUP_RUNS,
-    debug_crash_flags: Optional[DebugCrashFlags] = None,
+    debug_crash_flags: DebugCrashFlags | None = None,
     timeout: int = FUTURES_TIMEOUT,
-    submit_executor: Optional[ThreadPoolExecutor] = None,
-    iteration_times: Optional[dict[str, ScheduleIterationTimes]] = None,
+    submit_executor: ThreadPoolExecutor | None = None,
+    iteration_times: dict[str, ScheduleIterationTimes] | None = None,
 ):
     logger = get_default_daemon_logger("SchedulerDaemon")
     futures = {}
@@ -478,6 +485,16 @@ def asset1():
     return "asset1"
 
 
+@dg.asset_check(asset=asset1)
+def asset_1_check_1():
+    return dg.AssetCheckResult(passed=True)
+
+
+@dg.asset_check(asset=asset1)
+def asset_1_check_2():
+    return dg.AssetCheckResult(passed=True)
+
+
 @dg.asset
 def asset2(asset1):
     return asset1 + "asset2"
@@ -489,6 +506,11 @@ asset_job = dg.define_asset_job("asset_job")
 @schedule(job=asset_job, cron_schedule="@daily")
 def asset_selection_schedule():
     return dg.RunRequest(asset_selection=[asset1.key])
+
+
+@schedule(job=asset_job, cron_schedule="@daily")
+def asset_check_selection_schedule():
+    return RunRequest(asset_selection=[asset1.key], asset_check_keys=[asset_1_check_1.check_key])
 
 
 @schedule(job=asset_job, cron_schedule="@daily")
@@ -598,8 +620,11 @@ def the_repo():
         empty_schedule,
         many_requests_schedule,
         [asset1, asset2, source_asset],
+        asset_1_check_1,
+        asset_1_check_2,
         asset_selection_schedule,
         stale_asset_selection_schedule,
+        asset_check_selection_schedule,
         source_asset_observation_schedule,
         static_partitioned_asset1,
         static_partitioned_asset1_schedule,
@@ -632,12 +657,18 @@ def never_running_schedule(context):
     return _op_config(context.scheduled_execution_time)
 
 
+@dg.sensor(job_name="the_job", default_status=DefaultSensorStatus.RUNNING)
+def always_running_sensor(context):
+    return dg.SkipReason("nope")
+
+
 @dg.repository
 def the_status_in_code_repo():
     return [
         the_job,
         always_running_schedule,
         never_running_schedule,
+        always_running_sensor,
     ]
 
 
@@ -651,9 +682,9 @@ def validate_tick(
     expected_datetime: datetime.datetime,
     expected_status: TickStatus,
     expected_run_ids: Sequence[str],
-    expected_error: Optional[str] = None,
+    expected_error: str | None = None,
     expected_failure_count: int = 0,
-    expected_skip_reason: Optional[str] = None,
+    expected_skip_reason: str | None = None,
     expected_consecutive_failure_count=None,
 ) -> None:
     tick_data = tick.tick_data
@@ -2845,7 +2876,7 @@ class TestSchedulerRun:
         workspace_context: WorkspaceProcessContext,
         remote_repo: RemoteRepository,
         executor: ThreadPoolExecutor,
-        submit_executor: Optional[ThreadPoolExecutor],
+        submit_executor: ThreadPoolExecutor | None,
     ):
         freeze_datetime = feb_27_2019_start_of_day()
         with freeze_time(freeze_datetime):
@@ -2873,6 +2904,55 @@ class TestSchedulerRun:
                 freeze_datetime,
                 TickStatus.SUCCESS,
                 [run.run_id for run in runs],
+            )
+
+    @pytest.mark.parametrize("executor", get_schedule_executors())
+    def test_asset_check_selection(
+        self,
+        scheduler_instance: DagsterInstance,
+        workspace_context: WorkspaceProcessContext,
+        remote_repo: RemoteRepository,
+        executor: ThreadPoolExecutor,
+    ):
+        # TestSchedulerRun::test_asset_check_selection
+        freeze_datetime = feb_27_2019_one_second_to_midnight()
+        schedule = remote_repo.get_schedule("asset_check_selection_schedule")
+        schedule_origin = schedule.get_remote_origin()
+
+        with freeze_time(freeze_datetime):
+            scheduler_instance.start_schedule(schedule)
+
+            ticks = scheduler_instance.get_ticks(schedule_origin.get_id(), schedule.selector_id)
+
+            # launch_scheduled_runs does nothing before the first tick
+            evaluate_schedules(workspace_context, executor, get_current_datetime())
+            scheduler_instance.get_ticks(schedule_origin.get_id(), schedule.selector_id)
+
+        freeze_datetime = freeze_datetime + relativedelta(seconds=2)
+        with freeze_time(freeze_datetime):
+            evaluate_schedules(workspace_context, executor, get_current_datetime())
+
+            assert scheduler_instance.get_runs_count() == 1
+            ticks = scheduler_instance.get_ticks(schedule_origin.get_id(), schedule.selector_id)
+            assert len(ticks) == 1
+
+            expected_datetime = create_datetime(year=2019, month=2, day=28)
+
+            validate_tick(
+                ticks[0],
+                schedule,
+                expected_datetime,
+                TickStatus.SUCCESS,
+                [run.run_id for run in scheduler_instance.get_runs()],
+            )
+
+            wait_for_all_runs_to_start(scheduler_instance)
+            run = next(iter(scheduler_instance.get_runs()))
+            assert run.asset_selection == {AssetKey("asset1")}
+            assert run.asset_check_selection == {asset_1_check_1.check_key}
+
+            validate_run_started(
+                scheduler_instance, run, execution_time=create_datetime(2019, 2, 28)
             )
 
     @pytest.mark.parametrize("executor", get_schedule_executors())
@@ -3104,3 +3184,233 @@ class TestSchedulerRun:
             )
             assert "tag_foo" not in no_tags_with_run_tags_run.tags
             assert no_tags_with_run_tags_run.tags["run_tag_foo"] == "bar"
+
+    @pytest.mark.parametrize("sensor_status", [InstigatorStatus.STOPPED, InstigatorStatus.RUNNING])
+    def test_start_schedule_with_existing_sensor_state(
+        self,
+        scheduler_instance: DagsterInstance,
+        workspace_context: WorkspaceProcessContext,
+        remote_repo: RemoteRepository,
+        sensor_status: InstigatorStatus,
+    ):
+        """Test that starting a schedule works when there's existing state from a sensor
+        with the same name. This can happen when a user renames a sensor to a schedule
+        or vice versa. The sensor status (running or stopped) shouldn't matter - the
+        existing mismatched-type state should be replaced.
+        """
+        schedule = remote_repo.get_schedule("simple_schedule")
+        schedule_origin = schedule.get_remote_origin()
+
+        sensor_state = InstigatorState(
+            schedule_origin,
+            InstigatorType.SENSOR,
+            sensor_status,
+            SensorInstigatorData(min_interval=30),
+        )
+        scheduler_instance.add_instigator_state(sensor_state)
+
+        stored_state = scheduler_instance.get_instigator_state(
+            schedule_origin.get_id(), schedule.selector_id
+        )
+        assert stored_state is not None
+        assert stored_state.instigator_type == InstigatorType.SENSOR
+
+        started_state = scheduler_instance.start_schedule(schedule)
+        assert started_state.instigator_type == InstigatorType.SCHEDULE
+        assert started_state.status == InstigatorStatus.RUNNING
+        assert isinstance(started_state.instigator_data, ScheduleInstigatorData)
+
+        stopped_state = scheduler_instance.stop_schedule(
+            schedule_origin.get_id(), schedule.selector_id, schedule
+        )
+        assert stopped_state.instigator_type == InstigatorType.SCHEDULE
+        assert stopped_state.status == InstigatorStatus.STOPPED
+
+
+def test_start_schedule_with_declared_in_code_running_replaces_sensor_state(
+    instance: DagsterInstance,
+):
+    """When a schedule has default_status=RUNNING and there's an invalid stored sensor
+    state (e.g. this was a sensor with the same name), start_schedule should delete
+    the invalid row and return the DECLARED_IN_CODE running state derived from the
+    default.
+    """
+    with create_test_daemon_workspace_context(
+        workspace_load_target(attribute="the_status_in_code_repo"),
+        instance,
+    ) as workspace_context:
+        code_location = next(
+            iter(workspace_context.create_request_context().get_code_location_entries().values())
+        ).code_location
+        assert code_location
+        remote_repo = code_location.get_repository("the_status_in_code_repo")
+        running_schedule = remote_repo.get_schedule("always_running_schedule")
+        schedule_origin = running_schedule.get_remote_origin()
+
+        sensor_state = InstigatorState(
+            schedule_origin,
+            InstigatorType.SENSOR,
+            InstigatorStatus.RUNNING,
+            SensorInstigatorData(min_interval=30),
+        )
+        instance.add_instigator_state(sensor_state)
+
+        started_state = instance.start_schedule(running_schedule)
+        assert started_state.instigator_type == InstigatorType.SCHEDULE
+        assert started_state.status == InstigatorStatus.DECLARED_IN_CODE
+
+        # The invalid sensor row should have been deleted; the stored state is
+        # now either absent (so it gets recomputed from the default) or of the
+        # correct type.
+        stored = instance.get_instigator_state(
+            schedule_origin.get_id(), running_schedule.selector_id
+        )
+        assert stored is None or stored.instigator_type == InstigatorType.SCHEDULE
+
+
+def test_start_sensor_with_declared_in_code_running_replaces_schedule_state(
+    instance: DagsterInstance,
+):
+    """Analogous case for sensors: when a sensor has default_status=RUNNING and there's
+    an invalid stored schedule state (e.g. this was a schedule with the same name),
+    start_sensor should delete the invalid row and return the DECLARED_IN_CODE
+    running state.
+    """
+    with create_test_daemon_workspace_context(
+        workspace_load_target(attribute="the_status_in_code_repo"),
+        instance,
+    ) as workspace_context:
+        code_location = next(
+            iter(workspace_context.create_request_context().get_code_location_entries().values())
+        ).code_location
+        assert code_location
+        remote_repo = code_location.get_repository("the_status_in_code_repo")
+        running_sensor = remote_repo.get_sensor("always_running_sensor")
+        sensor_origin = running_sensor.get_remote_origin()
+
+        schedule_state = InstigatorState(
+            sensor_origin,
+            InstigatorType.SCHEDULE,
+            InstigatorStatus.RUNNING,
+            ScheduleInstigatorData("0 0 * * *", get_current_timestamp()),
+        )
+        instance.add_instigator_state(schedule_state)
+
+        started_state = instance.start_sensor(running_sensor)
+        assert started_state.instigator_type == InstigatorType.SENSOR
+        assert started_state.status == InstigatorStatus.DECLARED_IN_CODE
+
+        stored = instance.get_instigator_state(sensor_origin.get_id(), running_sensor.selector_id)
+        assert stored is None or stored.instigator_type == InstigatorType.SENSOR
+
+
+def test_reset_schedule_with_existing_sensor_state(
+    instance: DagsterInstance,
+):
+    """When resetting a schedule but there's an invalid stored sensor state (e.g. this
+    was a sensor with the same name), reset_schedule should delete the invalid row and
+    create a new state with the correct type.
+    """
+    with create_test_daemon_workspace_context(
+        workspace_load_target(attribute="the_status_in_code_repo"),
+        instance,
+    ) as workspace_context:
+        code_location = next(
+            iter(workspace_context.create_request_context().get_code_location_entries().values())
+        ).code_location
+        assert code_location
+        remote_repo = code_location.get_repository("the_status_in_code_repo")
+        running_schedule = remote_repo.get_schedule("always_running_schedule")
+        schedule_origin = running_schedule.get_remote_origin()
+
+        sensor_state = InstigatorState(
+            schedule_origin,
+            InstigatorType.SENSOR,
+            InstigatorStatus.RUNNING,
+            SensorInstigatorData(min_interval=30),
+        )
+        instance.add_instigator_state(sensor_state)
+
+        reset_state = instance.reset_schedule(running_schedule)
+        assert reset_state.instigator_type == InstigatorType.SCHEDULE
+        assert reset_state.status == InstigatorStatus.DECLARED_IN_CODE
+
+        stored = instance.get_instigator_state(
+            schedule_origin.get_id(), running_schedule.selector_id
+        )
+        assert stored is not None
+        assert stored.instigator_type == InstigatorType.SCHEDULE
+
+
+def test_stop_sensor_with_existing_schedule_state(
+    instance: DagsterInstance,
+):
+    """When stopping a sensor but there's an invalid stored schedule state (e.g. this
+    was a schedule with the same name), stop_sensor should delete the invalid row and
+    create a new state with the correct type.
+    """
+    with create_test_daemon_workspace_context(
+        workspace_load_target(attribute="the_status_in_code_repo"),
+        instance,
+    ) as workspace_context:
+        code_location = next(
+            iter(workspace_context.create_request_context().get_code_location_entries().values())
+        ).code_location
+        assert code_location
+        remote_repo = code_location.get_repository("the_status_in_code_repo")
+        running_sensor = remote_repo.get_sensor("always_running_sensor")
+        sensor_origin = running_sensor.get_remote_origin()
+
+        schedule_state = InstigatorState(
+            sensor_origin,
+            InstigatorType.SCHEDULE,
+            InstigatorStatus.RUNNING,
+            ScheduleInstigatorData("0 0 * * *", get_current_timestamp()),
+        )
+        instance.add_instigator_state(schedule_state)
+
+        stopped_state = instance.stop_sensor(
+            sensor_origin.get_id(), running_sensor.selector_id, running_sensor
+        )
+        assert stopped_state.instigator_type == InstigatorType.SENSOR
+        assert stopped_state.status == InstigatorStatus.STOPPED
+
+        stored = instance.get_instigator_state(sensor_origin.get_id(), running_sensor.selector_id)
+        assert stored is not None
+        assert stored.instigator_type == InstigatorType.SENSOR
+
+
+def test_reset_sensor_with_existing_schedule_state(
+    instance: DagsterInstance,
+):
+    """When resetting a sensor but there's an invalid stored schedule state (e.g. this
+    was a schedule with the same name), reset_sensor should delete the invalid row and
+    create a new state with the correct type.
+    """
+    with create_test_daemon_workspace_context(
+        workspace_load_target(attribute="the_status_in_code_repo"),
+        instance,
+    ) as workspace_context:
+        code_location = next(
+            iter(workspace_context.create_request_context().get_code_location_entries().values())
+        ).code_location
+        assert code_location
+        remote_repo = code_location.get_repository("the_status_in_code_repo")
+        running_sensor = remote_repo.get_sensor("always_running_sensor")
+        sensor_origin = running_sensor.get_remote_origin()
+
+        schedule_state = InstigatorState(
+            sensor_origin,
+            InstigatorType.SCHEDULE,
+            InstigatorStatus.RUNNING,
+            ScheduleInstigatorData("0 0 * * *", get_current_timestamp()),
+        )
+        instance.add_instigator_state(schedule_state)
+
+        reset_state = instance.reset_sensor(running_sensor)
+        assert reset_state.instigator_type == InstigatorType.SENSOR
+        assert reset_state.status == InstigatorStatus.DECLARED_IN_CODE
+
+        stored = instance.get_instigator_state(sensor_origin.get_id(), running_sensor.selector_id)
+        assert stored is not None
+        assert stored.instigator_type == InstigatorType.SENSOR

@@ -1,7 +1,5 @@
-from collections.abc import Iterator, Mapping
-from typing import Callable, NamedTuple, NoReturn, cast
-
-from typing_extensions import TypeAlias
+from collections.abc import Callable, Iterator, Mapping
+from typing import NamedTuple, NoReturn, TypeAlias, cast
 
 import dagster._check as check
 from dagster._config import EvaluateValueResult, process_config
@@ -10,7 +8,7 @@ from dagster._core.definitions.dependency import GraphNode, Node, NodeHandle, Op
 from dagster._core.definitions.graph_definition import GraphDefinition, SubselectedGraphDefinition
 from dagster._core.definitions.job_definition import JobDefinition
 from dagster._core.definitions.resource_definition import ResourceDefinition
-from dagster._core.definitions.run_config import define_node_shape
+from dagster._core.definitions.run_config import define_node_config
 from dagster._core.errors import (
     DagsterConfigMappingFunctionError,
     DagsterInvalidConfigError,
@@ -217,7 +215,7 @@ def _apply_top_level_config_mapping(
         # Dynamically construct the type that the output of the config mapping function will
         # be evaluated against
 
-        type_to_evaluate_against = define_node_shape(
+        type_to_evaluate_against = define_node_config(
             nodes=graph_def.nodes,
             ignored_nodes=None,
             dependency_structure=graph_def.dependency_structure,
@@ -284,7 +282,7 @@ def _apply_config_mapping(
         else None
     )
 
-    type_to_evaluate_against = define_node_shape(
+    type_to_evaluate_against = define_node_config(
         nodes=graph_def.nodes,
         ignored_nodes=ignored_nodes,
         dependency_structure=graph_def.dependency_structure,

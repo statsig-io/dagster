@@ -2,118 +2,33 @@
 
 This is the home of the Dagster documentation. The documentation site is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
 
----
+## Installing dependencies
 
-## Overview of the docs
+To install Dagster docs dependencies, run the following command in this directory:
 
-- `./src` contains custom components, styles, themes, and layouts.
-- `./docs/` contains documentation Markdown files.
-- `/examples/docs_snippets/docs_snippets/` contains code examples for the documentation. Some code examples also live in `/examples/` and `/examples/docs_snippets/docs_snippets/`.
-
-The docs are organized into the following sections:
-
-- Docs - includes content from [getting-started](./docs/getting-started/), [etl-pipeline-tutorial](./docs/etl-pipeline-tutorial/), [guides](./docs/guides/), and [about](./docs/about/)
-- [Examples](./docs/examples/)
-- [Integrations](./docs/integrations/)
-- [Dagster+](./docs/dagster-plus/)
-- [API reference](./docs/api/)
-
-`sidebar.ts` and `docusaurus.config.ts` are the main configuration files for the documentation.
-
-For formatting guidelines, see the [CONTRIBUTING](CONTRIBUTING.md) guide.
-
----
-
-## Installation
-
-The site uses [yarn](https://yarnpkg.com/) for package management. We recommend using `nvm` to install the long-term-support version of Node.
-
-```bash
-nvm install --lts
 ```
-
-```bash
 yarn install
 ```
 
----
+## Building and running docs locally
 
-## Local development
+To build and run Dagster docs locally for the first time:
 
-To start the local development server:
-
-```bash
-yarn start
+```
+yarn build-api-docs  # builds Sphinx API docs
+yarn start           # rebuilds changed non-API docs and starts local docs server
 ```
 
-This command starts a local development server and opens [http://localhost:3050](http://localhost:3050) in a browser window.
+After building API docs for the first time, you can use `yarn start` only to start the docs server and rebuild non-API docs. You do not need to run `yarn build-api-docs` every time you start the docs server.
 
-### Checking for build errors
+> [!IMPORTANT] > `yarn start` (and `yarn build`) will not rebuild API docs. If you update docstrings in `python_modules` or RST files in `sphinx/sections`, you will need to rerun `yarn build-api-docs` to pick up the changes.
 
-To check for broken links and other build errors, you will need to build API docs, then build the full docs site:
+## Fixing docs formatting errors
 
-```bash
-# build and copy API markdown files; build and copy the sphinx `objects.inv` to static/
-yarn build-api-docs
+To fix docs formatting errors:
 
-# build the static site
-yarn build
 ```
-
-Note that building API docs requires you to configure Python on your system. To do this, run `make dev_install` as outlined in the [Dagster contributing guide](https://docs.dagster.io/about/contributing).
-
-### Linting
-
-To check the documentation for formatting issues, run the following:
-
-```bash
 yarn format
 ```
 
----
-
-## Generated content
-
-Kinds tags are generated programmatically and stored in the `docs/partials/_KindsTags.md` partial with the following command:
-
-```sh
-yarn build-kinds-tags
-```
-
-**Note:** Most of the time, you will not need to run this command locally, since it runs on the production build.
-
----
-
-## Versioning
-
-Previous versions of the docs site, plus an "Upcoming release" version, are made accessible through preview deployments in Vercel.
-
-For example, https://release-1-9-13.archive.dagster-docs.io/ is hosted on the `archive` subdomain of dagster-docs.io where `release-1-9-13` is the release branch in version control.
-
-The "Upcoming release" version is also hosted on the `archive` subdomain. Its release branch is `master`.
-
-These versions are accessible through the navigation bar as external links. See the conditional logic using `VERCEL_ENV` in docusaurus.config.ts.
-
-To validate the dropdown menu, you can run `VERCEL_ENV=preview yarn start`.
-
----
-
-## Production deployment
-
-This site is built and deployed using Vercel.
-
-The _build_ step in Vercel is overridden to build API documentation using the `scripts/vercel-sync-api-docs.sh` script; this is configured in the `vercel.json` file through the `buildCommand` property.
-
----
-
-## Search
-
-Algolia search is used for search results on the website, as configured in `docusaurus.config.ts`.
-
-The following environment variables must be configured in Vercel:
-
-- `ALGOLIA_APP_ID`
-- `ALGOLIA_API_KEY`
-- `ALGOLIA_INDEX_NAME`
-
-These variables are not loaded when `process.env.ENV === 'development'`.
+For more information, see the [Dagster docs contributing guide](https://docs.dagster.io/about/contributing-docs#building-and-running-docs-locally).

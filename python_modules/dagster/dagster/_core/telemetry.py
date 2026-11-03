@@ -15,9 +15,9 @@ import hashlib
 import inspect
 import os
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Optional, TypeVar, overload
 
 from dagster_shared.telemetry import (
     DAGSTER_HOME_FALLBACK,
@@ -25,6 +25,7 @@ from dagster_shared.telemetry import (
     TelemetrySettings,
     dagster_home_if_set,
     get_or_set_instance_id,
+    get_or_set_user_id,
     log_telemetry_action,
     write_telemetry_log_line,
 )
@@ -90,13 +91,13 @@ def telemetry_wrapper(target_fn: T_Callable) -> T_Callable: ...
 @overload
 def telemetry_wrapper(
     *,
-    metadata: Optional[Mapping[str, str]],
+    metadata: Mapping[str, str] | None,
 ) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
 
 
 def telemetry_wrapper(
-    target_fn: Optional[T_Callable] = None, *, metadata: Optional[Mapping[str, str]] = None
-) -> Union[T_Callable, Callable[[Callable[P, T]], Callable[P, T]]]:
+    target_fn: T_Callable | None = None, *, metadata: Mapping[str, str] | None = None
+) -> T_Callable | Callable[[Callable[P, T]], Callable[P, T]]:
     """Wrapper around functions that are logged. Will log the function_name, client_time, and
     elapsed_time, and success.
 
@@ -113,13 +114,13 @@ def telemetry_wrapper(
 
 
 def _telemetry_wrapper(
-    f: Callable[P, T], metadata: Optional[Mapping[str, str]] = None
+    f: Callable[P, T], metadata: Mapping[str, str] | None = None
 ) -> Callable[P, T]:
     metadata = check.opt_mapping_param(metadata, "metadata", key_type=str, value_type=str)
 
-    if f.__name__ not in TELEMETRY_WHITELISTED_FUNCTIONS:
+    if f.__name__ not in TELEMETRY_WHITELISTED_FUNCTIONS:  # ty: ignore[unresolved-attribute]
         raise DagsterInvariantViolationError(
-            f"Attempted to log telemetry for function {f.__name__} that is not in telemetry whitelisted "
+            f"Attempted to log telemetry for function {f.__name__} that is not in telemetry whitelisted "  # ty: ignore[unresolved-attribute]
             f"functions list: {TELEMETRY_WHITELISTED_FUNCTIONS}."
         )
     sig = inspect.signature(f)
@@ -141,7 +142,7 @@ def _telemetry_wrapper(
         start_time = datetime.datetime.now()
         log_action(
             instance=instance,
-            action=f.__name__ + "_started",
+            action=f.__name__ + "_started",  # ty: ignore[unresolved-attribute]
             client_time=start_time,
             metadata=metadata,
         )
@@ -150,7 +151,7 @@ def _telemetry_wrapper(
         success_metadata = {"success": getattr(result, "success", None)}
         log_action(
             instance=instance,
-            action=f.__name__ + "_ended",
+            action=f.__name__ + "_ended",  # ty: ignore[unresolved-attribute]
             client_time=end_time,
             elapsed_time=end_time - start_time,
             metadata=merge_dicts(success_metadata, metadata),
@@ -184,17 +185,15 @@ def _check_telemetry_instance_param(
     args: Sequence[object], kwargs: Mapping[str, object], instance_index: int
 ) -> DagsterInstance:
     if "instance" in kwargs:
-        return check.inst_param(
-            kwargs["instance"],  # type: ignore
-            "instance",
+        return check.inst(
+            kwargs["instance"],
             DagsterInstance,
             "'instance' parameter passed as keyword argument must be a DagsterInstance",
         )
     else:
         check.invariant(len(args) > instance_index)
-        return check.inst_param(
-            args[instance_index],  # type: ignore
-            "instance",
+        return check.inst(
+            args[instance_index],
             DagsterInstance,
             f"'instance' argument at position {instance_index} must be a DagsterInstance",
         )
@@ -230,10 +229,7 @@ def hash_name(name: str) -> str:
 
 
 def get_stats_from_remote_repo(remote_repo: "RemoteRepository") -> Mapping[str, str]:
-    from dagster._core.remote_representation.external_data import (
-        DynamicPartitionsSnap,
-        MultiPartitionsSnap,
-    )
+    from dagster._core.definitions.partitions.snap import DynamicPartitionsSnap, MultiPartitionsSnap
 
     num_pipelines_in_repo = len(remote_repo.get_all_jobs())
     num_schedules_in_repo = len(remote_repo.get_schedules())
@@ -382,6 +378,7 @@ def log_remote_repo_stats(
                 client_time=str(datetime.datetime.now()),
                 event_id=str(uuid.uuid4()),
                 instance_id=instance_id,
+                user_id=get_or_set_user_id(),
                 metadata={
                     **get_stats_from_remote_repo(remote_repo),
                     "source": source,
@@ -396,8 +393,8 @@ def log_remote_repo_stats(
 def log_repo_stats(
     instance: DagsterInstance,
     source: str,
-    job: Optional[IJob] = None,
-    repo: Optional[ReconstructableRepository] = None,
+    job: IJob | None = None,
+    repo: ReconstructableRepository | None = None,
 ) -> None:
     from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
     from dagster._core.definitions.partitions.definition import DynamicPartitionsDefinition
@@ -453,6 +450,7 @@ def log_repo_stats(
                 client_time=str(datetime.datetime.now()),
                 event_id=str(uuid.uuid4()),
                 instance_id=instance_id,
+                user_id=get_or_set_user_id(),
                 metadata={
                     "source": source,
                     "pipeline_name_hash": job_name_hash,
@@ -489,9 +487,9 @@ def log_workspace_stats(
 def log_action(
     instance: DagsterInstance,
     action: str,
-    client_time: Optional[datetime.datetime] = None,
-    elapsed_time: Optional[datetime.timedelta] = None,
-    metadata: Optional[Mapping[str, str]] = None,
+    client_time: datetime.datetime | None = None,
+    elapsed_time: datetime.timedelta | None = None,
+    metadata: Mapping[str, str] | None = None,
 ) -> None:
     log_telemetry_action(
         lambda: _get_instance_telemetry_info(instance),
@@ -506,7 +504,7 @@ def log_dagster_event(event: DagsterEvent, job_context: PlanOrchestrationContext
     if not any((event.is_step_start, event.is_step_success, event.is_step_failure)):
         return
 
-    metadata = {
+    metadata: dict[str, Any] = {
         "run_id_hash": hash_name(job_context.run_id),
         "step_key_hash": hash_name(event.step_key),  # type: ignore
     }

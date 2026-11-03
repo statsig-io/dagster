@@ -1,9 +1,13 @@
 import pickle
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
+from unittest import mock
 
 import pytest
 from dagster import (
     ConfigurableResource,
+    DynamicOut,
+    DynamicOutput,
     GraphIn,
     GraphOut,
     IAttachDifferentObjectToOpContext,
@@ -23,7 +27,11 @@ from dagster._core.definitions.partitions.definition import StaticPartitionsDefi
 from dagster._core.definitions.source_asset import SourceAsset
 from dagster._core.definitions.unresolved_asset_job_definition import define_asset_job
 
-from dagster_aws.s3.io_manager import S3PickleIOManager, s3_pickle_io_manager
+from dagster_aws.s3.io_manager import (
+    PickledObjectS3IOManager,
+    S3PickleIOManager,
+    s3_pickle_io_manager,
+)
 from dagster_aws.s3.utils import construct_s3_client
 
 
@@ -220,3 +228,55 @@ def test_s3_pickle_io_manager_asset_execution(mock_s3_bucket):
             "/".join(["dagster", "storage", result2.run_id, "graph_asset.first_op", "result"]),
         ),
     }
+
+
+def define_dynamic_job(s3_resource, s3_io_manager_builder):
+
+    @op(out=DynamicOut())
+    def dynamic_values():
+        for key in ["foo", "bar"]:
+            yield DynamicOutput(value=key, mapping_key=key)
+
+    @op
+    def return_value(value):
+        return value
+
+    @job(
+        resource_defs={
+            "io_manager": s3_io_manager_builder(s3_resource),
+            "s3": s3_resource,
+        }
+    )
+    def dynamic_job():
+        dynamic_values().map(return_value)
+
+    return dynamic_job
+
+
+def test_s3_pickle_io_manager_dynamic_output(mock_s3_bucket, s3_and_io_manager):
+    s3_resource, s3_io_manager_builder = s3_and_io_manager
+    dynamic_job = define_dynamic_job(s3_resource, s3_io_manager_builder)
+
+    run_config = {"resources": {"io_manager": {"config": {"s3_bucket": mock_s3_bucket.name}}}}
+
+    result = dynamic_job.execute_in_process(run_config)
+
+    assert result.success
+
+    outputs = result.output_for_node("return_value")
+    assert outputs == {"foo": "foo", "bar": "bar"}
+
+    keys = [o.key for o in mock_s3_bucket.objects.all()]
+    for key in keys:
+        assert "[" not in key, f"S3 key contains '[': {key}"
+        assert "]" not in key, f"S3 key contains ']': {key}"
+
+    assert any("return_value--foo" in key for key in keys)
+    assert any("return_value--bar" in key for key in keys)
+
+
+@pytest.mark.parametrize("s3_prefix", ["", None])
+def test_pickled_object_s3_io_manager_init_with_none_prefix(s3_prefix: str | None):
+    mock_session = mock.Mock()
+    PickledObjectS3IOManager(s3_bucket="test-bucket", s3_session=mock_session, s3_prefix=s3_prefix)
+    mock_session.list_objects.assert_called_once_with(Bucket="test-bucket", Prefix="", MaxKeys=1)

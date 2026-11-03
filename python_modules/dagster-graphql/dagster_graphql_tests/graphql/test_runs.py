@@ -1,6 +1,7 @@
 import copy
 import tempfile
 import time
+from unittest import mock
 
 import pytest
 import yaml
@@ -449,10 +450,44 @@ class TestGetRuns(ExecutingGraphQLContextTestMatrix):
         run_logs_result = execute_dagster_graphql(
             read_context,
             RUN_LOGS_QUERY,
-            variables={"runId": run_id_one, "limit": 5000, "afterCursor": cursor},
+            variables={"runId": run_id_one, "limit": 1000, "afterCursor": cursor},
         )
 
         assert not run_logs_result.data["pipelineRunOrError"]["eventConnection"]["hasMore"]
+
+        with pytest.raises(Exception, match=r"Limit of 5000 is too large. Max is 1000"):
+            run_logs_result = execute_dagster_graphql(
+                read_context,
+                RUN_LOGS_QUERY,
+                variables={"runId": run_id_one, "limit": 5000, "afterCursor": cursor},
+            )
+
+        with mock.patch.object(
+            type(read_context),
+            "records_for_run_default_limit",
+            new_callable=mock.PropertyMock,
+        ) as mock_records_for_run_default_limit:
+            mock_records_for_run_default_limit.return_value = 5
+            run_logs_result = execute_dagster_graphql(
+                read_context,
+                RUN_LOGS_QUERY,
+                variables={"runId": run_id_one, "afterCursor": cursor},
+            )
+            assert len(run_logs_result.data["pipelineRunOrError"]["eventConnection"]["events"]) == 5
+
+            with pytest.raises(Exception, match=r"Limit of 1000 is too large. Max is 5"):
+                run_logs_result = execute_dagster_graphql(
+                    read_context,
+                    RUN_LOGS_QUERY,
+                    variables={"runId": run_id_one, "limit": 1000, "afterCursor": cursor},
+                )
+
+            run_logs_result = execute_dagster_graphql(
+                read_context,
+                RUN_LOGS_QUERY,
+                variables={"runId": run_id_one, "limit": 4, "afterCursor": cursor},
+            )
+            assert len(run_logs_result.data["pipelineRunOrError"]["eventConnection"]["events"]) == 4
 
         # delete the second run
         result = execute_dagster_graphql(
@@ -810,6 +845,72 @@ def test_filtered_runs_multiple_filters():
             assert started_run_without_tags.run_id not in run_ids
 
 
+FILTERED_RUN_WITH_LIMIT_QUERY = """
+query PipelineRunsWithLimitQuery($filter: RunsFilter, $limit: Int) {
+  pipelineRunsOrError(filter: $filter, limit: $limit) {
+    ... on PipelineRuns {
+      results {
+        runId
+      }
+    }
+  }
+}
+"""
+
+
+def test_default_graphql_run_records_limit(monkeypatch):
+    monkeypatch.setenv("DAGSTER_DEFAULT_GRAPHQL_RUN_RECORDS_LIMIT", "2")
+
+    with instance_for_test() as instance:
+        repo = get_repo_at_time_1()
+        run_ids = [
+            instance.create_run_for_job(
+                repo.get_job("foo_job"),
+                status=DagsterRunStatus.SUCCESS,
+                tags={"foo": "bar"},
+            ).run_id
+            for _ in range(5)
+        ]
+
+        with define_out_of_process_context(__file__, "get_repo_at_time_1", instance) as context:
+            # No filter: cap kicks in.
+            result = execute_dagster_graphql(
+                context,
+                FILTERED_RUN_WITH_LIMIT_QUERY,
+                variables={},
+            )
+            assert result.data
+            assert len(result.data["pipelineRunsOrError"]["results"]) == 2
+
+            # Tag-only filter: cap still kicks in (matches unboundedly many rows over time).
+            result = execute_dagster_graphql(
+                context,
+                FILTERED_RUN_WITH_LIMIT_QUERY,
+                variables={"filter": {"tags": [{"key": "foo", "value": "bar"}]}},
+            )
+            assert result.data
+            assert len(result.data["pipelineRunsOrError"]["results"]) == 2
+
+            # run_ids filter: bounded by caller's input list, so the cap is bypassed.
+            result = execute_dagster_graphql(
+                context,
+                FILTERED_RUN_WITH_LIMIT_QUERY,
+                variables={"filter": {"runIds": run_ids}},
+            )
+            assert result.data
+            returned = [r["runId"] for r in result.data["pipelineRunsOrError"]["results"]]
+            assert set(returned) == set(run_ids)
+
+            # Explicit limit is honored as-is.
+            result = execute_dagster_graphql(
+                context,
+                FILTERED_RUN_WITH_LIMIT_QUERY,
+                variables={"limit": 1},
+            )
+            assert result.data
+            assert len(result.data["pipelineRunsOrError"]["results"]) == 1
+
+
 def test_filtered_runs_count():
     with instance_for_test() as instance:
         repo = get_repo_at_time_1()
@@ -883,7 +984,7 @@ def test_run_group():
                 tags={PARENT_RUN_ID_TAG: root_run_id, ROOT_RUN_ID_TAG: root_run_id},
             )
             execute_run(InMemoryJob(foo_job), run, instance)
-            runs.append(run)  # pyright: ignore[reportArgumentType]
+            runs.append(run)
 
         with define_out_of_process_context(
             __file__, "get_repo_at_time_1", instance
@@ -958,7 +1059,7 @@ def test_asset_batching():
             assert len(materializations) == 3
 
             counter = traced_counter.get()
-            counts = counter.counts()  # pyright: ignore[reportOptionalMemberAccess]
+            counts = counter.counts()  # ty: ignore[unresolved-attribute]
             assert counts
             assert counts.get("DagsterInstance.get_run_records") == 1
 
@@ -985,7 +1086,7 @@ def test_run_has_concurrency_slots():
         with instance_for_test(
             overrides={
                 "event_log_storage": {
-                    "module": "dagster.utils.test",
+                    "module": "dagster._utils.test",
                     "class": "ConcurrencyEnabledSqliteTestEventLogStorage",
                     "config": {"base_dir": temp_dir},
                 },

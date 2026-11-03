@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import time
-from typing import Optional, Union
 
 from dagster import AssetKey, Output, asset, define_asset_job
 from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView, TemporalContext
@@ -14,7 +13,7 @@ from dagster._core.execution.asset_backfill import (
 )
 from dagster._core.execution.backfill import BulkActionStatus, PartitionBackfill
 from dagster._core.execution.job_backfill import execute_job_backfill_iteration
-from dagster._core.remote_representation.origin import RemotePartitionSetOrigin
+from dagster._core.remote_origin import RemotePartitionSetOrigin
 from dagster._core.storage.dagster_run import DagsterRun, DagsterRunStatus, RunsFilter
 from dagster._core.storage.tags import (
     ASSET_PARTITION_RANGE_END_TAG,
@@ -66,6 +65,7 @@ PARTITION_PROGRESS_QUERY = """
         }
         hasCancelPermission
         hasResumePermission
+        endTimestamp
         user
         title
         description
@@ -180,6 +180,8 @@ GET_PARTITION_BACKFILLS_QUERY = """
       ...on PartitionSet {
         name
         pipelineName
+        hasLaunchBackfillPermission
+        hasCancelBackfillPermission
         backfills {
           id
           isAssetBackfill
@@ -193,7 +195,7 @@ GET_PARTITION_BACKFILLS_QUERY = """
 
 def _seed_runs(
     graphql_context,
-    partition_runs: list[tuple[DagsterRunStatus, Union[str, PartitionKeyRange]]],
+    partition_runs: list[tuple[DagsterRunStatus, str | PartitionKeyRange]],
     backfill_id: str,
 ) -> None:
     for status, partition_or_range in partition_runs:
@@ -255,6 +257,7 @@ def _execute_asset_backfill_iteration_no_side_effects(graphql_context, backfill_
             asset_graph_view=asset_graph_view,
             backfill_start_timestamp=asset_backfill_data.backfill_start_timestamp,
             logger=logging.getLogger("fake_logger"),
+            run_config=None,
         )
 
     updated_backfill = backfill.with_asset_backfill_data(
@@ -297,7 +300,7 @@ def _mock_asset_backfill_runs(
     asset_key: AssetKey,
     backfill_id: str,
     status: DagsterRunStatus,
-    partition_key: Optional[str],
+    partition_key: str | None,
 ):
     partitions_def = graphql_context.asset_graph.get(asset_key).partitions_def
 
@@ -448,6 +451,7 @@ class TestDaemonPartitionBackfill(ExecutingGraphQLContextTestMatrix):
         assert result.data["partitionBackfillOrError"]["numCancelable"] == 2
         assert result.data["partitionBackfillOrError"]["hasCancelPermission"] is True
         assert result.data["partitionBackfillOrError"]["hasResumePermission"] is True
+        assert result.data["partitionBackfillOrError"]["endTimestamp"] is None
 
         assert len(result.data["partitionBackfillOrError"]["partitionNames"]) == 2
 
@@ -618,10 +622,12 @@ class TestDaemonPartitionBackfill(ExecutingGraphQLContextTestMatrix):
         assert result.data["partitionBackfillOrError"]["__typename"] == "PartitionBackfill"
         assert result.data["partitionBackfillOrError"]["status"] == "CANCELING"
 
+        start = time.time()
         while (
             graphql_context.instance.get_backfill(backfill_id).status != BulkActionStatus.CANCELED
         ):
             _execute_job_backfill_iteration_with_side_effects(graphql_context, backfill_id)
+            assert time.time() - start < 60, "timed out waiting for backfill to cancel"
 
         runs = graphql_context.instance.get_runs(RunsFilter(tags={BACKFILL_ID_TAG: backfill_id}))
         assert len(runs) == 1
@@ -636,6 +642,7 @@ class TestDaemonPartitionBackfill(ExecutingGraphQLContextTestMatrix):
         assert result.data
         assert result.data["partitionBackfillOrError"]["__typename"] == "PartitionBackfill"
         assert result.data["partitionBackfillOrError"]["status"] == "CANCELED"
+        assert result.data["partitionBackfillOrError"]["endTimestamp"] is not None
 
     def test_cancel_then_retry_backfill(self, graphql_context):
         repository_selector = infer_repository_selector(graphql_context)
@@ -712,6 +719,118 @@ class TestDaemonPartitionBackfill(ExecutingGraphQLContextTestMatrix):
         assert len(result.data["partitionBackfillOrError"]["partitionNames"]) == 2
         assert result.data["partitionBackfillOrError"]["fromFailure"]
 
+    def test_failing_job_backfill_cancels_runs(self, graphql_context):
+        repository_selector = infer_repository_selector(graphql_context)
+        result = execute_dagster_graphql(
+            graphql_context,
+            LAUNCH_PARTITION_BACKFILL_MUTATION,
+            variables={
+                "backfillParams": {
+                    "selector": {
+                        "repositorySelector": repository_selector,
+                        "partitionSetName": "hanging_partitioned_job_partition_set",
+                    },
+                    "partitionNames": ["1", "2"],
+                }
+            },
+        )
+
+        assert not result.errors
+        assert result.data
+        assert result.data["launchPartitionBackfill"]["__typename"] == "LaunchBackfillSuccess"
+        backfill_id = result.data["launchPartitionBackfill"]["backfillId"]
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            PARTITION_PROGRESS_QUERY,
+            variables={"backfillId": backfill_id},
+        )
+
+        assert not result.errors
+        assert result.data
+        assert result.data["partitionBackfillOrError"]["__typename"] == "PartitionBackfill"
+        assert result.data["partitionBackfillOrError"]["status"] == "REQUESTED"
+
+        # Update backfill data to update the partition checkpoint, but manually launch the run
+        # since launching the run via the backfill iteration loop will cause test process will hang forever.
+        backfill = graphql_context.instance.get_backfill(backfill_id)
+        partition_to_run = "1"
+        graphql_context.instance.update_backfill(
+            backfill.with_partition_checkpoint(partition_to_run)
+        )
+
+        # Launch the run that runs forever
+        selector = infer_job_selector(graphql_context, "hanging_partitioned_job")
+        with safe_tempfile_path() as path:
+            result = execute_dagster_graphql(
+                graphql_context,
+                LAUNCH_PIPELINE_EXECUTION_MUTATION,
+                variables={
+                    "executionParams": {
+                        "selector": selector,
+                        "mode": "default",
+                        "runConfigData": {
+                            "resources": {"hanging_asset_resource": {"config": {"file": path}}}
+                        },
+                        "executionMetadata": {
+                            "tags": [
+                                {"key": "dagster/partition", "value": partition_to_run},
+                                {"key": BACKFILL_ID_TAG, "value": backfill_id},
+                            ]
+                        },
+                    }
+                },
+            )
+
+            assert not result.errors
+            assert result.data
+            assert result.data["launchPipelineExecution"]["__typename"] == "LaunchRunSuccess"
+
+            # ensure the execution has happened
+            start = time.time()
+            while not os.path.exists(path):
+                time.sleep(0.1)
+                assert time.time() - start < 60, "timed out waiting for file"
+
+        runs = graphql_context.instance.get_runs(RunsFilter(tags={BACKFILL_ID_TAG: backfill_id}))
+        assert len(runs) == 1
+        assert runs[0].status == DagsterRunStatus.STARTED
+
+        # simulate the backfill failing for some reason and being marked FAILING
+        updated_backfill = graphql_context.instance.get_backfill(backfill_id).with_status(
+            BulkActionStatus.FAILING
+        )
+        graphql_context.instance.update_backfill(updated_backfill)
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            PARTITION_PROGRESS_QUERY,
+            variables={"backfillId": backfill_id},
+        )
+        assert not result.errors
+        assert result.data
+        assert result.data["partitionBackfillOrError"]["__typename"] == "PartitionBackfill"
+        assert result.data["partitionBackfillOrError"]["status"] == "FAILING"
+
+        start = time.time()
+        while graphql_context.instance.get_backfill(backfill_id).status != BulkActionStatus.FAILED:
+            _execute_job_backfill_iteration_with_side_effects(graphql_context, backfill_id)
+            assert time.time() - start < 60, "timed out waiting for backfill to fail"
+
+        runs = graphql_context.instance.get_runs(RunsFilter(tags={BACKFILL_ID_TAG: backfill_id}))
+        assert len(runs) == 1
+        assert runs[0].status == DagsterRunStatus.CANCELED
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            PARTITION_PROGRESS_QUERY,
+            variables={"backfillId": backfill_id},
+        )
+        assert not result.errors
+        assert result.data
+        assert result.data["partitionBackfillOrError"]["__typename"] == "PartitionBackfill"
+        assert result.data["partitionBackfillOrError"]["status"] == "FAILED"
+
     def test_cancel_asset_backfill(self, graphql_context):
         asset_key = AssetKey("hanging_partition_asset")
         partitions = ["a"]
@@ -776,11 +895,13 @@ class TestDaemonPartitionBackfill(ExecutingGraphQLContextTestMatrix):
             assert result.data
             assert result.data["cancelPartitionBackfill"]["__typename"] == "CancelBackfillSuccess"
 
+            start = time.time()
             while (
                 graphql_context.instance.get_backfill(backfill_id).status
                 != BulkActionStatus.CANCELED
             ):
                 _execute_backfill_iteration_with_side_effects(graphql_context, backfill_id)
+                assert time.time() - start < 60, "timed out waiting for backfill to cancel"
 
             runs = graphql_context.instance.get_runs(
                 RunsFilter(tags={BACKFILL_ID_TAG: backfill_id})
@@ -889,6 +1010,91 @@ class TestDaemonPartitionBackfill(ExecutingGraphQLContextTestMatrix):
         )
         assert retried_backfill.tags.get(PARENT_BACKFILL_ID_TAG) == backfill_id
         assert retried_backfill.tags.get(ROOT_BACKFILL_ID_TAG) == backfill_id
+
+    def test_failing_asset_backfill_cancels_runs(self, graphql_context):
+        asset_key = AssetKey("hanging_partition_asset")
+        partitions = ["a"]
+        result = execute_dagster_graphql(
+            graphql_context,
+            LAUNCH_PARTITION_BACKFILL_MUTATION,
+            variables={
+                "backfillParams": {
+                    "partitionNames": partitions,
+                    "assetSelection": [asset_key.to_graphql_input()],
+                }
+            },
+        )
+
+        assert not result.errors
+        assert result.data
+        assert result.data["launchPartitionBackfill"]["__typename"] == "LaunchBackfillSuccess"
+        backfill_id = result.data["launchPartitionBackfill"]["backfillId"]
+
+        # Update asset backfill data to contain requested partition, but does not execute side effects,
+        # since launching the run will cause test process will hang forever.
+        _execute_asset_backfill_iteration_no_side_effects(graphql_context, backfill_id)
+
+        # Launch the run that runs forever
+        selector = infer_job_selector(graphql_context, "hanging_partition_asset_job")
+        with safe_tempfile_path() as path:
+            result = execute_dagster_graphql(
+                graphql_context,
+                LAUNCH_PIPELINE_EXECUTION_MUTATION,
+                variables={
+                    "executionParams": {
+                        "selector": selector,
+                        "mode": "default",
+                        "runConfigData": {
+                            "resources": {"hanging_asset_resource": {"config": {"file": path}}}
+                        },
+                        "executionMetadata": {
+                            "tags": [
+                                {"key": "dagster/partition", "value": "a"},
+                                {"key": BACKFILL_ID_TAG, "value": backfill_id},
+                            ]
+                        },
+                    }
+                },
+            )
+
+            assert not result.errors
+            assert result.data
+            assert result.data["launchPipelineExecution"]["__typename"] == "LaunchRunSuccess"
+
+            # ensure the execution has happened
+            start = time.time()
+            while not os.path.exists(path):
+                time.sleep(0.1)
+                assert time.time() - start < 60, "timed out waiting for file"
+
+            # simulate the backfill failing for some reason and being marked FAILING
+            updated_backfill = graphql_context.instance.get_backfill(backfill_id).with_status(
+                BulkActionStatus.FAILING
+            )
+            graphql_context.instance.update_backfill(updated_backfill)
+
+            start = time.time()
+            while (
+                graphql_context.instance.get_backfill(backfill_id).status != BulkActionStatus.FAILED
+            ):
+                _execute_backfill_iteration_with_side_effects(graphql_context, backfill_id)
+                assert time.time() - start < 60, "timed out waiting for backfill to fail"
+
+            runs = graphql_context.instance.get_runs(
+                RunsFilter(tags={BACKFILL_ID_TAG: backfill_id})
+            )
+            assert len(runs) == 1
+            assert runs[0].status == DagsterRunStatus.CANCELED
+
+        result = execute_dagster_graphql(
+            graphql_context,
+            PARTITION_PROGRESS_QUERY,
+            variables={"backfillId": backfill_id},
+        )
+        assert not result.errors
+        assert result.data
+        assert result.data["partitionBackfillOrError"]["__typename"] == "PartitionBackfill"
+        assert result.data["partitionBackfillOrError"]["status"] == "FAILED"
 
     def test_resume_backfill(self, graphql_context):
         repository_selector = infer_repository_selector(graphql_context)

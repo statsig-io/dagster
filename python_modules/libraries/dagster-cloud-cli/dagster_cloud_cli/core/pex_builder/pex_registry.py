@@ -2,11 +2,18 @@ import base64
 import json
 import os
 from tempfile import TemporaryDirectory
-from typing import Any, Optional
+from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from dagster_cloud_cli import gql, ui
+from dagster_cloud_cli.core.graphql_client import (
+    DEFAULT_BACKOFF_FACTOR,
+    DEFAULT_RETRIES,
+    PRESIGNED_URL_PUT_RETRY_STATUS_CODES,
+)
 
 GENERATE_PUT_URL_QUERY = """
 mutation GenerateServerlessPexUrlMutation($filenames: [String!]!) {
@@ -27,7 +34,7 @@ mutation GenerateServerlessPexUrlMutation($filenames: [String!]!) {
 
 def get_s3_urls_for_put(
     dagster_cloud_url: str, dagster_cloud_api_token: str, filenames: list[str]
-) -> Optional[list[str]]:
+) -> list[str] | None:
     with gql.graphql_client_from_url(dagster_cloud_url, dagster_cloud_api_token) as client:
         result = client.execute(
             GENERATE_PUT_URL_QUERY,
@@ -43,7 +50,7 @@ def get_s3_urls_for_put(
 
 def get_s3_urls_for_get(
     dagster_cloud_url: str, dagster_cloud_api_token: str, filenames: list[str]
-) -> Optional[list[str]]:
+) -> list[str] | None:
     with gql.graphql_client_from_url(dagster_cloud_url, dagster_cloud_api_token) as client:
         result = client.execute(
             GENERATE_GET_URL_QUERY,
@@ -57,7 +64,7 @@ def get_s3_urls_for_get(
             return None
 
 
-def requirements_hash_filename(requirements_hash: str, cache_tag: Optional[str]):
+def requirements_hash_filename(requirements_hash: str, cache_tag: str | None):
     # encode cache_tag as a filesystem safe string
     if cache_tag:
         cache_tag_suffix = "-" + base64.urlsafe_b64encode(cache_tag.encode("utf-8")).decode("utf-8")
@@ -71,8 +78,8 @@ def get_cached_deps_details(
     dagster_cloud_url: str,
     dagster_cloud_api_token: str,
     requirements_hash: str,
-    cache_tag: Optional[str],
-) -> Optional[dict[str, Any]]:
+    cache_tag: str | None,
+) -> dict[str, Any] | None:
     """Returns a metadata dict for the requirements_hash and cache_tag.
 
     The dict contains:
@@ -109,7 +116,7 @@ def set_cached_deps_details(
     dagster_cloud_url: str,
     dagster_cloud_api_token: str,
     requirements_hash: str,
-    cache_tag: Optional[str],
+    cache_tag: str | None,
     deps_pex_name: str,
     dagster_version: str,
 ):
@@ -131,6 +138,18 @@ def upload_files(dagster_cloud_url: str, dagster_cloud_api_token: str, filepaths
         ui.error(f"Cannot upload files, did not get PUT urls for: {filenames}")
         return
 
+    session = requests.Session()
+    put_retry_adapter = HTTPAdapter(
+        max_retries=Retry(
+            total=DEFAULT_RETRIES,
+            backoff_factor=DEFAULT_BACKOFF_FACTOR,
+            status_forcelist=PRESIGNED_URL_PUT_RETRY_STATUS_CODES,
+            allowed_methods=["PUT"],
+        )
+    )
+    session.mount("https://", put_retry_adapter)
+    session.mount("http://", put_retry_adapter)
+
     # we expect response list to be in the same order as the request
     for _, filepath, url in zip(filenames, filepaths, urls):
         if not url:
@@ -139,7 +158,7 @@ def upload_files(dagster_cloud_url: str, dagster_cloud_api_token: str, filepaths
 
         ui.print(f"Uploading {filepath} ...")
         with open(filepath, "rb") as f:
-            response = requests.put(url, data=f)
+            response = session.put(url, data=f)
             if response.ok:
                 ui.print(f"Upload successful: {filepath}")
             else:

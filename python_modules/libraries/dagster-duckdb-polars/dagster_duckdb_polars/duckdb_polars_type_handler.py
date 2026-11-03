@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from typing import Optional
 
 import polars as pl
 from dagster import InputContext, MetadataValue, OutputContext, TableColumn, TableSchema
@@ -40,17 +39,22 @@ class DuckDBPolarsTypeHandler(DbTypeHandler[pl.DataFrame]):
         self, context: OutputContext, table_slice: TableSlice, obj: pl.DataFrame, connection
     ):
         """Stores the polars DataFrame in duckdb."""
-        obj_arrow = obj.to_arrow()  # noqa: F841  # need obj_arrow symbol to exist for duckdb query
-        connection.execute(f"create schema if not exists {table_slice.schema};")
-        connection.execute(
-            f"create table if not exists {table_slice.schema}.{table_slice.table} as select * from"
-            " obj_arrow;"
-        )
-        if not connection.fetchall():
-            # table was not created, therefore already exists. Insert the data
-            connection.execute(
-                f"insert into {table_slice.schema}.{table_slice.table} select * from obj_arrow"
+        if obj.is_empty():
+            context.log.warning(
+                "Skipping DuckDB write for empty DataFrame. An empty table will not be created."
             )
+        else:
+            obj_arrow = obj.to_arrow()  # noqa: F841  # need obj_arrow symbol to exist for duckdb query
+            connection.execute(f"create schema if not exists {table_slice.schema};")
+            connection.execute(
+                f"create table if not exists {table_slice.schema}.{table_slice.table} as select * from"
+                " obj_arrow;"
+            )
+            if not connection.fetchall():
+                # table was not created, therefore already exists. Insert the data
+                connection.execute(
+                    f"insert into {table_slice.schema}.{table_slice.table} select * from obj_arrow"
+                )
 
         context.add_output_metadata(
             {
@@ -254,5 +258,5 @@ class DuckDBPolarsIOManager(DuckDBIOManager):
         return [DuckDBPolarsTypeHandler()]
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         return pl.DataFrame

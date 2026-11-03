@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, AbstractSet, Annotated, Any, Optional  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Annotated, Any  # noqa: UP035
 
 from dagster._check import checked
 from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
@@ -7,8 +7,8 @@ from dagster._core.definitions.events import AssetKey
 from dagster._core.errors import DagsterUserCodeProcessError
 from dagster._core.execution.plan.state import KnownExecutionState
 from dagster._core.instance import DagsterInstance
+from dagster._core.remote_origin import RemoteJobOrigin
 from dagster._core.remote_representation.external_data import DEFAULT_MODE_NAME
-from dagster._core.remote_representation.origin import RemoteJobOrigin
 from dagster._core.snap.execution_plan_snapshot import (
     ExecutionPlanSnapshot,
     ExecutionPlanSnapshotErrorData,
@@ -27,12 +27,12 @@ def sync_get_external_execution_plan_grpc(
     job_origin: RemoteJobOrigin,
     run_config: Mapping[str, Any],
     job_snapshot_id: str,
-    asset_selection: Optional[AbstractSet[AssetKey]] = None,
-    asset_check_selection: Optional[AbstractSet[AssetCheckKey]] = None,
-    op_selection: Optional[Sequence[str]] = None,
-    step_keys_to_execute: Optional[Sequence[str]] = None,
-    known_state: Optional[KnownExecutionState] = None,
-    instance: Optional[DagsterInstance] = None,
+    asset_selection: AbstractSet[AssetKey] | None = None,
+    asset_check_selection: AbstractSet[AssetCheckKey] | None = None,
+    op_selection: Sequence[str] | None = None,
+    step_keys_to_execute: Sequence[str] | None = None,
+    known_state: KnownExecutionState | None = None,
+    instance: DagsterInstance | None = None,
 ) -> ExecutionPlanSnapshot:
     op_selection = op_selection or []
     result = deserialize_value(
@@ -64,12 +64,12 @@ async def gen_external_execution_plan_grpc(
     job_origin: RemoteJobOrigin,
     run_config: Mapping[str, Any],
     job_snapshot_id: str,
-    asset_selection: Optional[AbstractSet[AssetKey]] = None,
-    asset_check_selection: Optional[AbstractSet[AssetCheckKey]] = None,
-    op_selection: Optional[Sequence[str]] = None,
-    step_keys_to_execute: Optional[Sequence[str]] = None,
-    known_state: Optional[KnownExecutionState] = None,
-    instance: Optional[DagsterInstance] = None,
+    asset_selection: AbstractSet[AssetKey] | None = None,
+    asset_check_selection: AbstractSet[AssetCheckKey] | None = None,
+    op_selection: Sequence[str] | None = None,
+    step_keys_to_execute: Sequence[str] | None = None,
+    known_state: KnownExecutionState | None = None,
+    instance: DagsterInstance | None = None,
 ) -> ExecutionPlanSnapshot:
     op_selection = op_selection or []
 

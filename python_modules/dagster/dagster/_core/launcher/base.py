@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, NamedTuple, Optional
 
+from dagster._annotations import public
 from dagster._core.instance import MayHaveInstanceWeakref, T_DagsterInstance
 from dagster._core.origin import JobPythonOrigin
 from dagster._core.storage.dagster_run import DagsterRun
@@ -18,7 +19,7 @@ class LaunchRunContext(NamedTuple):
     workspace: Optional["BaseWorkspaceRequestContext"]
 
     @property
-    def job_code_origin(self) -> Optional[JobPythonOrigin]:
+    def job_code_origin(self) -> JobPythonOrigin | None:
         return self.dagster_run.job_code_origin
 
 
@@ -27,10 +28,10 @@ class ResumeRunContext(NamedTuple):
 
     dagster_run: DagsterRun
     workspace: Optional["BaseWorkspaceRequestContext"]
-    resume_attempt_number: Optional[int] = None
+    resume_attempt_number: int | None = None
 
     @property
-    def job_code_origin(self) -> Optional[JobPythonOrigin]:
+    def job_code_origin(self) -> JobPythonOrigin | None:
         return self.dagster_run.job_code_origin
 
 
@@ -47,14 +48,15 @@ class CheckRunHealthResult(NamedTuple):
     """Result of a check_run_worker_health call."""
 
     status: WorkerStatus
-    msg: Optional[str] = None
-    transient: Optional[bool] = None
-    run_worker_id: Optional[str] = None  # Identifier for a particular run worker
+    msg: str | None = None
+    transient: bool | None = None
+    run_worker_id: str | None = None  # Identifier for a particular run worker
 
     def __str__(self) -> str:
         return f"{self.status.value}: '{self.msg}'"
 
 
+@public
 class RunLauncher(ABC, MayHaveInstanceWeakref[T_DagsterInstance]):
     @abstractmethod
     def launch_run(self, context: LaunchRunContext) -> None:
@@ -99,8 +101,8 @@ class RunLauncher(ABC, MayHaveInstanceWeakref[T_DagsterInstance]):
         )
 
     def get_run_worker_debug_info(
-        self, run: DagsterRun, include_container_logs: Optional[bool] = True
-    ) -> Optional[str]:
+        self, run: DagsterRun, include_container_logs: bool | None = True
+    ) -> str | None:
         return None
 
     @property

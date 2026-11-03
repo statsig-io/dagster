@@ -3,9 +3,11 @@ import functools
 import inspect
 import os
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import TYPE_CHECKING, Any
 
-import yaml
+if TYPE_CHECKING:
+    from typer.models import OptionInfo
+
 from click import Context
 from dagster_shared.merger import deep_merge_dicts
 from dagster_shared.plus.config import (
@@ -14,6 +16,7 @@ from dagster_shared.plus.config import (
     get_dg_config_path,
 )
 from dagster_shared.utils import remove_none_recursively
+from dagster_shared.yaml_utils import safe_load_yaml
 from typer import Option
 
 from dagster_cloud_cli import gql, ui
@@ -65,7 +68,7 @@ def read_config() -> DagsterPlusCliConfig:
     return DagsterPlusCliConfig.get()
 
 
-def get_deployment(ctx: Optional[Context] = None) -> Optional[str]:
+def get_deployment(ctx: Context | None = None) -> str | None:
     """Gets the configured deployment to target.
     Highest precedence is a deployment argument, then `DAGSTER_CLOUD_DEPLOYMENT`
     env var, then `~/.dagster_cloud_cli/config` default.
@@ -75,7 +78,7 @@ def get_deployment(ctx: Optional[Context] = None) -> Optional[str]:
     return os.getenv(DEPLOYMENT_ENV_VAR_NAME, read_config().default_deployment)
 
 
-def get_organization(ctx: Optional[Context] = None) -> Optional[str]:
+def get_organization(ctx: Context | None = None) -> str | None:
     """Gets the configured organization to target.
     Highest precedence is an organization argument, then `DAGSTER_CLOUD_ORGANIZATION`
     env var, then `~/.dagster_cloud_cli/config` value.
@@ -87,7 +90,7 @@ def get_organization(ctx: Optional[Context] = None) -> Optional[str]:
 
 def get_location_load_timeout() -> int:
     """Gets the configured location load timeout to target.
-    Highest precedence is an location-load-timeout argument, then `DAGTER_CLOUD_LOCATION_LOAD_TIMEOUT`
+    Highest precedence is an location-load-timeout argument, then `DAGSTER_CLOUD_LOCATION_LOAD_TIMEOUT`
     env var, then `~/.dagster_cloud_cli/config` value.
     """
     config_timeout = read_config().agent_timeout
@@ -98,20 +101,20 @@ def get_location_load_timeout() -> int:
 
     env_val = os.getenv(LOCATION_LOAD_TIMEOUT_ENV_VAR_NAME)
 
-    return int(cast("str", env_val)) if env_val is not None else default_timeout
+    return int(env_val) if env_val is not None else default_timeout
 
 
-def get_agent_heartbeat_timeout(default_timeout: Optional[int]) -> Optional[int]:
+def get_agent_heartbeat_timeout(default_timeout: int | None) -> int | None:
     """Gets the configured agent timeout to target.
-    Highest precedence is an agent-timeout argument, then `DAGTER_CLOUD_AGENT_HEARTBEAT_TIMEOUT`
+    Highest precedence is an agent-timeout argument, then `DAGSTER_CLOUD_AGENT_HEARTBEAT_TIMEOUT`
     env var.
     """
     env_val = os.getenv(AGENT_HEARTBEAT_TIMEOUT_ENV_VAR_NAME)
 
-    return int(cast("str", env_val)) if env_val is not None else None
+    return int(env_val) if env_val is not None else None
 
 
-def get_user_token(ctx: Optional[Context] = None) -> Optional[str]:
+def get_user_token(ctx: Context | None = None) -> str | None:
     """Gets the configured user token to use.
     Highest precedence is an api-token argument, then `DAGSTER_CLOUD_API_TOKEN`
     env var, then `~/.dagster_cloud_cli/config` value.
@@ -137,34 +140,34 @@ def available_deployment_names(ctx, incomplete: str = "") -> list[str]:
         return []
 
 
-def get_url(ctx: Optional[Context] = None) -> Optional[str]:
+def get_url(ctx: Context | None = None) -> str | None:
     """Gets the url passed in or from the environment."""
     if ctx and ctx.params.get(URL_CLI_ARGUMENT):
         return ctx.params[URL_CLI_ARGUMENT]
     return os.getenv(URL_ENV_VAR_NAME)
 
 
-def get_org_url(organization: str, dagster_env: Optional[str]):
+def get_org_url(organization: str, dagster_env: str | None):
     if dagster_env:
         return f"https://{organization}.{dagster_env}.dagster.cloud"
     return f"https://{organization}.dagster.cloud"
 
 
 # Typer Option definitions for common CLI config options (organization, deployment, user token)
-ORGANIZATION_OPTION = Option(
+ORGANIZATION_OPTION = Option(  # ty: ignore[no-matching-overload]
     get_organization,
     "--organization",
     "-o",
     help="Organization to target.",
-    show_default=get_organization(),  # type: ignore
+    show_default=get_organization(),
 )
-DEPLOYMENT_OPTION = Option(
+DEPLOYMENT_OPTION = Option(  # ty: ignore[no-matching-overload]
     get_deployment,
     "--deployment",
     "-d",
     help="Deployment to target.",
     autocompletion=available_deployment_names,
-    show_default=get_deployment(),  # type: ignore
+    show_default=get_deployment(),
 )
 
 DAGSTER_ENV_OPTION = Option(
@@ -174,13 +177,14 @@ DAGSTER_ENV_OPTION = Option(
     envvar="DAGSTER_CLOUD_ENV",
 )
 
-USER_TOKEN_OPTION = Option(
+_user_token = get_user_token()
+USER_TOKEN_OPTION = Option(  # ty: ignore[no-matching-overload]
     get_user_token,
     "--api-token",
     "--user-token",
     "-u",
     help="Cloud user token.",
-    show_default=ui.censor_token(get_user_token()) if get_user_token() else None,  # type: ignore
+    show_default=ui.censor_token(_user_token) if _user_token else None,
 )
 URL_OPTION = Option(
     get_url,
@@ -203,7 +207,7 @@ LOCATION_LOAD_TIMEOUT_OPTION = Option(
 )
 
 
-def get_agent_heartbeat_timeout_option(default_timeout: Optional[int]):
+def get_agent_heartbeat_timeout_option(default_timeout: int | None):
     return Option(
         get_agent_heartbeat_timeout(default_timeout),
         f"--{AGENT_HEARTBEAT_TIMEOUT_CLI_ARGUMENT}",
@@ -235,7 +239,7 @@ def dagster_cloud_options(
         wrapped_sig = inspect.signature(to_wrap)
         params = collections.OrderedDict(wrapped_sig.parameters)
 
-        options = {
+        options: dict[str, tuple[Any, OptionInfo]] = {
             ORGANIZATION_CLI_ARGUMENT: (str, ORGANIZATION_OPTION),
             TOKEN_CLI_ARGUMENT_VAR: (str, USER_TOKEN_OPTION),
         }
@@ -254,13 +258,13 @@ def dagster_cloud_options(
 
         has_location_load_timeout_param = LOCATION_LOAD_TIMEOUT_ARGUMENT_VAR in params
         if has_location_load_timeout_param:
-            options[LOCATION_LOAD_TIMEOUT_ARGUMENT_VAR] = (  # pyright: ignore[reportArgumentType]
+            options[LOCATION_LOAD_TIMEOUT_ARGUMENT_VAR] = (
                 int,
                 LOCATION_LOAD_TIMEOUT_OPTION,
             )
         has_agent_heartbeat_timeout_param = AGENT_HEARTBEAT_TIMEOUT_ARGUMENT_VAR in params
         if has_agent_heartbeat_timeout_param:
-            options[AGENT_HEARTBEAT_TIMEOUT_ARGUMENT_VAR] = (  # pyright: ignore[reportArgumentType]
+            options[AGENT_HEARTBEAT_TIMEOUT_ARGUMENT_VAR] = (
                 int,
                 get_agent_heartbeat_timeout_option(default_timeout=60),
             )
@@ -278,7 +282,7 @@ def dagster_cloud_options(
                 and kwargs.get(DEPLOYMENT_CLI_ARGUMENT)
             ):
                 kwargs[URL_CLI_ARGUMENT] = gql.url_from_config(
-                    organization=kwargs.get(ORGANIZATION_CLI_ARGUMENT),  # pyright: ignore[reportArgumentType]
+                    organization=kwargs.get(ORGANIZATION_CLI_ARGUMENT),  # ty: ignore[invalid-argument-type]
                     deployment=kwargs.get(DEPLOYMENT_CLI_ARGUMENT),
                 )
 
@@ -433,13 +437,13 @@ DEPLOYMENT_CLI_OPTIONS = {
 }
 
 
-def get_location_document(name: Optional[str], kwargs: dict[str, Any]) -> dict[str, Any]:
+def get_location_document(name: str | None, kwargs: dict[str, Any]) -> dict[str, Any]:
     name = name or kwargs.get("location_name")
     location_file = kwargs.get("location_file")
     location_doc_from_file = {}
     if location_file:
         with open(location_file, encoding="utf8") as f:
-            location_doc_from_file = yaml.safe_load(f.read())
+            location_doc_from_file = safe_load_yaml(f.read())
 
     if not location_file and not name:
         raise ui.error(
@@ -500,6 +504,10 @@ def get_location_document(name: Optional[str], kwargs: dict[str, Any]) -> dict[s
                 if kwargs.get("pex_tag")
                 else None
             ),
+            # Marks an image that was baked from a PEX build (BuildStrategy.pex_docker) so the
+            # server can identify PEX-origin deploys. Only present (True) for such images.
+            "pex_bundle": kwargs.get("pex_bundle"),
+            "defs_state_info": kwargs.get("defs_state_info"),
         }
     )
     return deep_merge_dicts(location_doc_from_file, location_doc_from_kwargs)

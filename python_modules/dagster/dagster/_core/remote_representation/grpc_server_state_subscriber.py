@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable, NamedTuple, Optional
+from typing import NamedTuple
 
 import dagster._check as check
 
@@ -18,7 +19,7 @@ class LocationStateChangeEvent(
             ("event_type", LocationStateChangeEventType),
             ("location_name", str),
             ("message", str),
-            ("server_id", Optional[str]),
+            ("server_id", str | None),
         ],
     )
 ):
@@ -27,7 +28,7 @@ class LocationStateChangeEvent(
         event_type: LocationStateChangeEventType,
         location_name: str,
         message: str,
-        server_id: Optional[str] = None,
+        server_id: str | None = None,
     ):
         return super().__new__(
             cls,

@@ -62,11 +62,11 @@ class AssetDefinitionDiffDetails:
     """
 
     change_types: Set[AssetDefinitionChangeType]
-    code_version: Optional[ValueDiff[Optional[str]]] = None
-    dependencies: Optional[DictDiff[AssetKey]] = None
-    partitions_definition: Optional[ValueDiff[Optional[str]]] = None
-    tags: Optional[DictDiff[str]] = None
-    metadata: Optional[DictDiff[str]] = None
+    code_version: ValueDiff[str | None] | None = None
+    dependencies: DictDiff[AssetKey] | None = None
+    partitions_definition: ValueDiff[str | None] | None = None
+    tags: DictDiff[str] | None = None
+    metadata: DictDiff[str] | None = None
 
 
 class AssetGraphDiffer:
@@ -80,7 +80,7 @@ class AssetGraphDiffer:
     def __init__(
         self,
         branch_asset_graph: "RemoteAssetGraph",
-        base_asset_graph: "RemoteAssetGraph",
+        base_asset_graph: Optional["RemoteAssetGraph"],
     ):
         self._branch_asset_graph = branch_asset_graph
         self._base_asset_graph = base_asset_graph
@@ -91,7 +91,7 @@ class AssetGraphDiffer:
         """Computes the diff between a branch deployment asset and the
         corresponding base deployment asset.
         """
-        if not self._base_asset_graph.has(asset_key):
+        if not self._base_asset_graph or not self._base_asset_graph.has(asset_key):
             # if the base asset graph is None, it is because the asset graph in the branch deployment
             # is new and doesn't exist in the base deployment. Thus all assets are new.
             return AssetDefinitionDiffDetails(change_types={AssetDefinitionChangeType.NEW})
@@ -108,11 +108,11 @@ class AssetGraphDiffer:
         ).resolve_to_singular_repo_scoped_node()
 
         change_types: set[AssetDefinitionChangeType] = set()
-        code_version_diff: Optional[ValueDiff] = None
-        dependencies_diff: Optional[DictDiff] = None
-        partitions_definition_diff: Optional[ValueDiff] = None
-        tags_diff: Optional[DictDiff] = None
-        metadata_diff: Optional[DictDiff] = None
+        code_version_diff: ValueDiff | None = None
+        dependencies_diff: DictDiff | None = None
+        partitions_definition_diff: ValueDiff | None = None
+        tags_diff: DictDiff | None = None
+        metadata_diff: DictDiff | None = None
 
         if branch_asset.code_version != base_asset.code_version:
             change_types.add(AssetDefinitionChangeType.CODE_VERSION)

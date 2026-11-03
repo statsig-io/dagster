@@ -1,35 +1,50 @@
-import textwrap
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
-from typing import Annotated, Any, Literal, Optional, Union
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Annotated, Any, Literal, TypeAlias
 
-from dagster import Component, ComponentLoadContext, Resolvable
+from dagster import ComponentLoadContext, Resolvable
 from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.assets.definition.asset_spec import (
     SYSTEM_METADATA_KEY_AUTO_CREATED_STUB_ASSET,
     AssetSpec,
 )
 from dagster._core.definitions.definitions_class import Definitions
+from dagster.components.component.state_backed_component import StateBackedComponent
 from dagster.components.component_scaffolding import scaffold_component
 from dagster.components.core.defs_module import DefsFolderComponent, find_components_from_context
 from dagster.components.resolved.base import resolve_fields
 from dagster.components.resolved.context import ResolutionContext
-from dagster.components.resolved.core_models import (
-    AssetPostProcessor,
-    ResolvedAssetKey,
-    ResolvedAssetSpec,
-)
+from dagster.components.resolved.core_models import ResolvedAssetKey, ResolvedAssetSpec
 from dagster.components.resolved.model import Resolver
 from dagster.components.scaffold.scaffold import Scaffolder, ScaffoldRequest, scaffold_with
+from dagster.components.utils.defs_state import (
+    DefsStateConfig,
+    DefsStateConfigArgs,
+    ResolvedDefsStateConfig,
+)
+from dagster_shared.serdes.serdes import deserialize_value, serialize_value
 from pydantic import BaseModel
-from typing_extensions import TypeAlias
 
 import dagster_airlift.core as dg_airlift_core
 from dagster_airlift.core.airflow_instance import AirflowAuthBackend
 from dagster_airlift.core.basic_auth import AirflowBasicAuthBackend
 from dagster_airlift.core.filter import AirflowFilter
-from dagster_airlift.core.load_defs import build_job_based_airflow_defs
-from dagster_airlift.core.serialization.serialized_data import DagHandle, TaskHandle
+from dagster_airlift.core.load_defs import (
+    _apply_airflow_data_to_specs,
+    _get_dag_to_spec_mapping,
+    build_airflow_monitoring_defs,
+    construct_dag_jobs,
+    construct_dataset_specs,
+    replace_assets_in_defs,
+    type_narrow_defs_assets,
+)
+from dagster_airlift.core.serialization.compute import compute_serialized_data
+from dagster_airlift.core.serialization.serialized_data import (
+    DagHandle,
+    SerializedAirflowDefinitionsData,
+    TaskHandle,
+)
 
 
 @dataclass
@@ -44,12 +59,12 @@ class ResolvedAirflowBasicAuthBackend(Resolvable):
 class ResolvedAirflowMwaaAuthBackend(Resolvable):
     type: Literal["mwaa"]
     env_name: str
-    region_name: Optional[str] = None
-    profile_name: Optional[str] = None
-    aws_account_id: Optional[str] = None
-    aws_access_key_id: Optional[str] = None
-    aws_secret_access_key: Optional[str] = None
-    aws_session_token: Optional[str] = None
+    region_name: str | None = None
+    profile_name: str | None = None
+    aws_account_id: str | None = None
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_session_token: str | None = None
 
 
 @dataclass
@@ -62,7 +77,7 @@ class InDagsterAssetRef(Resolvable):
     by_key: ResolvedAssetKey
 
 
-def resolve_mapped_asset(context: ResolutionContext, model) -> Union[AssetKey, AssetSpec]:
+def resolve_mapped_asset(context: ResolutionContext, model) -> AssetKey | AssetSpec:
     if isinstance(model, InAirflowAsset.model()):
         return InAirflowAsset.resolve_from_model(context, model).spec
     elif isinstance(model, InDagsterAssetRef.model()):
@@ -72,20 +87,20 @@ def resolve_mapped_asset(context: ResolutionContext, model) -> Union[AssetKey, A
 
 
 ResolvedMappedAsset: TypeAlias = Annotated[
-    Union[AssetKey, AssetSpec],
+    AssetKey | AssetSpec,
     Resolver(
         resolve_mapped_asset,
-        model_field_type=Union[InAirflowAsset.model(), InDagsterAssetRef.model()],
+        model_field_type=InAirflowAsset.model() | InDagsterAssetRef.model(),
     ),
 ]
 
 
 @dataclass
 class AirflowFilterParams(Resolvable):
-    dag_id_ilike: Optional[str] = None
-    airflow_tags: Optional[Sequence[str]] = None
+    dag_id_ilike: str | None = None
+    airflow_tags: Sequence[str] | None = None
     retrieve_datasets: bool = True
-    dataset_uri_ilike: Optional[str] = None
+    dataset_uri_ilike: str | None = None
 
 
 def resolve_airflow_filter(context: ResolutionContext, model) -> AirflowFilter:
@@ -110,8 +125,8 @@ class AirflowTaskMapping(Resolvable):
 @dataclass
 class AirflowDagMapping(Resolvable):
     dag_id: str
-    assets: Optional[Sequence[ResolvedMappedAsset]] = None
-    task_mappings: Optional[Sequence[AirflowTaskMapping]] = None
+    assets: Sequence[ResolvedMappedAsset] | None = None
+    task_mappings: Sequence[AirflowTaskMapping] | None = None
 
 
 class AirflowInstanceScaffolderParams(BaseModel):
@@ -182,23 +197,53 @@ ResolvedAirflowAuthBackend: TypeAlias = Annotated[
     AirflowAuthBackend,
     Resolver(
         resolve_auth,
-        model_field_type=Union[
-            ResolvedAirflowBasicAuthBackend.model(), ResolvedAirflowMwaaAuthBackend.model()
-        ],
+        model_field_type=ResolvedAirflowBasicAuthBackend.model()
+        | ResolvedAirflowMwaaAuthBackend.model(),
     ),
 ]
 
 
 @scaffold_with(AirflowInstanceScaffolder)
 @dataclass
-class AirflowInstanceComponent(Component, Resolvable):
+class AirflowInstanceComponent(StateBackedComponent, Resolvable):
+    """Loads Airflow DAGs and tasks from an Airflow instance as Dagster assets.
+
+    This component connects to an Airflow instance, retrieves metadata about DAGs and tasks,
+    and creates corresponding Dagster assets. It supports mapping Airflow tasks to existing
+    Dagster assets or creating new assets to represent Airflow workflows.
+
+    Example:
+
+        .. code-block:: yaml
+
+            # defs.yaml
+
+            type: dagster_airlift.core.AirflowInstanceComponent
+            attributes:
+              name: my_airflow_instance
+              auth:
+                type: basic_auth
+                webserver_url: "{{ env.AIRFLOW_WEBSERVER_URL }}"
+                username: "{{ env.AIRFLOW_USERNAME }}"
+                password: "{{ env.AIRFLOW_PASSWORD }}"
+              filter:
+                dag_id_ilike: "analytics_%"
+                retrieve_datasets: true
+    """
+
     auth: ResolvedAirflowAuthBackend
     name: str
-    filter: Optional[ResolvedAirflowFilter] = None
-    mappings: Optional[Sequence[AirflowDagMapping]] = None
-    source_code_retrieval_enabled: Optional[bool] = None
-    # TODO: deprecate and then delete -- schrockn 2025-06-10
-    asset_post_processors: Optional[Sequence[AssetPostProcessor]] = None
+    filter: ResolvedAirflowFilter | None = None
+    mappings: Sequence[AirflowDagMapping] | None = None
+    source_code_retrieval_enabled: bool | None = None
+    defs_state: ResolvedDefsStateConfig = field(
+        default_factory=DefsStateConfigArgs.local_filesystem
+    )
+
+    @property
+    def defs_state_config(self) -> DefsStateConfig:
+        default_key = f"{self.__class__.__name__}[{self.name}]"
+        return DefsStateConfig.from_args(self.defs_state, default_key=default_key)
 
     def _get_instance(self) -> dg_airlift_core.AirflowInstance:
         return dg_airlift_core.AirflowInstance(
@@ -206,30 +251,54 @@ class AirflowInstanceComponent(Component, Resolvable):
             name=self.name,
         )
 
-    def build_defs(self, context: ComponentLoadContext) -> Definitions:
-        if self.asset_post_processors:
-            raise Exception(
-                "The asset_post_processors field is deprecated, place your post-processors in the assets"
-                " field in the top-level post_processing field instead, as in this example:\n"
-                + textwrap.dedent(
-                    """
-                    type: dagster_airlift.core.components.AirflowInstanceComponent
-
-                    attributes: ~
-
-                    post_processing:
-                      assets:
-                        - target: "*"
-                          attributes:
-                            group_name: "my_group"
-                    """
-                )
-            )
-        return build_job_based_airflow_defs(
+    async def write_state_to_path(self, state_path: Path) -> None:
+        # Fetch the serialized Airflow definitions data
+        state = compute_serialized_data(
             airflow_instance=self._get_instance(),
-            mapped_defs=apply_mappings(defs_from_subdirs(context), self.mappings or []),
+            mapped_assets=[],
+            dag_selector_fn=None,
+            automapping_enabled=False,
             source_code_retrieval_enabled=self.source_code_retrieval_enabled,
             retrieval_filter=self.filter or AirflowFilter(),
+        )
+        state_path.write_text(serialize_value(state), encoding="utf-8")
+
+    def build_defs_from_state(
+        self, context: ComponentLoadContext, state_path: Path | None
+    ) -> Definitions:
+        if state_path is None:
+            return Definitions()
+
+        # Load the serialized state
+        serialized_airflow_data = deserialize_value(
+            state_path.read_text(), SerializedAirflowDefinitionsData
+        )
+
+        # Get mapped defs from subdirs
+        mapped_defs = apply_mappings(defs_from_subdirs(context), self.mappings or [])
+        mapped_assets = type_narrow_defs_assets(mapped_defs)
+
+        # Apply airflow data to specs
+        assets_with_airflow_data = _apply_airflow_data_to_specs(
+            [
+                *mapped_assets,
+                *construct_dataset_specs(serialized_airflow_data),
+            ],
+            serialized_airflow_data,
+        )
+
+        # Construct DAG jobs
+        dag_to_spec_mapping = _get_dag_to_spec_mapping(assets_with_airflow_data)
+        jobs = construct_dag_jobs(
+            serialized_data=serialized_airflow_data,
+            mapped_specs=dag_to_spec_mapping,
+        )
+
+        # Build the final definitions
+        return Definitions.merge(
+            replace_assets_in_defs(defs=mapped_defs, assets=assets_with_airflow_data),
+            Definitions(jobs=jobs),
+            build_airflow_monitoring_defs(airflow_instance=self._get_instance()),
         )
 
 
@@ -242,8 +311,8 @@ def defs_from_subdirs(context: ComponentLoadContext) -> Definitions:
 
 
 def handle_iterator(
-    mappings: Optional[Sequence[AirflowDagMapping]],
-) -> Iterator[tuple[Union[TaskHandle, DagHandle], Sequence[ResolvedMappedAsset]]]:
+    mappings: Sequence[AirflowDagMapping] | None,
+) -> Iterator[tuple[TaskHandle | DagHandle, Sequence[ResolvedMappedAsset]]]:
     if mappings is None:
         return
     for mapping in mappings:

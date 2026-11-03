@@ -98,7 +98,7 @@ def test_materialize_conflicting_resources():
         with pytest.raises(
             dg.DagsterInvalidDefinitionError,
             match=(
-                "Conflicting versions of resource with key 'foo' were provided to different assets."
+                r"Conflicting versions of resource with key 'foo' were provided to different assets."
             ),
         ):
             dg.materialize([first, second], instance=instance)
@@ -169,7 +169,7 @@ def test_materialize_asset_specs_conflicting_key():
 @ignore_warning("Parameter `io_manager_def` .* is currently in beta")
 @ignore_warning("Class `SourceAsset` is deprecated and will be removed in 2.0.0.")
 def test_materialize_source_asset_conflicts():
-    @dg.io_manager(required_resource_keys={"foo"})  # pyright: ignore[reportArgumentType]
+    @dg.io_manager(required_resource_keys={"foo"})
     def the_manager():
         pass
 
@@ -187,7 +187,7 @@ def test_materialize_source_asset_conflicts():
         with pytest.raises(
             dg.DagsterInvalidDefinitionError,
             match=(
-                "Conflicting versions of resource with key 'foo' were provided to different assets."
+                r"Conflicting versions of resource with key 'foo' were provided to different assets."
             ),
         ):
             dg.materialize([the_asset, the_source], instance=instance)

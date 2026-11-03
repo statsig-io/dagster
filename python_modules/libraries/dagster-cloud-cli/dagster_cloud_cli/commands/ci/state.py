@@ -3,8 +3,9 @@ import json
 import os
 from abc import ABCMeta, abstractmethod
 from enum import Enum
-from typing import Literal, Optional, Union
+from typing import Literal
 
+from dagster_shared.serdes.objects.models import DefsStateInfo
 from pydantic import BaseModel, Extra, Field
 
 from dagster_cloud_cli.config import models
@@ -12,21 +13,25 @@ from dagster_cloud_cli.config import models
 
 class DockerBuildOutput(BaseModel, extra=Extra.forbid):
     strategy: Literal["docker"] = "docker"
-    python_version: Optional[str] = None
+    python_version: str | None = None
     image: str
+    # True when the image was produced by baking a PEX build into Docker (BuildStrategy.pex_docker).
+    # Propagated to the deploy document as `pex_bundle` so the server can identify (and, once PEX is
+    # deprecated, reject) PEX-origin deploys — the bundle is otherwise an ordinary image.
+    pex_bundle: bool = False
 
 
 class PexBuildOutput(BaseModel, extra=Extra.forbid):
     strategy: Literal["python-executable"] = "python-executable"
     python_version: str
-    image: Optional[str]  # if None we determine the image from the python_version and agent version
+    image: str | None  # if None we determine the image from the python_version and agent version
     pex_tag: str
 
 
 class BuildMetadata(BaseModel):
-    git_url: Optional[str]
-    commit_hash: Optional[str]
-    build_config: Optional[models.Build]  # copied from dagster_cloud.yaml
+    git_url: str | None
+    commit_hash: str | None
+    build_config: models.Build | None  # copied from dagster_cloud.yaml
 
 
 class LocationStatus(Enum):
@@ -50,11 +55,11 @@ class LocationState(BaseModel, extra=Extra.forbid):
     is_branch_deployment: bool
     selected: bool = True
     build: BuildMetadata
-    build_output: Optional[Union[DockerBuildOutput, PexBuildOutput]] = Field(
-        None, discriminator="strategy"
-    )
-    status_url: Optional[str]  # link to cicd run url when building and dagster cloud url when done
+    build_output: DockerBuildOutput | PexBuildOutput | None = Field(None, discriminator="strategy")
+    defs_state_info: DefsStateInfo | None = None
+    status_url: str | None  # link to cicd run url when building and dagster cloud url when done
     history: list[StatusChange] = []
+    project_dir: str | None = None
 
     def add_status_change(self, status: LocationStatus, log: str):
         self.history.append(

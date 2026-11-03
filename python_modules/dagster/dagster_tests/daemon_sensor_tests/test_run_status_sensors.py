@@ -3,7 +3,7 @@ import time
 from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from typing import Any, NamedTuple, Optional, cast
+from typing import Any, NamedTuple, cast
 
 import dagster as dg
 import pytest
@@ -17,7 +17,8 @@ from dagster._core.definitions.sensor_definition import SensorType
 from dagster._core.events import DagsterEventType
 from dagster._core.instance import DagsterInstance
 from dagster._core.log_manager import LOG_RECORD_METADATA_ATTR
-from dagster._core.remote_representation import CodeLocation, RemoteRepository
+from dagster._core.remote_representation.code_location import CodeLocation
+from dagster._core.remote_representation.external import RemoteRepository
 from dagster._core.scheduler.instigation import SensorInstigatorData, TickStatus
 from dagster._core.test_utils import create_test_daemon_workspace_context, environ, freeze_time
 from dagster._core.workspace.context import WorkspaceProcessContext
@@ -84,8 +85,8 @@ class CodeLocationInfoForSensorTest(NamedTuple):
 
 @contextmanager
 def instance_with_single_code_location_multiple_repos_with_sensors(
-    overrides: Optional[Mapping[str, Any]] = None,
-    workspace_load_target: Optional[WorkspaceLoadTarget] = None,
+    overrides: Mapping[str, Any] | None = None,
+    workspace_load_target: WorkspaceLoadTarget | None = None,
     synchronous_run_coordinator=False,
 ) -> Iterator[tuple[dg.DagsterInstance, WorkspaceProcessContext, dict[str, RemoteRepository]]]:
     with instance_with_multiple_code_locations(
@@ -102,7 +103,7 @@ def instance_with_single_code_location_multiple_repos_with_sensors(
 
 @contextmanager
 def instance_with_multiple_code_locations(
-    overrides: Optional[Mapping[str, Any]] = None,
+    overrides: Mapping[str, Any] | None = None,
     workspace_load_target=None,
     synchronous_run_coordinator=False,
 ) -> Iterator[dict[str, CodeLocationInfoForSensorTest]]:
@@ -130,7 +131,7 @@ def instance_with_multiple_code_locations(
 
 def test_run_status_sensor(
     caplog,
-    executor: Optional[ThreadPoolExecutor],
+    executor: ThreadPoolExecutor | None,
     instance: DagsterInstance,
     workspace_context: WorkspaceProcessContext,
     remote_repo: RemoteRepository,
@@ -252,7 +253,7 @@ def test_run_status_sensor(
 
 
 def test_run_failure_sensor(
-    executor: Optional[ThreadPoolExecutor],
+    executor: ThreadPoolExecutor | None,
     instance: DagsterInstance,
     workspace_context: WorkspaceProcessContext,
     remote_repo: RemoteRepository,
@@ -308,7 +309,7 @@ def test_run_failure_sensor(
 
 
 def test_run_failure_sensor_that_fails(
-    executor: Optional[ThreadPoolExecutor],
+    executor: ThreadPoolExecutor | None,
     instance: DagsterInstance,
     workspace_context: WorkspaceProcessContext,
     remote_repo: RemoteRepository,
@@ -382,7 +383,7 @@ def test_run_failure_sensor_that_fails(
 
 
 def test_run_failure_sensor_filtered(
-    executor: Optional[ThreadPoolExecutor],
+    executor: ThreadPoolExecutor | None,
     instance: DagsterInstance,
     workspace_context: WorkspaceProcessContext,
     remote_repo: RemoteRepository,
@@ -470,7 +471,7 @@ def test_run_failure_sensor_filtered(
 
 
 def test_run_failure_sensor_overfetch(
-    executor: Optional[ThreadPoolExecutor],
+    executor: ThreadPoolExecutor | None,
     instance: DagsterInstance,
     remote_repo: RemoteRepository,
 ):
@@ -644,7 +645,7 @@ def sql_event_log_storage_config_fn(temp_dir: str):
     "storage_config_fn",
     [default_storage_config_fn, sqlite_storage_config_fn],
 )
-def test_run_status_sensor_interleave(storage_config_fn, executor: Optional[ThreadPoolExecutor]):
+def test_run_status_sensor_interleave(storage_config_fn, executor: ThreadPoolExecutor | None):
     freeze_datetime = get_current_datetime()
     with tempfile.TemporaryDirectory() as temp_dir:
         with instance_with_sensors(overrides=storage_config_fn(temp_dir)) as (
@@ -713,8 +714,8 @@ def test_run_status_sensor_interleave(storage_config_fn, executor: Optional[Thre
                     freeze_datetime,
                     TickStatus.SUCCESS,
                 )
-                assert len(ticks[0].origin_run_ids) == 1  # pyright: ignore[reportArgumentType]
-                assert ticks[0].origin_run_ids[0] == run2.run_id  # pyright: ignore[reportOptionalSubscript]
+                assert len(ticks[0].origin_run_ids) == 1
+                assert ticks[0].origin_run_ids[0] == run2.run_id
 
             # fail run 1
             with freeze_time(freeze_datetime):
@@ -738,13 +739,13 @@ def test_run_status_sensor_interleave(storage_config_fn, executor: Optional[Thre
                     freeze_datetime,
                     TickStatus.SUCCESS,
                 )
-                assert len(ticks[0].origin_run_ids) == 1  # pyright: ignore[reportArgumentType]
-                assert ticks[0].origin_run_ids[0] == run1.run_id  # pyright: ignore[reportOptionalSubscript]
+                assert len(ticks[0].origin_run_ids) == 1
+                assert ticks[0].origin_run_ids[0] == run1.run_id
 
 
 @pytest.mark.parametrize("storage_config_fn", [sql_event_log_storage_config_fn])
 def test_run_failure_sensor_empty_run_records(
-    storage_config_fn, executor: Optional[ThreadPoolExecutor]
+    storage_config_fn, executor: ThreadPoolExecutor | None
 ):
     freeze_datetime = get_current_datetime()
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -812,7 +813,7 @@ def test_run_failure_sensor_empty_run_records(
                 )
 
 
-def test_all_code_locations_run_status_sensor(executor: Optional[ThreadPoolExecutor]):
+def test_all_code_locations_run_status_sensor(executor: ThreadPoolExecutor | None):
     freeze_datetime = get_current_datetime()
 
     # we have no good api for compositing load targets so forced to use a workspace file
@@ -900,7 +901,7 @@ def test_all_code_locations_run_status_sensor(executor: Optional[ThreadPoolExecu
             )
 
 
-def test_all_code_location_run_failure_sensor(executor: Optional[ThreadPoolExecutor]):
+def test_all_code_location_run_failure_sensor(executor: ThreadPoolExecutor | None):
     freeze_datetime = get_current_datetime()
 
     # we have no good api for compositing load targets so forced to use a workspace file
@@ -988,7 +989,7 @@ def test_all_code_location_run_failure_sensor(executor: Optional[ThreadPoolExecu
             )
 
 
-def test_cross_code_location_run_status_sensor(executor: Optional[ThreadPoolExecutor]):
+def test_cross_code_location_run_status_sensor(executor: ThreadPoolExecutor | None):
     freeze_datetime = get_current_datetime()
 
     # we have no good api for compositing load targets so forced to use a workspace file
@@ -1087,7 +1088,7 @@ def test_cross_code_location_run_status_sensor(executor: Optional[ThreadPoolExec
 
 
 def test_cross_code_location_job_selector_on_defs_run_status_sensor(
-    executor: Optional[ThreadPoolExecutor],
+    executor: ThreadPoolExecutor | None,
 ):
     freeze_datetime = get_current_datetime()
 
@@ -1240,7 +1241,7 @@ def test_cross_code_location_job_selector_on_defs_run_status_sensor(
             )
 
 
-def test_code_location_scoped_run_status_sensor(executor: Optional[ThreadPoolExecutor]):
+def test_code_location_scoped_run_status_sensor(executor: ThreadPoolExecutor | None):
     freeze_datetime = get_current_datetime()
 
     # we have no good api for compositing load targets so forced to use a workspace file
@@ -1372,7 +1373,7 @@ def test_code_location_scoped_run_status_sensor(executor: Optional[ThreadPoolExe
             )
 
 
-def test_cross_repo_run_status_sensor(executor: Optional[ThreadPoolExecutor]):
+def test_cross_repo_run_status_sensor(executor: ThreadPoolExecutor | None):
     freeze_datetime = get_current_datetime()
     with instance_with_single_code_location_multiple_repos_with_sensors(
         synchronous_run_coordinator=True,
@@ -1432,7 +1433,7 @@ def test_cross_repo_run_status_sensor(executor: Optional[ThreadPoolExecutor]):
             )
 
 
-def test_cross_repo_job_run_status_sensor(executor: Optional[ThreadPoolExecutor]):
+def test_cross_repo_job_run_status_sensor(executor: ThreadPoolExecutor | None):
     freeze_datetime = get_current_datetime()
     with instance_with_single_code_location_multiple_repos_with_sensors(
         synchronous_run_coordinator=True,
@@ -1523,7 +1524,7 @@ def test_cross_repo_job_run_status_sensor(executor: Optional[ThreadPoolExecutor]
 
 def test_partitioned_job_run_status_sensor(
     caplog,
-    executor: Optional[ThreadPoolExecutor],
+    executor: ThreadPoolExecutor | None,
     instance: DagsterInstance,
     workspace_context: WorkspaceProcessContext,
     remote_repo: RemoteRepository,
@@ -1588,7 +1589,7 @@ def test_partitioned_job_run_status_sensor(
         )
 
 
-def test_different_instance_run_status_sensor(executor: Optional[ThreadPoolExecutor]):
+def test_different_instance_run_status_sensor(executor: ThreadPoolExecutor | None):
     freeze_datetime = get_current_datetime()
     with instance_with_sensors(
         synchronous_run_coordinator=True,
@@ -1656,7 +1657,7 @@ def test_different_instance_run_status_sensor(executor: Optional[ThreadPoolExecu
                 )
 
 
-def test_instance_run_status_sensor(executor: Optional[ThreadPoolExecutor]):
+def test_instance_run_status_sensor(executor: ThreadPoolExecutor | None):
     freeze_datetime = get_current_datetime()
     with instance_with_single_code_location_multiple_repos_with_sensors(
         synchronous_run_coordinator=True,
@@ -1717,7 +1718,7 @@ def test_instance_run_status_sensor(executor: Optional[ThreadPoolExecutor]):
 
 
 def test_logging_run_status_sensor(
-    executor: Optional[ThreadPoolExecutor],
+    executor: ThreadPoolExecutor | None,
     instance: DagsterInstance,
     workspace_context: WorkspaceProcessContext,
     remote_repo: RemoteRepository,

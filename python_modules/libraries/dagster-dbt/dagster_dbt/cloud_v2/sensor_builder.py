@@ -1,6 +1,5 @@
 from collections.abc import Iterator, Sequence
 from datetime import timedelta
-from typing import Optional, Union
 
 from dagster import (
     AssetCheckEvaluation,
@@ -14,7 +13,6 @@ from dagster import (
     _check as check,
     sensor,
 )
-from dagster._annotations import beta
 from dagster._core.definitions.repository_definition.repository_definition import (
     RepositoryDefinition,
 )
@@ -24,14 +22,13 @@ from dagster._serdes import deserialize_value, serialize_value
 from dagster._time import datetime_from_timestamp, get_current_datetime
 from dagster_shared.serdes import whitelist_for_serdes
 
-from dagster_dbt.cloud_v2.resources import DbtCloudWorkspace
+from dagster_dbt.cloud_v2.resources import DAGSTER_ADHOC_PREFIX, DbtCloudWorkspace
 from dagster_dbt.cloud_v2.run_handler import (
     COMPLETED_AT_TIMESTAMP_METADATA_KEY,
     DbtCloudJobRunResults,
 )
 from dagster_dbt.cloud_v2.types import DbtCloudRun
 from dagster_dbt.dagster_dbt_translator import DagsterDbtTranslator
-from dagster_dbt.utils import clean_name
 
 MAIN_LOOP_TIMEOUT_SECONDS = DEFAULT_SENSOR_GRPC_TIMEOUT - 20
 DEFAULT_DBT_CLOUD_SENSOR_INTERVAL_SECONDS = 30
@@ -50,9 +47,9 @@ class BatchResult:
 class DbtCloudPollingSensorCursor:
     """A cursor that stores the last effective timestamp and offset."""
 
-    finished_at_lower_bound: Optional[float] = None
-    finished_at_upper_bound: Optional[float] = None
-    offset: Optional[int] = None
+    finished_at_lower_bound: float | None = None
+    finished_at_upper_bound: float | None = None
+    offset: int | None = None
 
 
 def materializations_from_batch_iter(
@@ -62,9 +59,19 @@ def materializations_from_batch_iter(
     offset: int,
     workspace: DbtCloudWorkspace,
     dagster_dbt_translator: DagsterDbtTranslator,
-) -> Iterator[Optional[BatchResult]]:
+) -> Iterator[BatchResult | None]:
     client = workspace.get_client()
     workspace_data = workspace.get_or_fetch_workspace_data()
+
+    # Build a set of all adhoc job IDs to filter out Dagster-triggered runs.
+    # This includes the current adhoc job pool and any stale adhoc jobs from a
+    # previous naming convention that still exist in dbt Cloud.
+    adhoc_job_ids = {
+        job["id"]
+        for job in workspace_data.jobs
+        if (job.get("name") or "").startswith(DAGSTER_ADHOC_PREFIX)
+    }
+    adhoc_job_ids.update(workspace_data.adhoc_job_ids)
 
     total_processed_runs = 0
     while True:
@@ -81,13 +88,13 @@ def materializations_from_batch_iter(
             context.log.info("Received no runs. Breaking.")
             break
         context.log.info(
-            f"Processing {len(runs)}/{total_runs} runs for dbt Cloud workspace "
-            f"for project {workspace.project_name} and environment {workspace.environment_name}..."
+            f"Processing {len(runs)}/{total_runs} runs for dbt Cloud "
+            f"project {workspace.project_id} and environment {workspace.environment_id}..."
         )
         for i, run_details in enumerate(runs):
             run = DbtCloudRun.from_run_details(run_details=run_details)
 
-            if run.job_definition_id == workspace_data.adhoc_job_id:
+            if run.job_definition_id in adhoc_job_ids:
                 context.log.info(f"Run {run.id} was triggered by Dagster. Continuing.")
                 continue
 
@@ -122,8 +129,8 @@ def materializations_from_batch_iter(
             )
         total_processed_runs += len(runs)
         context.log.info(
-            f"Processed {total_processed_runs}/{total_runs} runs for dbt Cloud workspace "
-            f"for project {workspace.project_name} and environment {workspace.environment_name}..."
+            f"Processed {total_processed_runs}/{total_runs} runs for dbt Cloud "
+            f"project {workspace.project_id} and environment {workspace.environment_id}..."
         )
         if total_processed_runs == total_runs:
             yield None
@@ -132,9 +139,9 @@ def materializations_from_batch_iter(
 
 
 def sorted_asset_events(
-    asset_events: Sequence[Union[AssetMaterialization, AssetObservation, AssetCheckEvaluation]],
+    asset_events: Sequence[AssetMaterialization | AssetObservation | AssetCheckEvaluation],
     repository_def: RepositoryDefinition,
-) -> list[Union[AssetMaterialization, AssetObservation, AssetCheckEvaluation]]:
+) -> list[AssetMaterialization | AssetObservation | AssetCheckEvaluation]:
     """Sort asset events by end date and toposort order."""
     topo_aks = repository_def.asset_graph.toposorted_asset_keys
     materializations_and_timestamps = [
@@ -143,18 +150,17 @@ def sorted_asset_events(
     return [
         sorted_event[1]
         for sorted_event in sorted(
-            materializations_and_timestamps, key=lambda x: (x[0], topo_aks.index(x[1].asset_key))
+            materializations_and_timestamps, key=lambda x: (topo_aks.index(x[1].asset_key), x[0])
         )
     ]
 
 
-@beta
 def build_dbt_cloud_polling_sensor(
     *,
     workspace: DbtCloudWorkspace,
-    dagster_dbt_translator: Optional[DagsterDbtTranslator] = None,
+    dagster_dbt_translator: DagsterDbtTranslator | None = None,
     minimum_interval_seconds: int = DEFAULT_DBT_CLOUD_SENSOR_INTERVAL_SECONDS,
-    default_sensor_status: Optional[DefaultSensorStatus] = None,
+    default_sensor_status: DefaultSensorStatus | None = None,
 ) -> SensorDefinition:
     """The constructed sensor polls the dbt Cloud Workspace for activity, and inserts asset events into Dagster's event log.
 
@@ -172,12 +178,10 @@ def build_dbt_cloud_polling_sensor(
     dagster_dbt_translator = dagster_dbt_translator or DagsterDbtTranslator()
 
     @sensor(
-        name=clean_name(
-            f"{workspace.account_name}_{workspace.project_name}_{workspace.environment_name}__run_status_sensor"
-        ),
+        name=f"dbt_cloud_{workspace.credentials.account_id}_{workspace.project_id}_{workspace.environment_id}__run_status_sensor",
         description=(
-            f"dbt Cloud polling sensor for dbt Cloud workspace for account {workspace.account_name}, "
-            f"project {workspace.project_name} and environment {workspace.environment_name}"
+            f"dbt Cloud polling sensor for account {workspace.credentials.account_id}, "
+            f"project {workspace.project_id} and environment {workspace.environment_id}"
         ),
         minimum_interval_seconds=minimum_interval_seconds,
         default_status=default_sensor_status or DefaultSensorStatus.RUNNING,
@@ -185,10 +189,8 @@ def build_dbt_cloud_polling_sensor(
     def dbt_cloud_run_sensor(context: SensorEvaluationContext) -> SensorResult:
         """Sensor to report materialization events for each asset as new runs come in."""
         context.log.info(
-            f"************"
-            f"Running sensor for dbt Cloud workspace for account {workspace.account_name}, "
-            f"project {workspace.project_name} and environment {workspace.environment_name}"
-            f"***********"
+            f"Running sensor for dbt Cloud account {workspace.credentials.account_id}, "
+            f"project {workspace.project_id} and environment {workspace.environment_id}"
         )
         try:
             cursor = (
@@ -244,10 +246,8 @@ def build_dbt_cloud_polling_sensor(
         context.update_cursor(serialize_value(new_cursor))
 
         context.log.info(
-            f"************"
-            f"Exiting sensor for dbt Cloud workspace for account {workspace.account_name}, "
-            f"project {workspace.project_name} and environment {workspace.environment_name}"
-            f"***********"
+            f"Exiting sensor for dbt Cloud account {workspace.credentials.account_id}, "
+            f"project {workspace.project_id} and environment {workspace.environment_id}"
         )
         return SensorResult(
             asset_events=sorted_asset_events(all_asset_events, repository_def),

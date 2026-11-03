@@ -2,7 +2,7 @@ import re
 from collections.abc import Mapping
 from enum import Enum
 from functools import cached_property
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from dagster_shared.dagster_model.pydantic_compat_layer import (
     ModelFieldCompat,
@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypeVar
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._config import (
     Field as DagsterField,
     Shape,
@@ -137,20 +138,21 @@ def ensure_env_vars_set_post_init(set_value: T, input_value: Any) -> T:
             if isinstance(value, (EnvVar, IntEnvVar)):
                 set_value[key] = value
             elif isinstance(value, dict):
-                set_value[key] = ensure_env_vars_set_post_init(set_value.get(key) or {}, value)
+                set_value[key] = ensure_env_vars_set_post_init(set_value.get(key) or {}, value)  # ty: ignore[invalid-assignment]
             elif isinstance(value, list):
-                set_value[key] = ensure_env_vars_set_post_init(set_value.get(key) or [], value)
+                set_value[key] = ensure_env_vars_set_post_init(set_value.get(key) or [], value)  # ty: ignore[invalid-assignment]
     if isinstance(set_value, list) and isinstance(input_value, list):
         for i in range(len(set_value)):
             value = input_value[i]
             if isinstance(value, (EnvVar, IntEnvVar)):
                 set_value[i] = value
             elif isinstance(value, (dict, list)):
-                set_value[i] = ensure_env_vars_set_post_init(set_value[i], value)
+                set_value[i] = ensure_env_vars_set_post_init(set_value[i], value)  # ty: ignore[invalid-assignment]
 
     return set_value
 
 
+@public  # ty: ignore[conflicting-metaclass]
 class Config(MakeConfigCacheable, metaclass=BaseConfigMeta):
     """Base class for Dagster configuration models, used to specify config schema for
     ops and assets. Subclasses :py:class:`pydantic.BaseModel`.
@@ -228,13 +230,13 @@ class Config(MakeConfigCacheable, metaclass=BaseConfigMeta):
             elif (
                 field
                 and safe_is_subclass(field.annotation, Enum)
-                and value in field.annotation.__members__
+                and value in field.annotation.__members__  # ty: ignore[unresolved-attribute]
                 and value not in [member.value for member in field.annotation]  # type: ignore
             ):
-                modified_data_by_config_key[config_key] = field.annotation.__members__[value].value
+                modified_data_by_config_key[config_key] = field.annotation.__members__[value].value  # ty: ignore[unresolved-attribute]
             elif field and safe_is_subclass(field.annotation, Config) and isinstance(value, dict):
                 modified_data_by_config_key[field_key] = (
-                    field.annotation._get_non_default_public_field_values_cls(  # noqa: SLF001
+                    field.annotation._get_non_default_public_field_values_cls(  # noqa: SLF001  # ty: ignore[unresolved-attribute]
                         value
                     )
                 )
@@ -255,6 +257,12 @@ class Config(MakeConfigCacheable, metaclass=BaseConfigMeta):
             field_info = field_info_by_config_key.get(config_key)
             field_key = field_info[0] if field_info else config_key
             modified_data_by_field_key[field_key] = value
+
+        # This is done to support dot-access for unexpected or undeclared fields.
+        if model_config(self.__class__).get("extra") == "allow":
+            for key, value in modified_data_by_field_key.items():
+                if key not in model_fields(self.__class__):
+                    object.__setattr__(self, key, value)
 
         self.__dict__ = ensure_env_vars_set_post_init(self.__dict__, modified_data_by_field_key)
 
@@ -320,7 +328,7 @@ class Config(MakeConfigCacheable, metaclass=BaseConfigMeta):
         This is useful when interacting with legacy code that expects a dictionary of fields but you
         want the source of truth to be a config class.
         """
-        return cast("Shape", cls.to_config_schema().as_field().config_type).fields  # pyright: ignore[reportReturnType]
+        return cast("Shape", cls.to_config_schema().as_field().config_type).fields  # ty: ignore[invalid-return-type]
 
 
 def _discriminated_union_config_dict_to_selector_config_dict(
@@ -339,7 +347,7 @@ def _discriminated_union_config_dict_to_selector_config_dict(
     return wrapped_dict
 
 
-def _config_value_to_dict_representation(field: Optional[ModelFieldCompat], value: Any):
+def _config_value_to_dict_representation(field: ModelFieldCompat | None, value: Any):
     """Converts a config value to a dictionary representation. If a field is provided, it will be used
     to determine the appropriate dictionary representation in the case of discriminated unions.
     """
@@ -368,6 +376,7 @@ def _config_value_to_dict_representation(field: Optional[ModelFieldCompat], valu
     return value
 
 
+@public
 class PermissiveConfig(Config):
     """Subclass of :py:class:`Config` that allows arbitrary extra fields. This is useful for
     config classes which may have open-ended inputs.
@@ -408,9 +417,9 @@ class PermissiveConfig(Config):
 
 def infer_schema_from_config_class(
     model_cls: type["Config"],
-    description: Optional[str] = None,
-    fields_to_omit: Optional[set[str]] = None,
-    default: Optional[Any] = None,
+    description: str | None = None,
+    fields_to_omit: set[str] | None = None,
+    default: Any | None = None,
 ) -> DagsterField:
     from dagster._config.pythonic_config.config import Config
     from dagster._config.pythonic_config.resource import (

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Generic, NamedTuple, Optional, TypeVar, Union, cast
+from typing import Any, Generic, NamedTuple, TypeVar, cast
 
 import dagster._check as check
 from dagster._check import CheckError
@@ -11,36 +11,60 @@ from dagster._core.definitions.partitions.definition import (
     MultiPartitionsDefinition,
     TimeWindowPartitionsDefinition,
 )
+from dagster._core.definitions.partitions.partition_key_range import PartitionKeyRange
 from dagster._core.definitions.partitions.utils import MultiPartitionKey, TimeWindow
 from dagster._core.errors import DagsterInvalidMetadata, DagsterInvariantViolationError
 from dagster._core.execution.context.input import InputContext
 from dagster._core.execution.context.output import OutputContext
 from dagster._core.storage.io_manager import IOManager
 
-if TYPE_CHECKING:
-    from dagster._core.definitions.partitions.utils.multi import MultiPartitionKey
-
 T = TypeVar("T")
 
 
 class TablePartitionDimension(NamedTuple):
     partition_expr: str
-    partitions: Union[TimeWindow, Sequence[str]]
+    partitions: TimeWindow | Sequence[str]
 
 
 class TableSlice(NamedTuple):
     table: str
     schema: str
-    database: Optional[str] = None
-    columns: Optional[Sequence[str]] = None
-    partition_dimensions: Optional[Sequence[TablePartitionDimension]] = None
+    database: str | None = None
+    columns: Sequence[str] | None = None
+    partition_dimensions: Sequence[TablePartitionDimension] | None = None
+
+
+def escape_sql_string_literal(value: str) -> str:
+    """Escape a string for safe inclusion in a SQL single-quoted literal.
+
+    Replaces single quotes with doubled single quotes — the standard SQL
+    escaping mechanism across all major databases. Used to prevent SQL
+    injection when partition key values are interpolated into WHERE clauses.
+    """
+    return value.replace("'", "''")
+
+
+def static_where_clause(table_partition: TablePartitionDimension) -> str:
+    """Build a SQL WHERE clause fragment for static (non-time-window) partitions.
+
+    Escapes partition key values to prevent SQL injection.
+    """
+    check.invariant(
+        not isinstance(table_partition.partitions, TimeWindow),
+        "static_where_clause should not be called with TimeWindow partitions",
+    )
+    partition_keys = cast("Sequence[str]", table_partition.partitions)
+    partitions = ", ".join(
+        f"'{escape_sql_string_literal(partition)}'" for partition in partition_keys
+    )
+    return f"""{table_partition.partition_expr} in ({partitions})"""
 
 
 class DbTypeHandler(ABC, Generic[T]):
     @abstractmethod
     def handle_output(
         self, context: OutputContext, table_slice: TableSlice, obj: T, connection
-    ) -> Optional[Mapping[str, RawMetadataValue]]:
+    ) -> Mapping[str, RawMetadataValue] | None:
         """Stores the given object at the given table in the given schema."""
 
     @abstractmethod
@@ -84,9 +108,7 @@ class DbClient(Generic[T]):
     @staticmethod
     @abstractmethod
     @contextmanager
-    def connect(
-        context: Union[OutputContext, InputContext], table_slice: TableSlice
-    ) -> Iterator[T]: ...
+    def connect(context: OutputContext | InputContext, table_slice: TableSlice) -> Iterator[T]: ...
 
 
 class DbIOManager(IOManager):
@@ -96,9 +118,9 @@ class DbIOManager(IOManager):
         type_handlers: Sequence[DbTypeHandler],
         db_client: DbClient,
         database: str,
-        schema: Optional[str] = None,
-        io_manager_name: Optional[str] = None,
-        default_load_type: Optional[type] = None,
+        schema: str | None = None,
+        io_manager_name: str | None = None,
+        default_load_type: type | None = None,
     ):
         self._handlers_by_type: dict[type[Any], DbTypeHandler] = {}
         self._io_manager_name = io_manager_name or self.__class__.__name__
@@ -174,7 +196,7 @@ class DbIOManager(IOManager):
         table_slice = self._get_table_slice(context, cast("OutputContext", context.upstream_output))
 
         with self._db_client.connect(context, table_slice) as conn:
-            return self._resolve_handler(load_type).load_input(context, table_slice, conn)  # type: ignore  # (pyright bug)
+            return self._resolve_handler(load_type).load_input(context, table_slice, conn)
 
     def _resolve_handler(self, obj_type: type) -> DbTypeHandler:
         return next(
@@ -184,7 +206,7 @@ class DbIOManager(IOManager):
         )
 
     def _get_table_slice(
-        self, context: Union[OutputContext, InputContext], output_context: OutputContext
+        self, context: OutputContext | InputContext, output_context: OutputContext
     ) -> TableSlice:
         output_context_metadata = output_context.definition_metadata or {}
 
@@ -215,17 +237,30 @@ class DbIOManager(IOManager):
                     )
 
                 if isinstance(context.asset_partitions_def, MultiPartitionsDefinition):
-                    multi_partition_key_mapping = cast(
-                        "MultiPartitionKey", context.asset_partition_key
-                    ).keys_by_dimension
+                    partition_range = context.asset_partition_key_range
+
                     for part in context.asset_partitions_def.partitions_defs:
-                        partition_key = multi_partition_key_mapping[part.name]
+                        start_key_for_partition = cast(
+                            "MultiPartitionKey", partition_range.start
+                        ).keys_by_dimension[part.name]
+                        end_key_for_partition = cast(
+                            "MultiPartitionKey", partition_range.end
+                        ).keys_by_dimension[part.name]
+
                         if isinstance(part.partitions_def, TimeWindowPartitionsDefinition):
-                            partitions = part.partitions_def.time_window_for_partition_key(
-                                partition_key
-                            )
+                            start_time = part.partitions_def.time_window_for_partition_key(
+                                start_key_for_partition
+                            ).start
+                            end_time = part.partitions_def.time_window_for_partition_key(
+                                end_key_for_partition
+                            ).end
+                            partitions = TimeWindow(start_time, end_time)
                         else:
-                            partitions = [partition_key]
+                            partitions = part.partitions_def.get_partition_keys_in_range(
+                                PartitionKeyRange(
+                                    start=start_key_for_partition, end=end_key_for_partition
+                                )
+                            )
 
                         partition_expr_str = cast("Mapping[str, str]", partition_expr).get(
                             part.name

@@ -10,7 +10,7 @@ from dagster._utils import run_with_concurrent_update_guard, segfault
 
 def _update_file(file_path: Path):
     time.sleep(0.01)  # fake computation
-    file_path.open("a").write(f"write-from-{os.getpid()}\n")
+    file_path.open("a", encoding="utf-8").write(f"write-from-{os.getpid()}\n")
 
 
 def test_basic(tmp_path: str):
@@ -71,7 +71,10 @@ def test_staggered_no_ops(tmp_path: str):
         time.sleep(0.025)
 
     for proc in procs:
-        proc.join(timeout=1)
-        assert proc.exitcode == 0
+        # 10 second timeout allows for slower process startup on some Python versions
+        proc.join(timeout=10)
+        assert proc.exitcode == 0, (
+            f"Process {proc.name} did not exit cleanly (exitcode={proc.exitcode})"
+        )
 
     assert test_file_path.read_text()

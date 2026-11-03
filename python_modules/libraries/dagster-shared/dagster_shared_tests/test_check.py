@@ -127,10 +127,10 @@ def test_callable_param():
     assert check.callable_param(lamb, "lamb") == lamb
 
     with pytest.raises(ParameterCheckError):
-        check.callable_param(None, "lamb")  # pyright: ignore[reportArgumentType]
+        check.callable_param(None, "lamb")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        check.callable_param(2, "lamb")  # pyright: ignore[reportArgumentType]
+        check.callable_param(2, "lamb")  # ty: ignore[invalid-argument-type]
 
 
 def test_opt_callable_param():
@@ -141,7 +141,7 @@ def test_opt_callable_param():
     assert check.opt_callable_param(None, "lamb", default=lamb) == lamb
 
     with pytest.raises(ParameterCheckError):
-        check.opt_callable_param(2, "lamb")  # pyright: ignore[reportCallIssue,reportArgumentType]
+        check.opt_callable_param(2, "lamb")  # ty: ignore[no-matching-overload]
 
 
 def test_is_callable():
@@ -153,13 +153,13 @@ def test_is_callable():
     assert check.is_callable(lambda: None, "some desc")
 
     with pytest.raises(CheckError):
-        check.is_callable(None)  # pyright: ignore[reportArgumentType]
+        check.is_callable(None)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        check.is_callable(1)  # pyright: ignore[reportArgumentType]
+        check.is_callable(1)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError, match="some other desc"):
-        check.is_callable(1, "some other desc")  # pyright: ignore[reportArgumentType]
+        check.is_callable(1, "some other desc")  # ty: ignore[invalid-argument-type]
 
 
 # ########################
@@ -198,19 +198,19 @@ def test_class_param():
     assert check.class_param(Bar, "foo")
 
     with pytest.raises(CheckError):
-        check.class_param(None, "foo")  # pyright: ignore[reportArgumentType]
+        check.class_param(None, "foo")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        check.class_param(check, "foo")
+        check.class_param(check, "foo")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        check.class_param(234, "foo")  # pyright: ignore[reportArgumentType]
+        check.class_param(234, "foo")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        check.class_param("bar", "foo")  # pyright: ignore[reportArgumentType]
+        check.class_param("bar", "foo")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        check.class_param(Bar(), "foo")  # pyright: ignore[reportArgumentType]
+        check.class_param(Bar(), "foo")  # ty: ignore[invalid-argument-type]
 
     class Super:
         pass
@@ -227,7 +227,7 @@ def test_class_param():
         assert check.class_param(Alone, "foo", superclass=Super)
 
     with pytest.raises(CheckError):
-        assert check.class_param("value", "foo", superclass=Super)  # pyright: ignore[reportArgumentType]
+        assert check.class_param("value", "foo", superclass=Super)  # ty: ignore[invalid-argument-type]
 
     assert check.opt_class_param(Sub, "foo", superclass=Super)
     assert check.opt_class_param(None, "foo", superclass=Super) is None
@@ -363,19 +363,19 @@ def test_opt_dict_param():
     assert check.opt_dict_param(ddict, "opt_dict_param") == ddict
 
     with pytest.raises(ParameterCheckError):
-        check.opt_dict_param(0, "opt_dict_param")  # pyright: ignore[reportArgumentType]
+        check.opt_dict_param(0, "opt_dict_param")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        check.opt_dict_param(1, "opt_dict_param")  # pyright: ignore[reportArgumentType]
+        check.opt_dict_param(1, "opt_dict_param")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        check.opt_dict_param("foo", "opt_dict_param")  # pyright: ignore[reportArgumentType]
+        check.opt_dict_param("foo", "opt_dict_param")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        check.opt_dict_param(["foo"], "opt_dict_param")  # pyright: ignore[reportArgumentType]
+        check.opt_dict_param(["foo"], "opt_dict_param")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        check.opt_dict_param([], "opt_dict_param")  # pyright: ignore[reportArgumentType]
+        check.opt_dict_param([], "opt_dict_param")  # ty: ignore[invalid-argument-type]
 
 
 def test_opt_nullable_dict_param():
@@ -580,13 +580,13 @@ def test_generator_param():
     assert list(gen) == []
 
     with pytest.raises(ParameterCheckError):
-        assert check.generator_param(list(gen), "gen")  # pyright: ignore[reportArgumentType]
+        assert check.generator_param(list(gen), "gen")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        assert check.generator_param(None, "gen")  # pyright: ignore[reportArgumentType]
+        assert check.generator_param(None, "gen")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        assert check.generator_param(_test_gen, "gen")  # pyright: ignore[reportArgumentType]
+        assert check.generator_param(_test_gen, "gen")  # ty: ignore[invalid-argument-type]
 
 
 def test_opt_generator_param():
@@ -889,13 +889,13 @@ def test_opt_nullable_list_param():
     assert check.opt_nullable_list_param(obj_list, "list_param") == obj_list
 
     with pytest.raises(ParameterCheckError):
-        check.opt_nullable_list_param(0, "list_param")  # pyright: ignore[reportCallIssue,reportArgumentType]
+        check.opt_nullable_list_param(0, "list_param")  # ty: ignore[no-matching-overload]
 
     with pytest.raises(ParameterCheckError):
-        check.opt_nullable_list_param("", "list_param")  # pyright: ignore[reportCallIssue,reportArgumentType]
+        check.opt_nullable_list_param("", "list_param")  # ty: ignore[no-matching-overload]
 
     with pytest.raises(ParameterCheckError):
-        check.opt_nullable_list_param("3u4", "list_param")  # pyright: ignore[reportCallIssue,reportArgumentType]
+        check.opt_nullable_list_param("3u4", "list_param")  # ty: ignore[no-matching-overload]
 
 
 def test_typed_is_list():
@@ -1022,7 +1022,7 @@ def test_opt_mapping_param():
     assert check.opt_mapping_param(None, param_name="name") == dict()
 
     with pytest.raises(CheckError):
-        check.opt_mapping_param("foo", param_name="name")  # pyright: ignore[reportArgumentType]
+        check.opt_mapping_param("foo", param_name="name")  # ty: ignore[invalid-argument-type]
     assert check.opt_nullable_mapping_param(None, "name") is None
 
 
@@ -1055,10 +1055,10 @@ def test_path_param():
         assert check.opt_path_param(Path("/a/b.csv"), "path_param") == "/a/b.csv"
 
     with pytest.raises(ParameterCheckError):
-        check.path_param(None, "path_param")  # pyright: ignore[reportArgumentType]
+        check.path_param(None, "path_param")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        check.path_param(0, "path_param")  # pyright: ignore[reportArgumentType]
+        check.path_param(0, "path_param")  # ty: ignore[invalid-argument-type]
 
 
 def test_opt_path_param():
@@ -1072,7 +1072,7 @@ def test_opt_path_param():
     assert check.opt_path_param(None, "path_param") is None
 
     with pytest.raises(ParameterCheckError):
-        check.opt_path_param(0, "path_param")  # pyright: ignore[reportCallIssue,reportArgumentType]
+        check.opt_path_param(0, "path_param")  # ty: ignore[no-matching-overload]
 
 
 # ########################
@@ -1085,10 +1085,10 @@ def test_set_param():
     assert check.set_param(frozenset(), "set_param") == set()
 
     with pytest.raises(ParameterCheckError):
-        check.set_param(None, "set_param")  # pyright: ignore[reportArgumentType]
+        check.set_param(None, "set_param")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        check.set_param("3u4", "set_param")  # pyright: ignore[reportArgumentType]
+        check.set_param("3u4", "set_param")  # ty: ignore[invalid-argument-type]
 
     obj_set = {1}
     assert check.set_param(obj_set, "set_param") == obj_set
@@ -1105,6 +1105,41 @@ def test_set_param():
         check.set_param({"foo"}, "set_param", of_type=int)
 
 
+def test_abstract_set_param():
+    assert check.abstract_set_param(set(), "set_param") == set()
+    assert check.abstract_set_param(frozenset(), "set_param") == frozenset()
+
+    # unlike set_param, accepts any collections.abc.Set (e.g. a dict_keys view)
+    keys = {"a": 1, "b": 2}.keys()
+    assert check.abstract_set_param(keys, "set_param") is keys
+    assert set(check.abstract_set_param(keys, "set_param", of_type=str)) == {"a", "b"}
+
+    with pytest.raises(ParameterCheckError):
+        check.abstract_set_param(None, "set_param")  # ty: ignore[invalid-argument-type]
+
+    with pytest.raises(ParameterCheckError):
+        check.abstract_set_param("3u4", "set_param")  # ty: ignore[invalid-argument-type]
+
+    # a list is not a Set
+    with pytest.raises(ParameterCheckError):
+        check.abstract_set_param([1, 2], "set_param")  # ty: ignore[invalid-argument-type]
+
+    # element type checking still enforced
+    with pytest.raises(CheckError, match="Member of set mismatches type"):
+        check.abstract_set_param({1: 0}.keys(), "set_param", of_type=str)
+
+
+def test_opt_nullable_abstract_set_param():
+    assert check.opt_nullable_abstract_set_param(None, "set_param") is None
+    assert check.opt_nullable_abstract_set_param(set(), "set_param") == set()
+
+    keys = {"a": 1, "b": 2}.keys()
+    assert check.opt_nullable_abstract_set_param(keys, "set_param") is keys
+
+    with pytest.raises(ParameterCheckError):
+        check.opt_nullable_abstract_set_param("3u4", "set_param")  # ty: ignore[no-matching-overload]
+
+
 def test_opt_set_param():
     assert check.opt_set_param(None, "set_param") == set()
     assert check.opt_set_param(set(), "set_param") == set()
@@ -1112,10 +1147,10 @@ def test_opt_set_param():
     assert check.opt_set_param({3}, "set_param") == {3}
 
     with pytest.raises(ParameterCheckError):
-        check.opt_set_param(0, "set_param")  # pyright: ignore[reportArgumentType]
+        check.opt_set_param(0, "set_param")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ParameterCheckError):
-        check.opt_set_param("3u4", "set_param")  # pyright: ignore[reportArgumentType]
+        check.opt_set_param("3u4", "set_param")  # ty: ignore[invalid-argument-type]
 
 
 # ########################
@@ -1134,10 +1169,10 @@ def test_sequence_param():
     assert check.sequence_param(["foo"], "sequence_param", of_type=str) == ["foo"]
 
     with pytest.raises(ParameterCheckError):
-        check.sequence_param(None, "sequence_param")  # pyright: ignore[reportArgumentType]
+        check.sequence_param(None, "sequence_param")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        check.sequence_param(1, "sequence_param", of_type=int)  # pyright: ignore[reportArgumentType]
+        check.sequence_param(1, "sequence_param", of_type=int)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
         check.sequence_param(["foo"], "sequence_param", of_type=int)
@@ -1149,7 +1184,7 @@ def test_sequence_param():
         check.sequence_param("foo", "sequence_param", of_type=str)
 
     with pytest.raises(CheckError):
-        check.sequence_param(SomeRecord(), "sequence_param")  # pyright: ignore[reportArgumentType]
+        check.sequence_param(SomeRecord(), "sequence_param")  # ty: ignore[invalid-argument-type]
 
 
 def test_opt_sequence_param():
@@ -1161,7 +1196,7 @@ def test_opt_sequence_param():
     assert check.opt_sequence_param(None, "sequence_param") == []
 
     with pytest.raises(CheckError):
-        check.opt_sequence_param(1, "sequence_param", of_type=int)  # pyright: ignore[reportArgumentType]
+        check.opt_sequence_param(1, "sequence_param", of_type=int)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
         check.opt_sequence_param(["foo"], "sequence_param", of_type=int)
@@ -1173,7 +1208,7 @@ def test_opt_sequence_param():
         check.opt_sequence_param("foo", "sequence_param", of_type=str)
 
     with pytest.raises(CheckError):
-        check.opt_sequence_param(SomeRecord(), "sequence_param")  # pyright: ignore[reportArgumentType]
+        check.opt_sequence_param(SomeRecord(), "sequence_param")  # ty: ignore[invalid-argument-type]
 
 
 def test_opt_nullable_sequence_param():
@@ -1185,7 +1220,7 @@ def test_opt_nullable_sequence_param():
     assert check.opt_nullable_sequence_param(None, "sequence_param") is None
 
     with pytest.raises(CheckError):
-        check.opt_nullable_sequence_param(1, "sequence_param", of_type=int)  # pyright: ignore[reportCallIssue,reportArgumentType]
+        check.opt_nullable_sequence_param(1, "sequence_param", of_type=int)  # ty: ignore[no-matching-overload]
 
     with pytest.raises(CheckError):
         check.opt_nullable_sequence_param(["foo"], "sequence_param", of_type=int)
@@ -1194,7 +1229,7 @@ def test_opt_nullable_sequence_param():
         assert check.opt_nullable_sequence_param("foo", "sequence_param", of_type=str)
 
     with pytest.raises(CheckError):
-        check.opt_nullable_sequence_param(SomeRecord(), "sequence_param")  # pyright: ignore[reportCallIssue,reportArgumentType]
+        check.opt_nullable_sequence_param(SomeRecord(), "sequence_param")  # ty: ignore[no-matching-overload]
 
 
 # ########################
@@ -1280,19 +1315,19 @@ def test_tuple_param():
     assert check.tuple_param((1, 2), "something")
 
     with pytest.raises(CheckError):
-        assert check.tuple_param(None, "something")  # pyright: ignore[reportArgumentType]
+        assert check.tuple_param(None, "something")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        assert check.tuple_param(1, "something")  # pyright: ignore[reportArgumentType]
+        assert check.tuple_param(1, "something")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        assert check.tuple_param([1], "something")  # pyright: ignore[reportArgumentType]
+        assert check.tuple_param([1], "something")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        assert check.tuple_param({1: 2}, "something")  # pyright: ignore[reportArgumentType]
+        assert check.tuple_param({1: 2}, "something")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError):
-        assert check.tuple_param("kdjfkd", "something")  # pyright: ignore[reportArgumentType]
+        assert check.tuple_param("kdjfkd", "something")  # ty: ignore[invalid-argument-type]
 
     assert check.tuple_param((3, 4), "something", of_type=int)
     assert check.tuple_param(("foo", "bar"), "something", of_type=str)
@@ -1365,7 +1400,7 @@ def test_opt_nullable_tuple_param():
     assert check.opt_nullable_tuple_param(None, "something") is None
 
     with pytest.raises(CheckError):
-        check.opt_nullable_tuple_param([3, 4], "something", of_shape=(int, int), of_type=int)  # pyright: ignore[reportCallIssue,reportArgumentType]
+        check.opt_nullable_tuple_param([3, 4], "something", of_shape=(int, int), of_type=int)  # ty: ignore[no-matching-overload]
 
 
 def test_is_tuple():
@@ -1513,7 +1548,7 @@ def test_failed():
         check.failed("some desc")
 
     with pytest.raises(CheckError, match="must be a string"):
-        check.failed(0)  # pyright: ignore[reportArgumentType]
+        check.failed(0)  # ty: ignore[invalid-argument-type]
 
 
 def test_not_implemented():
@@ -1521,7 +1556,7 @@ def test_not_implemented():
         check.not_implemented("some string")
 
     with pytest.raises(CheckError, match="desc argument must be a string"):
-        check.not_implemented(None)  # pyright: ignore[reportArgumentType]
+        check.not_implemented(None)  # ty: ignore[invalid-argument-type]
 
 
 def test_iterable():
@@ -1533,14 +1568,14 @@ def test_iterable():
     assert check.iterable_param((i for i in [1, 2]), "thisisfine") != [1, 2]
     assert list(check.iterable_param((i for i in [1, 2]), "thisisfine")) == [1, 2]
 
-    with pytest.raises(CheckError, match="Iterable.*str"):
+    with pytest.raises(CheckError, match=r"Iterable.*str"):
         check.iterable_param("lkjsdkf", "stringisiterable")
 
-    with pytest.raises(CheckError, match="Iterable.*None"):
-        check.iterable_param(None, "nonenotallowed")  # pyright: ignore[reportArgumentType]
+    with pytest.raises(CheckError, match=r"Iterable.*None"):
+        check.iterable_param(None, "nonenotallowed")  # ty: ignore[invalid-argument-type]
 
-    with pytest.raises(CheckError, match="Iterable.*int"):
-        check.iterable_param(1, "intnotallowed")  # pyright: ignore[reportArgumentType]
+    with pytest.raises(CheckError, match=r"Iterable.*int"):
+        check.iterable_param(1, "intnotallowed")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError, match="Member of iterable mismatches type"):
         check.iterable_param([1], "typemismatch", of_type=str)
@@ -1552,7 +1587,7 @@ def test_iterable():
         check.iterable_param(["atr", None], "nonedoesntcount", of_type=str)
 
     with pytest.raises(CheckError):
-        check.iterable_param(SomeRecord(), "nonenotallowed")  # pyright: ignore[reportArgumentType]
+        check.iterable_param(SomeRecord(), "nonenotallowed")  # ty: ignore[invalid-argument-type]
 
 
 def test_opt_iterable():
@@ -1570,11 +1605,11 @@ def test_opt_iterable():
 
     check.opt_iterable_param(None, "noneisallowed")
 
-    with pytest.raises(CheckError, match="Iterable.*str"):
+    with pytest.raises(CheckError, match=r"Iterable.*str"):
         check.opt_iterable_param("lkjsdkf", "stringisiterable")
 
-    with pytest.raises(CheckError, match="Iterable.*int"):
-        check.opt_iterable_param(1, "intnotallowed")  # pyright: ignore[reportArgumentType]
+    with pytest.raises(CheckError, match=r"Iterable.*int"):
+        check.opt_iterable_param(1, "intnotallowed")  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(CheckError, match="Member of iterable mismatches type"):
         check.opt_iterable_param([1], "typemismatch", of_type=str)
@@ -1586,7 +1621,7 @@ def test_opt_iterable():
         check.opt_iterable_param(["atr", None], "nonedoesntcount", of_type=str)
 
     with pytest.raises(CheckError):
-        check.opt_iterable_param(SomeRecord(), "nonenotallowed")  # pyright: ignore[reportArgumentType]
+        check.opt_iterable_param(SomeRecord(), "nonenotallowed")  # ty: ignore[invalid-argument-type]
 
 
 def test_is_iterable() -> None:
@@ -1672,13 +1707,20 @@ BUILD_CASES = [
     (float, [4.2], ["4.1"]),
     (str, ["hi"], [Foo()]),
     (Bar, [Bar()], [Foo()]),
-    (Optional[Bar], [Bar()], [Foo()]),
+    (Bar | None, [Bar()], [Foo()]),
     (List[str], [["a", "b"]], [[1, 2]]),
     (Sequence[str], [["a", "b"]], [[1, 2], "just_a_string"]),
     (Iterable[str], [["a", "b"]], [[1, 2]]),
-    (Set[str], [{"a", "b"}], [{1, 2}]),
-    (AbstractSet[str], [{"a", "b"}], [{1, 2}]),
-    (Optional[AbstractSet[str]], [{"a", "b"}, None], [{1, 2}]),
+    # concrete set rejects non-set Set instances (e.g. dict_keys views)
+    (Set[str], [{"a", "b"}], [{1, 2}, {"a": 1}.keys()]),
+    # AbstractSet accepts any collections.abc.Set, including dict_keys views, but still
+    # enforces the inner element type
+    (AbstractSet[str], [{"a", "b"}, {"a": 1, "b": 2}.keys()], [{1, 2}, {1: 0}.keys()]),
+    (
+        AbstractSet[str] | None,
+        [{"a", "b"}, {"a": 1, "b": 2}.keys(), None],
+        [{1, 2}, {1: 0}.keys()],
+    ),
     (
         Mapping[str, AbstractSet[str]],
         [
@@ -1693,14 +1735,14 @@ BUILD_CASES = [
     ),
     (Dict[str, int], [{"a": 1}], [{1: "a"}]),
     (Mapping[str, int], [{"a": 1}], [{1: "a"}]),
-    (Optional[int], [None], ["4"]),
-    (Optional[Bar], [None], [Foo()]),
-    (Optional[List[str]], [["a", "b"]], [[1, 2]]),
-    (Optional[Sequence[str]], [["a", "b"]], [[1, 2]]),
-    (Optional[Iterable[str]], [["a", "b"]], [[1, 2]]),
-    (Optional[Set[str]], [{"a", "b"}], [{1, 2}]),
-    (Optional[Dict[str, int]], [{"a": 1}], [{1: "a"}]),
-    (Optional[Mapping[str, int]], [{"a": 1}], [{1: "a"}]),
+    (int | None, [None], ["4"]),
+    (Bar | None, [None], [Foo()]),
+    (list[str] | None, [["a", "b"]], [[1, 2]]),
+    (Sequence[str] | None, [["a", "b"]], [[1, 2]]),
+    (Iterable[str] | None, [["a", "b"]], [[1, 2]]),
+    (set[str] | None, [{"a", "b"}], [{1, 2}]),
+    (dict[str, int] | None, [{"a": 1}], [{1: "a"}]),
+    (Mapping[str, int] | None, [{"a": 1}], [{1: "a"}]),
     (Annotated[Bar, None], [Bar()], [Foo()]),
     (Annotated["Bar", None], [Bar()], [Foo()]),
     (List[Annotated[Bar, None]], [[Bar()], []], [[Foo()]]),
@@ -1709,17 +1751,18 @@ BUILD_CASES = [
         [[]],  # avoid importing TestType
         [[Foo()]],
     ),
-    (Union[bool, Foo], [True], [None]),
+    (Union[bool, Foo], [True], [None]),  # noqa: UP007
+    (bool | Foo, [True], [None]),
     (Union[Foo, "Bar"], [Bar()], [None]),
-    (TypeVar("T", bound=Foo), [Foo(), SubFoo()], [Bar()]),
-    (TypeVar("T", bound=Optional[Foo]), [None], [Bar()]),
-    (TypeVar("T"), [Foo(), None], []),
+    (TypeVar("T", bound=Foo), [Foo(), SubFoo()], [Bar()]),  # ty: ignore[invalid-legacy-type-variable]
+    (TypeVar("T", bound=Foo | None), [None], [Bar()]),  # ty: ignore[invalid-legacy-type-variable]
+    (TypeVar("T"), [Foo(), None], []),  # ty: ignore[invalid-legacy-type-variable]
     (Literal["apple"], ["apple"], ["banana"]),
     (Literal["apple", "manzana"], ["apple", "manzana"], ["banana"]),
     (Callable, [lambda x: x, int], [4]),
     (Callable[[], int], [lambda x: x, int], [4]),
     (
-        Optional[Callable[[], int]],
+        Callable[[], int] | None,
         [
             None,
             lambda x: x,
@@ -1744,7 +1787,7 @@ BUILD_CASES = [
         ],
         [None, Foo()],
     ),
-    (Optional[MyTypedDict], [{"foo": "f", "bar": "b"}, None], [Foo()]),
+    (MyTypedDict | None, [{"foo": "f", "bar": "b"}, None], [Foo()]),
 ]
 
 
@@ -1790,7 +1833,7 @@ def test_forward_ref_flow() -> None:
 
 
 def test_never():
-    def _val() -> Union[int, str]:
+    def _val() -> int | str:
         return 4
 
     v = _val()

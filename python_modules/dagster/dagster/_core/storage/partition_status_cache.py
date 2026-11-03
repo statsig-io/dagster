@@ -75,11 +75,11 @@ class AssetStatusCacheValue(
         "_AssetPartitionsStatusCacheValue",
         [
             ("latest_storage_id", int),
-            ("partitions_def_id", Optional[str]),
-            ("serialized_materialized_partition_subset", Optional[str]),
-            ("serialized_failed_partition_subset", Optional[str]),
-            ("serialized_in_progress_partition_subset", Optional[str]),
-            ("earliest_in_progress_materialization_event_id", Optional[int]),
+            ("partitions_def_id", str | None),
+            ("serialized_materialized_partition_subset", str | None),
+            ("serialized_failed_partition_subset", str | None),
+            ("serialized_in_progress_partition_subset", str | None),
+            ("earliest_in_progress_materialization_event_id", int | None),
         ],
     ),
     LoadableBy[tuple[AssetKey, PartitionsDefinition]],
@@ -107,11 +107,11 @@ class AssetStatusCacheValue(
     def __new__(
         cls,
         latest_storage_id: int,
-        partitions_def_id: Optional[str] = None,
-        serialized_materialized_partition_subset: Optional[str] = None,
-        serialized_failed_partition_subset: Optional[str] = None,
-        serialized_in_progress_partition_subset: Optional[str] = None,
-        earliest_in_progress_materialization_event_id: Optional[int] = None,
+        partitions_def_id: str | None = None,
+        serialized_materialized_partition_subset: str | None = None,
+        serialized_failed_partition_subset: str | None = None,
+        serialized_in_progress_partition_subset: str | None = None,
+        earliest_in_progress_materialization_event_id: int | None = None,
     ):
         check.int_param(latest_storage_id, "latest_storage_id")
         check.opt_str_param(partitions_def_id, "partitions_def_id")
@@ -272,10 +272,10 @@ def get_last_planned_storage_id(
 def _build_status_cache(
     instance: DagsterInstance,
     asset_key: AssetKey,
-    partitions_def: Optional[PartitionsDefinition],
-    stored_cache_value: Optional[AssetStatusCacheValue],
+    partitions_def: PartitionsDefinition | None,
+    stored_cache_value: AssetStatusCacheValue | None,
     asset_record: Optional["AssetRecord"],
-) -> Optional[AssetStatusCacheValue]:
+) -> AssetStatusCacheValue | None:
     """This method refreshes the asset status cache for a given asset key. It recalculates
     the materialized partition subset for the asset key and updates the cache value.
     """
@@ -380,9 +380,9 @@ def build_failed_and_in_progress_partition_subset(
     asset_key: AssetKey,
     partitions_def: PartitionsDefinition,
     last_planned_materialization_storage_id: int,
-    failed_subset: Optional[PartitionsSubset[str]] = None,
-    after_storage_id: Optional[int] = None,
-) -> tuple[PartitionsSubset, PartitionsSubset, Optional[int]]:
+    failed_subset: PartitionsSubset[str] | None = None,
+    after_storage_id: int | None = None,
+) -> tuple[PartitionsSubset, PartitionsSubset, int | None]:
     in_progress_partitions: set[str] = set()
 
     incomplete_materializations = {}
@@ -451,10 +451,10 @@ def build_failed_and_in_progress_partition_subset(
 def get_and_update_asset_status_cache_value(
     instance: DagsterInstance,
     asset_key: AssetKey,
-    partitions_def: Optional[PartitionsDefinition],
-    dynamic_partitions_loader: Optional[DynamicPartitionsStore] = None,
-    loading_context: Optional[LoadingContext] = None,
-) -> Optional[AssetStatusCacheValue]:
+    partitions_def: PartitionsDefinition | None,
+    dynamic_partitions_loader: DynamicPartitionsStore | None = None,
+    loading_context: LoadingContext | None = None,
+) -> AssetStatusCacheValue | None:
     from dagster._core.storage.event_log.base import AssetRecord
 
     with partition_loading_context(None, dynamic_partitions_loader or instance):
@@ -491,13 +491,13 @@ def get_and_update_asset_status_cache_value(
         return updated_cache_value
 
 
-def get_partition_subsets(
+async def get_partition_subsets(
     instance: DagsterInstance,
     loading_context: LoadingContext,
     asset_key: AssetKey,
     dynamic_partitions_loader: DynamicPartitionsStore,
-    partitions_def: Optional[PartitionsDefinition] = None,
-) -> tuple[Optional[PartitionsSubset], Optional[PartitionsSubset], Optional[PartitionsSubset]]:
+    partitions_def: PartitionsDefinition | None = None,
+) -> tuple[PartitionsSubset | None, PartitionsSubset | None, PartitionsSubset | None]:
     """Returns a tuple of PartitionSubset objects: the first is the materialized partitions,
     the second is the failed partitions, and the third are in progress.
     """
@@ -510,13 +510,10 @@ def get_partition_subsets(
         if instance.can_read_asset_status_cache() and is_cacheable_partition_type(partitions_def):
             # When the "cached_status_data" column exists in storage, update the column to contain
             # the latest partition status values
-            updated_cache_value = get_and_update_asset_status_cache_value(
-                instance,
-                asset_key,
-                partitions_def,
-                dynamic_partitions_loader,
-                loading_context,
+            updated_cache_value = await AssetStatusCacheValue.gen(
+                loading_context, (asset_key, partitions_def)
             )
+
             materialized_subset = (
                 updated_cache_value.deserialize_materialized_partition_subsets(partitions_def)
                 if updated_cache_value

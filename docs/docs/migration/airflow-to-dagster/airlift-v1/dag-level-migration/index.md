@@ -2,13 +2,15 @@
 description: Mapping assets to a full Airflow DAG using dagster-airlift.
 sidebar_position: 20
 title: Migrate from Airflow to Dagster at the DAG level
+canonicalUrl: '/migration/airflow-to-dagster/airlift-v1/dag-level-migration'
+slug: '/migration/airflow-to-dagster/airlift-v1/dag-level-migration'
 ---
 
 import UseAirliftComponent from '@site/docs/partials/\_UseAirliftComponent.md';
 
 <UseAirliftComponent />
 
-This tutorial demonstrates mapping assets to a full Airflow DAG using [`dagster-airlift`](/api/libraries/dagster-airlift).
+This tutorial demonstrates mapping assets to a full Airflow DAG using [`dagster-airlift`](/integrations/libraries/airlift/dagster-airlift).
 
 You might want to map assets to a full Airflow DAG rather than on a per-task basis because:
 

@@ -10,7 +10,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import timedelta
-from typing import Optional, TypeVar, Union
+from typing import Literal, TypeVar
 
 from dagster import (
     Any,
@@ -80,6 +80,7 @@ from dagster import (
     schedule,
     usable_as_dagster_type,
 )
+from dagster._core.definitions.asset_key import AssetJobKey
 from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
 from dagster._core.definitions.automation_condition_sensor_definition import (
     AutomationConditionSensorDefinition,
@@ -91,11 +92,11 @@ from dagster._core.definitions.decorators.sensor_decorator import sensor
 from dagster._core.definitions.definitions_class import Definitions
 from dagster._core.definitions.events import Failure
 from dagster._core.definitions.executor_definition import in_process_executor
-from dagster._core.definitions.external_asset import external_asset_from_spec
-from dagster._core.definitions.freshness import InternalFreshnessPolicy
+from dagster._core.definitions.freshness import FreshnessPolicy
 from dagster._core.definitions.freshness_policy import LegacyFreshnessPolicy
 from dagster._core.definitions.job_definition import JobDefinition
 from dagster._core.definitions.metadata import MetadataValue
+from dagster._core.definitions.metadata.metadata_value import ObjectMetadataValue
 from dagster._core.definitions.partitions.definition import (
     DailyPartitionsDefinition,
     DynamicPartitionsDefinition,
@@ -132,7 +133,7 @@ from dagster_graphql.test.utils import (
     main_repo_name,
 )
 from dagster_shared.seven import get_system_temp_directory
-from typing_extensions import Literal, Never
+from typing_extensions import Never
 
 T = TypeVar("T")
 
@@ -512,7 +513,7 @@ def scalar_output_job():
     def return_bool():
         return True
 
-    @op(out=Out(Any))  # pyright: ignore[reportArgumentType]
+    @op(out=Out(Any))
     def return_any():
         return "dkjfkdjfe"
 
@@ -591,10 +592,8 @@ def multer_resource(init_context):
 
 @resource(config_schema={"num_one": Field(Int), "num_two": Field(Int)})
 def double_adder_resource(init_context):
-    return (
-        lambda x: x
-        + init_context.resource_config["num_one"]
-        + init_context.resource_config["num_two"]
+    return lambda x: (
+        x + init_context.resource_config["num_one"] + init_context.resource_config["num_two"]
     )
 
 
@@ -630,7 +629,7 @@ def foo_logger(init_context):
     return logger_
 
 
-@logger({"log_level": Field(str), "prefix": Field(str)})  # pyright: ignore[reportArgumentType]
+@logger({"log_level": Field(str), "prefix": Field(str)})
 def bar_logger(init_context):
     class BarLogger(logging.Logger):
         def __init__(self, name, prefix, *args, **kwargs):
@@ -682,6 +681,9 @@ def composites_job():
     div_four(add_four())
 
 
+class SomeClass: ...
+
+
 @job
 def materialization_job():
     @op
@@ -723,6 +725,9 @@ def materialization_job():
                     ),
                 ),
                 "my job": MetadataValue.job("materialization_job", location_name="test_location"),
+                "some_class": ObjectMetadataValue(SomeClass()),
+                "float inf": float("inf"),
+                "float -inf": float("-inf"),
             },
         )
         yield Output(None)
@@ -989,7 +994,7 @@ def basic_job():
 
 
 def get_retry_multi_execution_params(
-    graphql_context: WorkspaceRequestContext, should_fail: bool, retry_id: Optional[str] = None
+    graphql_context: WorkspaceRequestContext, should_fail: bool, retry_id: str | None = None
 ) -> Mapping[str, Any]:
     selector = infer_job_selector(graphql_context, "retry_multi_output_job")
     return {
@@ -1148,6 +1153,8 @@ def define_schedules():
         provide_config_schedule,
         always_error,
         jobless_schedule,
+        owned_schedule,
+        unowned_schedule,
     ]
 
 
@@ -1158,6 +1165,10 @@ def define_sensors():
             run_key=None,
             tags={"test": "1234"},
         )
+
+    @sensor(job_name="no_config_job")
+    def run_key_sensor(_):
+        return RunRequest(run_key="the_key")
 
     @sensor(job_name="no_config_job")
     def always_error_sensor(_):
@@ -1262,6 +1273,8 @@ def define_sensors():
     def jobless_sensor(_):
         pass
 
+    # claims job_with_automation_condition's job key so that no default automation
+    # condition sensor is summoned into this repository
     auto_materialize_sensor = AutomationConditionSensorDefinition(
         "my_auto_materialize_sensor",
         target=AssetSelection.assets(
@@ -1269,10 +1282,12 @@ def define_sensors():
             "asset_with_automation_condition",
             "asset_with_custom_automation_condition",
         ),
+        asset_job_keys={AssetJobKey("job_with_automation_condition")},
     )
 
     return [
         always_no_config_sensor_with_tags_and_metadata,
+        run_key_sensor,
         always_error_sensor,
         once_no_config_sensor,
         never_no_config_sensor,
@@ -1291,6 +1306,8 @@ def define_sensors():
         every_asset_sensor,
         invalid_asset_selection_error,
         jobless_sensor,
+        owned_sensor,
+        unowned_sensor,
     ]
 
 
@@ -1460,8 +1477,16 @@ def asset_two(asset_one):
 
 two_assets_job = define_asset_job(name="two_assets_job", selection=[asset_one, asset_two])
 
+job_with_automation_condition = define_asset_job(
+    name="job_with_automation_condition",
+    selection=[asset_one, asset_two],
+    automation_condition=AutomationCondition.all_job_root_assets_match(
+        AutomationCondition.missing()
+    ),
+)
 
-unexecutable_asset = external_asset_from_spec(AssetSpec("unexecutable_asset"))
+
+unexecutable_asset = AssetSpec("unexecutable_asset")
 
 
 @asset
@@ -1472,6 +1497,9 @@ def executable_asset(unexecutable_asset) -> None:
 executable_test_job = define_asset_job(name="executable_test_job", selection=[executable_asset])
 
 static_partitions_def = StaticPartitionsDefinition(["a", "b", "c", "d", "e", "f"])
+
+# Partitions definition for testing partitioned asset checks
+partitioned_asset_check_partitions = StaticPartitionsDefinition(["a", "b", "c", "d"])
 
 
 @asset
@@ -1505,6 +1533,29 @@ static_partitioned_assets_job = define_asset_job(
     "static_partitioned_assets_job",
     AssetSelection.assets(upstream_static_partitioned_asset).downstream(),
 )
+
+
+@asset(partitions_def=partitioned_asset_check_partitions)
+def partitioned_asset_for_checks(context: AssetExecutionContext):
+    """Asset with partitions for testing partitioned asset checks."""
+    partition_key = context.partition_key
+    return f"data_for_{partition_key}"
+
+
+@asset_check(
+    asset=partitioned_asset_for_checks,
+    description="Check for partitioned asset",
+    blocking=True,
+    partitions_def=partitioned_asset_check_partitions,
+)
+def partitioned_asset_check(partitioned_asset_for_checks):
+    """Asset check for the partitioned asset."""
+    return AssetCheckResult(
+        passed=True,
+        metadata={
+            "check_type": "partitioned",
+        },
+    )
 
 
 @asset(partitions_def=DynamicPartitionsDefinition(name="foo"))
@@ -1697,7 +1748,7 @@ def req_config_job():
 
 @asset(
     owners=["user@dagsterlabs.com", "team:team1"],
-    freshness_policy=InternalFreshnessPolicy.time_window(
+    freshness_policy=FreshnessPolicy.time_window(
         fail_window=timedelta(minutes=10), warn_window=timedelta(minutes=5)
     ),
 )
@@ -1712,7 +1763,7 @@ def asset_2():
 
 @asset(
     deps=[AssetKey("asset_2")],
-    freshness_policy=InternalFreshnessPolicy.time_window(
+    freshness_policy=FreshnessPolicy.time_window(
         fail_window=timedelta(minutes=10), warn_window=timedelta(minutes=5)
     ),
 )
@@ -1870,12 +1921,20 @@ def asset_with_compute_storage_kinds():
 def asset_with_automation_condition() -> None: ...
 
 
+@asset(description="A" * 100)
+def asset_with_long_description() -> None: ...
+
+
+@asset
+def asset_without_description() -> None: ...
+
+
 class MyAutomationCondition(AutomationCondition):
     @property
     def name(self) -> str:
         return "some_custom_name"
 
-    def evaluate(self): ...  # pyright: ignore[reportIncompatibleMethodOverride]
+    def evaluate(self): ...  # ty: ignore[invalid-method-override]
 
 
 @asset(automation_condition=MyAutomationCondition().since_last_handled())
@@ -1974,6 +2033,11 @@ def single_run_backfill_policy_asset(context):
     backfill_policy=BackfillPolicy.multi_run(10),
 )
 def multi_run_backfill_policy_asset(context):
+    pass
+
+
+@asset(op_tags={"foo": "bar", "baz": "qux", "dagster/kind/python": ""})
+def asset_with_op_tags():
     pass
 
 
@@ -2131,6 +2195,7 @@ def define_asset_jobs() -> Sequence[UnresolvedAssetJobDefinition]:
         static_partitioned_assets_job,
         time_partitioned_assets_job,
         two_assets_job,
+        job_with_automation_condition,
         typed_assets_job,
     ]
 
@@ -2187,7 +2252,128 @@ def define_standard_jobs() -> Sequence[JobDefinition]:
         tagged_job,
         two_ins_job,
         some_external_job,
+        owned_job,
+        unowned_job,
+        owned_partitioned_job,
+        unowned_partitioned_job,
     ]
+
+
+partitions_def_for_permissions = StaticPartitionsDefinition(["a", "b", "c"])
+
+
+@asset(
+    owners=["test@elementl.com", "team:foo"],
+)
+def owned_asset():
+    return 1
+
+
+@asset_check(asset=owned_asset, description="owned asset check", blocking=True)
+def owned_asset_check(owned_asset):
+    return AssetCheckResult(passed=True)
+
+
+@asset
+def unowned_asset():
+    return 2
+
+
+@asset_check(asset=unowned_asset, description="unowned asset check", blocking=True)
+def unowned_asset_check(unowned_asset):
+    return AssetCheckResult(passed=True)
+
+
+@asset(partitions_def=partitions_def_for_permissions, owners=["test@elementl.com", "team:foo"])
+def owned_partitioned_asset():
+    return 1
+
+
+@asset(partitions_def=partitions_def_for_permissions)
+def unowned_partitioned_asset():
+    return 2
+
+
+@op
+def permission_test_op():
+    pass
+
+
+@job(owners=["test@elementl.com", "team:foo"])
+def owned_job():
+    permission_test_op()
+
+
+@job
+def unowned_job():
+    permission_test_op()
+
+
+@op
+def permission_partitioned_op(context):
+    context.log.info(f"Processing partition: {context.partition_key}")
+    return context.partition_key
+
+
+@job(partitions_def=partitions_def_for_permissions, owners=["test@elementl.com", "team:foo"])
+def owned_partitioned_job():
+    permission_partitioned_op()
+
+
+@job(partitions_def=partitions_def_for_permissions)
+def unowned_partitioned_job():
+    permission_partitioned_op()
+
+
+@sensor(job=owned_job, owners=["test@elementl.com", "team:foo"])
+def owned_sensor():
+    pass
+
+
+@sensor(job=unowned_job)
+def unowned_sensor():
+    pass
+
+
+@schedule(job=owned_job, cron_schedule="* * * * *", owners=["test@elementl.com", "team:foo"])
+def owned_schedule():
+    return {}
+
+
+@schedule(job=unowned_job, cron_schedule="* * * * *")
+def unowned_schedule():
+    return {}
+
+
+# Assets for testing assetsForSameStorageAddress GraphQL field
+@asset(metadata={"dagster/table_name": "db.schema.shared_table"})
+def table_asset_1():
+    pass
+
+
+@asset(metadata={"dagster/table_name": "DB.SCHEMA.SHARED_TABLE"})  # case-insensitive match
+def table_asset_2():
+    pass
+
+
+@asset(metadata={"dagster/table_name": "db.schema.different_table"})
+def table_asset_3():
+    pass
+
+
+@asset  # no table_name
+def table_asset_4():
+    pass
+
+
+@asset(
+    metadata={
+        "dagster/table_name": "db.schema.snowflake_table",
+        "dagster/storage_kind": "snowflake",
+    },
+)
+def table_asset_with_kind():
+    pass
 
 
 def define_assets():
@@ -2229,6 +2415,7 @@ def define_assets():
         check_in_op_asset,
         single_run_backfill_policy_asset,
         multi_run_backfill_policy_asset,
+        asset_with_op_tags,
         executable_asset,
         unexecutable_asset,
         upstream_dynamic_partitioned_asset,
@@ -2256,6 +2443,8 @@ def define_assets():
         asset_with_compute_storage_kinds,
         asset_with_automation_condition,
         asset_with_custom_automation_condition,
+        asset_with_long_description,
+        asset_without_description,
         concurrency_asset,
         concurrency_graph_asset,
         concurrency_multi_asset,
@@ -2264,6 +2453,16 @@ def define_assets():
         asset_with_prefix_3,
         asset_with_prefix_4,
         asset_with_prefix_5,
+        owned_asset,
+        unowned_asset,
+        owned_partitioned_asset,
+        unowned_partitioned_asset,
+        table_asset_1,
+        table_asset_2,
+        table_asset_3,
+        table_asset_4,
+        table_asset_with_kind,
+        partitioned_asset_for_checks,
     ]
 
 
@@ -2275,7 +2474,14 @@ def define_resources():
 
 
 def define_asset_checks():
-    return [my_check, asset_3_check, asset_3_other_check]
+    return [
+        my_check,
+        asset_3_check,
+        asset_3_other_check,
+        owned_asset_check,
+        unowned_asset_check,
+        partitioned_asset_check,
+    ]
 
 
 asset_jobs = define_asset_jobs()
@@ -2297,7 +2503,7 @@ test_repo = Definitions(
 test_repo._name = "test_repo"  # noqa: SLF001
 
 
-def _targets_asset_job(instigator: Union[ScheduleDefinition, SensorDefinition]) -> bool:
+def _targets_asset_job(instigator: ScheduleDefinition | SensorDefinition) -> bool:
     if isinstance(instigator, SensorDefinition) and instigator.sensor_type in (
         # these rely on asset selections, which are invalid with the repos constructed
         # using the legacy dictionary pattern

@@ -12,8 +12,16 @@ from dagster import (
 )
 from dagster._check import CheckError
 from dagster._core.definitions.definitions_class import Definitions
+from dagster._core.definitions.job_base import InMemoryJob
 from dagster._core.definitions.partitions.definition.static import StaticPartitionsDefinition
+from dagster._core.execution.api import execute_run
+from dagster._core.remote_origin import (
+    RegisteredCodeLocationOrigin,
+    RemoteJobOrigin,
+    RemoteRepositoryOrigin,
+)
 from dagster._core.storage.fs_io_manager import FilesystemIOManager
+from dagster._core.test_utils import create_run_for_test
 
 
 def test_op_execution_context():
@@ -143,7 +151,7 @@ def test_context_provided_to_op():
 
 def test_context_provided_to_multi_asset():
     @dg.multi_asset(
-        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # pyright: ignore[reportArgumentType]
+        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # ty: ignore[invalid-argument-type]
     )
     def no_annotation(context):
         assert isinstance(context, dg.AssetExecutionContext)
@@ -152,7 +160,7 @@ def test_context_provided_to_multi_asset():
     dg.materialize([no_annotation])
 
     @dg.multi_asset(
-        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # pyright: ignore[reportArgumentType]
+        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # ty: ignore[invalid-argument-type]
     )
     def asset_annotation(context: AssetExecutionContext):
         assert isinstance(context, dg.AssetExecutionContext)
@@ -161,7 +169,7 @@ def test_context_provided_to_multi_asset():
     dg.materialize([asset_annotation])
 
     @dg.multi_asset(
-        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # pyright: ignore[reportArgumentType]
+        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # ty: ignore[invalid-argument-type]
     )
     def op_annotation(context: OpExecutionContext):
         assert isinstance(context, dg.OpExecutionContext)
@@ -232,7 +240,7 @@ def test_context_provided_to_graph_multi_asset():
         return 1
 
     @dg.graph_multi_asset(
-        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # pyright: ignore[reportArgumentType]
+        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # ty: ignore[invalid-argument-type]
     )
     def no_annotation_asset():
         return layered_op(no_annotation_op()), layered_op(no_annotation_op())
@@ -245,7 +253,7 @@ def test_context_provided_to_graph_multi_asset():
         return 1
 
     @dg.graph_multi_asset(
-        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # pyright: ignore[reportArgumentType]
+        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # ty: ignore[invalid-argument-type]
     )
     def asset_annotation_asset():
         return layered_op(asset_annotation_op()), layered_op(asset_annotation_op())
@@ -260,7 +268,7 @@ def test_context_provided_to_graph_multi_asset():
         return 1
 
     @dg.graph_multi_asset(
-        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # pyright: ignore[reportArgumentType]
+        outs={"out1": dg.AssetOut(dagster_type=None), "out2": dg.AssetOut(dagster_type=None)}  # ty: ignore[invalid-argument-type]
     )
     def op_annotation_asset():
         return layered_op(op_annotation_op()), layered_op(op_annotation_op())
@@ -324,7 +332,7 @@ def test_context_provided_to_asset_check():
     def to_check():
         return 1
 
-    @dg.asset_check(asset=to_check)  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(asset=to_check)
     def no_annotation(context):
         assert isinstance(context, dg.AssetCheckExecutionContext)
         assert context.check_specs == [
@@ -336,7 +344,7 @@ def test_context_provided_to_asset_check():
 
     execute_assets_and_checks(assets=[to_check], asset_checks=[no_annotation])
 
-    @dg.asset_check(asset=to_check)  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(asset=to_check)
     def asset_annotation(context: AssetExecutionContext):
         pass
 
@@ -346,7 +354,7 @@ def test_context_provided_to_asset_check():
     ):
         execute_assets_and_checks(assets=[to_check], asset_checks=[asset_annotation])
 
-    @dg.asset_check(asset=to_check)  # pyright: ignore[reportArgumentType]
+    @dg.asset_check(asset=to_check)
     def op_annotation(context: OpExecutionContext):
         assert isinstance(context, dg.OpExecutionContext)
         # AssetExecutionContext is an instance of OpExecutionContext, so add this additional check
@@ -622,3 +630,29 @@ def test_load_asset_value_multiple_upstream_partition_keys():
         result = global_asset_job.execute_in_process(asset_selection=[downstream_asset.key])
         assert result.success
         assert result.output_for_node("downstream_asset") == 6
+
+
+def test_location_name_property():
+    @dg.op
+    def location_check(context: OpExecutionContext):
+        return context.location_name
+
+    @dg.job(executor_def=dg.in_process_executor)
+    def location_check_job():
+        location_check()
+
+    location_name = "the_location"
+    with dg.instance_for_test() as instance:
+        run = create_run_for_test(
+            instance,
+            remote_job_origin=RemoteJobOrigin(
+                repository_origin=RemoteRepositoryOrigin(
+                    repository_name="the_repo",
+                    code_location_origin=RegisteredCodeLocationOrigin(location_name=location_name),
+                ),
+                job_name="the_job",
+            ),
+        )
+        with execute_run(InMemoryJob(location_check_job), run, instance) as result:
+            assert result.success
+            assert result.output_for_node("location_check") == location_name

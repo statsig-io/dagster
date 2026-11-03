@@ -5,6 +5,7 @@ from collections.abc import Set
 import dagster as dg
 import pytest
 from dagster import AutomationCondition, DagsterInstance, Definitions
+from dagster._core.definitions.data_version import DATA_VERSION_TAG
 from dagster._time import datetime_from_timestamp
 from dagster_shared.check.functions import ParameterCheckError
 
@@ -128,7 +129,8 @@ def test_on_cron_on_asset_check() -> None:
     def A() -> None: ...
 
     @dg.asset_check(asset=A, automation_condition=AutomationCondition.on_cron("@hourly"))
-    def foo_check() -> ...: ...
+    def foo_check() -> ...:  # ty: ignore[invalid-type-form]
+        ...
 
     current_time = datetime.datetime(2024, 8, 16, 4, 35)
     defs = dg.Definitions(assets=[A], asset_checks=[foo_check])
@@ -203,12 +205,29 @@ def test_on_cron_on_observable_source() -> None:
     )
     assert result.total_requested == 0
 
-    # now passed a cron tick, kick off both
+    # now passed a cron tick, kick off just the observable source, as we don't know
+    # if that will result in a new data version
     current_time += datetime.timedelta(minutes=30)
     result = dg.evaluate_automation_conditions(
         defs=defs, instance=instance, cursor=result.cursor, evaluation_time=current_time
     )
-    assert result.total_requested == 2
+    assert result.total_requested == 1
+    assert result.get_num_requested(obs.key) == 1
+
+    # don't kick off again
+    current_time += datetime.timedelta(minutes=1)
+    result = dg.evaluate_automation_conditions(
+        defs=defs, instance=instance, cursor=result.cursor, evaluation_time=current_time
+    )
+    assert result.total_requested == 0
+
+    # observable source is updated, kick off the downstream asset
+    instance.report_runless_asset_event(dg.AssetObservation("obs", tags={DATA_VERSION_TAG: "blah"}))
+    result = dg.evaluate_automation_conditions(
+        defs=defs, instance=instance, cursor=result.cursor, evaluation_time=current_time
+    )
+    assert result.total_requested == 1
+    assert result.get_num_requested(mat.key) == 1
 
     # don't kick off again
     current_time += datetime.timedelta(minutes=1)
@@ -222,7 +241,115 @@ def test_on_cron_on_observable_source() -> None:
     result = dg.evaluate_automation_conditions(
         defs=defs, instance=instance, cursor=result.cursor, evaluation_time=current_time
     )
-    assert result.total_requested == 2
+    assert result.total_requested == 1
+    assert result.get_num_requested(obs.key) == 1
+
+    # same data version, don't kick off downstream
+    instance.report_runless_asset_event(dg.AssetObservation("obs", tags={DATA_VERSION_TAG: "blah"}))
+    result = dg.evaluate_automation_conditions(
+        defs=defs, instance=instance, cursor=result.cursor, evaluation_time=current_time
+    )
+    assert result.total_requested == 0
+
+
+def test_on_cron_parent_updated_in_same_evaluation_as_cron_tick() -> None:
+    """Tests the case where the parent asset update and the cron tick both happen
+    between two evaluations (in the same evaluation window).
+    """
+
+    @dg.asset
+    def A() -> None: ...
+
+    @dg.asset(deps=[A], automation_condition=AutomationCondition.on_cron(cron_schedule="0 * * * *"))
+    def B() -> None: ...
+
+    instance = DagsterInstance.ephemeral()
+    current_time = datetime.datetime(2020, 2, 2, 0, 55)
+
+    # no cron boundary crossed
+    result = dg.evaluate_automation_conditions(
+        defs=[A, B], instance=instance, evaluation_time=current_time
+    )
+    assert result.total_requested == 0
+
+    # parent A updates, then cron boundary crosses - both in the same evaluation window
+    instance.report_runless_asset_event(dg.AssetMaterialization("A"))
+    current_time += datetime.timedelta(minutes=10)
+    result = dg.evaluate_automation_conditions(
+        defs=[A, B], instance=instance, cursor=result.cursor, evaluation_time=current_time
+    )
+    assert result.total_requested == 1
+
+    # execute B
+    instance.report_runless_asset_event(dg.AssetMaterialization("B"))
+    current_time += datetime.timedelta(minutes=1)
+
+    # don't fire again
+    result = dg.evaluate_automation_conditions(
+        defs=[A, B], instance=instance, cursor=result.cursor, evaluation_time=current_time
+    )
+    assert result.total_requested == 0
+
+    # next cron tick, A hasn't been materialized since the hour
+    current_time += datetime.timedelta(hours=1)
+    result = dg.evaluate_automation_conditions(
+        defs=[A, B], instance=instance, cursor=result.cursor, evaluation_time=current_time
+    )
+    assert result.total_requested == 0
+
+    # A gets materialized after the new cron tick, fire again
+    instance.report_runless_asset_event(dg.AssetMaterialization("A"))
+    current_time += datetime.timedelta(minutes=1)
+    result = dg.evaluate_automation_conditions(
+        defs=[A, B], instance=instance, cursor=result.cursor, evaluation_time=current_time
+    )
+    assert result.total_requested == 1
+
+
+def test_on_cron_multi_dep_one_updated_in_same_evaluation_as_cron_tick() -> None:
+    """Tests the multi-dep case where one dep updates in the same evaluation window
+    as the cron tick, and the other dep updates in a later evaluation.
+    """
+
+    @dg.asset
+    def A() -> None: ...
+
+    @dg.asset
+    def B() -> None: ...
+
+    @dg.asset(
+        deps=[A, B],
+        automation_condition=AutomationCondition.on_cron(cron_schedule="0 * * * *"),
+    )
+    def C() -> None: ...
+
+    instance = DagsterInstance.ephemeral()
+    current_time = datetime.datetime(2020, 2, 2, 0, 55)
+
+    # baseline
+    result = dg.evaluate_automation_conditions(
+        defs=[A, B, C], instance=instance, evaluation_time=current_time
+    )
+    assert result.total_requested == 0
+
+    # advance past the cron boundary, then update A (A updated after cron tick)
+    instance.report_runless_asset_event(dg.AssetMaterialization("A"))
+    current_time += datetime.timedelta(minutes=10)
+
+    # A updated + cron passed in same eval window, but B hasn't updated
+    result = dg.evaluate_automation_conditions(
+        defs=[A, B, C], instance=instance, cursor=result.cursor, evaluation_time=current_time
+    )
+    assert result.total_requested == 0
+
+    # B updates after the cron tick
+    instance.report_runless_asset_event(dg.AssetMaterialization("B"))
+    current_time += datetime.timedelta(minutes=1)
+    result = dg.evaluate_automation_conditions(
+        defs=[A, B, C], instance=instance, cursor=result.cursor, evaluation_time=current_time
+    )
+    # Both A and B have been updated since the cron tick
+    assert result.total_requested == 1
 
 
 def test_asset_order_change_doesnt_reset_cursor_state() -> None:
@@ -261,20 +388,26 @@ def test_asset_order_change_doesnt_reset_cursor_state() -> None:
         defs.resolve_implicit_global_asset_job_def().get_subset(
             asset_check_selection=checks
         ).execute_in_process(
-            tags={"passed": ""} if passed else None, instance=instance, raise_on_error=passed
+            tags={"passed": ""} if passed else None,
+            instance=instance,
+            raise_on_error=passed,
         )
 
     start_time = time.time()
 
     result = dg.evaluate_automation_conditions(
-        defs=defs_before, instance=instance, evaluation_time=datetime_from_timestamp(start_time)
+        defs=defs_before,
+        instance=instance,
+        evaluation_time=datetime_from_timestamp(start_time),
     )
     assert result.total_requested == 0
 
     # Cross a cron boundary
     start_time += 60
     result = dg.evaluate_automation_conditions(
-        defs=defs_before, instance=instance, evaluation_time=datetime_from_timestamp(start_time)
+        defs=defs_before,
+        instance=instance,
+        evaluation_time=datetime_from_timestamp(start_time),
     )
     assert result.total_requested == 0
 
@@ -321,3 +454,39 @@ def test_invalid_schedules(schedule: str, should_fail: bool) -> None:
             AutomationCondition.on_cron(cron_schedule=schedule)
     else:
         AutomationCondition.on_cron(cron_schedule=schedule)
+
+
+def test_on_cron_with_dynamic_partitions() -> None:
+    @dg.asset(
+        partitions_def=dg.DynamicPartitionsDefinition(name="some_def"),
+        automation_condition=AutomationCondition.on_cron("@hourly"),
+    )
+    def A() -> None: ...
+
+    current_time = datetime.datetime(2024, 8, 16, 4, 35)
+    defs = dg.Definitions(assets=[A])
+    instance = DagsterInstance.ephemeral()
+
+    # add a, b, c
+    instance.add_dynamic_partitions("some_def", ["a", "b", "c"])
+
+    # first evaluation, baseline no requests
+    result = dg.evaluate_automation_conditions(
+        defs=defs, instance=instance, evaluation_time=current_time
+    )
+    assert result.total_requested == 0
+
+    # now an hour later, so all requested
+    current_time += datetime.timedelta(hours=1)
+    result = dg.evaluate_automation_conditions(
+        defs=defs, instance=instance, evaluation_time=current_time, cursor=result.cursor
+    )
+    assert result.total_requested == 3
+
+    # now c gets deleted, which shouldn't cause an error
+    current_time += datetime.timedelta(minutes=1)
+    instance.delete_dynamic_partition("some_def", "c")
+    result = dg.evaluate_automation_conditions(
+        defs=defs, instance=instance, evaluation_time=current_time, cursor=result.cursor
+    )
+    assert result.total_requested == 0

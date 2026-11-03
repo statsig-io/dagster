@@ -1,6 +1,5 @@
 import os
 import subprocess
-from typing import Optional
 
 import dagster._check as check
 
@@ -36,7 +35,12 @@ def get_aws_region() -> str:
 def ensure_ecr_login(aws_region: str = DEFAULT_AWS_ECR_REGION):
     check.str_param(aws_region, "aws_region")
 
-    cmd = f"aws ecr get-login --no-include-email --region {aws_region} | sh"
+    aws_account_id = get_aws_account_id()
+    registry = aws_ecr_repository(aws_account_id, aws_region)
+    cmd = (
+        f"aws ecr get-login-password --region {aws_region} "
+        f"| docker login --username AWS --password-stdin {registry}"
+    )
 
     check.invariant(
         subprocess.call(cmd, shell=True) == 0,
@@ -45,7 +49,7 @@ def ensure_ecr_login(aws_region: str = DEFAULT_AWS_ECR_REGION):
 
 
 def ecr_image(
-    image: str, tag: Optional[str], aws_account_id: str, aws_region: str = DEFAULT_AWS_ECR_REGION
+    image: str, tag: str | None, aws_account_id: str, aws_region: str = DEFAULT_AWS_ECR_REGION
 ) -> str:
     check.str_param(image, "image")
     check.opt_str_param(aws_account_id, "tag")

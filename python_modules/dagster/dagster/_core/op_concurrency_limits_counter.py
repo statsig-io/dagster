@@ -1,7 +1,7 @@
 import os
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import dagster._check as check
 from dagster._core.instance import DagsterInstance
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from dagster._utils.concurrency import ConcurrencyKeyInfo
 
 
-def _pool_key_for_step(step: ExecutionStepSnap) -> Optional[str]:
+def _pool_key_for_step(step: ExecutionStepSnap) -> str | None:
     if step.pool is not None:
         return step.pool
 
@@ -32,7 +32,7 @@ def _pool_key_for_step(step: ExecutionStepSnap) -> Optional[str]:
 
 def compute_run_op_concurrency_info_for_snapshot(
     plan_snapshot: ExecutionPlanSnapshot,
-) -> Optional[RunOpConcurrency]:
+) -> RunOpConcurrency | None:
     """Utility function called at run creation time to add the concurrency info needed to keep track
     of concurrency limits for each in-flight run.
     """
@@ -83,10 +83,15 @@ class GlobalOpConcurrencyLimitsCounter:
         concurrency_keys: set[str],
         pool_limits: Sequence[PoolLimit],
         slot_count_offset: int = 0,
-        pool_granularity: Optional[PoolGranularity] = None,
+        pool_granularity: PoolGranularity | None = None,
+        concurrency_info_by_key: dict[str, "ConcurrencyKeyInfo"] | None = None,
     ):
         self._root_pools_by_run = {}
-        self._concurrency_info_by_key: dict[str, ConcurrencyKeyInfo] = {}
+        # Callers that build several counters within one dequeue pass share this cache so each
+        # pool is fetched from storage at most once per pass.
+        self._concurrency_info_by_key: dict[str, ConcurrencyKeyInfo] = (
+            concurrency_info_by_key if concurrency_info_by_key is not None else {}
+        )
         self._launched_pool_counts = defaultdict(int)
         self._in_progress_pool_counts = defaultdict(int)
         self._slot_count_offset = slot_count_offset
@@ -144,12 +149,14 @@ class GlobalOpConcurrencyLimitsCounter:
                 instance.event_log_storage.initialize_concurrency_limit_to_default(pool_name)
 
     def _fetch_concurrency_info(self, instance: DagsterInstance, pool_names: set[str]):
-        for pool_name in pool_names:
-            if pool_name is None:
-                continue
-
-            self._concurrency_info_by_key[pool_name] = (
-                instance.event_log_storage.get_concurrency_info(pool_name)
+        missing = [
+            pool_name
+            for pool_name in pool_names
+            if pool_name is not None and pool_name not in self._concurrency_info_by_key
+        ]
+        if missing:
+            self._concurrency_info_by_key.update(
+                instance.event_log_storage.get_concurrency_infos(missing)
             )
 
     def _should_allocate_slots_for_in_progress_run(self, record: RunRecord):

@@ -1,5 +1,3 @@
-from typing import Optional
-
 import click
 import dagster._check as check
 
@@ -12,6 +10,8 @@ CLI_HELP = """This CLI is used for building the various Dagster images we use in
 """
 
 AWS_ECR_REGISTRY = "public.ecr.aws/dagster"
+
+DEFAULT_PUBLISH_PLATFORMS = ("linux/amd64", "linux/arm64")
 
 
 @click.group(help=CLI_HELP)
@@ -55,7 +55,7 @@ opt_build_timestamp = click.option(
 @click.option("-v", "--python-version", type=click.STRING, required=True)
 @opt_build_platform
 def build(
-    name: str, dagster_version: str, timestamp: str, python_version: str, platform: Optional[str]
+    name: str, dagster_version: str, timestamp: str, python_version: str, platform: str | None
 ):
     get_image(name).build(timestamp, dagster_version, python_version, platform)
 
@@ -65,7 +65,7 @@ def build(
 @opt_build_dagster_version
 @opt_build_timestamp
 @opt_build_platform
-def build_all(name: str, dagster_version: str, timestamp: str, platform: Optional[str]):
+def build_all(name: str, dagster_version: str, timestamp: str, platform: str | None):
     """Build all supported python versions for image."""
     image = get_image(name)
 
@@ -86,13 +86,22 @@ opt_set_latest = click.option(
     default=False,
     help="Whether to tag the image as latest",
 )
+opt_publish_platforms = click.option(
+    "--platform",
+    "platforms",
+    type=click.STRING,
+    multiple=True,
+    default=DEFAULT_PUBLISH_PLATFORMS,
+    show_default=True,
+    help="Target platform to publish. Repeat to publish a multi-platform manifest list.",
+)
 
 
 @cli.command()
 @opt_push_name
 @click.option("-v", "--python-version", type=click.STRING, required=True)
 @click.option("--custom-tag", type=click.STRING, required=False)
-def push(name: str, python_version: str, custom_tag: Optional[str]):
+def push(name: str, python_version: str, custom_tag: str | None):
     ensure_ecr_login()
     get_image(name).push(python_version, custom_tag=custom_tag)
 
@@ -156,6 +165,32 @@ def push_ecr(name: str, dagster_version: str, set_latest: bool):
         tags.append(f"{AWS_ECR_REGISTRY}/{name}:latest")
 
     push_to_registry(name, tags)
+
+
+@cli.command()
+@opt_push_name
+@opt_push_dagster_version
+@opt_set_latest
+@opt_publish_platforms
+def build_and_push_dockerhub(
+    name: str, dagster_version: str, set_latest: bool, platforms: tuple[str, ...]
+):
+    """Build and push a multi-platform k8s image to Docker Hub as one manifest list.
+
+    Replaces a `build` plus `push-dockerhub` pair: a multi-platform image cannot be staged
+    in the local image store, so it has to be built and pushed in one step. Must be logged
+    in to Docker Hub, with a buildx builder that can target every requested platform.
+    """
+    tags = [
+        f"dagster/{name}:{dagster_version}",
+    ]
+    if set_latest:
+        tags.append(f"dagster/{name}:latest")
+
+    image = get_image(name)
+    image.build_and_push_multiplatform(
+        dagster_version, next(iter(image.python_versions)), tags, list(platforms)
+    )
 
 
 def main():

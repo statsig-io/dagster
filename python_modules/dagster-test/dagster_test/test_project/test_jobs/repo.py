@@ -3,9 +3,9 @@ import os
 import random
 import time
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
-from typing import Any, Callable, Optional, Union
+from typing import Any
 
 import boto3
 from dagster import (
@@ -68,11 +68,11 @@ _GCS_RESOURCES = {
 
 def define_job(
     graph_def: GraphDefinition,
-    platform: Optional[str] = None,
-    extra_resources: Optional[Mapping[str, ResourceDefinition]] = None,
-    name: Optional[str] = None,
+    platform: str | None = None,
+    extra_resources: Mapping[str, ResourceDefinition] | None = None,
+    name: str | None = None,
     **kwargs: Any,  # forwarded to graph_def.to_job
-) -> Union[JobDefinition, Callable[[], JobDefinition]]:
+) -> JobDefinition | Callable[[], JobDefinition]:
     if not name:
         base_name = graph_def.name.rsplit("_", 1)[0]  # remove "_graph" suffix
         suffix = f"_job_{platform}" if platform else "_job"
@@ -87,7 +87,7 @@ def define_job(
 
 def apply_platform_settings(
     job_def: JobDefinition,
-    platform: Optional[str],
+    platform: str | None,
     extra_resources: Mapping[str, ResourceDefinition] = {},
 ) -> JobDefinition:
     if platform == "k8s":
@@ -435,7 +435,7 @@ def s3_resource_with_context_manager(context):
         context.log.info("tearing down s3_resource_with_context_manager")
         bucket = "dagster-scratch-80542c2"
         key = f"resource_termination_test/{context.run_id}"
-        s3.put_object(Bucket=bucket, Key=key, Body=b"foo")  # pyright: ignore[reportPossiblyUnboundVariable]
+        s3.put_object(Bucket=bucket, Key=key, Body=b"foo")
 
 
 @op(required_resource_keys={"s3_resource_with_context_manager"})
@@ -464,9 +464,7 @@ def sum_fan_in(_, nums):
 
 
 def construct_fan_in_level(source, level, fanout):
-    fan_outs = []
-    for i in range(0, fanout):
-        fan_outs.append(add_one_fan.alias(f"add_one_fan_{level}_{i}")(source))
+    fan_outs = [add_one_fan.alias(f"add_one_fan_{level}_{i}")(source) for i in range(0, fanout)]
 
     return sum_fan_in.alias(f"sum_{level}")(fan_outs)
 

@@ -3,7 +3,7 @@ import inspect
 from abc import abstractmethod
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 from dagster import (
     InputContext,
@@ -17,6 +17,40 @@ from dagster._core.storage.io_manager import IOManager
 if TYPE_CHECKING:
     from fsspec import AbstractFileSystem
     from upath import UPath
+
+
+def escape_leading_slash(segment: str) -> str:
+    """Escape a leading ``/`` to ``%2F``. ``pathlib``'s ``/`` operator
+    drops the left side when the right side is absolute, so this is required
+    to keep a string joinable as a relative subpath. Escaping (rather than
+    stripping) preserves uniqueness: ``"/foo"`` and ``"foo"`` are distinct.
+    """
+    return "%2F" + segment[1:] if segment.startswith("/") else segment
+
+
+def escape_dotdot_segments(s: str) -> str:
+    """Escape ``..`` *path segments* between ``/`` separators to ``%2E%2E``.
+    Substrings like ``my..backup`` are left intact; only whole-segment
+    matches are escaped.
+
+    Required for hierarchical filesystems where the OS resolves ``..`` as
+    an upward traversal at write time.
+    """
+    parts = s.split("/")
+    escaped = ["%2E%2E" if p == ".." else p for p in parts]
+    return "/".join(escaped)
+
+
+def coerce_to_relative_parts(path: "UPath") -> tuple[str, ...]:
+    """Return ``path.parts`` with the absolute-root marker dropped and the
+    "this path was absolute" intent encoded as a ``%2F`` escape on the
+    first component. The result can be joined onto a base path as a
+    relative subpath without an absolute right side dropping the base.
+    """
+    non_root = tuple(p for p in path.parts if p != "/")
+    if path.is_absolute() and non_root:
+        non_root = ("%2F" + non_root[0],) + non_root[1:]
+    return non_root
 
 
 class UPathIOManager(IOManager):
@@ -33,7 +67,7 @@ class UPathIOManager(IOManager):
 
     """
 
-    extension: Optional[str] = None  # override in child class
+    extension: str | None = None  # override in child class
 
     def __init__(
         self,
@@ -43,6 +77,16 @@ class UPathIOManager(IOManager):
 
         assert not self.extension or "." in self.extension
         self._base_path = base_path or UPath(".")
+
+    def make_safe_partition_path(self, base_path: "UPath", partition: str) -> "UPath":
+        """Join ``partition`` onto ``base_path``, escaping characters whose
+        pathlib interpretation would relocate the result off of ``base_path``.
+
+        Default escapes a leading ``/``. Subclasses backed by hierarchical
+        filesystems should override to also escape ``..`` path segments —
+        see :py:func:`escape_dotdot_segments`.
+        """
+        return base_path / escape_leading_slash(partition)
 
     @abstractmethod
     def dump_to_path(self, context: OutputContext, obj: Any, path: "UPath"):
@@ -117,7 +161,7 @@ class UPathIOManager(IOManager):
         from upath import UPath
 
         if isinstance(self._base_path, UPath):
-            return self._base_path._kwargs.copy()  # noqa  # pyright: ignore[reportAttributeAccessIssue]
+            return self._base_path._kwargs.copy()  # noqa
         elif isinstance(self._base_path, Path):
             return {}
         else:
@@ -157,22 +201,24 @@ class UPathIOManager(IOManager):
     def _with_extension(self, path: "UPath") -> "UPath":
         return path.with_suffix(path.suffix + self.extension) if self.extension else path
 
-    def _get_path_without_extension(self, context: Union[InputContext, OutputContext]) -> "UPath":
+    def _get_path_without_extension(self, context: InputContext | OutputContext) -> "UPath":
         if context.has_asset_key:
             context_path = self.get_asset_relative_path(context)
         else:
             # we are dealing with an op output
             context_path = self.get_op_output_relative_path(context)
 
-        return self._base_path.joinpath(context_path)
+        # Coerce absolute components to relative ones so the join can't drop
+        # the configured base.
+        return self._base_path.joinpath(*coerce_to_relative_parts(context_path))
 
-    def get_asset_relative_path(self, context: Union[InputContext, OutputContext]) -> "UPath":
+    def get_asset_relative_path(self, context: InputContext | OutputContext) -> "UPath":
         from upath import UPath
 
         # we are not using context.get_asset_identifier() because it already includes the partition_key
         return UPath(*context.asset_key.path)
 
-    def get_op_output_relative_path(self, context: Union[InputContext, OutputContext]) -> "UPath":
+    def get_op_output_relative_path(self, context: InputContext | OutputContext) -> "UPath":
         from upath import UPath
 
         return UPath(*context.get_identifier())
@@ -192,7 +238,7 @@ class UPathIOManager(IOManager):
             "because the input metadata includes allow_missing_partitions=True"
         )
 
-    def _get_path(self, context: Union[InputContext, OutputContext]) -> "UPath":
+    def _get_path(self, context: InputContext | OutputContext) -> "UPath":
         """Returns the I/O path for a given context.
         Should not be used with partitions (use `_get_paths_for_partitions` instead).
         """
@@ -200,7 +246,7 @@ class UPathIOManager(IOManager):
         return self._with_extension(path)
 
     def get_path_for_partition(
-        self, context: Union[InputContext, OutputContext], path: "UPath", partition: str
+        self, context: InputContext | OutputContext, path: "UPath", partition: str
     ) -> "UPath":
         """Override this method if you want to use a different partitioning scheme
         (for example, if the saving function handles partitioning instead).
@@ -214,10 +260,10 @@ class UPathIOManager(IOManager):
         Returns:
             UPath: The path to the file with the partition key appended.
         """
-        return path / partition
+        return self.make_safe_partition_path(path, partition)
 
     def _get_paths_for_partitions(
-        self, context: Union[InputContext, OutputContext]
+        self, context: InputContext | OutputContext
     ) -> dict[str, "UPath"]:
         """Returns a dict of partition_keys into I/O paths for a given context."""
         if not context.has_asset_partitions:
@@ -251,7 +297,7 @@ class UPathIOManager(IOManager):
         }
 
     def _get_multipartition_backcompat_paths(
-        self, context: Union[InputContext, OutputContext]
+        self, context: InputContext | OutputContext
     ) -> Mapping[str, "UPath"]:
         if not context.has_asset_partitions:
             raise TypeError(
@@ -262,11 +308,14 @@ class UPathIOManager(IOManager):
         partition_keys = context.asset_partition_keys
 
         asset_path = self._get_path_without_extension(context)
-        return {
-            partition_key: self._with_extension(asset_path / partition_key)
-            for partition_key in partition_keys
-            if isinstance(partition_key, MultiPartitionKey)
-        }
+        result: dict[str, UPath] = {}
+        for partition_key in partition_keys:
+            if not isinstance(partition_key, MultiPartitionKey):
+                continue
+            result[partition_key] = self._with_extension(
+                self.make_safe_partition_path(asset_path, partition_key)
+            )
+        return result
 
     def _load_single_input(self, path: "UPath", context: InputContext) -> Any:
         context.log.debug(self.get_loading_input_log_message(path))
@@ -338,19 +387,17 @@ class UPathIOManager(IOManager):
         async def collect():
             loop = asyncio.get_running_loop()
 
-            tasks = []
-
-            for partition_key in context.asset_partition_keys:
-                tasks.append(
-                    loop.create_task(
-                        self._load_partition_from_path(
-                            context,
-                            partition_key,
-                            paths[partition_key],
-                            backcompat_paths.get(partition_key),
-                        )
+            tasks = [
+                loop.create_task(
+                    self._load_partition_from_path(
+                        context,
+                        partition_key,
+                        paths[partition_key],
+                        backcompat_paths.get(partition_key),
                     )
                 )
+                for partition_key in context.asset_partition_keys
+            ]
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -383,7 +430,7 @@ class UPathIOManager(IOManager):
 
             return results_without_errors
 
-        awaited_objects = asyncio.get_event_loop().run_until_complete(collect())
+        awaited_objects = asyncio.run(collect())
 
         return {
             partition_key: awaited_object
@@ -399,7 +446,7 @@ class UPathIOManager(IOManager):
             # load_from_path returns a coroutine, so we need to await the results
             return self.load_partitions_async(context)
 
-    def load_input(self, context: InputContext) -> Union[Any, dict[str, Any]]:
+    def load_input(self, context: InputContext) -> Any | dict[str, Any]:
         # If no asset key, we are dealing with an op output which is always non-partitioned
         if not context.has_asset_key or not context.has_asset_partitions:
             path = self._get_path(context)

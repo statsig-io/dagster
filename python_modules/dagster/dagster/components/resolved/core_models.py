@@ -1,18 +1,21 @@
-from collections.abc import Mapping, Sequence
-from typing import Annotated, Any, Callable, Literal, Optional, Union
+from collections.abc import Callable, Mapping, Sequence
+from typing import Annotated, Any, Literal, Optional, TypeAlias
 
 from dagster_shared.record import record
-from typing_extensions import TypeAlias
 
 import dagster._check as check
 from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckSpec
 from dagster._core.definitions.asset_key import AssetKey, CoercibleToAssetKeyPrefix
+from dagster._core.definitions.asset_selection import AssetSelection
 from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
+from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
+from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
 from dagster._core.definitions.backfill_policy import BackfillPolicy
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
 )
 from dagster._core.definitions.definitions_class import Definitions
+from dagster._core.definitions.freshness import FreshnessPolicy
 from dagster._core.definitions.partitions.definition import (
     DailyPartitionsDefinition,
     HourlyPartitionsDefinition,
@@ -21,9 +24,16 @@ from dagster._core.definitions.partitions.definition import (
     TimeWindowPartitionsDefinition,
     WeeklyPartitionsDefinition,
 )
+from dagster._core.definitions.source_asset import SourceAsset
 from dagster.components.resolved.base import Resolvable, resolve_fields
 from dagster.components.resolved.context import ResolutionContext
 from dagster.components.resolved.model import Injected, Model, Resolver
+
+
+def _resolve_tags(context: ResolutionContext, tags: Mapping[str, Any]) -> Mapping[str, str]:
+    """Resolve tags, coercing non-string scalar values to strings."""
+    resolved = context.resolve_value(tags)
+    return {k: str(v) for k, v in resolved.items()}
 
 
 def _resolve_asset_key(context: ResolutionContext, key: str) -> AssetKey:
@@ -39,16 +49,16 @@ PostProcessorFn: TypeAlias = Callable[[Definitions], Definitions]
 class HourlyPartitionsDefinitionModel(Resolvable, Model):
     type: Literal["hourly"] = "hourly"
     start_date: str
-    end_date: Optional[str] = None
-    timezone: Optional[str] = None
+    end_date: str | None = None
+    timezone: str | None = None
     minute_offset: int = 0
 
 
 class DailyPartitionsDefinitionModel(Resolvable, Model):
     type: Literal["daily"] = "daily"
     start_date: str
-    end_date: Optional[str] = None
-    timezone: Optional[str] = None
+    end_date: str | None = None
+    timezone: str | None = None
     minute_offset: int = 0
     hour_offset: int = 0
 
@@ -56,8 +66,8 @@ class DailyPartitionsDefinitionModel(Resolvable, Model):
 class WeeklyPartitionsDefinitionModel(Resolvable, Model):
     type: Literal["weekly"] = "weekly"
     start_date: str
-    end_date: Optional[str] = None
-    timezone: Optional[str] = None
+    end_date: str | None = None
+    timezone: str | None = None
     minute_offset: int = 0
     hour_offset: int = 0
     day_offset: int = 0
@@ -66,8 +76,8 @@ class WeeklyPartitionsDefinitionModel(Resolvable, Model):
 class TimeWindowPartitionsDefinitionModel(Resolvable, Model):
     type: Literal["time_window"] = "time_window"
     start_date: str
-    end_date: Optional[str] = None
-    timezone: Optional[str] = None
+    end_date: str | None = None
+    timezone: str | None = None
     fmt: str
     cron_schedule: str
 
@@ -77,7 +87,7 @@ class StaticPartitionsDefinitionModel(Resolvable, Model):
     partition_keys: Sequence[str]
 
 
-def resolve_partitions_def(context: ResolutionContext, model) -> Optional[PartitionsDefinition]:
+def resolve_partitions_def(context: ResolutionContext, model) -> PartitionsDefinition | None:
     if model is None:
         return None
 
@@ -131,7 +141,7 @@ class MultiRunBackfillPolicyModel(Resolvable, Model):
 def resolve_backfill_policy(
     context: ResolutionContext,
     backfill_policy,
-) -> Optional[BackfillPolicy]:
+) -> BackfillPolicy | None:
     if backfill_policy is None:
         return None
 
@@ -146,15 +156,15 @@ def resolve_backfill_policy(
 
 
 class OpSpec(Model, Resolvable):
-    name: Optional[str] = None
-    tags: Optional[dict[str, Any]] = None
-    description: Optional[str] = None
-    pool: Optional[str] = None
+    name: str | None = None
+    tags: dict[str, Any] | None = None
+    description: str | None = None
+    pool: str | None = None
     backfill_policy: Annotated[
-        Optional[BackfillPolicy],
+        BackfillPolicy | None,
         Resolver(
             resolve_backfill_policy,
-            model_field_type=Union[SingleRunBackfillPolicyModel, MultiRunBackfillPolicyModel],
+            model_field_type=SingleRunBackfillPolicyModel | MultiRunBackfillPolicyModel,
         ),
     ] = None
 
@@ -176,14 +186,14 @@ ResolvedAssetKey: TypeAlias = Annotated[
 @record
 class SharedAssetKwargs(Resolvable):
     deps: Annotated[
-        Optional[Sequence[ResolvedAssetKey]],
+        Sequence[ResolvedAssetKey] | None,
         Resolver.default(
             description="The asset keys for the upstream assets that this asset depends on.",
             examples=[["my_database/my_schema/upstream_table"]],
         ),
     ] = None
     description: Annotated[
-        Optional[str],
+        str | None,
         Resolver.default(
             description="Human-readable description of the asset.",
             examples=["Refined sales data"],
@@ -196,27 +206,27 @@ class SharedAssetKwargs(Resolvable):
         ),
     ] = {}
     group_name: Annotated[
-        Optional[str],
+        str | None,
         Resolver.default(
             description="Used to organize assets into groups, defaults to 'default'.",
             examples=["staging"],
         ),
     ] = None
     skippable: Annotated[
-        Optional[bool],
+        bool | None,
         Resolver.default(
             description="Whether this asset can be omitted during materialization, causing downstream dependencies to skip.",
         ),
     ] = None
     code_version: Annotated[
-        Optional[str],
+        str | None,
         Resolver.default(
             description="A version representing the code that produced the asset. Increment this value when the code changes.",
             examples=["3"],
         ),
     ] = None
     owners: Annotated[
-        Optional[Sequence[str]],
+        Sequence[str] | None,
         Resolver.default(
             description="A list of strings representing owners of the asset. Each string can be a user's email address, or a team name prefixed with `team:`, e.g. `team:finops`.",
             examples=[["team:analytics", "nelson@hooli.com"]],
@@ -224,7 +234,9 @@ class SharedAssetKwargs(Resolvable):
     ] = None
     tags: Annotated[
         Mapping[str, str],
-        Resolver.default(
+        Resolver(
+            _resolve_tags,
+            model_field_type=Mapping[str, str | int | float | bool],
             description="Tags for filtering and organizing.",
             examples=[{"tier": "prod", "team": "analytics"}],
         ),
@@ -237,24 +249,30 @@ class SharedAssetKwargs(Resolvable):
         ),
     ] = []
     automation_condition: Annotated[
-        Optional[AutomationCondition],
+        AutomationCondition | None,
         Resolver.default(
-            model_field_type=Optional[str],
+            model_field_type=Optional[str],  # noqa: UP045
             description="The condition under which the asset will be automatically materialized.",
         ),
     ] = None
     partitions_def: Annotated[
-        Optional[PartitionsDefinition],
+        PartitionsDefinition | None,
         Resolver(
             resolve_partitions_def,
             description="The partitions definition for the asset.",
-            model_field_type=Union[
-                HourlyPartitionsDefinitionModel,
-                DailyPartitionsDefinitionModel,
-                WeeklyPartitionsDefinitionModel,
-                TimeWindowPartitionsDefinitionModel,
-                StaticPartitionsDefinitionModel,
-            ],
+            model_field_type=HourlyPartitionsDefinitionModel
+            | DailyPartitionsDefinitionModel
+            | WeeklyPartitionsDefinitionModel
+            | TimeWindowPartitionsDefinitionModel
+            | StaticPartitionsDefinitionModel,
+        ),
+    ] = None
+    freshness_policy: Annotated[
+        FreshnessPolicy | None,
+        Resolver.default(
+            model_field_type=Optional[str],  # noqa: UP045
+            description="The freshness policy for the asset.",
+            examples=["{{ custom_freshness_template_var() }}"],
         ),
     ] = None
 
@@ -280,9 +298,20 @@ class AssetSpecUpdateKwargs(SharedAssetKwargs):
     overriding a default resolution of each AssetSpec.
     """
 
-    key: Optional[ResolvedAssetKey] = None
+    key: ResolvedAssetKey | None = None
     key_prefix: Annotated[
-        Optional[CoercibleToAssetKeyPrefix],
+        CoercibleToAssetKeyPrefix | None,
+        Resolver.default(description="Prefix the existing asset key with the provided value."),
+    ] = None
+
+
+@record
+class AssetSpecKeyUpdateKwargs(Resolvable):
+    """Resolvable object representing only a configurable asset key."""
+
+    key: ResolvedAssetKey | None = None
+    key_prefix: Annotated[
+        CoercibleToAssetKeyPrefix | None,
         Resolver.default(description="Prefix the existing asset key with the provided value."),
     ] = None
 
@@ -304,11 +333,11 @@ ResolvedAssetSpec: TypeAlias = Annotated[
 class AssetCheckSpecKwargs(Resolvable):
     name: str
     asset: ResolvedAssetKey
-    additional_deps: Optional[Sequence[ResolvedAssetKey]] = None
-    description: Optional[str] = None
+    additional_deps: Sequence[ResolvedAssetKey] | None = None
+    description: str | None = None
     blocking: bool = False
-    metadata: Optional[Mapping[str, Any]] = None
-    automation_condition: Optional[Injected[AutomationCondition]] = None
+    metadata: Mapping[str, Any] | None = None
+    automation_condition: Injected[AutomationCondition] | None = None
 
 
 def resolve_asset_check_spec(context: ResolutionContext, model):
@@ -395,6 +424,40 @@ def apply_post_processor_to_spec(
         check.failed(f"Unsupported operation: {model.operation}")
 
 
+def _resolve_target_keys(
+    defs: Definitions,
+    target: str | None,
+) -> frozenset[AssetKey] | None:
+    """Resolve a post-processing target string to a set of asset keys.
+
+    Returns None for wildcard targets (meaning "apply to all"), or a frozenset
+    of matching AssetKeys for targeted selections.
+
+    Builds a lightweight AssetGraph directly from the definitions' assets rather
+    than going through get_repository_def(), which would trigger premature
+    resource validation. This is necessary because during post-processing, the
+    Definitions may not yet contain resources from parent folders (they get
+    merged later when components are composed).
+    """
+    if target is None or target == "*":
+        return None
+
+    selection = AssetSelection.from_string(target, include_sources=True)
+
+    # Build a lightweight asset graph for selection resolution only.
+    # Wrap bare AssetSpecs into AssetsDefinitions so they can participate
+    # in the graph, and pass through all other asset types as-is.
+    all_assets: list[AssetsDefinition | SourceAsset] = []
+    for asset in defs.assets or []:
+        if isinstance(asset, (AssetsDefinition, SourceAsset)):
+            all_assets.append(asset)
+        elif isinstance(asset, AssetSpec):
+            all_assets.append(AssetsDefinition(specs=[asset]))
+
+    asset_graph = AssetGraph.from_assets(all_assets)
+    return frozenset(selection.resolve(asset_graph))
+
+
 def apply_post_processor_to_defs(
     model,
     defs: Definitions,
@@ -402,9 +465,21 @@ def apply_post_processor_to_defs(
 ) -> Definitions:
     check.inst(model, AssetPostProcessorModel.model())
 
-    return defs.map_resolved_asset_specs(
-        selection=model.target,
-        func=lambda spec: apply_post_processor_to_spec(model, spec, context),
+    target_keys = _resolve_target_keys(defs, model.target)
+
+    # Use permissive_map_resolved_asset_specs with selection=None to:
+    # 1. Avoid triggering resolve_asset_graph() -> get_repository_def(), which
+    #    validates resource requirements prematurely before parent component
+    #    resources are merged (selection=None skips resolution).
+    # 2. Allow SourceAsset and CacheableAssetsDefinition to pass through
+    #    unchanged, since map_resolved_asset_specs rejects those types.
+    return defs.permissive_map_resolved_asset_specs(
+        func=lambda spec: (
+            apply_post_processor_to_spec(model, spec, context)
+            if target_keys is None or spec.key in target_keys
+            else spec
+        ),
+        selection=None,
     )
 
 
@@ -426,7 +501,7 @@ AssetPostProcessor: TypeAlias = Annotated[
 ]
 
 
-def post_process_defs(defs: Definitions, post_processors: Optional[list[AssetPostProcessor]]):
+def post_process_defs(defs: Definitions, post_processors: list[AssetPostProcessor] | None):
     for post_processor in post_processors or []:
         defs = post_processor(defs)
     return defs

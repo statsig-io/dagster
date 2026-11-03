@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from dagster._annotations import public, superseded
 
@@ -47,7 +48,7 @@ def component_instance(
             class MyComponent(dg.Component):
                 ...
 
-            @component_instance
+            @dg.component_instance
             def load(context: dg.ComponentLoadContext) -> MyComponent:
                 return MyComponent(...)
     """

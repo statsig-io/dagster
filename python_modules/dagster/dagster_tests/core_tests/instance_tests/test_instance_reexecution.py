@@ -65,7 +65,7 @@ def b() -> None: ...
 @dg.multi_asset(
     specs=[
         dg.AssetSpec("a_checked", skippable=True),
-        dg.AssetSpec("c_checked", deps="b_checked", skippable=True),
+        dg.AssetSpec("c_checked", deps=["b_checked"], skippable=True),
         dg.AssetSpec("d_checked", deps=["a_checked", "b_checked"], skippable=True),
     ],
     check_specs=[
@@ -284,6 +284,7 @@ def test_create_reexecuted_run_from_failure(
         code_location=code_location,
         remote_job=remote_job,
         strategy=ReexecutionStrategy.FROM_FAILURE,
+        request_context=workspace,
     )
 
     assert run.tags[RESUME_RETRY_TAG] == "true"
@@ -298,15 +299,16 @@ def test_create_reexecuted_run_from_failure(
 
 
 def test_create_reexecuted_run_from_failure_all_steps_succeeded(
-    instance: dg.DagsterInstance, code_location, remote_job, success_run
+    instance: dg.DagsterInstance, workspace, code_location, remote_job, success_run
 ):
     failed_after_finish_run = success_run._replace(status=DagsterRunStatus.FAILURE)
 
     with pytest.raises(
-        DagsterInvalidSubsetError, match="No steps needed to be retried in the failed run."
+        DagsterInvalidSubsetError, match=r"No steps needed to be retried in the failed run."
     ):
         instance.create_reexecuted_run(
             parent_run=failed_after_finish_run,
+            request_context=workspace,
             code_location=code_location,
             remote_job=remote_job,
             strategy=ReexecutionStrategy.FROM_FAILURE,
@@ -315,12 +317,14 @@ def test_create_reexecuted_run_from_failure_all_steps_succeeded(
 
 def test_create_reexecuted_run_from_failure_tags(
     instance: dg.DagsterInstance,
+    workspace,
     code_location,
     remote_job,
     failed_run,
 ):
     run = instance.create_reexecuted_run(
         parent_run=failed_run,
+        request_context=workspace,
         code_location=code_location,
         remote_job=remote_job,
         strategy=ReexecutionStrategy.FROM_FAILURE,
@@ -331,6 +335,7 @@ def test_create_reexecuted_run_from_failure_tags(
 
     run = instance.create_reexecuted_run(
         parent_run=failed_run,
+        request_context=workspace,
         code_location=code_location,
         remote_job=remote_job,
         strategy=ReexecutionStrategy.FROM_FAILURE,
@@ -342,6 +347,7 @@ def test_create_reexecuted_run_from_failure_tags(
 
     run = instance.create_reexecuted_run(
         parent_run=failed_run,
+        request_context=workspace,
         code_location=code_location,
         remote_job=remote_job,
         strategy=ReexecutionStrategy.FROM_FAILURE,
@@ -359,6 +365,7 @@ def test_create_reexecuted_run_all_steps(
 ):
     run = instance.create_reexecuted_run(
         parent_run=failed_run,
+        request_context=workspace,
         code_location=code_location,
         remote_job=remote_job,
         strategy=ReexecutionStrategy.ALL_STEPS,
@@ -415,6 +422,7 @@ def test_create_reexecuted_run_from_multi_asset_failure(
     }
     run = instance.create_reexecuted_run(
         parent_run=failed_run,
+        request_context=workspace,
         code_location=code_location,
         remote_job=remote_job,
         strategy=ReexecutionStrategy.FROM_ASSET_FAILURE,
@@ -444,12 +452,15 @@ def test_create_reexecuted_run_from_multi_asset_check_failure(
 
     assert _get_materialized_keys(instance, failed_run.run_id) == {
         dg.AssetKey("a_checked"),
+        dg.AssetKey("b_checked"),
     }
     assert _get_checked_keys(instance, failed_run.run_id) == {
         dg.AssetCheckKey(dg.AssetKey("a_checked"), "good"),
+        dg.AssetCheckKey(dg.AssetKey("b_checked"), "good"),
     }
     run = instance.create_reexecuted_run(
         parent_run=failed_run,
+        request_context=workspace,
         code_location=code_location,
         remote_job=remote_job,
         strategy=ReexecutionStrategy.FROM_ASSET_FAILURE,
@@ -461,12 +472,10 @@ def test_create_reexecuted_run_from_multi_asset_check_failure(
 
     assert run.status == DagsterRunStatus.SUCCESS
     assert _get_materialized_keys(instance, run.run_id) == {
-        dg.AssetKey("b_checked"),
         dg.AssetKey("c_checked"),
         dg.AssetKey("d_checked"),
     }
     assert _get_checked_keys(instance, run.run_id) == {
-        dg.AssetCheckKey(dg.AssetKey("b_checked"), "good"),
         dg.AssetCheckKey(dg.AssetKey("c_checked"), "good"),
         dg.AssetCheckKey(dg.AssetKey("d_checked"), "good"),
     }
@@ -487,10 +496,11 @@ def test_create_reexecuted_run_from_multi_asset_failure_after_all_assets_materia
     }
     with pytest.raises(
         DagsterInvalidSubsetError,
-        match="No assets or asset checks needed to be retried in the failed run.",
+        match=r"No assets or asset checks needed to be retried in the failed run.",
     ):
         instance.create_reexecuted_run(
             parent_run=failed_run,
+            request_context=workspace,
             code_location=code_location,
             remote_job=remote_job,
             strategy=ReexecutionStrategy.FROM_ASSET_FAILURE,
@@ -517,6 +527,7 @@ def test_create_reexecuted_run_from_multi_asset_check_failure_blocking_check(
     }
     run = instance.create_reexecuted_run(
         parent_run=failed_run,
+        request_context=workspace,
         code_location=code_location,
         remote_job=remote_job,
         strategy=ReexecutionStrategy.FROM_ASSET_FAILURE,
@@ -558,6 +569,7 @@ def test_create_reexecuted_run_from_multi_asset_check_failure_unsubsettable(
     }
     run = instance.create_reexecuted_run(
         parent_run=failed_run,
+        request_context=workspace,
         code_location=code_location,
         remote_job=remote_job,
         strategy=ReexecutionStrategy.FROM_ASSET_FAILURE,

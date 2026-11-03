@@ -34,8 +34,8 @@ def aws_env(hostnames):
     endpoint_url_from_dagster_container = (
         endpoint_url_from_pytest if IS_BUILDKITE else "http://s3:4566"
     )
-    access_key_id = "fake"
-    secret_access_key = "fake"
+    access_key_id = "minioadmin"
+    secret_access_key = "minioadmin"
 
     boto3.client(
         "s3",
@@ -60,3 +60,21 @@ def docker_postgres_instance(postgres_instance):
             yield instance
 
     return _instance
+
+
+def pytest_runtest_setup(item):
+    if "integration" not in item.keywords:
+        return
+
+    if os.getenv("BUILDKITE"):
+        required = [
+            "DAGSTER_DOCKER_REPOSITORY",
+            "DAGSTER_DOCKER_IMAGE_TAG",
+            "AWS_ACCOUNT_ID",
+            "BUILDKITE_SECRETS_BUCKET",
+        ]
+        missing = [var for var in required if not os.getenv(var)]
+        if missing:
+            pytest.skip(
+                "Docker integration tests require Buildkite env vars: " + ", ".join(missing)
+            )

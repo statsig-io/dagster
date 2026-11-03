@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import ContextManager, Optional, cast  # noqa: UP035
+from typing import ContextManager, cast  # noqa: UP035
 
 import dagster._check as check
 import sqlalchemy as db
@@ -23,6 +23,7 @@ from dagster._core.storage.sql import (
     run_alembic_upgrade,
     stamp_alembic_rev,
 )
+from dagster._core.storage.sqlalchemy_compat import db_result
 from dagster._serdes import ConfigurableClass, ConfigurableClassData, serialize_value
 from dagster._time import get_current_datetime
 from sqlalchemy.engine import Connection
@@ -47,7 +48,7 @@ class MySQLScheduleStorage(SqlScheduleStorage, ConfigurableClass):
     ``dagster-webserver`` and ``dagster-graphql`` load, based on the values in the ``dagster.yaml`` file in
     ``$DAGSTER_HOME``. Configuration of this class should be done by setting values in that file.
 
-    .. literalinclude:: ../../../../../../examples/docs_snippets/docs_snippets/deploying/dagster-mysql-legacy.yaml
+    .. literalinclude:: ../../../../../../examples/docs_snippets/docs_snippets/deployment/execution/dagster-mysql-legacy.yaml
        :caption: dagster.yaml
        :start-after: start_marker_schedules
        :end-before: end_marker_schedules
@@ -57,7 +58,7 @@ class MySQLScheduleStorage(SqlScheduleStorage, ConfigurableClass):
     :py:class:`~dagster.IntSource` and can be configured from environment variables.
     """
 
-    def __init__(self, mysql_url: str, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, mysql_url: str, inst_data: ConfigurableClassData | None = None):
         self._inst_data = check.opt_inst_param(inst_data, "inst_data", ConfigurableClassData)
         self.mysql_url = mysql_url
 
@@ -101,7 +102,7 @@ class MySQLScheduleStorage(SqlScheduleStorage, ConfigurableClass):
         )
 
     @property
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         return self._inst_data
 
     @classmethod
@@ -109,8 +110,8 @@ class MySQLScheduleStorage(SqlScheduleStorage, ConfigurableClass):
         return mysql_config()
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
-        cls, inst_data: Optional[ConfigurableClassData], config_value: MySqlStorageConfig
+    def from_config_value(  # ty: ignore[invalid-method-override]
+        cls, inst_data: ConfigurableClassData | None, config_value: MySqlStorageConfig
     ) -> "MySQLScheduleStorage":
         return MySQLScheduleStorage(
             inst_data=inst_data, mysql_url=mysql_url_from_config(config_value)
@@ -143,9 +144,9 @@ class MySQLScheduleStorage(SqlScheduleStorage, ConfigurableClass):
             MINIMUM_MYSQL_BATCH_VERSION
         )
 
-    def get_server_version(self) -> Optional[str]:
-        with self.connect() as conn:
-            row = conn.execute(db.text("select version()")).fetchone()
+    def get_server_version(self) -> str | None:
+        with self.connect() as conn, db_result(conn, db.text("select version()")) as result:
+            row = result.fetchone()
 
         if not row:
             return None

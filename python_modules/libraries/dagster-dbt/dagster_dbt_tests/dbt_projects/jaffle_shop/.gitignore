@@ -11,3 +11,4 @@ env/
 **/*.duckdb.wal
 tmp/
 state/
+dbt_internal_packages/

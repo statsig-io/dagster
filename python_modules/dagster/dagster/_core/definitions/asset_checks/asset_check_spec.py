@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Mapping
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, Any, Optional, Union
+from typing import TYPE_CHECKING, Annotated, Any, Optional, TypeAlias, Union
 
 from dagster_shared.record import (
     IHaveNew,
@@ -10,10 +10,16 @@ from dagster_shared.record import (
     replace,
 )
 from dagster_shared.serdes import whitelist_for_serdes
-from typing_extensions import TypeAlias
+from dagster_shared.utils.warnings import preview_warning
 
-from dagster._annotations import PublicAttr
-from dagster._core.definitions.asset_key import AssetCheckKey, AssetKey, CoercibleToAssetKey
+from dagster._annotations import PublicAttr, public
+from dagster._core.definitions.asset_key import (
+    AssetCheckKey,
+    AssetKey,
+    AssetOrCheckKey,
+    CoercibleToAssetKey,
+)
+from dagster._core.definitions.partitions.definition import PartitionsDefinition
 
 if TYPE_CHECKING:
     from dagster._core.definitions.assets.definition.asset_dep import AssetDep, CoercibleToAssetDep
@@ -24,6 +30,7 @@ if TYPE_CHECKING:
     from dagster._core.definitions.source_asset import SourceAsset
 
 
+@public
 @whitelist_for_serdes
 class AssetCheckSeverity(Enum):
     """Severity level for an AssetCheckResult.
@@ -48,16 +55,9 @@ LazyAssetDep: TypeAlias = Annotated[
 ]
 
 
+@public
 @record_custom
 class AssetCheckSpec(IHaveNew, LegacyNamedTupleMixin):
-    name: PublicAttr[str]
-    asset_key: PublicAttr[AssetKey]
-    description: PublicAttr[Optional[str]]
-    additional_deps: PublicAttr[Iterable[LazyAssetDep]]
-    blocking: PublicAttr[bool]
-    metadata: PublicAttr[Mapping[str, Any]]
-    automation_condition: PublicAttr[Optional[LazyAutomationCondition]]
-
     """Defines information about an asset check, except how to execute it.
 
     AssetCheckSpec is often used as an argument to decorators that decorator a function that can
@@ -77,24 +77,44 @@ class AssetCheckSpec(IHaveNew, LegacyNamedTupleMixin):
         blocking (bool): When enabled, if the check fails with severity `AssetCheckSeverity.ERROR`,
             then downstream assets won't execute. If this AssetCheckSpec is used in a multi-asset,
             that multi-asset is responsible for enforcing that downstream assets within the
-            same step do not execute after a blocking asset check fails.
+            same step do not execute after a blocking asset check fails. Note that gating
+            applies only to *failed* check results; if no result is emitted for the check,
+            downstream execution proceeds and a warning is logged.
         metadata (Optional[Mapping[str, Any]]):  A dict of static metadata for this asset check.
+        automation_condition (Optional[AutomationCondition[AssetCheckKey]]): The AutomationCondition for this asset check.
+        partitions_def (Optional[PartitionsDefinition]): The PartitionsDefinition for this asset check. Must be either None
+            or the same as the PartitionsDefinition of the asset specified by `asset`.
     """
+
+    name: PublicAttr[str]
+    asset_key: PublicAttr[AssetKey]
+    description: PublicAttr[str | None]
+    additional_deps: PublicAttr[Iterable[LazyAssetDep]]
+    blocking: PublicAttr[bool]
+    metadata: PublicAttr[Mapping[str, Any]]
+    automation_condition: PublicAttr[LazyAutomationCondition | None]
+    partitions_def: PublicAttr[PartitionsDefinition | None]
 
     def __new__(
         cls,
         name: str,
         *,
         asset: Union[CoercibleToAssetKey, "AssetsDefinition", "SourceAsset"],
-        description: Optional[str] = None,
-        additional_deps: Optional[Iterable["CoercibleToAssetDep"]] = None,
+        description: str | None = None,
+        additional_deps: Iterable["CoercibleToAssetDep"] | None = None,
         blocking: bool = False,
-        metadata: Optional[Mapping[str, Any]] = None,
-        automation_condition: Optional["AutomationCondition[AssetCheckKey]"] = None,
+        metadata: Mapping[str, Any] | None = None,
+        automation_condition: Optional[
+            "AutomationCondition[AssetCheckKey] | AutomationCondition[AssetOrCheckKey]"
+        ] = None,
+        partitions_def: PartitionsDefinition | None = None,
     ):
         from dagster._core.definitions.assets.definition.asset_dep import (
             coerce_to_deps_and_check_duplicates,
         )
+
+        if partitions_def is not None:
+            preview_warning("Specifying a partitions_def on an AssetCheckSpec")
 
         asset_key = AssetKey.from_coercible_or_definition(asset)
 
@@ -118,6 +138,7 @@ class AssetCheckSpec(IHaveNew, LegacyNamedTupleMixin):
             blocking=blocking,
             metadata=metadata or {},
             automation_condition=automation_condition,
+            partitions_def=partitions_def,
         )
 
     def get_python_identifier(self) -> str:

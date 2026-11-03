@@ -7,7 +7,7 @@ import atexit
 import sys
 from itertools import islice
 from os import environ
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import mlflow
 from dagster import Field, Noneable, Permissive, StringSource, resource
@@ -125,9 +125,7 @@ class MlFlow(metaclass=MlflowMeta):
         # a process exits in parallel runs
         atexit.unregister(mlflow.end_run)
 
-    def _get_current_run_id(
-        self, experiment: Optional[Any] = None, dagster_run_id: Optional[str] = None
-    ):
+    def _get_current_run_id(self, experiment: Any | None = None, dagster_run_id: str | None = None):
         """Gets the run id of a specific dagster run and experiment id.
         If it doesn't exist then it returns a None.
 
@@ -180,7 +178,7 @@ class MlFlow(metaclass=MlflowMeta):
         self._start_run(run_id=run_id, run_name=self.run_name, nested=nested_run)
 
     def _start_run(self, **kwargs):
-        """Catches the Mlflow exception if a run is already active."""
+        """Reuses an already-active run only when it matches the requested run ID."""
         try:
             # If a run_id is passed, mlflow will generally not start a new run
             # and instead, it will just be set as the active run
@@ -191,9 +189,14 @@ class MlFlow(metaclass=MlflowMeta):
             )
         except Exception as ex:
             run = mlflow.active_run()
-            if run is None or "is already active" not in str(ex):
-                raise (ex)
-            self.log.info(f"Run with id {run.info.run_id} is already active.")
+            if (
+                "is already active" not in str(ex)
+                or kwargs.get("run_id") is None
+                or run is None
+                or run.info.run_id != kwargs["run_id"]
+            ):
+                raise
+            self.log.info(f"Run with id {run.info.run_id} is already active.")  # type: ignore
 
     def _set_all_tags(self):
         """Method collects dagster_run_id plus all env variables/tags that have been

@@ -4,10 +4,9 @@ import re
 import subprocess
 import tempfile
 import textwrap
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Optional
 
 import dagster as dg
 import pytest
@@ -20,6 +19,7 @@ from dagster.components.core.package_entry import (
 )
 from dagster.components.core.snapshot import get_package_entry_snap
 from dagster_dg_core.utils import get_venv_executable
+from dagster_shared import seven
 from dagster_shared.serdes.objects import EnvRegistryKey
 
 ensure_dagster_tests_import()
@@ -63,12 +63,13 @@ def _get_component_types_in_python_environment(venv_root: Path) -> Sequence[str]
     result = _get_component_print_script_result(venv_root)
 
     component_type_list = json.loads(result.stdout)
-    return [component_type["key"] for component_type in component_type_list]
+    return [component_type["key"] for component_type in component_type_list["items"]]
 
 
-def _find_repo_root():
+# Works from both standalone OSS and monorepo
+def _find_oss_root():
     current = Path(__file__).parent
-    while not (current / ".git").exists():
+    while not ((current / ".git").exists() or current.name == "dagster-oss"):
         if current == Path("/"):
             raise Exception("Could not find the repository root.")
         current = current.parent
@@ -85,7 +86,7 @@ def _generate_test_component_source(number: int) -> str:
     """)
 
 
-_repo_root = _find_repo_root()
+_repo_root = _find_oss_root()
 
 
 def _get_editable_package_root(pkg_name: str) -> str:
@@ -101,15 +102,19 @@ def _get_editable_package_root(pkg_name: str) -> str:
 # ########################
 
 
+@pytest.mark.skipif(
+    seven.IS_PYTHON_3_14, reason="uses dagster_dbt, but dbt-core doesn't support 3.14"
+)
 def test_components_from_dagster():
     common_deps: list[str] = []
     for pkg_name in [
-        "dagster-shared",
         "dagster-cloud-cli",
+        "dagster-dg-cli",
         "dagster-dg-core",
         "dagster-pipes",
+        "dagster-rest-resources",
+        "dagster-shared",
         "dagster",
-        "dagster-dg-cli",
     ]:
         common_deps.extend(["-e", _get_editable_package_root(pkg_name)])
 
@@ -148,6 +153,42 @@ def test_all_components_have_defined_summary():
             )
 
 
+def test_produces_declared_on_spec_flows_to_snap_and_json():
+    from dagster_shared.serdes.objects.package_entry import json_for_component_type
+
+    class ProducingComponent(dg.Component):
+        @classmethod
+        def get_spec(cls):
+            return dg.ComponentTypeSpec(produces=["asset", "schedule"])
+
+        def build_defs(self, context):
+            pass
+
+    key = EnvRegistryKey(name="ProducingComponent", namespace="dagster_test")
+    snap = get_package_entry_snap(key, ProducingComponent)
+    assert snap.produces == ["asset", "schedule"]
+
+    component_data = snap.get_feature_data("component")
+    assert component_data is not None
+    assert json_for_component_type(key, snap, component_data)["produces"] == ["asset", "schedule"]
+
+
+def test_produces_defaults_to_empty_when_not_declared():
+    class PlainComponent(dg.Component):
+        def build_defs(self, context):
+            pass
+
+    snap = get_package_entry_snap(EnvRegistryKey("a", "a"), PlainComponent)
+    assert snap.produces == []
+
+
+def test_produces_rejects_unknown_kind():
+    import dagster._check as check
+
+    with pytest.raises(check.CheckError, match="Invalid produces kind"):
+        dg.ComponentTypeSpec(produces=["asset", "bogus"])
+
+
 # Our pyproject.toml installs local dagster components
 DAGSTER_FOO_PYPROJECT_TOML = """
 [build-system]
@@ -179,7 +220,7 @@ from dagster_foo.lib.sub import TestComponent2
 @contextmanager
 def isolated_venv_with_component_lib_dagster_foo(
     entry_point_group: str,
-    pre_install_hook: Optional[Callable[[], None]] = None,
+    pre_install_hook: Callable[[], None] | None = None,
 ):
     with tempfile.TemporaryDirectory() as tmpdir:
         with pushd(tmpdir):
@@ -190,15 +231,15 @@ def isolated_venv_with_component_lib_dagster_foo(
                 r"<ENTRY_POINT_GROUP>", entry_point_group, DAGSTER_FOO_PYPROJECT_TOML
             )
 
-            with open("dagster-foo/pyproject.toml", "w") as f:
+            with open("dagster-foo/pyproject.toml", "w", encoding="utf-8") as f:
                 f.write(pyproject_toml_content)
 
             os.makedirs("dagster-foo/dagster_foo/lib/sub")
 
-            with open("dagster-foo/dagster_foo/lib/__init__.py", "w") as f:
+            with open("dagster-foo/dagster_foo/lib/__init__.py", "w", encoding="utf-8") as f:
                 f.write(DAGSTER_FOO_LIB_ROOT)
 
-            with open("dagster-foo/dagster_foo/lib/sub/__init__.py", "w") as f:
+            with open("dagster-foo/dagster_foo/lib/sub/__init__.py", "w", encoding="utf-8") as f:
                 f.write(_generate_test_component_source(2))
 
             if pre_install_hook:
@@ -213,11 +254,13 @@ def isolated_venv_with_component_lib_dagster_foo(
                 "-e",
                 _get_editable_package_root("dagster-shared"),
                 "-e",
-                _get_editable_package_root("dagster-cloud-cli"),
+                _get_editable_package_root("dagster-dg-cli"),
                 "-e",
                 _get_editable_package_root("dagster-dg-core"),
                 "-e",
-                _get_editable_package_root("dagster-dg-cli"),
+                _get_editable_package_root("dagster-cloud-cli"),
+                "-e",
+                _get_editable_package_root("dagster-rest-resources"),
                 "-e",
                 "dagster-foo",
             ]

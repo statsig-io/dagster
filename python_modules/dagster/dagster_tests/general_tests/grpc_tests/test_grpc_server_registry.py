@@ -9,12 +9,12 @@ import pytest
 from dagster._cli.dev import ProxyServerManager
 from dagster._core.errors import DagsterUserCodeProcessError
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation.code_location import GrpcServerCodeLocation
-from dagster._core.remote_representation.grpc_server_registry import GrpcServerRegistry
-from dagster._core.remote_representation.origin import (
+from dagster._core.remote_origin import (
     ManagedGrpcPythonEnvCodeLocationOrigin,
     RegisteredCodeLocationOrigin,
 )
+from dagster._core.remote_representation.code_location import GrpcServerCodeLocation
+from dagster._core.remote_representation.grpc_server_registry import GrpcServerRegistry
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._core.workspace.load_target import PythonFileTarget
 from dagster._grpc.constants import GrpcServerCommand
@@ -254,7 +254,7 @@ def test_registry_multithreading(instance, server_command: GrpcServerCommand):
     assert not _can_connect(origin, endpoint, instance)
 
 
-class TestMockProcessGrpcServerRegistry(GrpcServerRegistry):
+class MockProcessGrpcServerRegistry(GrpcServerRegistry):
     def __init__(self, instance):
         self.mocked_loadable_target_origin = None
         super().__init__(
@@ -265,10 +265,10 @@ class TestMockProcessGrpcServerRegistry(GrpcServerRegistry):
             wait_for_processes_on_shutdown=True,
         )
 
-    def supports_origin(self, code_location_origin):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def supports_origin(self, code_location_origin):
         return isinstance(code_location_origin, RegisteredCodeLocationOrigin)
 
-    def _get_loadable_target_origin(self, code_location_origin):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def _get_loadable_target_origin(self, code_location_origin):
         return self.mocked_loadable_target_origin
 
 
@@ -289,7 +289,7 @@ def test_custom_loadable_target_origin(instance):
 
     origin = RegisteredCodeLocationOrigin("test_location")
 
-    with TestMockProcessGrpcServerRegistry(instance) as registry:
+    with MockProcessGrpcServerRegistry(instance) as registry:
         registry.mocked_loadable_target_origin = first_loadable_target_origin
 
         endpoint_one = registry.get_grpc_endpoint(origin)

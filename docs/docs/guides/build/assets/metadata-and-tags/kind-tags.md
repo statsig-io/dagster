@@ -8,15 +8,15 @@ Kind tags can help you quickly identify the underlying system or technology used
 
 ## Adding kinds to an asset
 
-You may add up to three kinds to the `kinds` argument of an <PyObject section="assets" module="dagster" object="asset" decorator />, which can be useful to represent multiple technologies or systems that an asset is associated with. For example, an asset which is built by Python code and stored in Snowflake can be tagged with both `python` and `snowflake` kinds:
+You may add up to ten kinds to the `kinds` argument of an <PyObject section="assets" module="dagster" object="asset" decorator />, which can be useful to represent multiple technologies or systems that an asset is associated with. For example, an asset which is built by Python code and stored in Snowflake can be tagged with both `python` and `snowflake` kinds:
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/metadata-tags/asset_kinds.py" title="src/<project_name>/defs/assets.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/build/metadata-tags/asset_kinds.py" title="src/<project_name>/defs/assets.py" />
 
 Kinds can also be specified on an <PyObject section="assets" module="dagster" object="AssetSpec" />, for use in multi-assets:
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/metadata-tags/asset_kinds_multi.py" title="src/<project_name>/defs/assets.py" />
+<CodeExample path="docs_snippets/docs_snippets/guides/build/metadata-tags/asset_kinds_multi.py" title="src/<project_name>/defs/assets.py" />
 
-On the backend, these kind inputs are stored as tags on the asset. For more information, see [Tags](/guides/build/assets/metadata-and-tags/index.md#tags).
+On the backend, these kind inputs are stored as tags on the asset. For more information, see [Tags](/guides/build/assets/metadata-and-tags#tags).
 
 When viewing the asset in the lineage view, the attached kinds will be visible at the bottom the asset.
 

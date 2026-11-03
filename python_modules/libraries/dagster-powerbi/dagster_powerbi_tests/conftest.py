@@ -1,7 +1,9 @@
 from collections.abc import Iterator
+from typing import cast
 
 import pytest
 import responses
+from dagster._core.instance_for_test import instance_for_test
 from dagster_powerbi.resource import BASE_API_URL, generate_data_source_id
 from dagster_powerbi.translator import PowerBIContentData, PowerBIContentType, PowerBIWorkspaceData
 
@@ -159,22 +161,22 @@ def workspace_data_fixture(workspace_id: str) -> PowerBIWorkspaceData:
     return PowerBIWorkspaceData(
         workspace_id=workspace_id,
         dashboards_by_id={
-            sample_dash["id"]: PowerBIContentData(
+            cast("str", sample_dash["id"]): PowerBIContentData(
                 content_type=PowerBIContentType.DASHBOARD, properties=sample_dash
             )
         },
         reports_by_id={
-            SAMPLE_REPORT["id"]: PowerBIContentData(
+            cast("str", SAMPLE_REPORT["id"]): PowerBIContentData(
                 content_type=PowerBIContentType.REPORT, properties=SAMPLE_REPORT
             )
         },
         semantic_models_by_id={
-            sample_semantic_model["id"]: PowerBIContentData(
+            cast("str", sample_semantic_model["id"]): PowerBIContentData(
                 content_type=PowerBIContentType.SEMANTIC_MODEL, properties=sample_semantic_model
             )
         },
         data_sources_by_id={
-            ds["datasourceId"]: PowerBIContentData(
+            cast("str", ds["datasourceId"]): PowerBIContentData(
                 content_type=PowerBIContentType.DATA_SOURCE, properties=ds
             )
             for ds in data_sources
@@ -225,7 +227,10 @@ def workspace_scan_data_api_mocks_fixture(workspace_id: str) -> Iterator[respons
     name="workspace_data_api_mocks",
 )
 def workspace_data_api_mocks_fixture(workspace_id: str) -> Iterator[responses.RequestsMock]:
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as response:
+    with (
+        responses.RequestsMock(assert_all_requests_are_fired=False) as response,
+        instance_for_test(),
+    ):
         response.add(
             method=responses.GET,
             url=f"{BASE_API_URL}/groups/{workspace_id}/dashboards",
@@ -310,7 +315,7 @@ def second_workspace_data_fixture(second_workspace_id: str) -> PowerBIWorkspaceD
         dashboards_by_id={},
         reports_by_id={},
         semantic_models_by_id={
-            OTHER_SAMPLE_SEMANTIC_MODEL["id"]: PowerBIContentData(
+            cast("str", OTHER_SAMPLE_SEMANTIC_MODEL["id"]): PowerBIContentData(
                 content_type=PowerBIContentType.SEMANTIC_MODEL,
                 properties=OTHER_SAMPLE_SEMANTIC_MODEL,
             )

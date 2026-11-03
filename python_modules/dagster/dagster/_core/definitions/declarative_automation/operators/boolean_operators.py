@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 from dagster_shared.serdes import whitelist_for_serdes
 from typing_extensions import Self
@@ -15,7 +15,10 @@ from dagster._core.definitions.declarative_automation.automation_condition impor
     T_AutomationCondition,
 )
 from dagster._core.definitions.declarative_automation.automation_context import AutomationContext
-from dagster._core.definitions.declarative_automation.operators.utils import has_allow_ignore
+from dagster._core.definitions.declarative_automation.operators.utils import (
+    has_allow_ignore,
+    has_resolve_through_virtual,
+)
 from dagster._core.definitions.declarative_automation.serialized_objects import OperatorType
 from dagster._record import copy, record
 
@@ -50,7 +53,7 @@ class AndAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
     def requires_cursor(self) -> bool:
         return False
 
-    async def evaluate(  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def evaluate(  # ty: ignore[invalid-method-override]
         self, context: AutomationContext[T_EntityKey]
     ) -> AutomationResult[T_EntityKey]:
         child_results: list[AutomationResult] = []
@@ -77,11 +80,11 @@ class AndAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
 
     @public
     def replace(
-        self, old: Union[AutomationCondition, str], new: T_AutomationCondition
-    ) -> Union[Self, T_AutomationCondition]:
+        self, old: AutomationCondition | str, new: T_AutomationCondition
+    ) -> Self | T_AutomationCondition:
         """Replaces all instances of ``old`` across any sub-conditions with ``new``.
 
-        If ``old`` is a string, then conditions with a label matching
+        If ``old`` is a string, then conditions with a label or name matching
         that string will be replaced.
 
         Args:
@@ -90,7 +93,7 @@ class AndAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
         """
         return (
             new
-            if old in [self, self.get_label()]
+            if old in [self, self.name, self.get_label()]
             else copy(self, operands=[child.replace(old, new) for child in self.operands])
         )
 
@@ -134,6 +137,21 @@ class AndAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
             ],
         )
 
+    def resolve_through_virtual(self, value: bool = True) -> "AndAutomationCondition":
+        """Applies the ``.resolve_through_virtual()`` method across all sub-conditions.
+
+        This impacts any dep-related sub-conditions.
+        """
+        return copy(
+            self,
+            operands=[
+                child.resolve_through_virtual(value)
+                if has_resolve_through_virtual(child)
+                else child
+                for child in self.operands
+            ],
+        )
+
 
 @whitelist_for_serdes(storage_name="OrAssetCondition")
 @record
@@ -162,7 +180,7 @@ class OrAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
     def requires_cursor(self) -> bool:
         return False
 
-    async def evaluate(  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def evaluate(  # ty: ignore[invalid-method-override]
         self, context: AutomationContext[T_EntityKey]
     ) -> AutomationResult[T_EntityKey]:
         true_subset = context.get_empty_subset()
@@ -184,11 +202,11 @@ class OrAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
 
     @public
     def replace(
-        self, old: Union[AutomationCondition, str], new: T_AutomationCondition
-    ) -> Union[Self, T_AutomationCondition]:
+        self, old: AutomationCondition | str, new: T_AutomationCondition
+    ) -> Self | T_AutomationCondition:
         """Replaces all instances of ``old`` across any sub-conditions with ``new``.
 
-        If ``old`` is a string, then conditions with a label matching
+        If ``old`` is a string, then conditions with a label or name matching
         that string will be replaced.
 
         Args:
@@ -197,7 +215,7 @@ class OrAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
         """
         return (
             new
-            if old in [self, self.get_label()]
+            if old in [self, self.name, self.get_label()]
             else copy(self, operands=[child.replace(old, new) for child in self.operands])
         )
 
@@ -241,6 +259,21 @@ class OrAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
             ],
         )
 
+    def resolve_through_virtual(self, value: bool = True) -> "OrAutomationCondition":
+        """Applies the ``.resolve_through_virtual()`` method across all sub-conditions.
+
+        This impacts any dep-related sub-conditions.
+        """
+        return copy(
+            self,
+            operands=[
+                child.resolve_through_virtual(value)
+                if has_resolve_through_virtual(child)
+                else child
+                for child in self.operands
+            ],
+        )
+
 
 @whitelist_for_serdes(storage_name="NotAssetCondition")
 @record
@@ -265,7 +298,7 @@ class NotAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
     def children(self) -> Sequence[AutomationCondition[T_EntityKey]]:
         return [self.operand]
 
-    async def evaluate(  # pyright: ignore[reportIncompatibleMethodOverride]
+    async def evaluate(  # ty: ignore[invalid-method-override]
         self, context: AutomationContext[T_EntityKey]
     ) -> AutomationResult[T_EntityKey]:
         child_result = await context.for_child_condition(
@@ -279,11 +312,11 @@ class NotAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
 
     @public
     def replace(
-        self, old: Union[AutomationCondition, str], new: T_AutomationCondition
-    ) -> Union[Self, T_AutomationCondition]:
+        self, old: AutomationCondition | str, new: T_AutomationCondition
+    ) -> Self | T_AutomationCondition:
         """Replaces all instances of ``old`` across any sub-conditions with ``new``.
 
-        If ``old`` is a string, then conditions with a label matching
+        If ``old`` is a string, then conditions with a label or name matching
         that string will be replaced.
 
         Args:
@@ -292,7 +325,7 @@ class NotAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
         """
         return (
             new
-            if old in [self, self.get_label()]
+            if old in [self, self.name, self.get_label()]
             else copy(self, operand=self.operand.replace(old, new))
         )
 
@@ -331,5 +364,17 @@ class NotAutomationCondition(BuiltinAutomationCondition[T_EntityKey]):
             self,
             operand=self.operand.ignore(selection)
             if has_allow_ignore(self.operand)
+            else self.operand,
+        )
+
+    def resolve_through_virtual(self, value: bool = True) -> "NotAutomationCondition":
+        """Applies the ``.resolve_through_virtual()`` method across all sub-conditions.
+
+        This impacts any dep-related sub-conditions.
+        """
+        return copy(
+            self,
+            operand=self.operand.resolve_through_virtual(value)
+            if has_resolve_through_virtual(self.operand)
             else self.operand,
         )

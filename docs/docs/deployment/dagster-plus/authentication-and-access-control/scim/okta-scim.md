@@ -3,6 +3,7 @@ description: Configure SCIM provisioning in Dagster+ to sync user information be
 sidebar_position: 8310
 title: Configuring Okta SCIM provisioning
 sidebar_label: Okta
+tags: [dagster-plus-feature]
 ---
 
 In this guide, we'll walk you through configuring [Okta SCIM provisioning](https://developer.okta.com/docs/concepts/scim) for Dagster+.
@@ -22,7 +23,7 @@ Dagster+ currently supports the following attributes for SCIM syncing:
 
 To complete the steps in this guide, you'll need:
 
-- **To have set up Okta SSO for Dagster+.** For more information, see the [Okta SSO setup guide](//dagster-plus/features/authentication-and-access-control/sso/okta-sso).
+- **To have set up Okta SSO for Dagster+.** For more information, see the [Okta SSO setup guide](/deployment/dagster-plus/authentication-and-access-control/sso/okta-sso).
 - **Permissions in Okta that allow you to configure applications.**
 - **The following in Dagster+:**
   - A Pro plan
@@ -44,7 +45,7 @@ Keep the API token handy - you'll need it in the next step.
 
 2. Using the sidebar, click **Applications > Applications**.
 
-3. Click the Dagster+ app. **Note**: If you haven't set up SSO for Okta, [follow this guide](/deployment/dagster-plus/authentication-and-access-control/sso/okta-sso) to do so before continuing.
+3. Click the Dagster+ app. If you haven't set up SSO for Okta, [follow this guide](/deployment/dagster-plus/authentication-and-access-control/sso/okta-sso) to do so before continuing.
 
 4. Click the **Sign On** tab and complete the following:
 
@@ -86,7 +87,7 @@ After you confirm that your API credentials work in the Dagster+ Okta applicatio
 
    ![Highlighted Create users setting and default username setting in Okta](/images/dagster-plus/features/authentication-and-access-control/okta/provisioning-to-app-create-users.png)
 
-   **Note**: The default username used to create accounts must be set to **Email** or user provisioning may not work correctly.
+   **Note that the default username used to create accounts must be set to "Email" or user provisioning may not work correctly.**
 
 5. Optionally, check **Enable** next to **Update User Attributes** and **Deactivate Users** to enable these features.
 

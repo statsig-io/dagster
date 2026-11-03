@@ -1,7 +1,7 @@
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from dagster_shared import check
 from typing_extensions import Self
@@ -28,13 +28,19 @@ def get_project_specified_env_vars(dg_context: DgContext) -> Mapping[str, Sequen
     env_vars = defaultdict(list)
 
     for component_dir in dg_context.defs_path.rglob("*"):
-        component_path = component_dir / "defs.yaml"
+        # defs.yaml/.yml take precedence, component.yaml is deprecated
+        candidates = (
+            component_dir / "defs.yaml",
+            component_dir / "defs.yml",
+            component_dir / "component.yaml",
+        )
+        defs_path = next((p for p in candidates if p.exists()), None)
 
-        if component_path.exists():
-            text = component_path.read_text()
+        if defs_path:
+            text = defs_path.read_text()
             try:
                 component_doc_trees = parse_yamls_with_source_position(
-                    text, filename=str(component_path)
+                    text, filename=str(defs_path)
                 )
             except ScannerError:
                 continue
@@ -42,7 +48,7 @@ def get_project_specified_env_vars(dg_context: DgContext) -> Mapping[str, Sequen
             for component_doc_tree in component_doc_trees:
                 specified_env_var_deps = get_specified_env_var_deps(component_doc_tree.value)
                 for key in specified_env_var_deps:
-                    env_vars[key].append(component_path.relative_to(dg_context.defs_path).parent)
+                    env_vars[key].append(defs_path.relative_to(dg_context.defs_path).parent)
     return env_vars
 
 
@@ -51,7 +57,7 @@ class ProjectEnvVars:
     project root.
     """
 
-    def __init__(self, ctx: DgContext, values: Mapping[str, Optional[str]]):
+    def __init__(self, ctx: DgContext, values: Mapping[str, str | None]):
         self.ctx = ctx
         self._values = values
 
@@ -71,13 +77,13 @@ class ProjectEnvVars:
         return cls(ctx, values=env)
 
     @property
-    def values(self) -> Mapping[str, Optional[str]]:
+    def values(self) -> Mapping[str, str | None]:
         return self._values
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         return self.values.get(key)
 
-    def with_values(self, values: Mapping[str, Optional[str]]) -> "ProjectEnvVars":
+    def with_values(self, values: Mapping[str, str | None]) -> "ProjectEnvVars":
         return ProjectEnvVars(self.ctx, {**self.values, **values})
 
     def without_values(self, keys: set[str]) -> "ProjectEnvVars":

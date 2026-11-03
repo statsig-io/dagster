@@ -62,7 +62,7 @@ def test_create_app_with_workspace_and_scheduler():
             temp_dir=temp_dir,
             overrides={
                 "scheduler": {
-                    "module": "dagster.utils.test",
+                    "module": "dagster._utils.test",
                     "class": "FilesystemTestScheduler",
                     "config": {"base_dir": temp_dir},
                 }
@@ -337,6 +337,7 @@ def test_dagster_webserver_logs(_, telemetry_caplog):
                         "elapsed_time",
                         "event_id",
                         "instance_id",
+                        "user_id",
                         "python_version",
                         "run_storage_id",
                         "metadata",

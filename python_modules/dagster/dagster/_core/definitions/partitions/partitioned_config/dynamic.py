@@ -1,9 +1,8 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import Callable, Optional
 
 import dagster._check as check
-from dagster._annotations import deprecated_param
+from dagster._annotations import deprecated_param, public
 from dagster._core.definitions.partitions.definition.dynamic import DynamicPartitionsDefinition
 from dagster._core.definitions.partitions.partitioned_config.partitioned_config import (
     PartitionConfigFn,
@@ -17,10 +16,11 @@ from dagster._utils.warnings import normalize_renamed_param
     breaking_version="2.0",
     additional_warn_text="Use tags_for_partition_key_fn instead.",
 )
+@public
 def dynamic_partitioned_config(
-    partition_fn: Callable[[Optional[datetime]], Sequence[str]],
-    tags_for_partition_fn: Optional[Callable[[str], Mapping[str, str]]] = None,
-    tags_for_partition_key_fn: Optional[Callable[[str], Mapping[str, str]]] = None,
+    partition_fn: Callable[[datetime | None], Sequence[str]],
+    tags_for_partition_fn: Callable[[str], Mapping[str, str]] | None = None,
+    tags_for_partition_key_fn: Callable[[str], Mapping[str, str]] | None = None,
 ) -> Callable[[PartitionConfigFn], PartitionedConfig]:
     """Creates a dynamic partitioned config for a job.
 

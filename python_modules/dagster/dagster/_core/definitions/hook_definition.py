@@ -1,8 +1,8 @@
 from collections.abc import Iterator
-from typing import AbstractSet, Any, Callable, NamedTuple, Optional  # noqa: UP035
+from typing import AbstractSet, Any, Callable, NamedTuple  # noqa: UP035
 
 import dagster._check as check
-from dagster._annotations import PublicAttr
+from dagster._annotations import PublicAttr, public
 from dagster._core.decorator_utils import get_function_params
 from dagster._core.definitions.resource_requirement import (
     HookResourceRequirement,
@@ -12,6 +12,7 @@ from dagster._core.definitions.utils import check_valid_name
 from dagster._core.errors import DagsterInvalidInvocationError
 
 
+@public
 class HookDefinition(
     NamedTuple(
         "_HookDefinition",
@@ -19,7 +20,7 @@ class HookDefinition(
             ("name", PublicAttr[str]),
             ("hook_fn", PublicAttr[Callable]),
             ("required_resource_keys", PublicAttr[AbstractSet[str]]),
-            ("decorated_fn", PublicAttr[Optional[Callable]]),
+            ("decorated_fn", PublicAttr[Callable | None]),
         ],
     ),
 ):
@@ -38,8 +39,8 @@ class HookDefinition(
         *,
         name: str,
         hook_fn: Callable[..., Any],
-        required_resource_keys: Optional[AbstractSet[str]] = None,
-        decorated_fn: Optional[Callable[..., Any]] = None,
+        required_resource_keys: AbstractSet[str] | None = None,
+        decorated_fn: Callable[..., Any] | None = None,
     ):
         return super().__new__(
             cls,
@@ -146,7 +147,7 @@ class HookDefinition(
 
     def get_resource_requirements(
         self,
-        attached_to: Optional[str],
+        attached_to: str | None,
     ) -> Iterator[ResourceRequirement]:
         for resource_key in sorted(list(self.required_resource_keys)):
             yield HookResourceRequirement(

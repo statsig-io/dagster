@@ -4,7 +4,7 @@ import subprocess
 import textwrap
 from collections.abc import Mapping
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 from dagster import Scaffolder, scaffold_component
 from dagster._utils import pushd
@@ -54,9 +54,8 @@ def _extract_pipelines_and_sources_from_pipeline_file(
     file_path: Path,
 ) -> ParsedPipelineAndSource:
     """Process a Python file and generate a new file with pipeline and data definitions."""
-    imports = []
     pipelines_and_sources = {}
-    source = file_path.read_text()
+    source = file_path.read_text(encoding="utf-8")
     tree = ast.parse(source)
 
     # Create new file content
@@ -64,9 +63,11 @@ def _extract_pipelines_and_sources_from_pipeline_file(
     new_content.append('"""Generated pipeline and data definitions."""\n')
 
     # Add imports from original file
-    for node in tree.body:
-        if isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom):
-            imports.append(ast.unparse(node).replace("from ", "from ."))
+    imports = [
+        ast.unparse(node).replace("from ", "from .")
+        for node in tree.body
+        if isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom)
+    ]
 
     # Process each function
     for node in tree.body:
@@ -103,12 +104,12 @@ def _construct_pipeline_source_file(
         )
         new_content.append("")
 
-    file_path.write_text("\n".join(new_content))
+    file_path.write_text("\n".join(new_content), encoding="utf-8")
 
 
 class DltScaffolderParams(BaseModel):
-    source: Optional[str] = None
-    destination: Optional[str] = None
+    source: str | None = None
+    destination: str | None = None
 
 
 DLT_INIT_FILES_TO_CLEAN_UP = [".gitignore", "requirements.txt", ".dlt"]
@@ -125,14 +126,13 @@ class DltLoadCollectionScaffolder(Scaffolder[DltScaffolderParams]):
             # Given source and destination, we can use dlt init to scaffold the source
             # code and some sample pipelines and sources.
             if request.params and request.params.source and request.params.destination:
-                yes = subprocess.Popen(["yes", "y"], stdout=subprocess.PIPE)
-                try:
-                    subprocess.check_call(
-                        ["dlt", "init", request.params.source, request.params.destination],
-                        stdin=yes.stdout,
-                    )
-                finally:
-                    yes.kill()
+                # Use subprocess with text input instead of Unix 'yes' command for cross-platform compatibility
+                subprocess.run(
+                    ["dlt", "init", request.params.source, request.params.destination],
+                    input="y\n" * 100,  # Provide enough 'y' responses for any prompts
+                    text=True,
+                    check=True,
+                )
                 # dlt init scaffolds a Python file with some example pipelines, nested in functions
                 # we extract them into top-level objects which we stash in loads.py as a sample
                 examples_python_file = next(Path(".").glob("*.py"))
@@ -165,7 +165,8 @@ class DltLoadCollectionScaffolder(Scaffolder[DltScaffolderParams]):
                     destination=f'destination="{request.params.destination}"'
                     if request.params and request.params.destination
                     else "",
-                )
+                ),
+                encoding="utf-8",
             )
 
             _format_file_if_ruff_installed(Path("loads.py"))

@@ -449,7 +449,7 @@ def _dataframe_loader_config():
                     is_required=option_args[1],
                     description=option_args[2],
                 )
-                for option_name, option_args in read_opts["options"].items()
+                for option_name, option_args in read_opts["options"].items()  # ty: ignore[unresolved-attribute]
             }
         )
         for read_from, read_opts in DataFrameReadTypes.items()
@@ -488,12 +488,26 @@ def dataframe_loader(_context, config):
     read_args = [read_options.pop("path")] if read_meta.get("is_path_based", False) else []
     read_kwargs = read_options
 
+    if "filters" in read_kwargs:
+        # Ops are configured in YAML, but YAML has no concept of a Python tuple. Dask is no longer lenient
+        # of the innermost list of a filter being a python list, and these must be converted to tuples.
+        read_kwargs["filters"] = _innermost_list2tuple(read_kwargs["filters"])
+
     # Read the dataframe and apply any utility functions
-    df = read_function(*read_args, **read_kwargs)
+    df = read_function(*read_args, **read_kwargs)  # ty: ignore[call-non-callable]
     df = apply_utilities_to_df(df, config)
     df = df.persist()
 
     return df
+
+
+def _innermost_list2tuple(data):
+    def converted(x):
+        if not any(isinstance(a, list) for a in x):
+            return tuple(x)
+        return [converted(d) if isinstance(d, list) else d for d in x]
+
+    return [converted(d) for d in data]
 
 
 def df_type_check(_, value):

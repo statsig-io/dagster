@@ -12,7 +12,9 @@ from dagster_k8s_test_infra.cluster import (
     define_cluster_provider_fixture as define_cluster_provider_fixture,
     helm_postgres_url_for_k8s_run_launcher as helm_postgres_url_for_k8s_run_launcher,
 )
+from dagster_k8s_test_infra.helm import LOCALSTACK_IMAGE
 from dagster_test.test_project import build_and_tag_test_image, get_test_project_docker_image
+from tests.utils import BUSYBOX_IMAGE
 
 pytest_plugins = ["dagster_k8s_test_infra.helm"]
 
@@ -28,11 +30,15 @@ def dagster_home() -> Iterator[None]:
         os.environ["DAGSTER_HOME"] = old_env
 
 
+# These images need to match what the Helm chart actually deploys (helm/dagster/values.yaml)
+# and what test pods spec, so the kind cluster has them cached and the kubelet doesn't have
+# to reach Docker Hub at test time.
 cluster_provider = define_cluster_provider_fixture(
     additional_kind_images=[
-        "docker.io/busybox",
-        "docker.io/bitnami/rabbitmq",
-        "docker.io/bitnami/postgresql",
+        f"docker.io/{BUSYBOX_IMAGE}",
+        "docker.io/bitnamilegacy/rabbitmq:3.8.12",
+        "docker.io/library/postgres:14.6",
+        f"docker.io/{LOCALSTACK_IMAGE}",
     ]
 )
 
@@ -62,7 +68,7 @@ def dagster_docker_image() -> str:
 
 
 # See: https://stackoverflow.com/a/31526934/324449
-def pytest_addoption(parser) -> None:
+def pytest_addoption(parser: pytest.Parser):
     # We catch the ValueError to support cases where we are loading multiple test suites, e.g., in
     # the VSCode test explorer. When pytest tries to add an option twice, we get, e.g.
     #

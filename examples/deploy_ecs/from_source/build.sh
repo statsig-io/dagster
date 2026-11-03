@@ -1,6 +1,14 @@
 #!/bin/bash
 
-ROOT=$(git rev-parse --show-toplevel)
+GIT_ROOT=$(git rev-parse --show-toplevel)
+
+# Support both standalone OSS repo and monorepo
+if [ -d "${GIT_ROOT}/dagster-oss" ]; then
+    ROOT="${GIT_ROOT}/dagster-oss"
+else
+    ROOT="${GIT_ROOT}"
+fi
+
 BASE_DIR="${ROOT}/examples/deploy_ecs/from_source"
 
 function cleanup {
@@ -26,7 +34,7 @@ if [[ -z ${DAGSTER_UI_DONT_BUILD_JS_BUNDLE+x} ]]; then
     echo -e "--- \033[32m:wrench: Building JS bundle\033[0m"
     echo -e "(set DAGSTER_UI_DONT_BUILD_JS_BUNDLE to skip)"
     pushd ${ROOT}
-#    make rebuild_ui
+#    just rebuild_ui
     popd
 fi
 
@@ -50,4 +58,4 @@ copy_py $ROOT/python_modules/libraries/dagster-postgres \
         python_modules/libraries/
 
 echo -e "--- \033[32m:docker: Building Docker images\033[0m"
-docker-compose build
+docker compose build

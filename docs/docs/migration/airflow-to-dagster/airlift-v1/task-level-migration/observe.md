@@ -8,7 +8,7 @@ import UseAirliftComponent from '@site/docs/partials/\_UseAirliftComponent.md';
 
 <UseAirliftComponent />
 
-In the previous step, "[Peer the Airflow instance with a Dagster code location](/migration/airflow-to-dagster/airlift-v1/task-level-migration/peer)", we connected the example Airflow instance to a Dagster code location.
+In the previous step, [Peer the Airflow instance with a Dagster code location](/migration/airflow-to-dagster/airlift-v1/task-level-migration/peer), we connected the example Airflow instance to a Dagster code location.
 
 The next step is to represent the Airflow workflows more richly by observing the data assets that are produced by the Airflow tasks. Similar to the peering step, this step does not require any changes to Airflow code.
 
@@ -24,14 +24,14 @@ In this example, there are three sequential tasks:
 
 First, you will need to create a set of <PyObject section="assets" module="dagster" object="AssetSpec" pluralize /> that correspond to the assets produced by these tasks. Next, you will annotate these asset specs so Dagster can associate them with the Airflow tasks that produce them.
 
-The first and third tasks involve a single table each, so we will manually construct asset specs for these two tasks. We will use the <PyObject section="libraries" module="dagster_airlift" object="core.assets_with_task_mappings" displayText="assets_with_task_mappings" /> function in the `dagster-airlift` package to annotate these asset specs with the tasks that produce them. Assets which are properly annotated will be materialized by the Airlift sensor once the corresponding task completes, and these annotated specs are then provided to the `defs` argument to <PyObject section="libraries" module="dagster_airlift" object="core.build_defs_from_airflow_instance" displayText="defs_from_airflow_instance" />.
+The first and third tasks involve a single table each, so we will manually construct asset specs for these two tasks. We will use the <PyObject section="libraries" integration="airlift" module="dagster_airlift" object="core.assets_with_task_mappings" displayText="assets_with_task_mappings" /> function in the `dagster-airlift` package to annotate these asset specs with the tasks that produce them. Assets which are properly annotated will be materialized by the Airlift sensor once the corresponding task completes, and these annotated specs are then provided to the `defs` argument to <PyObject section="libraries" integration="airlift" module="dagster_airlift" object="core.build_defs_from_airflow_instance" displayText="defs_from_airflow_instance" />.
 
-The second task, `build_dbt_models`, will require building a set of `dbt` asset definitions. We will use the <PyObject section="libraries" module="dagster_dbt" object="dbt_assets" decorator /> decorator from the [`dagster-dbt`](https://docs.dagster.io/api/libraries/dagster-dbt) package to generate these definitions using Dagster's dbt integration.
+The second task, `build_dbt_models`, will require building a set of `dbt` asset definitions. We will use the <PyObject section="libraries" integration="dbt" module="dagster_dbt" object="dbt_assets" decorator /> decorator from the [`dagster-dbt`](https://docs.dagster.io/integrations/libraries/dbt/dagster-dbt) package to generate these definitions using Dagster's dbt integration.
 
 First, install the `dbt` extra of `dagster-airlift`:
 
 ```bash
-uv pip install 'dagster-airlift[dbt]'
+uv add 'dagster-airlift[dbt]'
 ```
 
 Next, construct the assets:
@@ -103,4 +103,4 @@ In order for partitioned assets to work with `dagster-airlift`, the following th
 
 ## Next steps
 
-In the next step, "[Migrate Airflow tasks](/migration/airflow-to-dagster/airlift-v1/task-level-migration/migrate)", we will migrate Airflow DAG code to Dagster.
+In the next step, [Migrate Airflow tasks](/migration/airflow-to-dagster/airlift-v1/task-level-migration/migrate), we will migrate Airflow DAG code to Dagster.

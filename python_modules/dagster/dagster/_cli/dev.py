@@ -7,7 +7,6 @@ import time
 from collections.abc import Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import Optional
 
 import click
 import yaml
@@ -20,7 +19,7 @@ from dagster_shared.ipc import (
 )
 from dagster_shared.serdes import serialize_value
 
-from dagster._annotations import deprecated
+from dagster._annotations import deprecated, superseded
 from dagster._cli.proxy_server_manager import ProxyServerManager
 from dagster._cli.utils import assert_no_remaining_opts, get_possibly_temporary_instance_for_cli
 from dagster._cli.workspace.cli_target import WorkspaceOpts, workspace_opts_to_load_target
@@ -106,20 +105,51 @@ _CHECK_SUBPROCESS_INTERVAL = 5
     default=False,
     help="Show verbose stack traces for errors in the code server.",
 )
+@click.option(
+    "--db-statement-timeout",
+    help=(
+        "The timeout in milliseconds to set on database statements sent "
+        "to the DagsterInstance. Not respected in all configurations."
+    ),
+    default=None,
+    type=click.INT,
+)
+@click.option(
+    "--db-pool-recycle",
+    help=(
+        "The maximum age of a connection to use from the sqlalchemy pool without connection"
+        " recycling."
+    ),
+    default=None,
+    type=click.INT,
+)
+@click.option(
+    "--db-pool-max-overflow",
+    help=("The maximum overflow size of the sqlalchemy pool. Set to -1 to disable."),
+    default=None,
+    type=click.INT,
+)
 @workspace_options
 @deprecated(
     breaking_version="2.0", subject="--dagit-port and --dagit-host args", emit_runtime_warning=False
+)
+@superseded(
+    additional_warn_text="Use 'dg dev' instead.",
+    emit_runtime_warning=True,
 )
 def dev_command(
     code_server_log_level: str,
     log_level: str,
     log_format: str,
-    port: Optional[str],
-    host: Optional[str],
-    live_data_poll_rate: Optional[str],
+    port: str | None,
+    host: str | None,
+    live_data_poll_rate: str | None,
     use_legacy_code_server_behavior: bool,
-    shutdown_pipe: Optional[int],
+    shutdown_pipe: int | None,
     verbose: bool,
+    db_statement_timeout: int | None,
+    db_pool_recycle: int | None,
+    db_pool_max_overflow: int | None,
     **other_opts: object,
 ) -> None:
     workspace_opts = WorkspaceOpts.extract_from_cli_options(other_opts)
@@ -136,6 +166,9 @@ def dev_command(
         verbose,
         workspace_opts,
         live_data_poll_rate,
+        db_statement_timeout=db_statement_timeout,
+        db_pool_recycle=db_pool_recycle,
+        db_pool_max_overflow=db_pool_max_overflow,
     )
 
 
@@ -143,13 +176,16 @@ def dev_command_impl(
     code_server_log_level: str,
     log_level: str,
     log_format: str,
-    port: Optional[str],
-    host: Optional[str],
+    port: str | None,
+    host: str | None,
     use_legacy_code_server_behavior: bool,
-    shutdown_pipe: Optional[int],
+    shutdown_pipe: int | None,
     verbose: bool,
     workspace_opts: WorkspaceOpts,
-    live_data_poll_rate: Optional[str] = "2000",
+    live_data_poll_rate: str | None = "2000",
+    db_statement_timeout: int | None = None,
+    db_pool_recycle: int | None = None,
+    db_pool_max_overflow: int | None = None,
 ) -> None:
     # check if dagster-webserver installed, crash if not
     try:
@@ -169,17 +205,18 @@ def dev_command_impl(
 
     dagster_home_path = os.getenv("DAGSTER_HOME")
 
-    dagster_yaml_path = os.path.join(os.getcwd(), "dagster.yaml")
+    cwd = Path.cwd()
+    dagster_yaml_path = cwd / "dagster.yaml"
+    if not dagster_yaml_path.exists():
+        dagster_yaml_path = cwd / "dagster.yml"
 
-    has_local_dagster_yaml = os.path.exists(dagster_yaml_path)
-    if dagster_home_path:
-        if has_local_dagster_yaml and Path(os.getcwd()) != Path(dagster_home_path):
-            logger.warning(
-                "Found a dagster instance configuration value (dagster.yaml) in the current"
-                " folder, but your DAGSTER_HOME environment variable is set to"
-                f" {dagster_home_path}. The dagster.yaml file will not be used to configure Dagster"
-                " unless it is placed in the same folder as DAGSTER_HOME."
-            )
+    if dagster_home_path and dagster_yaml_path.exists() and cwd != Path(dagster_home_path):
+        logger.warning(
+            f"Found a dagster instance configuration value ({dagster_yaml_path.name}) in the current"
+            " folder, but your DAGSTER_HOME environment variable is set to"
+            f" {dagster_home_path}. The {dagster_yaml_path.name} file will not be used to configure Dagster"
+            " unless it is placed in the same folder as DAGSTER_HOME."
+        )
 
     # Set up windows interrupt signals to raise KeyboardInterrupt. Note that these handlers are
     # not used if we are using the shutdown pipe.
@@ -216,6 +253,21 @@ def dev_command_impl(
                 + (["--dagster-log-level", log_level])
                 + (["--log-format", log_format])
                 + (["--live-data-poll-rate", live_data_poll_rate] if live_data_poll_rate else [])
+                + (
+                    ["--db-statement-timeout", str(db_statement_timeout)]
+                    if db_statement_timeout is not None
+                    else []
+                )
+                + (
+                    ["--db-pool-recycle", str(db_pool_recycle)]
+                    if db_pool_recycle is not None
+                    else []
+                )
+                + (
+                    ["--db-pool-max-overflow", str(db_pool_max_overflow)]
+                    if db_pool_max_overflow is not None
+                    else []
+                )
                 + ["--shutdown-pipe", str(webserver_read_fd)]
                 + args,
                 pass_fds=[webserver_read_fd],
@@ -331,6 +383,13 @@ def _workspace_opts_to_serialized_cli_args(workspace_opts: WorkspaceOpts) -> Seq
     if workspace_opts.module_name:
         for module_name in workspace_opts.module_name:
             args.extend(("--module-name", module_name))
+
+    if workspace_opts.package_name:
+        for package_name in workspace_opts.package_name:
+            args.extend(("--package-name", package_name))
+
+    if workspace_opts.autoload_defs_module_name:
+        args.extend(("--autoload-defs-module-name", workspace_opts.autoload_defs_module_name))
 
     if workspace_opts.attribute:
         args.extend(("--attribute", workspace_opts.attribute))

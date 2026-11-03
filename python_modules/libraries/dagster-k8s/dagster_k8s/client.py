@@ -2,8 +2,9 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Callable
 from enum import Enum
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Optional, TypeVar
 
 import kubernetes.client
 import kubernetes.client.rest
@@ -121,14 +122,14 @@ class PatchedApiClient(ApiClient):
             for attr, attr_type in six.iteritems(klass.openapi_types):
                 if klass.attribute_map[attr] in data:
                     value = data[klass.attribute_map[attr]]
-                    kwargs[attr] = self._ApiClient__deserialize(value, attr_type)
+                    kwargs[attr] = self._ApiClient__deserialize(value, attr_type)  # ty: ignore[unresolved-attribute]
 
         instance = klass(**kwargs)
 
         if hasattr(instance, "get_real_child_model"):
             klass_name = instance.get_real_child_model(data)
             if klass_name:
-                instance = self._ApiClient__deserialize(data, klass_name)
+                instance = self._ApiClient__deserialize(data, klass_name)  # ty: ignore[unresolved-attribute]
         return instance
 
 
@@ -251,6 +252,28 @@ class KubernetesWaitingReasons:
     CrashLoopBackOff = "CrashLoopBackOff"
     RunContainerError = "RunContainerError"
     CreateContainerConfigError = "CreateContainerConfigError"
+
+
+def _init_container_will_be_retried(pod: kubernetes.client.V1Pod, container_name: str) -> bool:
+    """Whether the kubelet will restart this init container after it fails.
+
+    An init container may carry its own restart policy, which overrides the pod's - a native
+    sidecar is an init container with `restartPolicy: Always`. An unknown restart policy is
+    treated as Never so that a failure is surfaced rather than waited on indefinitely.
+    """
+    if not pod.spec:
+        return False
+
+    container_policy = next(
+        (
+            # absent on kubernetes client versions predating sidecar support
+            getattr(container, "restart_policy", None)
+            for container in (pod.spec.init_containers or [])
+            if container.name == container_name
+        ),
+        None,
+    )
+    return (container_policy or pod.spec.restart_policy) in ("OnFailure", "Always")
 
 
 class DagsterKubernetesClient:
@@ -424,7 +447,7 @@ class DagsterKubernetesClient:
         wait_timeout=DEFAULT_WAIT_TIMEOUT,
         wait_time_between_attempts=DEFAULT_WAIT_BETWEEN_ATTEMPTS,
         num_pods_to_wait_for=DEFAULT_JOB_POD_COUNT,
-        start_time: Optional[float] = None,
+        start_time: float | None = None,
     ):
         if wait_timeout:
             check.float_param(start_time, "start_time")
@@ -481,7 +504,7 @@ class DagsterKubernetesClient:
         job_name: str,
         namespace: str,
         wait_time_between_attempts=DEFAULT_WAIT_BETWEEN_ATTEMPTS,
-    ) -> Optional[V1JobStatus]:
+    ) -> Optional[V1JobStatus]:  # noqa: UP045
         def _get_job_status():
             try:
                 job = self.batch_api.read_namespaced_job_status(job_name, namespace=namespace)
@@ -603,7 +626,7 @@ class DagsterKubernetesClient:
         wait_timeout: float = DEFAULT_WAIT_TIMEOUT,
         wait_time_between_attempts: float = DEFAULT_WAIT_BETWEEN_ATTEMPTS,
         start_time: Any = None,
-        ignore_containers: Optional[set] = None,
+        ignore_containers: set | None = None,
     ) -> None:
         """Wait for a pod to launch and be running, or wait for termination (useful for job pods).
 
@@ -685,9 +708,14 @@ class DagsterKubernetesClient:
             all_statuses = []
             all_statuses.extend(pod.status.init_container_statuses or [])
             all_statuses.extend(pod.status.container_statuses or [])
-            initcontainers = set(s.name for s in (pod.status.init_container_statuses or []))
 
             # Filter out ignored containers
+            initcontainers = set(
+                s.name
+                for s in (pod.status.init_container_statuses or [])
+                if s.name not in ignore_containers
+            )
+
             all_statuses = [s for s in all_statuses if s.name not in ignore_containers]
 
             # Always get the first status from the list, which will first get the
@@ -770,6 +798,16 @@ class DagsterKubernetesClient:
             elif state.terminated is not None:
                 container_name = container_status.name
                 if state.terminated.exit_code != 0:
+                    if container_name in initcontainers and _init_container_will_be_retried(
+                        pod, container_name
+                    ):
+                        self.logger(
+                            f'Init container "{container_name}" in {pod_name} failed and will be'
+                            " restarted, waiting for the retry..."
+                        )
+                        self.sleeper(wait_time_between_attempts)
+                        continue
+
                     tail_lines = int(
                         os.getenv("DAGSTER_K8S_WAIT_FOR_POD_FAILURE_LOG_LINE_COUNT", "100")
                     )
@@ -783,6 +821,15 @@ class DagsterKubernetesClient:
                     )
 
                     self.logger(msg)
+
+                    # A failed init container prevents every later container from starting, so
+                    # waiting for the remaining containers to exit would block until the timeout.
+                    if container_name in initcontainers:
+                        debug_info = self.get_pod_debug_info(pod_name, namespace, pod=pod)
+                        raise DagsterK8sError(
+                            f"Pod {pod_name} failed to initialize:\n{msg}\n{debug_info}"
+                        )
+
                     error_logs.append(msg)
                 elif container_name in initcontainers:
                     self.logger(
@@ -811,7 +858,7 @@ class DagsterKubernetesClient:
         self,
         pod_name: str,
         namespace: str,
-        container_name: Optional[str] = None,
+        container_name: str | None = None,
         **kwargs,
     ) -> str:
         """Retrieves the raw pod logs for the pod named `pod_name` from Kubernetes.
@@ -931,8 +978,7 @@ class DagsterKubernetesClient:
                 namespace=namespace,
                 field_selector=f"involvedObject.name={job_name}",
             ).items
-            for event in events:
-                event_strs.append(f"{event.reason}: {event.message}")
+            event_strs.extend(f"{event.reason}: {event.message}" for event in events)
 
         return (
             f"Debug information for job {job_name}:"
@@ -944,8 +990,8 @@ class DagsterKubernetesClient:
         self,
         pod_name,
         namespace,
-        pod: Optional[kubernetes.client.V1Pod] = None,  # the already fetched pod
-        include_container_logs: Optional[bool] = True,
+        pod: Optional[kubernetes.client.V1Pod] = None,  # the already fetched pod  # noqa: UP045
+        include_container_logs: bool | None = True,
     ) -> str:
         if pod is None:
             pods = self.core_api.list_namespaced_pod(

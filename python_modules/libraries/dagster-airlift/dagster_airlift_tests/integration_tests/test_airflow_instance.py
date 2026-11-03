@@ -8,6 +8,7 @@ from dagster_shared.error import DagsterError
 from dagster_airlift_tests.integration_tests.conftest import assert_link_exists
 
 
+@pytest.mark.timeout(180)
 def test_airflow_instance(airflow_instance: None) -> None:
     """Test AirflowInstance APIs against live-running airflow. Ensure that links result in 200s.
 
@@ -27,7 +28,7 @@ def test_airflow_instance(airflow_instance: None) -> None:
     source_code = instance.get_dag_source_code(dag_infos[0].metadata["file_token"])
     assert "print_hello()" in source_code
     # Attempt a nonexistent file token
-    with pytest.raises(DagsterError, match="Failed to fetch source code."):
+    with pytest.raises(DagsterError, match=r"Failed to fetch source code."):
         instance.get_dag_source_code("nonexistent")
 
     task_info = instance.get_task_info(dag_id="print_dag", task_id="print_task")
@@ -53,13 +54,13 @@ def test_airflow_instance(airflow_instance: None) -> None:
 
     # Attempt a nonexistent task
     with pytest.raises(
-        DagsterError, match="Failed to fetch task info for print_dag/nonexistent_task."
+        DagsterError, match=r"Failed to fetch task info for print_dag/nonexistent_task."
     ):
         instance.get_task_info(dag_id="print_dag", task_id="nonexistent_task")
 
     # Kick off a run of the dag.
     run_id = instance.trigger_dag(dag_id="print_dag")
-    instance.wait_for_run_completion(dag_id="print_dag", run_id=run_id)
+    instance.wait_for_run_completion(dag_id="print_dag", run_id=run_id, timeout=180)
     run = instance.get_dag_run(dag_id="print_dag", run_id=run_id)
 
     assert run.run_id == run_id

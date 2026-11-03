@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import pytest
 from dagster import DefaultScheduleStatus, RunConfig
@@ -67,10 +67,10 @@ def test_dbt_build_schedule(
     dbt_select: str,
     dbt_exclude: str,
     dbt_selector: str,
-    schedule_name: Optional[str],
-    tags: Optional[Mapping[str, str]],
-    config: Optional[RunConfig],
-    execution_timezone: Optional[str],
+    schedule_name: str | None,
+    tags: Mapping[str, object] | None,
+    config: RunConfig | None,
+    execution_timezone: str | None,
     default_status: DefaultScheduleStatus,
 ) -> None:
     @dbt_assets(manifest=test_jaffle_shop_manifest)
@@ -113,3 +113,26 @@ def test_dbt_build_schedule(
     assert job_selection.select == (dbt_select or "fqn:*")
     assert job_selection.exclude == (dbt_exclude or "")
     assert job_selection.selector == (dbt_selector or "")
+
+
+def test_dbt_build_schedule_non_string_tag_values(
+    test_jaffle_shop_manifest: dict[str, Any],
+) -> None:
+    @dbt_assets(manifest=test_jaffle_shop_manifest)
+    def my_dbt_assets(): ...
+
+    schedule = build_schedule_from_dbt_selection(
+        [my_dbt_assets],
+        job_name="test_job",
+        cron_schedule="0 0 * * *",
+        tags={"count": 3, "flag": True, "nested": {"a": 1}, "already_str": "x"},
+    )
+
+    job = schedule.job
+    assert isinstance(job, UnresolvedAssetJobDefinition)
+    assert job.tags == {
+        "count": "3",
+        "flag": "true",
+        "nested": '{"a": 1}',
+        "already_str": "x",
+    }

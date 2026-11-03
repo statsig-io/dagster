@@ -7,6 +7,8 @@ keywords:
   - automation condition
 sidebar_position: 20
 title: Declarative Automation
+canonicalUrl: '/guides/automate/declarative-automation'
+slug: '/guides/automate/declarative-automation'
 ---
 
 Declarative Automation is a framework that uses information about the status of your assets and their dependencies to launch executions of your assets.
@@ -15,7 +17,7 @@ Not sure what automation method to use? Check out the [automation overview](/gui
 
 :::note
 
-To use Declarative Automation, you will need to enable the default **[automation condition sensor](automation-condition-sensors)** in the UI, which evaluates automation conditions and launches runs in response to their statuses. To do so, navigate to **Automation**, find the desired code location, and toggle on the **default_automation_condition_sensor** sensor.
+To use Declarative Automation, you will need to enable the default **[automation condition sensor](/guides/automate/declarative-automation/automation-condition-sensors)** in the UI, which evaluates automation conditions and launches runs in response to their statuses. To do so, navigate to **Automation**, find the desired code location, and toggle on the **default_automation_condition_sensor** sensor.
 
 :::
 
@@ -32,11 +34,14 @@ The <PyObject section="assets" module="dagster" object="AutomationCondition.on_c
 
 In the example below, the asset will start waiting for each of its dependencies to be updated at the start of each hour. Once all dependencies have updated since the start of the hour, this asset will be immediately requested.
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/declarative_automation/on_cron/basic.py" title="src/<project_name>/defs/assets.py" />
+<CodeExample
+  path="docs_snippets/docs_snippets/guides/automate/declarative_automation/on_cron/basic.py"
+  title="src/<project_name>/defs/assets.py"
+/>
 
 **Behavior**
 
-If you would like to customize aspects of this behavior, refer to the [customizing on_cron](/guides/automate/declarative-automation/customizing-automation-conditions/customizing-on-cron-condition) guide.
+To customize aspects of this behavior, see [Customizing on_cron](/guides/automate/declarative-automation/customizing-automation-conditions/customizing-on-cron-condition).
 
 - If at least one upstream partition of _all_ upstream assets has been updated since the previous cron schedule tick, and the downstream asset has not yet been requested or updated, the downstream asset will be requested.
 - If all upstream assets **do not** update within the given cron tick, the downstream asset will not be requested.
@@ -51,7 +56,10 @@ The <PyObject section="assets" module="dagster" object="AutomationCondition.eage
 
 In the example below, the following asset will be automatically updated whenever any of its upstream dependencies are updated:
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/declarative_automation/eager/basic.py" title="src/<project_name>/defs/assets.py" />
+<CodeExample
+  path="docs_snippets/docs_snippets/guides/automate/declarative_automation/eager/basic.py"
+  title="src/<project_name>/defs/assets.py"
+/>
 
 **Behavior**
 
@@ -73,7 +81,10 @@ The <PyObject section="assets" module="dagster" object="AutomationCondition.on_m
 
 In the example below, as soon as all hourly partitions of the upstream asset are filled in, the downstream asset will be immediately requested:
 
-<CodeExample path="docs_snippets/docs_snippets/concepts/declarative_automation/on_missing/basic.py" title="src/<project_name>/defs/assets.py" />
+<CodeExample
+  path="docs_snippets/docs_snippets/guides/automate/declarative_automation/on_missing/basic.py"
+  title="src/<project_name>/defs/assets.py"
+/>
 
 **Behavior**
 
@@ -81,8 +92,19 @@ In the example below, as soon as all hourly partitions of the upstream asset are
 - For **time-partitioned** assets, this condition will only request the _latest_ time partition of the asset.
 - This condition will only consider partitions that were added to the asset after the condition was enabled.
 
-To customize this behavior, see the [customizing on_missing](customizing-automation-conditions/customizing-on-missing-condition) guide.
+To customize this behavior, see the [customizing on_missing](/guides/automate/declarative-automation/customizing-automation-conditions/customizing-on-missing-condition) guide.
 
 </TabItem>
 
 </Tabs>
+
+## Automating asset checks and jobs
+
+Automation conditions can be attached to targets other than assets:
+
+- Automation conditions can be used to execute asset checks independently of the assets they target. For more information, see [Automating asset checks](/guides/automate/declarative-automation/automating-asset-checks).
+- An automation condition can be attached to an asset job, so that the entire job is launched as a single run when the condition becomes true. For more information, see [Automating jobs](/guides/automate/declarative-automation/automating-jobs).
+
+## Testing declarative automations
+
+To test automation conditions in isolation without starting the automation daemon, use <PyObject section="assets" module="dagster" object="evaluate_automation_conditions" />. Usage examples covering missing assets, same-code-location dependencies, and cross-code-location dependencies are available in the [API reference](/api/dagster/assets#testing-declarative-automations).

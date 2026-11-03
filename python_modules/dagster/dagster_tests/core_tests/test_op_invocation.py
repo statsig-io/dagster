@@ -25,7 +25,7 @@ def test_op_invocation_no_arg():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Too many input arguments were provided for op 'basic_op'. This may be because an"
+            r"Too many input arguments were provided for op 'basic_op'. This may be because an"
             " argument was provided for the context parameter, but no context parameter was defined"
             " for the op."
         ),
@@ -36,7 +36,7 @@ def test_op_invocation_no_arg():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Too many input arguments were provided for op 'aliased_basic_op'. This may be because"
+            r"Too many input arguments were provided for op 'aliased_basic_op'. This may be because"
             " an argument was provided for the context parameter, but no context parameter was"
             " defined for the op."
         ),
@@ -62,7 +62,7 @@ def test_op_invocation_lifecycle():
         pass
 
     # Verify dispose was called on the instance
-    assert context.instance.run_storage._held_conn.closed  # noqa  # pyright: ignore[reportAttributeAccessIssue]
+    assert context.instance.run_storage._held_conn.closed  # noqa
 
 
 def test_op_invocation_context_arg():
@@ -115,7 +115,7 @@ def test_op_invocation_with_resources():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Decorated function 'op_requires_resources' has context argument, but no "
+            r"Decorated function 'op_requires_resources' has context argument, but no "
             "context was provided when invoking."
         ),
     ):
@@ -125,7 +125,7 @@ def test_op_invocation_with_resources():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Decorated function 'op_requires_resources' has context argument, but no "
+            r"Decorated function 'op_requires_resources' has context argument, but no "
             "context was provided when invoking."
         ),
     ):
@@ -183,7 +183,7 @@ def test_op_invocation_with_config():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Decorated function 'op_requires_config' has context argument, but no "
+            r"Decorated function 'op_requires_config' has context argument, but no "
             "context was provided when invoking."
         ),
     ):
@@ -193,7 +193,7 @@ def test_op_invocation_with_config():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Decorated function 'op_requires_config' has context argument, but no "
+            r"Decorated function 'op_requires_config' has context argument, but no "
             "context was provided when invoking."
         ),
     ):
@@ -219,7 +219,7 @@ def test_op_invocation_with_config():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Decorated function 'op_requires_config' has context argument, but no "
+            r"Decorated function 'op_requires_config' has context argument, but no "
             "context was provided when invoking."
         ),
     ):
@@ -324,7 +324,7 @@ def test_op_with_inputs():
 
     # Check for proper error when incorrect number of inputs is provided.
     with pytest.raises(
-        dg.DagsterInvalidInvocationError, match='No value provided for required input "y".'
+        dg.DagsterInvalidInvocationError, match=r'No value provided for required input "y".'
     ):
         op_with_inputs(5)
 
@@ -342,7 +342,7 @@ def test_op_with_inputs():
 
     # Check for proper error when input missing.
     with pytest.raises(
-        dg.DagsterInvalidInvocationError, match='No value provided for required input "y".'
+        dg.DagsterInvalidInvocationError, match=r'No value provided for required input "y".'
     ):
         op_with_inputs(5, z=5)
 
@@ -411,9 +411,7 @@ def test_async_gen_invocation():
     context = dg.build_op_context()
 
     async def get_results():
-        res = []
-        async for output in aio_gen(context):
-            res.append(output)
+        res = [output async for output in aio_gen(context)]
         return res
 
     results = asyncio.run(get_results())
@@ -525,9 +523,7 @@ def test_optional_output_yielded_async():
         yield dg.Output(2, output_name="2")
 
     async def get_results():
-        res = []
-        async for output in op_multiple_outputs_not_sent():
-            res.append(output)
+        res = [output async for output in op_multiple_outputs_not_sent()]
         return res
 
     output = asyncio.run(get_results())[0]
@@ -593,9 +589,7 @@ def test_missing_required_output_generator_async():
         wrap_op_in_graph_and_execute(op_multiple_outputs_not_sent)
 
     async def get_results():
-        res = []
-        async for output in op_multiple_outputs_not_sent():
-            res.append(output)
+        res = [output async for output in op_multiple_outputs_not_sent()]
         return res
 
     with pytest.raises(
@@ -751,7 +745,7 @@ def test_input_type_check():
 
     with pytest.raises(
         dg.DagsterTypeCheckDidNotPass,
-        match='Description: Value "foo" of python type "str" must be a int.',
+        match=r'Description: Value "foo" of python type "str" must be a int.',
     ):
         op_takes_input("foo")
 
@@ -763,7 +757,7 @@ def test_output_type_check():
 
     with pytest.raises(
         dg.DagsterTypeCheckDidNotPass,
-        match='Description: Value "foo" of python type "str" must be a int.',
+        match=r'Description: Value "foo" of python type "str" must be a int.',
     ):
         wrong_type()
 
@@ -780,7 +774,7 @@ def test_graph_invocation_out_of_composition():
     with pytest.raises(
         dg.DagsterInvariantViolationError,
         match=(
-            "Attempted to call graph "
+            r"Attempted to call graph "
             "'the_graph' outside of a composition function. Invoking graphs is only valid in a "
             "function decorated with @job or @graph."
         ),
@@ -824,7 +818,7 @@ def test_op_invocation_nothing_deps():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Attempted to provide value for nothing input 'start'. Nothing dependencies are ignored"
+            r"Attempted to provide value for nothing input 'start'. Nothing dependencies are ignored"
             " when directly invoking ops."
         ),
     ):
@@ -833,7 +827,7 @@ def test_op_invocation_nothing_deps():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Too many input arguments were provided for op 'nothing_dep'. This may be because "
+            r"Too many input arguments were provided for op 'nothing_dep'. This may be because "
             "you attempted to provide a value for a nothing dependency. Nothing dependencies are "
             "ignored when directly invoking ops."
         ),
@@ -852,7 +846,7 @@ def test_op_invocation_nothing_deps():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Too many input arguments were provided for op 'sandwiched_nothing_dep'. This may "
+            r"Too many input arguments were provided for op 'sandwiched_nothing_dep'. This may "
             "be because you attempted to provide a value for a nothing dependency. Nothing "
             "dependencies are ignored when directly invoking ops."
         ),
@@ -885,9 +879,7 @@ def test_dynamic_output_async_gen():
         yield dg.Output(value="foo", output_name="b")
 
     async def get_results():
-        res = []
-        async for output in aio_gen():
-            res.append(output)
+        res = [output async for output in aio_gen()]
         return res
 
     a1, a2, b = asyncio.run(get_results())
@@ -982,7 +974,7 @@ def test_build_context_with_resources_config(context_builder):
 
     with pytest.raises(
         dg.DagsterInvalidConfigError,
-        match='Received unexpected config entry "bad_resource" at the root.',
+        match=r'Received unexpected config entry "bad_resource" at the root.',
     ):
         context_builder(
             resources={"my_resource": my_resource},
@@ -1032,7 +1024,7 @@ def test_add_output_metadata_after_output():
     with pytest.raises(
         dg.DagsterInvariantViolationError,
         match=(
-            "In op 'the_op', attempted to log output metadata for output 'result' which has already"
+            r"In op 'the_op', attempted to log output metadata for output 'result' which has already"
             " been yielded. Metadata must be logged before the output is yielded."
         ),
     ):
@@ -1070,7 +1062,7 @@ def test_log_metadata_after_dynamic_output():
     with pytest.raises(
         dg.DagsterInvariantViolationError,
         match=(
-            "In op 'the_op', attempted to log output metadata for output 'result' with mapping_key"
+            r"In op 'the_op', attempted to log output metadata for output 'result' with mapping_key"
             " 'one' which has already been yielded. Metadata must be logged before the output is"
             " yielded."
         ),
@@ -1085,7 +1077,7 @@ def test_kwarg_inputs():
 
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
-        match="'the_op' has 0 positional inputs, but 1 positional inputs were provided.",
+        match=r"'the_op' has 0 positional inputs, but 1 positional inputs were provided.",
     ):
         the_op("bar")
 
@@ -1111,7 +1103,7 @@ def test_kwarg_inputs_context():
 
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
-        match="'the_op' has 0 positional inputs, but 1 positional inputs were provided.",
+        match=r"'the_op' has 0 positional inputs, but 1 positional inputs were provided.",
     ):
         the_op(context, "bar")
 
@@ -1169,7 +1161,7 @@ def test_required_resource_keys_no_context_invocation():
     with pytest.raises(
         dg.DagsterInvalidInvocationError,
         match=(
-            "Too many input arguments were provided for op "
+            r"Too many input arguments were provided for op "
             "'uses_resource_no_context'. This may be because an argument was "
             "provided for the context parameter, but no context parameter was "
             "defined for the op."
@@ -1320,9 +1312,9 @@ def test_async_assets_with_shared_context():
     ctx = dg.build_asset_context()
 
     async def main():
-        return await asyncio.gather(
-            async_asset_one(ctx),  # type: ignore
-            async_asset_two(ctx),  # type: ignore
+        return await asyncio.gather(  # ty: ignore[no-matching-overload]
+            async_asset_one(ctx),
+            async_asset_two(ctx),
         )
 
     with pytest.raises(
@@ -1408,15 +1400,15 @@ def test_context_bound_state_async():
 
     ctx = dg.build_asset_context()
 
-    result = asyncio.run(async_asset(ctx))  # pyright: ignore[reportArgumentType]
+    result = asyncio.run(async_asset(ctx))  # ty: ignore[invalid-argument-type]
     assert result == "one"
-    assert_context_unbound(ctx)  # pyright: ignore[reportArgumentType]
-    assert_execution_properties_exist(ctx)  # pyright: ignore[reportArgumentType]
+    assert_context_unbound(ctx)  # ty: ignore[invalid-argument-type]
+    assert_execution_properties_exist(ctx)  # ty: ignore[invalid-argument-type]
 
-    result = asyncio.run(async_asset(ctx))  # pyright: ignore[reportArgumentType]
+    result = asyncio.run(async_asset(ctx))  # ty: ignore[invalid-argument-type]
     assert result == "one"
-    assert_context_unbound(ctx)  # pyright: ignore[reportArgumentType]
-    assert_execution_properties_exist(ctx)  # pyright: ignore[reportArgumentType]
+    assert_context_unbound(ctx)  # ty: ignore[invalid-argument-type]
+    assert_execution_properties_exist(ctx)  # ty: ignore[invalid-argument-type]
 
 
 def test_context_bound_state_async_generator():
@@ -1432,9 +1424,7 @@ def test_context_bound_state_async_generator():
     ctx = dg.build_op_context()
 
     async def get_results():
-        res = []
-        async for output in async_generator(ctx):
-            res.append(output)
+        res = [output async for output in async_generator(ctx)]
         return res
 
     result = asyncio.run(get_results())
@@ -1461,7 +1451,7 @@ def test_bound_state_with_error_assets():
     with pytest.raises(dg.Failure):
         throws_error(ctx)
 
-    assert_context_unbound(ctx)  # pyright: ignore[reportArgumentType]
+    assert_context_unbound(ctx)  # ty: ignore[invalid-argument-type]
 
     @dg.asset
     def no_error(context):
@@ -1502,16 +1492,16 @@ def test_context_bound_state_with_error_generator():
 def test_context_bound_state_with_error_async():
     @dg.asset
     async def async_asset(context):
-        assert_context_bound(ctx)  # pyright: ignore[reportArgumentType]
+        assert_context_bound(ctx)  # ty: ignore[invalid-argument-type]
         await asyncio.sleep(0.01)
         raise dg.Failure("something bad happened!")
 
     ctx = dg.build_asset_context()
 
     with pytest.raises(dg.Failure):
-        asyncio.run(async_asset(ctx))  # pyright: ignore[reportArgumentType]
+        asyncio.run(async_asset(ctx))  # ty: ignore[invalid-argument-type]
 
-    assert_context_unbound(ctx)  # pyright: ignore[reportArgumentType]
+    assert_context_unbound(ctx)  # ty: ignore[invalid-argument-type]
 
 
 def test_context_bound_state_with_error_async_generator():
@@ -1525,9 +1515,7 @@ def test_context_bound_state_with_error_async_generator():
     ctx = dg.build_op_context()
 
     async def get_results():
-        res = []
-        async for output in async_generator(ctx):
-            res.append(output)
+        res = [output async for output in async_generator(ctx)]
         return res
 
     with pytest.raises(dg.Failure):

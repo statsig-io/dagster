@@ -1,36 +1,5 @@
 import sys
 
-from dagster import _module_alias_map
-
-# Imports of a key will return the module named by the corresponding value.
-sys.meta_path.insert(
-    _module_alias_map.get_meta_path_insertion_index(),
-    _module_alias_map.AliasedModuleFinder(
-        {
-            "dagster.api": "dagster._api",
-            "dagster.builtins": "dagster._builtins",
-            "dagster.check": "dagster._check",
-            "dagster.cli": "dagster._cli",
-            "dagster.config": "dagster._config",
-            "dagster.core": "dagster._core",
-            "dagster.daemon": "dagster._daemon",
-            "dagster.experimental": "dagster._experimental",
-            "dagster.generate": "dagster._generate",
-            "dagster.grpc": "dagster._grpc",
-            "dagster.loggers": "dagster._loggers",
-            "dagster.serdes": "dagster._serdes",
-            "dagster.seven": "dagster_shared.seven",
-            "dagster.time": "dagster._time",
-            "dagster.utils": "dagster._utils",
-            # Added in 1.3.4 for backcompat when `_core.storage.pipeline_run` was renamed to
-            # `_core.storage.dagster_run`. This was necessary because some docs (incorrectly)
-            # demonstarted a direct import from `dagster._core.storage.pipeline_run` instead of
-            # using the top-level import.
-            "dagster._core.storage.pipeline_run": "dagster.core.storage.dagster_run",
-        }
-    ),
-)
-
 # ########################
 # ##### NOTES ON IMPORT FORMAT
 # ########################
@@ -44,13 +13,11 @@ sys.meta_path.insert(
 # by static analyzers. The redundant alias form `import X as X` overwrites the private imported `X`
 # with a public `X` bound to the same value. It is also possible to expose `X` as public by listing
 # it inside `__all__`, but the redundant alias form is preferred here due to easier maintainability.
-
 # (2) All imports should target the module in which a symbol is actually defined, rather than a
 # container module where it is imported. This rule also derives from the default private status of
 # imported symbols. So long as there is a private import somewhere in the import chain leading from
 # an import to its definition, some linters will be triggered (e.g. pyright). For example, the
 # following results in a linter error when using dagster as a third-party library:
-
 #     ### dagster/foo/bar.py
 #     BAR = "BAR"
 #
@@ -67,11 +34,9 @@ sys.meta_path.insert(
 #
 # We could get around this by always remembering to use the `from .foo import X as X` form in
 # containers, but it is simpler to just import directly from the defining module.
-
 # ########################
 # ##### DYNAMIC IMPORTS
 # ########################
-
 from dagster_shared.error import DagsterError as DagsterError
 from dagster_shared.libraries import DagsterLibraryRegistry
 from dagster_shared.serdes import (
@@ -146,6 +111,10 @@ from dagster._core.definitions.asset_checks.asset_check_spec import (
 from dagster._core.definitions.asset_checks.asset_checks_definition import (
     AssetChecksDefinition as AssetChecksDefinition,
 )
+from dagster._core.definitions.asset_key import (
+    AssetJobKey as AssetJobKey,
+    AssetOrCheckKey as AssetOrCheckKey,
+)
 from dagster._core.definitions.asset_selection import AssetSelection as AssetSelection
 from dagster._core.definitions.asset_sensor_definition import (
     AssetSensorDefinition as AssetSensorDefinition,
@@ -153,6 +122,7 @@ from dagster._core.definitions.asset_sensor_definition import (
 from dagster._core.definitions.assets.definition.asset_dep import AssetDep as AssetDep
 from dagster._core.definitions.assets.definition.asset_spec import (
     AssetSpec as AssetSpec,
+    apply_freshness_policy as apply_freshness_policy,
     map_asset_specs as map_asset_specs,
 )
 from dagster._core.definitions.assets.definition.assets_definition import (
@@ -186,6 +156,7 @@ from dagster._core.definitions.declarative_automation.automation_condition impor
     AutomationResult as AutomationResult,
 )
 from dagster._core.definitions.declarative_automation.automation_condition_tester import (
+    EvaluateAutomationConditionsResult as EvaluateAutomationConditionsResult,
     evaluate_automation_conditions as evaluate_automation_conditions,
 )
 from dagster._core.definitions.declarative_automation.automation_context import (
@@ -243,6 +214,7 @@ from dagster._core.definitions.events import (
     DynamicOutput as DynamicOutput,
     ExpectationResult as ExpectationResult,
     Failure as Failure,
+    HookExecutionResult as HookExecutionResult,
     Output as Output,
     RetryRequested as RetryRequested,
     TypeCheck as TypeCheck,
@@ -256,6 +228,7 @@ from dagster._core.definitions.executor_definition import (
     multiple_process_executor_requirements as multiple_process_executor_requirements,
     multiprocess_executor as multiprocess_executor,
 )
+from dagster._core.definitions.freshness import FreshnessPolicy as FreshnessPolicy
 from dagster._core.definitions.freshness_policy import (
     LegacyFreshnessPolicy as LegacyFreshnessPolicy,
 )
@@ -346,6 +319,9 @@ from dagster._core.definitions.output import (
     Out as Out,
     OutputMapping as OutputMapping,
 )
+from dagster._core.definitions.partitions.context import (
+    partition_loading_context as partition_loading_context,
+)
 from dagster._core.definitions.partitions.definition import (
     DailyPartitionsDefinition as DailyPartitionsDefinition,
     DynamicPartitionsDefinition as DynamicPartitionsDefinition,
@@ -379,6 +355,7 @@ from dagster._core.definitions.partitions.partitioned_config import (
     dynamic_partitioned_config as dynamic_partitioned_config,
     hourly_partitioned_config as hourly_partitioned_config,
     monthly_partitioned_config as monthly_partitioned_config,
+    partitioned_config as partitioned_config,
     static_partitioned_config as static_partitioned_config,
     weekly_partitioned_config as weekly_partitioned_config,
 )
@@ -551,17 +528,20 @@ from dagster._core.launcher.default_run_launcher import DefaultRunLauncher as De
 from dagster._core.log_manager import DagsterLogManager as DagsterLogManager
 from dagster._core.pipes.client import (
     PipesClient as PipesClient,
+    PipesClientCompletedInvocation as PipesClientCompletedInvocation,
     PipesContextInjector as PipesContextInjector,
     PipesExecutionResult as PipesExecutionResult,
     PipesMessageReader as PipesMessageReader,
 )
 from dagster._core.pipes.context import (
+    PipesLaunchedData as PipesLaunchedData,
     PipesMessageHandler as PipesMessageHandler,
     PipesSession as PipesSession,
 )
 from dagster._core.pipes.subprocess import PipesSubprocessClient as PipesSubprocessClient
 from dagster._core.pipes.utils import (
     PipesBlobStoreMessageReader as PipesBlobStoreMessageReader,
+    PipesCompositeMessageReader as PipesCompositeMessageReader,
     PipesEnvContextInjector as PipesEnvContextInjector,
     PipesFileContextInjector as PipesFileContextInjector,
     PipesFileMessageReader as PipesFileMessageReader,
@@ -581,6 +561,7 @@ from dagster._core.storage.dagster_run import (
     RunRecord as RunRecord,
     RunsFilter as RunsFilter,
 )
+from dagster._core.storage.defs_state import UPathDefsStateStorage as UPathDefsStateStorage
 from dagster._core.storage.file_manager import (
     FileHandle as FileHandle,
     LocalFileHandle as LocalFileHandle,
@@ -604,6 +585,10 @@ from dagster._core.storage.io_manager import (
 from dagster._core.storage.mem_io_manager import (
     InMemoryIOManager as InMemoryIOManager,
     mem_io_manager as mem_io_manager,
+)
+from dagster._core.storage.migrate import (
+    MigrateIOStorageResult as MigrateIOStorageResult,
+    migrate_io_storage as migrate_io_storage,
 )
 from dagster._core.storage.partition_status_cache import (
     AssetPartitionStatus as AssetPartitionStatus,
@@ -655,12 +640,16 @@ from dagster.components.component.component import (
     ComponentTypeSpec as ComponentTypeSpec,
 )
 from dagster.components.component.component_loader import component_instance as component_instance
+from dagster.components.component.state_backed_component import (
+    StateBackedComponent as StateBackedComponent,
+)
 from dagster.components.component.template_vars import template_var as template_var
 from dagster.components.component_scaffolding import scaffold_component as scaffold_component
 from dagster.components.components import (
     DefinitionsComponent as DefinitionsComponent,  # back-compat
     DefsFolderComponent as DefsFolderComponent,
 )
+from dagster.components.core.component_tree import ComponentTree as ComponentTree
 from dagster.components.core.context import ComponentLoadContext as ComponentLoadContext
 from dagster.components.core.load_defs import (
     build_component_defs as build_component_defs,
@@ -670,6 +659,10 @@ from dagster.components.core.load_defs import (
 )
 from dagster.components.definitions import definitions as definitions
 from dagster.components.lib.shim_components.resources import resources as resources
+from dagster.components.lib.sql_component.sql_component import (
+    SqlComponent as SqlComponent,
+    TemplatedSqlComponent as TemplatedSqlComponent,
+)
 from dagster.components.resolved.base import Resolvable as Resolvable
 from dagster.components.resolved.context import ResolutionContext as ResolutionContext
 from dagster.components.resolved.core_models import (
@@ -678,6 +671,7 @@ from dagster.components.resolved.core_models import (
     ResolvedAssetKey as ResolvedAssetKey,
     ResolvedAssetSpec as ResolvedAssetSpec,
 )
+from dagster.components.resolved.form_config import ComponentFormConfig as ComponentFormConfig
 from dagster.components.resolved.model import (
     Injected as Injected,
     Model as Model,
@@ -689,11 +683,10 @@ from dagster.components.scaffold.scaffold import (
     scaffold_with as scaffold_with,
 )
 from dagster.components.testing import (
-    component_defs as component_defs,
-    defs_from_component_yaml_path as defs_from_component_yaml_path,
     get_all_components_defs_within_project as get_all_components_defs_within_project,
     get_component_defs_within_project as get_component_defs_within_project,
 )
+from dagster.components.testing.utils import component_defs as component_defs
 from dagster.version import __version__ as __version__
 
 DagsterLibraryRegistry.register("dagster", __version__)
@@ -745,7 +738,6 @@ _DEPRECATED_RENAMED: Final[Mapping[str, tuple[Callable, str]]] = {
 _DEPRECATED_WITH_ERROR: Final[Mapping[str, str]] = {
     ##### EXAMPLE
     # "Foo": "Use Bar instead.",
-    "FreshnessPolicy": "FreshnessPolicy was renamed to LegacyFreshnessPolicy in 1.11.0. For more information, please refer to the section 'Migrating to 1.11.0' in the migration guide (MIGRATION.md)."
 }
 
 
@@ -760,7 +752,7 @@ def __getattr__(name: str) -> TypingAny:
         value, breaking_version = _DEPRECATED_RENAMED[name]
         stacklevel = 3 if sys.version_info >= (3, 7) else 4
         deprecation_warning(
-            value.__name__,
+            getattr(value, "__name__", name),
             breaking_version,
             additional_warn_text=f"Use `{name}` instead.",
             stacklevel=stacklevel,

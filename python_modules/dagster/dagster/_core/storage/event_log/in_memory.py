@@ -1,8 +1,10 @@
 import logging
+import threading
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Any, Callable, Optional
+from typing import Any
 
 import sqlalchemy as db
 from sqlalchemy.pool import NullPool
@@ -22,7 +24,7 @@ class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     WARNING: The Dagster UI and other core functionality will not work if this is used on a real DagsterInstance
     """
 
-    def __init__(self, inst_data: Optional[ConfigurableClassData] = None, preload=None):
+    def __init__(self, inst_data: ConfigurableClassData | None = None, preload=None):
         self._inst_data = inst_data
         self._engine = create_engine(
             create_in_memory_conn_string(f"events-{uuid.uuid4()}"),
@@ -30,6 +32,7 @@ class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         )
         self._handlers = defaultdict(set)
         self._storage_id = 0  # mirror the storage id, to mimic watching cursors
+        self._db_lock = threading.Lock()
 
         # hold one connection for life of instance, but vend new ones for specific calls
         self._held_conn = self._engine.connect()
@@ -48,11 +51,12 @@ class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
 
     @contextmanager
     def _connect(self):
-        with self._engine.connect() as conn:
-            with conn.begin():
-                conn.execute(db.text("PRAGMA journal_mode=WAL;"))
-                conn.execute(db.text("PRAGMA foreign_keys=ON;"))
-                yield conn
+        with self._db_lock:
+            with self._engine.connect() as conn:
+                with conn.begin():
+                    conn.execute(db.text("PRAGMA journal_mode=WAL;")).close()
+                    conn.execute(db.text("PRAGMA foreign_keys=ON;")).close()
+                    yield conn
 
     def run_connection(self, run_id=None):
         return self._connect()
@@ -90,7 +94,7 @@ class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
             except Exception:
                 logging.exception("Exception in callback for event watch on run %s.", event.run_id)
 
-    def watch(self, run_id: str, cursor: str, callback: Callable[..., Any]):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def watch(self, run_id: str, cursor: str, callback: Callable[..., Any]):  # ty: ignore[invalid-method-override]
         self._handlers[run_id].add(callback)
 
     def end_watch(self, run_id: str, handler: Callable[..., Any]):
@@ -102,7 +106,7 @@ class InMemoryEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         return False
 
     @property
-    def supports_global_concurrency_limits(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+    def supports_global_concurrency_limits(self) -> bool:
         return False
 
     def dispose(self):

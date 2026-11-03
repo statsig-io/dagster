@@ -1,6 +1,6 @@
 from collections.abc import Mapping
-from typing import Optional
 
+from dagster._annotations import public
 from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckSpec
 from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
 from dagster._core.definitions.events import AssetKey
@@ -8,6 +8,7 @@ from dagster._core.definitions.op_definition import OpDefinition
 from dagster._core.definitions.resource_definition import ResourceDefinition
 
 
+@public
 class AssetChecksDefinition(AssetsDefinition):
     """Defines a set of checks that are produced by the same op or op graph.
 
@@ -21,7 +22,7 @@ class AssetChecksDefinition(AssetsDefinition):
         node_def: OpDefinition,
         check_specs_by_output_name: Mapping[str, AssetCheckSpec],
         can_subset: bool,
-        resource_defs: Optional[Mapping[str, ResourceDefinition]] = None,
+        resource_defs: Mapping[str, ResourceDefinition] | None = None,
     ):
         """Create an AssetChecksDefinition."""
         return AssetChecksDefinition(

@@ -1,12 +1,11 @@
 import time
 from collections.abc import Mapping
-from typing import Optional
 from unittest import mock
 
 import pytest
 from dagster._core.execution.backfill import BulkActionStatus, PartitionBackfill
+from dagster._core.remote_origin import RemotePartitionSetOrigin
 from dagster._core.remote_representation.external_data import partition_set_snap_name_for_job_name
-from dagster._core.remote_representation.origin import RemotePartitionSetOrigin
 from dagster._core.storage.dagster_run import DagsterRun, DagsterRunStatus
 from dagster._core.storage.tags import BACKFILL_ID_TAG
 from dagster._core.test_utils import create_run_for_test
@@ -94,7 +93,7 @@ def _create_run(graphql_context, **kwargs) -> DagsterRun:
 
 
 def _create_run_for_backfill(
-    graphql_context, backfill_id: str, tags: Optional[Mapping[str, str]] = None, **kwargs
+    graphql_context, backfill_id: str, tags: Mapping[str, str] | None = None, **kwargs
 ) -> DagsterRun:
     if tags:
         tags = {**tags, **DagsterRun.tags_for_backfill_id(backfill_id)}
@@ -110,8 +109,8 @@ def _create_run_for_backfill(
 def _create_backfill(
     graphql_context,
     status: BulkActionStatus = BulkActionStatus.COMPLETED_SUCCESS,
-    tags: Optional[Mapping[str, str]] = None,
-    partition_set_origin: Optional[RemotePartitionSetOrigin] = None,
+    tags: Mapping[str, str] | None = None,
+    partition_set_origin: RemotePartitionSetOrigin | None = None,
 ) -> str:
     serialized_backfill_data = (
         "foo" if partition_set_origin is None else None

@@ -1,17 +1,14 @@
 import sys
 import threading
 from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeGuard, cast
 
-from typing_extensions import TypeGuard
+from dagster_shared.serdes.objects.models.defs_state_info import DefsStateInfo
 
 import dagster._check as check
 from dagster._core.errors import DagsterUserCodeProcessError, DagsterUserCodeUnreachableError
 from dagster._core.instance import InstanceRef
-from dagster._core.remote_representation.origin import (
-    CodeLocationOrigin,
-    ManagedGrpcPythonEnvCodeLocationOrigin,
-)
+from dagster._core.remote_origin import CodeLocationOrigin, ManagedGrpcPythonEnvCodeLocationOrigin
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._time import get_current_timestamp
 from dagster._utils.error import SerializableErrorInfo, serializable_error_info_from_exc_info
@@ -27,12 +24,12 @@ class GrpcServerEndpoint(
         "_GrpcServerEndpoint",
         [
             ("host", str),
-            ("port", Optional[int]),
-            ("socket", Optional[str]),
+            ("port", int | None),
+            ("socket", str | None),
         ],
     )
 ):
-    def __new__(cls, host: str, port: Optional[int], socket: Optional[str]):
+    def __new__(cls, host: str, port: int | None, socket: str | None):
         return super().__new__(
             cls,
             check.str_param(host, "host"),
@@ -63,7 +60,7 @@ class ErrorRegistryEntry(NamedTuple):
 class GrpcServerRegistry(AbstractContextManager):
     def __init__(
         self,
-        instance_ref: Optional[InstanceRef],
+        instance_ref: InstanceRef | None,
         server_command: "GrpcServerCommand",
         # How long the process can live without a heartbeat before it dies. You should ensure
         # that any processes returned by this registry have at least one
@@ -75,15 +72,16 @@ class GrpcServerRegistry(AbstractContextManager):
         wait_for_processes_on_shutdown: bool,
         log_level: str = "INFO",
         inject_env_vars_from_instance: bool = True,
-        container_image: Optional[str] = None,
-        container_context: Optional[dict[str, Any]] = None,
-        additional_timeout_msg: Optional[str] = None,
+        container_image: str | None = None,
+        container_context: dict[str, Any] | None = None,
+        additional_timeout_msg: str | None = None,
+        defs_state_info: DefsStateInfo | None = None,
     ):
         self.instance_ref = instance_ref
         self.server_command = server_command
 
         # map of servers being currently returned, keyed by origin ID
-        self._active_entries: dict[str, Union[ServerRegistryEntry, ErrorRegistryEntry]] = {}
+        self._active_entries: dict[str, ServerRegistryEntry | ErrorRegistryEntry] = {}
 
         self._waited_for_processes = False
 
@@ -92,13 +90,16 @@ class GrpcServerRegistry(AbstractContextManager):
         self._additional_timeout_msg = check.opt_str_param(
             additional_timeout_msg, "additional_timeout_msg"
         )
+        self._defs_state_info = check.opt_inst_param(
+            defs_state_info, "defs_state_info", DefsStateInfo
+        )
 
         self._lock = threading.Lock()
 
         self._all_processes: list[GrpcServerProcess] = []
 
-        self._cleanup_thread_shutdown_event: Optional[threading.Event] = None
-        self._cleanup_thread: Optional[threading.Thread] = None
+        self._cleanup_thread_shutdown_event: threading.Event | None = None
+        self._cleanup_thread: threading.Thread | None = None
 
         self._log_level = check.str_param(log_level, "log_level")
         self._inject_env_vars_from_instance = inject_env_vars_from_instance
@@ -155,7 +156,7 @@ class GrpcServerRegistry(AbstractContextManager):
 
     def get_grpc_server_entry(
         self, code_location_origin: ManagedGrpcPythonEnvCodeLocationOrigin
-    ) -> Union[ServerRegistryEntry, ErrorRegistryEntry]:
+    ) -> ServerRegistryEntry | ErrorRegistryEntry:
         check.inst_param(code_location_origin, "code_location_origin", CodeLocationOrigin)
 
         with self._lock:
@@ -173,7 +174,7 @@ class GrpcServerRegistry(AbstractContextManager):
 
     def _get_grpc_server_entry(
         self, code_location_origin: ManagedGrpcPythonEnvCodeLocationOrigin
-    ) -> Union[ServerRegistryEntry, ErrorRegistryEntry]:
+    ) -> ServerRegistryEntry | ErrorRegistryEntry:
         # deferred for import perf
         from dagster._grpc.server import GrpcServerProcess
 
@@ -206,6 +207,7 @@ class GrpcServerRegistry(AbstractContextManager):
                     container_image=self._container_image,
                     container_context=self._container_context,
                     additional_timeout_msg=self._additional_timeout_msg,
+                    defs_state_info=self._defs_state_info,
                 )
                 self._all_processes.append(server_process)
                 self._active_entries[origin_id] = ServerRegistryEntry(

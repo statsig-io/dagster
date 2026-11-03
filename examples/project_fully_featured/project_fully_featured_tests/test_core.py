@@ -1,14 +1,16 @@
 import tempfile
 
 from dagster import (
+    AssetsDefinition,
+    AssetSpec,
     FilesystemIOManager,
     ResourceDefinition,
+    SourceAsset,
     load_assets_from_package_module,
     materialize,
     mem_io_manager,
 )
 from dagster_pyspark import pyspark_resource
-
 from project_fully_featured.assets import core
 from project_fully_featured.resources.hn_resource import HNSnapshotClient
 from project_fully_featured.resources.parquet_io_manager import LocalPartitionedParquetIOManager
@@ -16,8 +18,13 @@ from project_fully_featured.resources.parquet_io_manager import LocalPartitioned
 
 def test_download():
     with tempfile.TemporaryDirectory() as temp_dir:
+        assets = [  # list comprehension for typing purposes
+            x
+            for x in load_assets_from_package_module(core)
+            if isinstance(x, (AssetsDefinition, AssetSpec, SourceAsset))
+        ]
         result = materialize(
-            load_assets_from_package_module(core),
+            assets,
             resources={
                 "io_manager": FilesystemIOManager(base_dir=temp_dir),
                 "partition_start": ResourceDefinition.string_resource(),

@@ -10,7 +10,7 @@ class ShellCommand(dg.Component, dg.Resolvable):
     @classmethod
     def get_spec(cls) -> dg.ComponentTypeSpec:
         return dg.ComponentTypeSpec(
-            owners=["John Dagster"],
+            owners=["john@dagster.io"],
             tags=["shell", "script"],
         )
 
@@ -24,4 +24,4 @@ class ShellCommand(dg.Component, dg.Resolvable):
         self.script_path = script_path
         self.asset_specs = asset_specs
 
-    def build_defs(self, context: dg.ComponentLoadContext) -> dg.Definitions: ...
+    def build_defs(self, context: dg.ComponentLoadContext) -> dg.Definitions: ...  # ty: ignore[empty-body]

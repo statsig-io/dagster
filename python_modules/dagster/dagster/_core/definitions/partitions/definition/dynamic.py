@@ -1,6 +1,6 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Callable, NamedTuple, Optional, Union
+from typing import TYPE_CHECKING, NamedTuple, Optional
 
 import dagster._check as check
 from dagster._annotations import PublicAttr, deprecated_param, public
@@ -17,8 +17,10 @@ from dagster._core.definitions.partitions.definition.partitions_definition impor
 )
 from dagster._core.definitions.partitions.partition import Partition
 from dagster._core.errors import DagsterInvalidDefinitionError
-from dagster._core.instance import DynamicPartitionsStore
 from dagster._core.types.pagination import PaginatedResults
+
+if TYPE_CHECKING:
+    from dagster._core.instance import DynamicPartitionsStore
 
 
 @deprecated_param(
@@ -26,6 +28,7 @@ from dagster._core.types.pagination import PaginatedResults
     breaking_version="2.0",
     additional_warn_text="Provide partition definition name instead.",
 )
+@public
 class DynamicPartitionsDefinition(
     PartitionsDefinition,
     NamedTuple(
@@ -33,13 +36,9 @@ class DynamicPartitionsDefinition(
         [
             (
                 "partition_fn",
-                PublicAttr[
-                    Optional[
-                        Callable[[Optional[datetime]], Union[Sequence[Partition], Sequence[str]]]
-                    ]
-                ],
+                PublicAttr[Callable[[datetime | None], Sequence[Partition] | Sequence[str]] | None],
             ),
-            ("name", PublicAttr[Optional[str]]),
+            ("name", PublicAttr[str | None]),
         ],
     ),
 ):
@@ -74,10 +73,9 @@ class DynamicPartitionsDefinition(
 
     def __new__(
         cls,
-        partition_fn: Optional[
-            Callable[[Optional[datetime]], Union[Sequence[Partition], Sequence[str]]]
-        ] = None,
-        name: Optional[str] = None,
+        partition_fn: Callable[[datetime | None], Sequence[Partition] | Sequence[str]]
+        | None = None,
+        name: str | None = None,
     ):
         partition_fn = check.opt_callable_param(partition_fn, "partition_fn")
         name = check.opt_str_param(name, "name")
@@ -122,23 +120,22 @@ class DynamicPartitionsDefinition(
             return super().__str__()
 
     def _ensure_dynamic_partitions_store(
-        self, dynamic_partitions_store: Optional[DynamicPartitionsStore]
-    ) -> DynamicPartitionsStore:
+        self, dynamic_partitions_store: Optional["DynamicPartitionsStore"]
+    ) -> "DynamicPartitionsStore":
         if dynamic_partitions_store is None:
             check.failed(
-                "The instance is not available to load partitions. You may be seeing this error"
-                " when using dynamic partitions with a version of dagster-webserver or"
-                " dagster-cloud that is older than 1.1.18. The other possibility is that an"
-                " internal framework error where a dynamic partitions store was not properly"
-                " threaded down a call stack."
+                "The instance is not available to load partitions. Try wrapping the call in"
+                " `with partition_loading_context` with an instance set. This error may also"
+                " indicate a Dagster framework error where an instance was not properly threaded"
+                " down a call stack."
             )
         return dynamic_partitions_store
 
     @public
     def get_partition_keys(
         self,
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None,
     ) -> Sequence[str]:
         """Returns a list of strings representing the partition keys of the
         PartitionsDefinition.
@@ -167,7 +164,7 @@ class DynamicPartitionsDefinition(
                 ).get_dynamic_partitions(partitions_def_name=self._validated_name())
 
     def get_serializable_unique_identifier(
-        self, dynamic_partitions_store: Optional[DynamicPartitionsStore] = None
+        self, dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None
     ) -> str:
         with partition_loading_context(dynamic_partitions_store=dynamic_partitions_store) as ctx:
             return self._ensure_dynamic_partitions_store(
@@ -179,7 +176,7 @@ class DynamicPartitionsDefinition(
         context: PartitionLoadingContext,
         limit: int,
         ascending: bool,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> PaginatedResults[str]:
         with partition_loading_context(new_ctx=context):
             partition_keys = self.get_partition_keys()
@@ -190,8 +187,8 @@ class DynamicPartitionsDefinition(
     def has_partition_key(
         self,
         partition_key: str,
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None,
     ) -> bool:
         with partition_loading_context(current_time, dynamic_partitions_store) as ctx:
             if self.partition_fn:
@@ -199,11 +196,10 @@ class DynamicPartitionsDefinition(
             else:
                 if ctx.dynamic_partitions_store is None:
                     check.failed(
-                        "The instance is not available to load partitions. You may be seeing this error"
-                        " when using dynamic partitions with a version of dagster-webserver or"
-                        " dagster-cloud that is older than 1.1.18. The other possibility is that an"
-                        " internal framework error where a dynamic partitions store was not properly"
-                        " threaded down a call stack."
+                        "The instance is not available to load partitions. Try wrapping the call"
+                        " in `with partition_loading_context` with an instance set. This error"
+                        " may also indicate a Dagster framework error where an instance was not"
+                        " properly threaded down a call stack."
                     )
 
                 return ctx.dynamic_partitions_store.has_dynamic_partition(

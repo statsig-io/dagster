@@ -1,6 +1,6 @@
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import Any, ContextManager, Optional, cast  # noqa: UP035
+from typing import TYPE_CHECKING, Any, ContextManager, cast  # noqa: UP035
 
 import dagster._check as check
 import sqlalchemy as db
@@ -29,19 +29,24 @@ from dagster._core.storage.sql import (
     run_alembic_upgrade,
     stamp_alembic_rev,
 )
-from dagster._core.storage.sqlalchemy_compat import db_select
+from dagster._core.storage.sqlalchemy_compat import db_result, db_select
 from dagster._serdes import ConfigurableClass, ConfigurableClassData, deserialize_value
 from sqlalchemy import event
 from sqlalchemy.engine import Connection
 
 from dagster_postgres.utils import (
     create_pg_connection,
+    create_pg_engine,
+    get_token_provider_from_config,
     pg_alembic_config,
     pg_url_from_config,
     retry_pg_connection_fn,
     retry_pg_creation_fn,
     set_pg_statement_timeout,
 )
+
+if TYPE_CHECKING:
+    from dagster_postgres.auth import PgTokenProvider
 
 CHANNEL_NAME = "run_events"
 
@@ -56,7 +61,7 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     To use Postgres for all of the components of your instance storage, you can add the following
     block to your ``dagster.yaml``:
 
-    .. literalinclude:: ../../../../../../examples/docs_snippets/docs_snippets/deploying/dagster-pg.yaml
+    .. literalinclude:: ../../../../../../examples/docs_snippets/docs_snippets/deployment/oss/dagster-pg.yaml
        :caption: dagster.yaml
        :lines: 1-8
        :language: YAML
@@ -65,7 +70,7 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     configuring your event log storage to use Postgres, you can add a block such as the following
     to your ``dagster.yaml``:
 
-    .. literalinclude:: ../../../../../../examples/docs_snippets/docs_snippets/deploying/dagster-pg-legacy.yaml
+    .. literalinclude:: ../../../../../../examples/docs_snippets/docs_snippets/deployment/oss/dagster-pg-legacy.yaml
        :caption: dagster.yaml
        :lines: 12-21
        :language: YAML
@@ -79,19 +84,24 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         self,
         postgres_url: str,
         should_autocreate_tables: bool = True,
-        inst_data: Optional[ConfigurableClassData] = None,
+        inst_data: ConfigurableClassData | None = None,
+        token_provider: "PgTokenProvider | None" = None,
     ):
         self._inst_data = check.opt_inst_param(inst_data, "inst_data", ConfigurableClassData)
         self.postgres_url = check.str_param(postgres_url, "postgres_url")
         self.should_autocreate_tables = check.bool_param(
             should_autocreate_tables, "should_autocreate_tables"
         )
+        self._token_provider = token_provider
 
         # Default to not holding any connections open to prevent accumulating connections per DagsterInstance
-        self._engine = create_engine(
-            self.postgres_url, isolation_level="AUTOCOMMIT", poolclass=db_pool.NullPool
+        self._engine = create_pg_engine(
+            self.postgres_url,
+            self._token_provider,
+            isolation_level="AUTOCOMMIT",
+            poolclass=db_pool.NullPool,
         )
-        self._event_watcher: Optional[SqlPollingEventWatcher] = None
+        self._event_watcher: SqlPollingEventWatcher | None = None
 
         self._secondary_index_cache = {}
 
@@ -116,7 +126,7 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         self, statement_timeout: int, pool_recycle: int, max_overflow: int
     ) -> None:
         # When running in dagster-webserver, hold an open connection and set statement_timeout
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "isolation_level": "AUTOCOMMIT",
             "pool_size": 1,
             "pool_recycle": pool_recycle,
@@ -125,7 +135,7 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         existing_options = self._engine.url.query.get("options")
         if existing_options:
             kwargs["connect_args"] = {"options": existing_options}
-        self._engine = create_engine(self.postgres_url, **kwargs)
+        self._engine = create_pg_engine(self.postgres_url, self._token_provider, **kwargs)
         event.listen(
             self._engine,
             "connect",
@@ -138,7 +148,7 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
             run_alembic_upgrade(alembic_config, conn)
 
     @property
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         return self._inst_data
 
     @classmethod
@@ -147,12 +157,13 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
 
     @classmethod
     def from_config_value(
-        cls, inst_data: Optional[ConfigurableClassData], config_value: Mapping[str, Any]
+        cls, inst_data: ConfigurableClassData | None, config_value: Mapping[str, Any]
     ) -> "PostgresEventLogStorage":
         return PostgresEventLogStorage(
             inst_data=inst_data,
             postgres_url=pg_url_from_config(config_value),
             should_autocreate_tables=config_value.get("should_autocreate_tables", True),
+            token_provider=get_token_provider_from_config(config_value),
         )
 
     @staticmethod
@@ -198,23 +209,27 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
             and event.dagster_event_type in ASSET_EVENTS
             and event.dagster_event.asset_key  # type: ignore
         ):
-            self.store_asset_event(event, event_id)
-
             if event_id is None:
                 raise DagsterInvariantViolationError(
                     "Cannot store asset event tags for null event id."
                 )
 
-            self.store_asset_event_tags([event], [event_id])
+            with self.index_transaction() as conn:
+                self._store_asset_event_tags(conn, [event], [event_id])
+                self._store_asset_event(conn, event, event_id)
 
         if event.is_dagster_event and event.dagster_event_type in ASSET_CHECK_EVENTS:
             self.store_asset_check_event(event, event_id)
 
     def store_event_batch(self, events: Sequence[EventLogEntry]) -> None:
+        from dagster import DagsterEventType
+
         check.sequence_param(events, "event", of_type=EventLogEntry)
 
+        event_types = {event.get_dagster_event().event_type for event in events}
+
         check.invariant(
-            all(event.get_dagster_event().event_type in BATCH_WRITABLE_EVENTS for event in events),
+            all(event_type in BATCH_WRITABLE_EVENTS for event_type in event_types),
             f"{BATCH_WRITABLE_EVENTS} are the only currently supported events for batch writes.",
         )
         events = [
@@ -225,21 +240,36 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         if len(events) == 0:
             return
 
-        insert_event_statement = self.prepare_insert_event_batch(events)
-        with self._connect() as conn:
-            result = conn.execute(insert_event_statement.returning(SqlEventLogStorageTable.c.id))
-            event_ids = [cast("int", row[0]) for row in result.fetchall()]
+        if event_types == {DagsterEventType.ASSET_MATERIALIZATION} or event_types == {
+            DagsterEventType.ASSET_OBSERVATION
+        }:
+            insert_event_statement = self.prepare_insert_event_batch(events)
+            with self._connect() as conn:
+                result = conn.execute(
+                    insert_event_statement.returning(SqlEventLogStorageTable.c.id)
+                )
+                event_ids = [cast("int", row[0]) for row in result.fetchall()]
 
-        # We only update the asset table with the last event
-        self.store_asset_event(events[-1], event_ids[-1])
+            if any(event_id is None for event_id in event_ids):
+                raise DagsterInvariantViolationError(
+                    "Cannot store asset event tags for null event id."
+                )
 
-        if any(event_id is None for event_id in event_ids):
-            raise DagsterInvariantViolationError("Cannot store asset event tags for null event id.")
-
-        self.store_asset_event_tags(events, event_ids)
+            with self.index_transaction() as conn:
+                self._store_asset_event_tags(conn, events, event_ids)
+                # We only update the asset table with the last event.
+                self._store_asset_event(conn, events[-1], event_ids[-1])
+        else:
+            return super().store_event_batch(events)
 
     def store_asset_event(self, event: EventLogEntry, event_id: int) -> None:
         check.inst_param(event, "event", EventLogEntry)
+        check.int_param(event_id, "event_id")
+
+        with self.index_transaction() as conn:
+            self._store_asset_event(conn, event, event_id)
+
+    def _store_asset_event(self, conn: Connection, event: EventLogEntry, event_id: int) -> None:
         if not (event.dagster_event and event.dagster_event.asset_key):
             return
 
@@ -276,19 +306,18 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         values = self._get_asset_entry_values(
             event, event_id, self.has_secondary_index(ASSET_KEY_INDEX_COLS)
         )
-        with self.index_connection() as conn:
-            query = db_dialects.postgresql.insert(AssetKeyTable).values(
-                asset_key=event.dagster_event.asset_key.to_string(),
-                **values,
+        query = db_dialects.postgresql.insert(AssetKeyTable).values(
+            asset_key=event.dagster_event.asset_key.to_string(),
+            **values,
+        )
+        if values:
+            query = query.on_conflict_do_update(
+                index_elements=[AssetKeyTable.c.asset_key],
+                set_=dict(**values),
             )
-            if values:
-                query = query.on_conflict_do_update(
-                    index_elements=[AssetKeyTable.c.asset_key],
-                    set_=dict(**values),
-                )
-            else:
-                query = query.on_conflict_do_nothing()
-            conn.execute(query)
+        else:
+            query = query.on_conflict_do_nothing()
+        conn.execute(query)
 
     def add_dynamic_partitions(
         self, partitions_def_name: str, partition_keys: Sequence[str]
@@ -313,7 +342,7 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     def _connect(self) -> ContextManager[Connection]:
         return create_pg_connection(self._engine)
 
-    def run_connection(self, run_id: Optional[str] = None) -> ContextManager[Connection]:
+    def run_connection(self, run_id: str | None = None) -> ContextManager[Connection]:
         return self._connect()
 
     def index_connection(self) -> ContextManager[Connection]:
@@ -331,7 +360,8 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
                     yield conn
 
     def has_table(self, table_name: str) -> bool:
-        return bool(self._engine.dialect.has_table(self._engine.connect(), table_name))
+        with self._connect() as conn:
+            return bool(self._engine.dialect.has_table(conn, table_name))
 
     def has_secondary_index(self, name: str) -> bool:
         if name not in self._secondary_index_cache:
@@ -346,7 +376,7 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
     def watch(
         self,
         run_id: str,
-        cursor: Optional[str],
+        cursor: str | None,
         callback: EventHandlerFn,
     ) -> None:
         if cursor and EventLogCursor.parse(cursor).is_offset_cursor():
@@ -357,13 +387,16 @@ class PostgresEventLogStorage(SqlEventLogStorage, ConfigurableClass):
         self._event_watcher.watch_run(run_id, cursor, callback)
 
     def _gen_event_log_entry_from_cursor(self, cursor) -> EventLogEntry:
-        with self._engine.connect() as conn:
-            cursor_res = conn.execute(
+        with (
+            self._engine.connect() as conn,
+            db_result(
+                conn,
                 db_select([SqlEventLogStorageTable.c.event]).where(
                     SqlEventLogStorageTable.c.id == cursor
                 ),
-            )
-            return deserialize_value(cursor_res.scalar(), EventLogEntry)  # type: ignore
+            ) as cursor_res,
+        ):
+            return deserialize_value(cursor_res.scalar(), EventLogEntry)
 
     def end_watch(self, run_id: str, handler: EventHandlerFn) -> None:
         if self._event_watcher:

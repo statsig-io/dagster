@@ -1,7 +1,6 @@
 import io
 import uuid
 from contextlib import contextmanager
-from typing import Optional
 
 import dagster._check as check
 from dagster._core.storage.file_manager import (
@@ -66,7 +65,7 @@ class GCSFileManager(FileManager):
         return file_handle
 
     @contextmanager
-    def read(self, file_handle, mode="rb"):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def read(self, file_handle, mode="rb"):
         check.inst_param(file_handle, "file_handle", GCSFileHandle)
         check.str_param(mode, "mode")
         check.param_invariant(mode in {"r", "rb"}, "mode")
@@ -87,12 +86,12 @@ class GCSFileManager(FileManager):
         with self.read(file_handle, mode="rb") as file_obj:
             return file_obj.read()
 
-    def write_data(self, data, ext=None, key: Optional[str] = None):
+    def write_data(self, data, ext=None, key: str | None = None):
         key = check.opt_str_param(key, "key", default=str(uuid.uuid4()))
         check.inst_param(data, "data", bytes)
         return self.write(io.BytesIO(data), mode="wb", key=key, ext=ext)
 
-    def write(self, file_obj, mode="wb", ext=None, key: Optional[str] = None):
+    def write(self, file_obj, mode="wb", ext=None, key: str | None = None):
         key = check.opt_str_param(key, "key", default=str(uuid.uuid4()))
         check_file_like_obj(file_obj)
         gcs_key = self.get_full_key(key + (("." + ext) if ext is not None else ""))

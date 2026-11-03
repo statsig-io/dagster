@@ -3,33 +3,37 @@ name = "project_atproto_dashboard"
 version = "0.0.1"
 description = "Project Bluesky BI"
 readme = "README.md"
-requires-python = ">=3.9,<3.14"
+requires-python = ">=3.10,<3.15"
 dependencies = [
     "atproto",
     "dagster",
-    "dagster-dg-cli",
     "dagster-aws",
     "dagster-dbt",
     "dagster-duckdb",
     "dagster-powerbi",
-    "dagster-webserver",
     "dbt-duckdb",
     "tenacity",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "dagster-webserver",
+    "dagster-dg-cli",
     "pytest",
-    "ruff",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.dg]
 directory_type = "project"
 
 [tool.dg.project]
 root_module = "project_atproto_dashboard"
-autoload_defs = true
+registry_modules = [
+    "project_atproto_dashboard.components.*",
+]
 
-[tool.dg.project.python_environment]
-active = true
+[tool.uv]
+exclude-newer = "48h"

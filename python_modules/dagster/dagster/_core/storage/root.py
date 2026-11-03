@@ -1,6 +1,5 @@
 import os
 from tempfile import TemporaryDirectory
-from typing import Optional
 
 from typing_extensions import TypedDict
 
@@ -8,6 +7,7 @@ from dagster import (
     StringSource,
     _check as check,
 )
+from dagster._annotations import public
 from dagster._config.config_schema import UserConfigSchema
 from dagster._serdes import ConfigurableClass, ConfigurableClassData
 
@@ -16,13 +16,14 @@ class LocalArtifactStorageConfig(TypedDict):
     base_dir: str
 
 
+@public
 class LocalArtifactStorage(ConfigurableClass):
-    def __init__(self, base_dir: str, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, base_dir: str, inst_data: ConfigurableClassData | None = None):
         self._base_dir = base_dir
         self._inst_data = check.opt_inst_param(inst_data, "inst_data", ConfigurableClassData)
 
     @property
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         return self._inst_data
 
     @property
@@ -42,8 +43,8 @@ class LocalArtifactStorage(ConfigurableClass):
         return os.path.join(self.base_dir, "schedules")
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
-        cls, inst_data: Optional[ConfigurableClassData], config_value: LocalArtifactStorageConfig
+    def from_config_value(  # ty: ignore[invalid-method-override]
+        cls, inst_data: ConfigurableClassData | None, config_value: LocalArtifactStorageConfig
     ) -> "LocalArtifactStorage":
         return LocalArtifactStorage(inst_data=inst_data, **config_value)
 

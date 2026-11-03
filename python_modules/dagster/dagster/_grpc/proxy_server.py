@@ -3,12 +3,14 @@ import sys
 import threading
 import time
 from contextlib import ExitStack
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
+
+from dagster_shared.serdes.objects.models.defs_state_info import DefsStateInfo
 
 import dagster._check as check
 from dagster._core.instance import InstanceRef
+from dagster._core.remote_origin import ManagedGrpcPythonEnvCodeLocationOrigin
 from dagster._core.remote_representation.grpc_server_registry import GrpcServerRegistry
-from dagster._core.remote_representation.origin import ManagedGrpcPythonEnvCodeLocationOrigin
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._grpc.__generated__ import dagster_api_pb2
 from dagster._grpc.__generated__.dagster_api_pb2_grpc import DagsterApiServicer
@@ -44,18 +46,20 @@ class DagsterProxyApiServicer(DagsterApiServicer):
     def __init__(
         self,
         loadable_target_origin: LoadableTargetOrigin,
-        fixed_server_id: Optional[str],
-        container_image: Optional[str],
-        container_context: Optional[dict],
+        fixed_server_id: str | None,
+        container_image: str | None,
+        container_context: dict | None,
         inject_env_vars_from_instance: bool,
-        location_name: Optional[str],
+        location_name: str | None,
         log_level: str,
         startup_timeout: int,
         server_termination_event: threading.Event,
-        instance_ref: Optional[InstanceRef],
+        instance_ref: InstanceRef | None,
         logger: logging.Logger,
         server_heartbeat: bool,
         server_heartbeat_timeout: int,
+        heartbeat_ttl: int,
+        defs_state_info: DefsStateInfo | None,
     ):
         super().__init__()
 
@@ -82,7 +86,7 @@ class DagsterProxyApiServicer(DagsterApiServicer):
             GrpcServerRegistry(
                 instance_ref=self._instance_ref,
                 server_command=GrpcServerCommand.API_GRPC,
-                heartbeat_ttl=30,
+                heartbeat_ttl=heartbeat_ttl,
                 startup_timeout=startup_timeout,
                 log_level=self._log_level,
                 inject_env_vars_from_instance=self._inject_env_vars_from_instance,
@@ -90,6 +94,7 @@ class DagsterProxyApiServicer(DagsterApiServicer):
                 container_context=self._container_context,
                 wait_for_processes_on_shutdown=True,
                 additional_timeout_msg="Set from --startup-timeout command line argument. ",
+                defs_state_info=defs_state_info,
             )
         )
         self._origin = ManagedGrpcPythonEnvCodeLocationOrigin(
@@ -176,6 +181,31 @@ class DagsterProxyApiServicer(DagsterApiServicer):
             old_heartbeat_thread.join()
 
         return dagster_api_pb2.ReloadCodeReply()
+
+    def RefreshComponentState(self, request, context):
+        if self._load_error:
+            return dagster_api_pb2.RefreshComponentStateReply(
+                serialized_error=serialize_value(self._load_error)
+            )
+        if not self._client:
+            raise Exception("No available client to code server")
+        return self._client.refresh_component_state(
+            defs_state_keys=list(request.defs_state_keys),
+        )
+
+    def ReloadCodeWithState(self, request, context):
+        # Forward into the long-lived inner code server so the in-process
+        # incremental reload happens there. Unlike ReloadCode, this does not
+        # restart the subprocess.
+        if self._load_error:
+            return dagster_api_pb2.ReloadCodeWithStateReply(
+                serialized_error=serialize_value(self._load_error)
+            )
+        if not self._client:
+            raise Exception("No available client to code server")
+        return self._client.reload_code_with_state(
+            serialized_defs_state_info=request.serialized_defs_state_info,
+        )
 
     def cleanup(self):
         # In case ShutdownServer was not called
@@ -295,7 +325,9 @@ class DagsterProxyApiServicer(DagsterApiServicer):
         return self._query("ExternalPipelineSubsetSnapshot", request, context)
 
     def ExternalRepository(self, request, context):
-        return self._query("ExternalRepository", request, context)
+        return self._query(
+            "ExternalRepository", request, context, timeout=DEFAULT_REPOSITORY_GRPC_TIMEOUT
+        )
 
     def ExternalJob(self, request, context):
         return self._query("ExternalJob", request, context)
@@ -401,6 +433,7 @@ class DagsterProxyApiServicer(DagsterApiServicer):
         run_id = execute_external_job_args.run_id
 
         client = self._client
+        assert client is not None
 
-        self._run_clients[run_id] = client  # pyright: ignore[reportArgumentType]
-        return client._get_response("StartRun", request)  # noqa  # pyright: ignore[reportOptionalMemberAccess]
+        self._run_clients[run_id] = client
+        return client._get_response("StartRun", request)  # noqa

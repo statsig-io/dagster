@@ -1,9 +1,7 @@
 import inspect
-from collections.abc import AsyncIterator, Awaitable, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
-
-from typing_extensions import get_args
+from typing import TYPE_CHECKING, Any, cast, get_args
 
 from dagster._config.pythonic_config import Config
 from dagster._core.definitions import (
@@ -26,6 +24,7 @@ from dagster._utils.warnings import disable_dagster_warnings
 
 if TYPE_CHECKING:
     from dagster._core.definitions.decorators.op_decorator import DecoratedOpFunction
+    from dagster._core.definitions.events import AssetKey
 
 
 def create_op_compute_wrapper(
@@ -49,7 +48,7 @@ def create_op_compute_wrapper(
     def compute(
         context: ExecutionContextTypes,
         input_defs: Mapping[str, InputDefinition],
-    ) -> Union[Iterator[Output], AsyncIterator[Output]]:
+    ) -> Iterator[Output] | AsyncIterator[Output]:
         kwargs = {}
         for input_name in input_names:
             kwargs[input_name] = input_defs[input_name]
@@ -98,8 +97,8 @@ def invoke_compute_fn(
     context: ExecutionContextTypes,
     kwargs: Mapping[str, Any],
     context_arg_provided: bool,
-    config_arg_cls: Optional[type[Config]],
-    resource_args: Optional[dict[str, str]] = None,
+    config_arg_cls: type[Config] | None,
+    resource_args: dict[str, str] | None = None,
 ) -> Any:
     args_to_pass = {**kwargs}
     if config_arg_cls:
@@ -178,20 +177,20 @@ def _filter_expected_output_defs(
     if not asset_results:
         return output_defs
 
-    check_names_by_asset_key = {}
+    check_names_by_asset_key: dict[AssetKey, set[str]] = {}
     for check_key in context.op_execution_context.selected_asset_check_keys:
         if check_key.asset_key not in check_names_by_asset_key:
-            check_names_by_asset_key[check_key.asset_key] = []
-        check_names_by_asset_key[check_key.asset_key].append(check_key.name)
+            check_names_by_asset_key[check_key.asset_key] = set()
+        check_names_by_asset_key[check_key.asset_key].add(check_key.name)
 
     remove_outputs = []
     for asset_result in asset_results:
-        for check_result in asset_result.check_results:
-            remove_outputs.append(
-                context.op_execution_context.assets_def.get_output_name_for_asset_check_key(
-                    check_result.resolve_target_check_key(check_names_by_asset_key)
-                )
+        remove_outputs.extend(
+            context.op_execution_context.assets_def.get_output_name_for_asset_check_key(
+                check_result.resolve_target_check_key(check_names_by_asset_key)
             )
+            for check_result in asset_result.check_results
+        )
 
     return [out for out in output_defs if out.name not in remove_outputs]
 
@@ -246,7 +245,7 @@ def _get_annotation_for_output_position(
 
 
 def _check_output_object_name(
-    output: Union[DynamicOutput, Output], output_def: OutputDefinition, position: int
+    output: DynamicOutput | Output, output_def: OutputDefinition, position: int
 ) -> None:
     from dagster._core.definitions.events import DEFAULT_OUTPUT
 
@@ -265,7 +264,7 @@ def validate_and_coerce_op_result_to_iterator(
 ) -> Iterator[Any]:
     if inspect.isgenerator(result):
         # this happens when a user explicitly returns a generator in the op
-        yield from result
+        yield from result  # ty: ignore[invalid-yield]
     elif isinstance(result, (AssetMaterialization, ExpectationResult)):
         raise DagsterInvariantViolationError(
             f"Error in {context.describe_op()}: If you are "

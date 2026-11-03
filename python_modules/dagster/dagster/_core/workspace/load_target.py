@@ -1,11 +1,11 @@
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Optional, Union, cast
+from typing import Union, cast
 
 from dagster_shared.record import record
 
-from dagster._core.remote_representation.origin import (
+from dagster._core.remote_origin import (
     CodeLocationOrigin,
     GrpcServerCodeLocationOrigin,
     InProcessCodeLocationOrigin,
@@ -48,9 +48,7 @@ class WorkspaceFileTarget(WorkspaceLoadTarget):
 class InProcessWorkspaceLoadTarget(WorkspaceLoadTarget):
     """A workspace load target that is in-process and does not spin up a gRPC server."""
 
-    def __init__(
-        self, origin: Union[InProcessCodeLocationOrigin, Sequence[InProcessCodeLocationOrigin]]
-    ):
+    def __init__(self, origin: InProcessCodeLocationOrigin | Sequence[InProcessCodeLocationOrigin]):
         self._origins = cast(
             "Sequence[InProcessCodeLocationOrigin]",
             origin if isinstance(origin, list) else [origin],
@@ -67,7 +65,7 @@ def validate_dagster_block_for_module_name_or_modules(dagster_block):
     modules_present = "modules" in dagster_block and isinstance(dagster_block.get("modules"), list)
 
     if module_name_present and modules_present:
-        # Here we have the check only for list; to be a bit more forgiving in comparison to 'is_valid_modules_list' in case it's an empty list next to 'module_name' existance
+        # Here we have the check only for list; to be a bit more forgiving in comparison to 'is_valid_modules_list' in case it's an empty list next to 'module_name' existence
         if len(dagster_block["modules"]) > 0:
             raise ValueError(
                 "Only one of 'module_name' or 'modules' should be specified, not both."
@@ -99,6 +97,61 @@ def is_valid_modules_list(modules: list[dict[str, str]]) -> bool:
     return True
 
 
+def get_target_from_toml_data(
+    data: dict,
+) -> Union["ModuleTarget", "AutoloadDefsModuleTarget", list["ModuleTarget"], None]:
+    dagster_block = data.get("tool", {}).get("dagster", {})
+
+    if "module_name" in dagster_block or "modules" in dagster_block:
+        assert validate_dagster_block_for_module_name_or_modules(dagster_block) is True
+
+    if "module_name" in dagster_block:
+        return ModuleTarget(
+            module_name=dagster_block.get("module_name"),
+            attribute=None,
+            working_directory=os.getcwd(),
+            location_name=dagster_block.get("code_location_name"),
+        )
+    elif "modules" in dagster_block and is_valid_modules_list(dagster_block.get("modules")):
+        return [
+            ModuleTarget(
+                module_name=module.get("name"),
+                attribute=None,
+                working_directory=os.getcwd(),
+                location_name=dagster_block.get("code_location_name"),
+            )
+            for module in dagster_block.get("modules")
+            if module.get("type") == "module"
+        ]
+
+    # This allows `dagster dev` to work with projects scaffolded by the new `dg` CLI
+    # without the need to include a `tool.dagster` section.
+    dg_block = data.get("tool", {}).get("dg", {}).get("project", {})
+    if dg_block:
+        if dg_block.get("autoload_defs"):
+            default_autoload_defs_module_name = f"{dg_block['root_module']}.defs"
+            autoload_defs_module_name = dg_block.get(
+                "defs_module", default_autoload_defs_module_name
+            )
+            return AutoloadDefsModuleTarget(
+                autoload_defs_module_name=autoload_defs_module_name,
+                working_directory=os.getcwd(),
+                location_name=dg_block.get("code_location_name"),
+            )
+
+        default_module_name = f"{dg_block['root_module']}.definitions"
+        module_name = dg_block.get("code_location_target_module", default_module_name)
+
+        return ModuleTarget(
+            module_name=module_name,
+            attribute=None,
+            working_directory=os.getcwd(),
+            location_name=dg_block.get("code_location_name"),
+        )
+
+    return None
+
+
 def get_origins_from_toml(
     path: str,
 ) -> Sequence[ManagedGrpcPythonEnvCodeLocationOrigin]:
@@ -108,57 +161,13 @@ def get_origins_from_toml(
         data = tomli.load(f)
         if not isinstance(data, dict):
             return []
-
-        dagster_block = data.get("tool", {}).get("dagster", {})
-
-        if "module_name" in dagster_block or "modules" in dagster_block:
-            assert validate_dagster_block_for_module_name_or_modules(dagster_block) is True
-
-        if "module_name" in dagster_block:
-            return ModuleTarget(
-                module_name=dagster_block.get("module_name"),
-                attribute=None,
-                working_directory=os.getcwd(),
-                location_name=dagster_block.get("code_location_name"),
-            ).create_origins()
-        elif "modules" in dagster_block and is_valid_modules_list(dagster_block.get("modules")):
-            origins = []
-            for module in dagster_block.get("modules"):
-                if module.get("type") == "module":
-                    origins.extend(
-                        ModuleTarget(
-                            module_name=module.get("name"),
-                            attribute=None,
-                            working_directory=os.getcwd(),
-                            location_name=dagster_block.get("code_location_name"),
-                        ).create_origins()
-                    )
-            return origins
-
-        # This allows `dagster dev` to work with projects scaffolded by the new `dg` CLI
-        # without the need to include a `tool.dagster` section.
-        dg_block = data.get("tool", {}).get("dg", {}).get("project", {})
-        if dg_block:
-            if dg_block.get("autoload_defs"):
-                default_autoload_defs_module_name = f"{dg_block['root_module']}.defs"
-                autoload_defs_module_name = dg_block.get(
-                    "defs_module", default_autoload_defs_module_name
-                )
-                return AutoloadDefsModuleTarget(
-                    autoload_defs_module_name=autoload_defs_module_name,
-                    working_directory=os.getcwd(),
-                    location_name=dg_block.get("code_location_name"),
-                ).create_origins()
-
-            default_module_name = f"{dg_block['root_module']}.definitions"
-            module_name = dg_block.get("code_location_target_module", default_module_name)
-
-            return ModuleTarget(
-                module_name=module_name,
-                attribute=None,
-                working_directory=os.getcwd(),
-                location_name=dg_block.get("code_location_name"),
-            ).create_origins()
+        target = get_target_from_toml_data(data)
+        if isinstance(target, ModuleTarget):
+            return target.create_origins()
+        elif isinstance(target, AutoloadDefsModuleTarget):
+            return target.create_origins()
+        elif isinstance(target, list):
+            return [origin for target in target for origin in target.create_origins()]
         else:
             return []
 
@@ -174,9 +183,9 @@ class PyProjectFileTarget(WorkspaceLoadTarget):
 @record(kw_only=False)
 class PythonFileTarget(WorkspaceLoadTarget):
     python_file: str
-    attribute: Optional[str]
-    working_directory: Optional[str]
-    location_name: Optional[str]
+    attribute: str | None
+    working_directory: str | None
+    location_name: str | None
 
     def create_origins(self) -> Sequence[ManagedGrpcPythonEnvCodeLocationOrigin]:
         return [
@@ -192,9 +201,9 @@ class PythonFileTarget(WorkspaceLoadTarget):
 @record(kw_only=False)
 class ModuleTarget(WorkspaceLoadTarget):
     module_name: str
-    attribute: Optional[str]
-    working_directory: Optional[str]
-    location_name: Optional[str]
+    attribute: str | None
+    working_directory: str | None
+    location_name: str | None
 
     def create_origins(self) -> Sequence[ManagedGrpcPythonEnvCodeLocationOrigin]:
         return [
@@ -210,9 +219,9 @@ class ModuleTarget(WorkspaceLoadTarget):
 @record(kw_only=False)
 class PackageTarget(WorkspaceLoadTarget):
     package_name: str
-    attribute: Optional[str]
-    working_directory: Optional[str]
-    location_name: Optional[str]
+    attribute: str | None
+    working_directory: str | None
+    location_name: str | None
 
     def create_origins(self) -> Sequence[ManagedGrpcPythonEnvCodeLocationOrigin]:
         return [
@@ -228,9 +237,10 @@ class PackageTarget(WorkspaceLoadTarget):
 @record(kw_only=False)
 class GrpcServerTarget(WorkspaceLoadTarget):
     host: str
-    port: Optional[int]
-    socket: Optional[str]
-    location_name: Optional[str]
+    port: int | None
+    socket: str | None
+    location_name: str | None
+    use_ssl: bool = False
 
     def create_origins(self) -> Sequence[GrpcServerCodeLocationOrigin]:
         return [
@@ -239,6 +249,7 @@ class GrpcServerTarget(WorkspaceLoadTarget):
                 socket=self.socket,
                 host=self.host,
                 location_name=self.location_name,
+                use_ssl=self.use_ssl,
             )
         ]
 
@@ -253,8 +264,8 @@ class EmptyWorkspaceTarget(WorkspaceLoadTarget):
 @record(kw_only=False)
 class AutoloadDefsModuleTarget(WorkspaceLoadTarget):
     autoload_defs_module_name: str
-    working_directory: Optional[str]
-    location_name: Optional[str]
+    working_directory: str | None
+    location_name: str | None
 
     def create_origins(self) -> Sequence[ManagedGrpcPythonEnvCodeLocationOrigin]:
         return [

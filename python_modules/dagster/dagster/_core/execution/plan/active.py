@@ -1,7 +1,8 @@
+import logging
 import time
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from types import TracebackType
-from typing import Any, Callable, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import Self
 
@@ -17,28 +18,35 @@ from dagster._core.execution.context.system import (
     PlanExecutionContext,
     PlanOrchestrationContext,
 )
+from dagster._core.execution.plan.inputs import FromMultipleSources
 from dagster._core.execution.plan.instance_concurrency_context import InstanceConcurrencyContext
 from dagster._core.execution.plan.outputs import StepOutputData, StepOutputHandle
 from dagster._core.execution.plan.plan import ExecutionPlan
 from dagster._core.execution.plan.state import KnownExecutionState
 from dagster._core.execution.plan.step import ExecutionStep
 from dagster._core.execution.retries import RetryMode, RetryState
+from dagster._core.execution.step_dependency_config import StepDependencyConfig
 from dagster._core.storage.tags import GLOBAL_CONCURRENCY_TAG, PRIORITY_TAG
 from dagster._utils.interrupts import pop_captured_interrupt
 from dagster._utils.tags import TagConcurrencyLimitsCounter
+
+if TYPE_CHECKING:
+    from dagster._core.execution.plan.state import PastExecutionState
 
 
 def _default_sort_key(step: ExecutionStep) -> float:
     return int(step.tags.get(PRIORITY_TAG, 0)) * -1
 
 
-def _pool_key_for_step(step: ExecutionStep) -> Optional[str]:
+def _pool_key_for_step(step: ExecutionStep) -> str | None:
     # for backwards compatibility, we also check the tags
     return step.pool or step.tags.get(GLOBAL_CONCURRENCY_TAG)
 
 
 CONCURRENCY_CLAIM_BLOCKED_INTERVAL = 1
 CONCURRENCY_CLAIM_MESSAGE_INTERVAL = 300
+
+logger = logging.getLogger(__name__)
 
 
 class ActiveExecution:
@@ -48,10 +56,11 @@ class ActiveExecution:
         self,
         execution_plan: ExecutionPlan,
         retry_mode: RetryMode,
-        sort_key_fn: Optional[Callable[[ExecutionStep], float]] = None,
-        max_concurrent: Optional[int] = None,
-        tag_concurrency_limits: Optional[list[dict[str, Any]]] = None,
-        instance_concurrency_context: Optional[InstanceConcurrencyContext] = None,
+        sort_key_fn: Callable[[ExecutionStep], float] | None = None,
+        max_concurrent: int | None = None,
+        tag_concurrency_limits: list[dict[str, Any]] | None = None,
+        instance_concurrency_context: InstanceConcurrencyContext | None = None,
+        step_dependency_config: StepDependencyConfig = StepDependencyConfig.default(),
     ):
         self._plan: ExecutionPlan = check.inst_param(
             execution_plan, "execution_plan", ExecutionPlan
@@ -59,6 +68,7 @@ class ActiveExecution:
         self._retry_mode = check.inst_param(retry_mode, "retry_mode", RetryMode)
         self._retry_state = self._plan.known_state.get_retry_state()
         self._instance_concurrency_context = instance_concurrency_context
+        self._step_dependency_config = step_dependency_config
 
         self._sort_key_fn: Callable[[ExecutionStep], float] = (
             check.opt_callable_param(
@@ -83,9 +93,9 @@ class ActiveExecution:
 
         # track mapping keys from DynamicOutputs, step_key, output_name -> list of keys
         # to _gathering while in flight
-        self._gathering_dynamic_outputs: dict[str, Mapping[str, Optional[list[str]]]] = {}
+        self._gathering_dynamic_outputs: dict[str, Mapping[str, list[str] | None]] = {}
         # then on resolution move to _completed
-        self._completed_dynamic_outputs: dict[str, Mapping[str, Optional[Sequence[str]]]] = (
+        self._completed_dynamic_outputs: dict[str, Mapping[str, Sequence[str] | None]] = (
             dict(self._plan.known_state.dynamic_mappings) if self._plan.known_state else {}
         )
         self._new_dynamic_mappings: bool = False
@@ -124,9 +134,9 @@ class ActiveExecution:
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_value: Optional[BaseException],
-        traceback: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> None:
         self._context_guard = False
 
@@ -190,27 +200,97 @@ class ActiveExecution:
             ),
         )
 
-    def _should_skip_step(self, step_key: str, successful_or_skipped_steps: set[str]) -> bool:
+    def _should_skip_step(self, step_key: str) -> bool:
+        successful_or_skipped_steps = self._success | self._skipped
         step = self.get_step_by_key(step_key)
         for step_input in step.step_inputs:
-            missing_source_handles = []
-
+            # Blocking asset checks gate downstream on check failure (a yielded
+            # result with passed=False and ERROR severity), not on the absence
+            # of a result. Asset-check outputs are therefore tracked separately
+            # from regular outputs here and never contribute to skip-propagation
+            # on absence; their absence is logged instead.
+            gating_dep_handles = []
+            check_dep_handles = []
             for source_handle in step_input.get_step_output_handle_dependencies():
-                if (
-                    source_handle.step_key in successful_or_skipped_steps
-                    and source_handle not in self._step_outputs
-                ):
-                    missing_source_handles.append(source_handle)
+                step_output = self._plan.get_step_output(source_handle)
+                if step_output.properties.asset_check_key is not None:
+                    check_dep_handles.append(source_handle)
+                else:
+                    gating_dep_handles.append(source_handle)
 
-            if missing_source_handles:
-                if len(missing_source_handles) == len(
-                    step_input.get_step_output_handle_dependencies()
+            missing_gating_handles = [
+                h
+                for h in gating_dep_handles
+                if h.step_key in successful_or_skipped_steps and h not in self._step_outputs
+            ]
+            missing_check_handles = [
+                h
+                for h in check_dep_handles
+                if h.step_key in successful_or_skipped_steps and h not in self._step_outputs
+            ]
+
+            for source_handle in missing_check_handles:
+                step_output = self._plan.get_step_output(source_handle)
+                check_key = check.not_none(step_output.properties.asset_check_key)
+                logger.warning(
+                    f"Blocking asset check {check_key.to_user_string()!r} emitted no result "
+                    f"in step {source_handle.step_key!r}; downstream step {step_key!r} "
+                    f"will proceed without gating on it."
+                )
+
+            if missing_gating_handles:
+                if (
+                    # for the FromMultipleSources case (aka fan-in), we only skip if all sources
+                    # are missing. for other cases, we skip if any source is missing
+                    not isinstance(step_input.source, FromMultipleSources)
+                    or (len(missing_gating_handles) == len(gating_dep_handles))
                 ):
                     self._skipped_deps[step_key] = [
-                        f"{h.step_key}.{h.output_name}" for h in missing_source_handles
+                        f"{h.step_key}.{h.output_name}" for h in missing_gating_handles
                     ]
                     return True
         return False
+
+    def _all_upstream_outputs_failed_or_abandoned(self, step_key: str) -> bool:
+        failed_or_abandoned_steps = self._failed | self._abandoned
+        # check that all upstream outputs have failed or been abandoned
+        step = self.get_step_by_key(step_key)
+        for step_input in step.step_inputs:
+            if any(
+                source_handle not in self._step_outputs
+                and source_handle.step_key in failed_or_abandoned_steps
+                for source_handle in step_input.get_step_output_handle_dependencies()
+            ):
+                return True
+        return False
+
+    def _has_produced_output(self, step_output_handle: StepOutputHandle) -> bool:
+        # check if the step output has been produced by this run or any parent run
+        if step_output_handle in self._step_outputs:
+            return True
+        elif step_output_handle.step_key in self._plan.step_keys_to_execute:
+            # step will be executed in this run, so should wait for this run to
+            # produce the output instead of looking at past runs
+            return False
+
+        # this case can happen if the original run was executed with AFTER_UPSTREAM_OUTPUTS
+        parent_state = self._plan.known_state.parent_state
+        while parent_state is not None:
+            if step_output_handle in parent_state.produced_outputs:
+                return True
+            parent_state = cast("PastExecutionState | None", parent_state.parent_state)
+        return False
+
+    def _all_upstream_outputs_produced(self, step_key: str) -> bool:
+        # check that all upstream outputs have been emitted
+        step = self.get_step_by_key(step_key)
+        for step_input in step.step_inputs:
+            if any(
+                not self._has_produced_output(source_handle)
+                for source_handle in step_input.get_step_output_handle_dependencies()
+            ):
+                return False
+        return True
 
     def _update(self) -> None:
         """Moves steps from _pending to _executable / _pending_skip / _pending_retry
@@ -220,10 +300,6 @@ class ActiveExecution:
         new_steps_to_skip: list[str] = []
         new_steps_to_abandon: list[str] = []
 
-        successful_or_skipped_steps = self._success | self._skipped
-        failed_or_abandoned_steps = self._failed | self._abandoned
-        resolved_steps = self._success | self._skipped | self._failed | self._abandoned
-
         if self._new_dynamic_mappings:
             new_step_deps = self._plan.resolve(self._completed_dynamic_outputs)
             for step_key, deps in new_step_deps.items():
@@ -231,13 +307,24 @@ class ActiveExecution:
 
             self._new_dynamic_mappings = False
 
+        resolved_steps = self._success | self._skipped | self._failed | self._abandoned
         for step_key, depends_on_steps in self._pending.items():
-            if depends_on_steps.issubset(resolved_steps):
-                if self._should_skip_step(step_key, successful_or_skipped_steps):
+            # traditional behavior, wait for all upstream steps before executing
+            if self._step_dependency_config.require_upstream_step_success:
+                if depends_on_steps.issubset(resolved_steps):
+                    if self._should_skip_step(step_key):
+                        new_steps_to_skip.append(step_key)
+                    elif depends_on_steps.intersection(self._failed | self._abandoned):
+                        new_steps_to_abandon.append(step_key)
+                    else:
+                        new_steps_to_execute.append(step_key)
+            # optional behavior, executes as soon as all upstream outputs are available
+            else:
+                if self._should_skip_step(step_key):
                     new_steps_to_skip.append(step_key)
-                elif depends_on_steps.intersection(failed_or_abandoned_steps):
+                elif self._all_upstream_outputs_failed_or_abandoned(step_key):
                     new_steps_to_abandon.append(step_key)
-                else:
+                elif self._all_upstream_outputs_produced(step_key):
                     new_steps_to_execute.append(step_key)
 
         for key in new_steps_to_execute:
@@ -266,8 +353,7 @@ class ActiveExecution:
         now = time.time()
         intervals = []
         if self._waiting_to_retry:
-            for t in self._waiting_to_retry.values():
-                intervals.append(t - now)
+            intervals.extend(t - now for t in self._waiting_to_retry.values())
         if (
             self._instance_concurrency_context
             and self._instance_concurrency_context.has_pending_claims()
@@ -285,7 +371,7 @@ class ActiveExecution:
         if sleep_amt > 0:
             time.sleep(sleep_amt)
 
-    def get_next_step(self) -> Optional[ExecutionStep]:
+    def get_next_step(self) -> ExecutionStep | None:
         check.invariant(not self.is_complete, "Can not call get_next_step when is_complete is True")
 
         steps = self.get_steps_to_execute(limit=1)
@@ -301,7 +387,7 @@ class ActiveExecution:
 
     def get_steps_to_execute(
         self,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> Sequence[ExecutionStep]:
         check.invariant(
             self._context_guard,
@@ -393,7 +479,7 @@ class ActiveExecution:
         return sorted(steps, key=self._sort_key_fn)
 
     def plan_events_iterator(
-        self, job_context: Union[PlanExecutionContext, PlanOrchestrationContext]
+        self, job_context: PlanExecutionContext | PlanOrchestrationContext
     ) -> Iterator[DagsterEvent]:
         """Process all steps that can be skipped and abandoned."""
         steps_to_skip = self.get_steps_to_skip()
@@ -461,7 +547,7 @@ class ActiveExecution:
     def check_for_interrupts(self) -> bool:
         return pop_captured_interrupt()
 
-    def mark_up_for_retry(self, step_key: str, at_time: Optional[float] = None) -> None:
+    def mark_up_for_retry(self, step_key: str, at_time: float | None = None) -> None:
         check.invariant(
             not self._retry_mode.disabled,
             f"Attempted to mark {step_key} as up for retry but retries are disabled",
@@ -506,7 +592,6 @@ class ActiveExecution:
                 dagster_event.step_key is not None,
                 "Resource init failure was reported during execution without a step key.",
             )
-            self.mark_failed(step_key)
             if self._instance_concurrency_context:
                 self._instance_concurrency_context.free_step(step_key)
         elif dagster_event.is_step_success:
@@ -606,7 +691,7 @@ class ActiveExecution:
     def _resolve_any_dynamic_outputs(self, step_key: str) -> None:
         if step_key in self._gathering_dynamic_outputs:
             step = self.get_step_by_key(step_key)
-            completed_mappings: dict[str, Optional[Sequence[str]]] = {}
+            completed_mappings: dict[str, Sequence[str] | None] = {}
             for output_name, mappings in self._gathering_dynamic_outputs[step_key].items():
                 # if no dynamic outputs were returned and the output was marked is_required=False
                 # set to None to indicate a skip should occur
@@ -636,7 +721,7 @@ class ActiveExecution:
         return [self.get_step_by_key(step_key) for step_key in self._in_flight]
 
     def concurrency_event_iterator(
-        self, plan_context: Union[PlanExecutionContext, PlanOrchestrationContext]
+        self, plan_context: PlanExecutionContext | PlanOrchestrationContext
     ) -> Iterator[DagsterEvent]:
         if not self._instance_concurrency_context:
             return

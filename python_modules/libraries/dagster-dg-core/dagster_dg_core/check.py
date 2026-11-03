@@ -1,10 +1,10 @@
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import click
 from dagster_shared.serdes.objects import EnvRegistryKey
-from dagster_shared.yaml_utils import parse_yaml_with_source_position
+from dagster_shared.yaml_utils import parse_yamls_with_source_position
 from dagster_shared.yaml_utils.source_position import (
     LineCol,
     SourcePosition,
@@ -58,7 +58,7 @@ def _scaffold_value_and_source_position_tree(
 
 
 class ErrorInput(NamedTuple):
-    object_key: Optional[EnvRegistryKey]
+    object_key: EnvRegistryKey | None
     error: "ValidationError"
     source_position_tree: ValueAndSourcePositionTree
 
@@ -85,11 +85,14 @@ def check_yaml(
             continue
 
         defs_yaml_path = component_dir / "defs.yaml"
+        defs_yml_path = component_dir / "defs.yml"
         component_yaml_path = component_dir / "component.yaml"
 
         yaml_path = (
             defs_yaml_path
             if defs_yaml_path.exists()
+            else defs_yml_path
+            if defs_yml_path.exists()
             else component_yaml_path
             if component_yaml_path.exists()
             else None
@@ -98,7 +101,9 @@ def check_yaml(
         if yaml_path:
             text = yaml_path.read_text()
             try:
-                component_doc_tree = parse_yaml_with_source_position(text, filename=str(yaml_path))
+                component_doc_trees = parse_yamls_with_source_position(
+                    text, filename=str(yaml_path)
+                )
             except ScannerError as se:
                 validation_errors.append(
                     ErrorInput(
@@ -113,52 +118,55 @@ def check_yaml(
                 )
                 continue
 
-            if validate_requirements:
-                specified_env_var_deps = get_specified_env_var_deps(component_doc_tree.value)
-                used_env_vars = get_used_env_vars(component_doc_tree.value)
-                all_specified_env_var_deps.update(specified_env_var_deps)
+            # Validate each YAML document in multi-document files
+            for component_doc_tree in component_doc_trees:
+                if validate_requirements:
+                    specified_env_var_deps = get_specified_env_var_deps(component_doc_tree.value)
+                    used_env_vars = get_used_env_vars(component_doc_tree.value)
+                    all_specified_env_var_deps.update(specified_env_var_deps)
 
-                if used_env_vars - specified_env_var_deps:
-                    msg = (
-                        "Component uses environment variables that are not specified in the component file: "
-                        + ", ".join(sorted(used_env_vars - specified_env_var_deps))
-                    )
-
-                    validation_errors.append(
-                        ErrorInput(
-                            None,
-                            ValidationError(
-                                msg,
-                                path=["requirements", "env"],
-                            ),
-                            component_doc_tree,
+                    if used_env_vars - specified_env_var_deps:
+                        msg = (
+                            "Component uses environment variables that are not specified in the component file: "
+                            + ", ".join(sorted(used_env_vars - specified_env_var_deps))
                         )
-                    )
 
-            # First, validate the top-level structure of the component file
-            # (type and params keys) before we try to validate the params themselves.
-            top_level_errs = list(
-                top_level_component_validator.iter_errors(component_doc_tree.value)
-            )
-            for err in top_level_errs:
-                validation_errors.append(ErrorInput(None, err, component_doc_tree))
-            if top_level_errs:
-                continue
+                        validation_errors.append(
+                            ErrorInput(
+                                None,
+                                ValidationError(
+                                    msg,
+                                    path=["requirements", "env"],
+                                ),
+                                component_doc_tree,
+                            )
+                        )
 
-            raw_key = component_doc_tree.value.get("type")
-            component_instance_module = dg_context.get_component_instance_module_name(
-                component_dir.name
-            )
-            qualified_key = (
-                f"{component_instance_module}{raw_key}" if raw_key.startswith(".") else raw_key
-            )
-            key = EnvRegistryKey.from_typename(qualified_key)
-            component_contents_by_key[key] = component_doc_tree
+                # First, validate the top-level structure of the component file
+                # (type and params keys) before we try to validate the params themselves.
+                top_level_errs = list(
+                    top_level_component_validator.iter_errors(component_doc_tree.value)
+                )
+                validation_errors.extend(
+                    ErrorInput(None, err, component_doc_tree) for err in top_level_errs
+                )
+                if top_level_errs:
+                    continue
 
-            # Add every module referenced to be explicitly fetched. If we don't do this, only
-            # modules that are explicitly declared as registry modules will work.
-            # `from_dg_context()` on the registry ensures that modules aren't double-fetched.
-            modules_to_fetch.add(key.namespace)
+                raw_key = component_doc_tree.value.get("type")
+                component_instance_module = dg_context.get_component_instance_module_name(
+                    component_dir.name
+                )
+                qualified_key = (
+                    f"{component_instance_module}{raw_key}" if raw_key.startswith(".") else raw_key
+                )
+                key = EnvRegistryKey.from_typename(qualified_key)
+                component_contents_by_key[key] = component_doc_tree
+
+                # Add every module referenced to be explicitly fetched. If we don't do this, only
+                # modules that are explicitly declared as registry modules will work.
+                # `from_dg_context()` on the registry ensures that modules aren't double-fetched.
+                modules_to_fetch.add(key.namespace)
 
     # Fetch the local component types, if we need any local components
     component_registry = EnvRegistry.from_dg_context(
@@ -169,8 +177,10 @@ def check_yaml(
             json_schema = component_registry.get(key).component_schema or {}
 
             v = Draft202012Validator(json_schema)
-            for err in v.iter_errors(component_doc_tree.value.get("attributes", {})):
-                validation_errors.append(ErrorInput(key, err, component_doc_tree))
+            validation_errors.extend(
+                ErrorInput(key, err, component_doc_tree)
+                for err in v.iter_errors(component_doc_tree.value.get("attributes", {}))
+            )
         except KeyError:
             # No matching component type found
             validation_errors.append(

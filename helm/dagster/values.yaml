@@ -6,6 +6,8 @@
 ---
 global:
   postgresqlSecretName: "dagster-postgresql-secret"
+  # When true, PostgreSQL uses workload identity federation instead of a password secret.
+  postgresqlAuthWifEnabled: false
   # The DAGSTER_HOME env var is set by default on all nodes from this value
   dagsterHome: "/opt/dagster/dagster_home"
 
@@ -17,6 +19,12 @@ global:
   # generally be left as the default, but can be useful if setting generateCeleryConfigSecret
   # to false below.
   celeryConfigSecretName: "dagster-celery-config-secret"
+
+  # The name of the ConfigMap containing the Dagster instance configuration (dagster.yaml).
+  # This is used by the dagster-user-deployments subchart when includeInstance is set to true.
+  # By default, this will be computed as "<release-name>-instance". Only set this if you are
+  # using a custom fullnameOverride or deploying with a non-standard release name.
+  dagsterInstanceConfigMap: ""
 
 nameOverride: ""
 fullnameOverride: ""
@@ -71,6 +79,10 @@ dagsterWebserver:
 
   # Deploy a separate instance of the webserver in --read-only mode (can't launch runs, disable schedules, etc.)
   enableReadOnly: false
+
+  # The log format of the webserver, defaults to colored if not set
+  # Valid options are: colored|json|rich
+  # logFormat: colored
 
   # The timeout in milliseconds to set on database statements sent to the Dagster instance.
   dbStatementTimeout: ~
@@ -344,14 +356,17 @@ dagster-user-deployments:
       #   - "-a"
       #   - "define_demo_execution_repo"
       #
-      # The `dagsterApiGrpcArgs` key can also be replaced with `codeServerArgs` to use a new
-      # experimental `dagster code-server start` command instead of `dagster api grpc`, which can
-      # reload its definitions from within the Dagster UI without needing to restart the user code
+      # The `dagsterApiGrpcArgs` key can also be replaced with `codeServerArgs` to use
+      # `dagster code-server start` instead of `dagster api grpc`, which can reload its
+      # definitions from within the Dagster UI without needing to restart the user code
       # deployment pod.
       dagsterApiGrpcArgs:
         - "--python-file"
         - "/example_project/example_repo/repo.py"
       port: 3030
+
+      # Number of replicas of the user code gRPC server Deployment.
+      replicaCount: 1
 
       # Whether or not to include configuration specified for this user code deployment in the pods
       # launched for runs from that deployment
@@ -831,6 +846,16 @@ postgresql:
   service:
     port: 5432
 
+  # Workload Identity Federation auth. When enabled, no password/secret is needed.
+  # The pod's service account token is exchanged for a short-lived DB access token.
+  authProvider:
+    # One of: azure_wif, gcp_wif, aws_wif
+    type: ""
+    # Azure-specific: override the default token scope
+    azureScope: "https://ossrdbms-aad.database.windows.net/.default"
+    # AWS-specific: the RDS region
+    awsRegion: ""
+
 # Whether to generate a secret resource for the PostgreSQL password. Useful if
 # global.postgresqlSecretName is managed outside of this helm chart.
 generatePostgresqlPasswordSecret: true
@@ -850,7 +875,7 @@ rabbitmq:
   enabled: false
 
   image:
-    repository: "bitnami/rabbitmq"
+    repository: "bitnamilegacy/rabbitmq"
     tag: "3.8.12"
     pullPolicy: IfNotPresent
 
@@ -879,6 +904,10 @@ redis:
   # To manage redis via helm, set `internal` to `true`. To use an external redis, set `internal` to `false`.
   # Note: If `internal` is true, then redis pod will be created regardless of `enabled` flag.
   internal: false
+  image:
+    repository: "bitnamilegacy/redis"
+    tag: "6.0.16"
+    pullPolicy: IfNotPresent
 
   usePassword: false
   password: "test"
@@ -1100,6 +1129,10 @@ dagsterDaemon:
     pullPolicy: Always
 
   heartbeatTolerance: 1800
+
+  # The log format of the daemon, defaults to colored if not set
+  # Valid options are: colored|json|rich
+  # logFormat: colored
 
   runCoordinator:
     # Whether or not to enable the run queue (or some other custom run coordinator). See
@@ -1439,6 +1472,41 @@ retention:
       skipped: 7
       started: -1
       success: -1
+
+####################################################################################################
+# Concurrency
+# Configure concurrency limits for runs and ops/assets. This is the recommended way to configure
+# concurrency settings. Do NOT set these values if you are also configuring maxConcurrentRuns,
+# tagConcurrencyLimits, or blockOpConcurrencyLimitedRuns in dagsterDaemon.runCoordinator.config.
+####################################################################################################
+concurrency:
+  # Set to true to enable the concurrency configuration block
+  enabled: false
+
+  # Pool-level concurrency settings (for op/asset-level concurrency)
+  pools:
+    # Default max concurrent operations for an unconfigured pool (0 to max limit)
+    defaultLimit: ~
+    # Granularity of concurrency enforcement: "run" or "op"
+    granularity: ~
+    # When granularity is "op", number of runs allowed to block waiting for pool slots
+    opGranularityRunBuffer: ~
+
+  # Run-level concurrency settings
+  runs:
+    # Max runs in progress at once (-1 to disable, 0 to stop launches, default 10)
+    maxConcurrentRuns: ~
+    # Tag-based concurrency limits
+    # Example:
+    # tagConcurrencyLimits:
+    #   - key: "database"
+    #     limit: 1
+    #   - key: "team"
+    #     value:
+    #       applyLimitPerUniqueValue: true
+    #     limit: 2
+    tagConcurrencyLimits: []
+
 ####################################################################################################
 # Additional fields on the instance to configure that aren't already determined by a key above.
 # See https://docs.dagster.io/deployment/dagster-instance for the full set of available fields.

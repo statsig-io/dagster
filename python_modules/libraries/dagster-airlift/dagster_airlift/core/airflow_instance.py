@@ -2,7 +2,7 @@ import datetime
 import time
 from abc import ABC
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import Any
 
 import requests
 from dagster._annotations import beta, public
@@ -31,6 +31,11 @@ DEFAULT_BATCH_TASK_RETRIEVAL_LIMIT = 100
 DEFAULT_BATCH_DAG_RUNS_LIMIT = 100
 DEFAULT_DAG_LIST_LIMIT = 100
 SLEEP_SECONDS = 1
+# Airflow webservers backed by SQLite occasionally return transient 500s when
+# basic-auth user lookups race scheduler writes ("database is locked"). Polling
+# read paths retry on 5xx so a single transient blip doesn't fail the caller.
+DEFAULT_5XX_RETRIES = 3
+DEFAULT_5XX_RETRY_SLEEP_SECONDS = 1.0
 
 
 @beta
@@ -85,7 +90,7 @@ class AirflowInstance:
     def get_api_url(self) -> str:
         return f"{self.auth_backend.get_webserver_url()}/api/v1"
 
-    def list_dags(self, retrieval_filter: Optional[AirflowFilter] = None) -> list["DagInfo"]:
+    def list_dags(self, retrieval_filter: AirflowFilter | None = None) -> list["DagInfo"]:
         retrieval_filter = retrieval_filter or AirflowFilter()
         dag_responses = []
         webserver_url = self.auth_backend.get_webserver_url()
@@ -295,12 +300,12 @@ class AirflowInstance:
     def get_dag_runs_batch(
         self,
         dag_ids: Sequence[str],
-        end_date_gte: Optional[datetime.datetime] = None,
-        end_date_lte: Optional[datetime.datetime] = None,
-        start_date_gte: Optional[datetime.datetime] = None,
-        start_date_lte: Optional[datetime.datetime] = None,
+        end_date_gte: datetime.datetime | None = None,
+        end_date_lte: datetime.datetime | None = None,
+        start_date_gte: datetime.datetime | None = None,
+        start_date_lte: datetime.datetime | None = None,
         offset: int = 0,
-        states: Optional[Sequence[str]] = None,
+        states: Sequence[str] | None = None,
     ) -> tuple[list["DagRun"], int]:
         """For the given list of dag_ids, return a tuple containing:
         - A list of dag runs ending within (end_date_gte, end_date_lte). Returns a maximum of batch_dag_runs_limit (which is configurable on the instance).
@@ -347,7 +352,7 @@ class AirflowInstance:
             )
 
     @public
-    def trigger_dag(self, dag_id: str, logical_date: Optional[datetime.datetime] = None) -> str:
+    def trigger_dag(self, dag_id: str, logical_date: datetime.datetime | None = None) -> str:
         """Trigger a dag run for the given dag_id.
 
         Does not wait for the run to finish. To wait for the completed run to finish, use :py:meth:`wait_for_run_completion`.
@@ -370,10 +375,24 @@ class AirflowInstance:
             )
         return response.json()["dag_run_id"]
 
+    def _get_with_5xx_retry(
+        self,
+        url: str,
+        *,
+        retries: int = DEFAULT_5XX_RETRIES,
+        sleep_seconds: float = DEFAULT_5XX_RETRY_SLEEP_SECONDS,
+        **kwargs: Any,
+    ) -> requests.Response:
+        session = self.auth_backend.get_session()
+        for attempt in range(retries + 1):
+            response = session.get(url, **kwargs)
+            if not (500 <= response.status_code < 600) or attempt == retries:
+                return response
+            time.sleep(sleep_seconds)
+        raise AssertionError("unreachable")
+
     def get_dag_run(self, dag_id: str, run_id: str) -> "DagRun":
-        response = self.auth_backend.get_session().get(
-            f"{self.get_api_url()}/dags/{dag_id}/dagRuns/{run_id}"
-        )
+        response = self._get_with_5xx_retry(f"{self.get_api_url()}/dags/{dag_id}/dagRuns/{run_id}")
         if response.status_code != 200:
             raise DagsterError(
                 f"Failed to fetch dag run for {dag_id}/{run_id}. Status code: {response.status_code}, Message: {response.text}"
@@ -447,7 +466,7 @@ class AirflowInstance:
         limit: int,
         offset: int,
         retrieval_filter: AirflowFilter,
-        dag_ids: Optional[Sequence[str]],
+        dag_ids: Sequence[str] | None,
     ) -> Sequence["Dataset"]:
         params: dict[str, Any] = {"limit": limit, "offset": offset}
         if retrieval_filter.dataset_uri_ilike:
@@ -510,8 +529,8 @@ class AirflowInstance:
         self,
         *,
         batch_size: int = 100,
-        retrieval_filter: Optional[AirflowFilter] = None,
-        dag_ids: Optional[Sequence[str]] = None,
+        retrieval_filter: AirflowFilter | None = None,
+        dag_ids: Sequence[str] | None = None,
     ) -> Sequence["Dataset"]:
         """Get all datasets from the Airflow instance, handling pagination.
 
@@ -574,7 +593,5 @@ def parse_af_log_response(logs: str) -> str:
     import ast
 
     parsed_data: list = ast.literal_eval(logs)
-    strs = []
-    for log_item in parsed_data:
-        strs.append(log_item[1])
+    strs = [log_item[1] for log_item in parsed_data]
     return "".join(strs)

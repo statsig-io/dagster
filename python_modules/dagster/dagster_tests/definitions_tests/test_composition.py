@@ -309,7 +309,7 @@ def test_output_map_mult():
 
     @dg.graph
     def mult_graph():
-        one, two = wrap_mult()  # pyright: ignore[reportGeneralTypeIssues]
+        one, two = wrap_mult()  # ty: ignore[not-iterable]
         echo.alias("echo_one")(one)
         echo.alias("echo_two")(two)
 
@@ -326,7 +326,7 @@ def test_output_map_mult_swizzle():
 
     @dg.graph
     def mult_graph():
-        x, y = wrap_mult()  # pyright: ignore[reportGeneralTypeIssues]
+        x, y = wrap_mult()  # ty: ignore[not-iterable]
         echo.alias("echo_x")(x)
         echo.alias("echo_y")(y)
 
@@ -661,7 +661,7 @@ def test_compose_nothing():
         pass
 
     @dg.graph(ins={"start": dg.GraphIn()})
-    def _compose(start: Nothing):  # type: ignore
+    def _compose(start: Nothing):
         go(start)
 
 
@@ -845,12 +845,12 @@ def test_composition_order():
 
     @dg.job
     def a_job():
-        a_op.with_hooks(hook_defs={test_hook}).alias("hook_alias_tag").tag({"pos": 3})()  # pyright: ignore[reportArgumentType]
-        a_op.with_hooks(hook_defs={test_hook}).tag({"pos": 2}).alias("hook_tag_alias")()  # pyright: ignore[reportArgumentType]
-        a_op.alias("alias_tag_hook").tag({"pos": 2}).with_hooks(hook_defs={test_hook})()  # pyright: ignore[reportArgumentType]
-        a_op.alias("alias_hook_tag").with_hooks(hook_defs={test_hook}).tag({"pos": 3})()  # pyright: ignore[reportArgumentType]
-        a_op.tag({"pos": 1}).with_hooks(hook_defs={test_hook}).alias("tag_hook_alias")()  # pyright: ignore[reportArgumentType]
-        a_op.tag({"pos": 1}).alias("tag_alias_hook").with_hooks(hook_defs={test_hook})()  # pyright: ignore[reportArgumentType]
+        a_op.with_hooks(hook_defs={test_hook}).alias("hook_alias_tag").tag({"pos": 3})()  # ty: ignore[invalid-argument-type]
+        a_op.with_hooks(hook_defs={test_hook}).tag({"pos": 2}).alias("hook_tag_alias")()  # ty: ignore[invalid-argument-type]
+        a_op.alias("alias_tag_hook").tag({"pos": 2}).with_hooks(hook_defs={test_hook})()  # ty: ignore[invalid-argument-type]
+        a_op.alias("alias_hook_tag").with_hooks(hook_defs={test_hook}).tag({"pos": 3})()  # ty: ignore[invalid-argument-type]
+        a_op.tag({"pos": 1}).with_hooks(hook_defs={test_hook}).alias("tag_hook_alias")()  # ty: ignore[invalid-argument-type]
+        a_op.tag({"pos": 1}).alias("tag_alias_hook").with_hooks(hook_defs={test_hook})()  # ty: ignore[invalid-argument-type]
 
     result = a_job.execute_in_process(raise_on_error=False)
     assert result.success
@@ -886,7 +886,7 @@ def test_with_hooks_on_invoked_op_fails():
 
     with pytest.raises(
         dg.DagsterInvariantViolationError,
-        match="attempted to call hook method for InvokedNodeOutputHandle.",
+        match=r"attempted to call hook method for InvokedNodeOutputHandle.",
     ):
 
         @dg.job
@@ -906,7 +906,7 @@ def test_iterating_over_dynamic_outputs_fails():
 
     with pytest.raises(
         dg.DagsterInvariantViolationError,
-        match="Attempted to iterate over an InvokedNodeOutputHandle.",
+        match=r"Attempted to iterate over an InvokedNodeOutputHandle.",
     ):
 
         @dg.job
@@ -927,7 +927,7 @@ def test_indexing_into_dynamic_outputs_fails():
 
     with pytest.raises(
         dg.DagsterInvariantViolationError,
-        match="Attempted to index in to an InvokedNodeOutputHandle.",
+        match=r"Attempted to index in to an InvokedNodeOutputHandle.",
     ):
 
         @dg.job
@@ -943,7 +943,7 @@ def test_aliasing_invoked_dynamic_output_fails():
 
     with pytest.raises(
         dg.DagsterInvariantViolationError,
-        match="attempted to call alias method for InvokedNodeOutputHandle.",
+        match=r"attempted to call alias method for InvokedNodeOutputHandle.",
     ):
 
         @dg.job

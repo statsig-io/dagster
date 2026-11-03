@@ -5,6 +5,7 @@ import {useDocById, findFirstSidebarItemLink} from '@docusaurus/plugin-content-d
 import {usePluralForm} from '@docusaurus/theme-common';
 import isInternalUrl from '@docusaurus/isInternalUrl';
 import {translate} from '@docusaurus/Translate';
+import {useLocation} from '@docusaurus/router';
 
 import type {Props} from '@theme/DocCard';
 import Heading from '@theme/Heading';
@@ -12,6 +13,7 @@ import type {PropSidebarItemCategory, PropSidebarItemLink} from '@docusaurus/plu
 
 import styles from './styles.module.css';
 import useBaseUrl from '@docusaurus/useBaseUrl';
+import {CARD_TAGS, hasCardTag} from '../DocCardList/filters';
 
 // TODO - text for folders
 // TODO - indicator for "community supported" integration
@@ -33,119 +35,139 @@ function useCategoryItemsPlural() {
     );
 }
 
-function CardContainer({href, children}: {href: string; children: ReactNode}): ReactNode {
+function ExternalLinkIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <Link href={href} className={clsx('card padding--lg', styles.cardContainer)} style={{height: '100%'}}>
-      {children}
-    </Link>
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      {...props}>
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M15.5 12.25V15.25C15.5 15.3881 15.3881 15.5 15.25 15.5H4.75C4.61193 15.5 4.5 15.3881 4.5 15.25V4.75C4.5 4.61193 4.61193 4.5 4.75 4.5H7.75H8.5V3H7.75H4.75C3.7835 3 3 3.7835 3 4.75V15.25C3 16.2165 3.7835 17 4.75 17H15.25C16.2165 17 17 16.2165 17 15.25V12.25V11.5H15.5V12.25ZM11 3H11.75H16.2495C16.6637 3 16.9995 3.33579 16.9995 3.75V8.25V9H15.4995V8.25V5.56066L10.5303 10.5298L10 11.0601L8.93934 9.99945L9.46967 9.46912L14.4388 4.5H11.75H11V3Z"
+        fill="currentColor"
+      />
+    </svg>
   );
 }
 
 function CardLayout({
-  href,
-  logo,
-  title,
-  description,
-  community,
-  referenceArchitecture,
+  item,
+  className,
 }: {
-  href: string;
-  title: string;
-  logo?: string;
-  description?: string;
-  community: boolean;
-  referenceArchitecture: boolean;
+  item: PropSidebarItemCategory | PropSidebarItemLink;
+  className?: string;
 }): ReactNode {
-  return (
-    <CardContainer href={href}>
-      <div style={{display: 'flex', flexDirection: 'row', gap: '12px'}}>
-        <div style={{flex: '0 0 64px', display: logo ? 'block' : 'none'}}>
-          <img
-            src={useBaseUrl(logo)}
-            style={{
-              display: 'block',
-              width: '64px',
-              height: '64px',
-              background: 'var(--dagster-white)',
-              padding: '4px',
-            }}
-          />
-        </div>
-        <div>
-          <div style={{display: 'flex', flexDirection: 'row'}}>
-            <Heading as="h2" className={clsx('', styles.cardTitle)} title={title}>
-              {title}
-            </Heading>
-            {community && (
-              <span style={{marginLeft: 'auto'}}>
-                <div className={clsx(styles.cardTags)}>Community</div>
-              </span>
-            )}
-            {referenceArchitecture && (
-              <span style={{marginLeft: 'auto'}}>
-                <div className={clsx(styles.cardTags)}>Reference architecture</div>
-              </span>
-            )}
-          </div>
-          {description && (
-            <p className={clsx(styles.cardDescription)} title={description}>
-              {description}
-            </p>
-          )}
-        </div>
-      </div>
-    </CardContainer>
-  );
-}
-
-function CardCategory({item}: {item: PropSidebarItemCategory}): ReactNode {
-  const href = findFirstSidebarItemLink(item);
+  const label = item.label;
+  const logo: string | null = (item?.customProps?.logo as string) || null;
+  const logoVariant: string | null = (item?.customProps?.logoVariant as string) || null;
+  const isPanelLogo = logoVariant === 'panel';
+  const cardTags = CARD_TAGS.filter((tag) => hasCardTag(item, tag.key));
   const categoryItemsPlural = useCategoryItemsPlural();
+  const doc = useDocById(item.type === 'link' ? (item.docId ?? undefined) : undefined);
+  const logoUrl = useBaseUrl(logo || '');
 
-  // Unexpected: categories that don't have a link have been filtered upfront
-  if (!href) {
-    return null;
+  let href, description;
+  if (item.type === 'category') {
+    href = findFirstSidebarItemLink(item);
+    // Add safety check to handle cases where a category might not have a valid link
+    if (href === undefined) {
+      href = null; // or another appropriate fallback
+    }
+    description = item.description ?? categoryItemsPlural(item.items.length);
+  } else {
+    href = item.href;
+    description = item.description ?? doc?.description;
   }
 
-  const logo: string | null = item?.customProps?.logo || null;
+  const LinkComponent = Link as any; //Type assertion to bypass linting error
+  const {pathname} = useLocation();
+  const hrefString = typeof href === 'string' ? href : '';
+  const isExamplesPage = pathname.startsWith('/examples');
+  const isExamplesCard = isExamplesPage || hrefString.startsWith('/examples');
+  const isBestPracticesCard = hrefString.includes('/best-practices/');
+  const examplePill = hrefString.includes('/best-practices/')
+    ? 'Best practice'
+    : hrefString.includes('/full-pipelines/')
+      ? 'Full pipeline'
+      : hrefString === '/examples'
+        ? 'Overview'
+        : 'Example';
+  const hasInternalHref = hrefString.length > 0 && isInternalUrl(hrefString);
+
+  if (isExamplesCard) {
+    return (
+      <LinkComponent href={href} className={clsx('card', styles.cardContainer, styles.examplesCard, className)}>
+        {logo && isPanelLogo && <img className={styles.cardLogoPanel} src={logoUrl} aria-hidden="true" />}
+        <div className={clsx(styles.examplesBody, isPanelLogo && styles.examplesBodyWithPanel)}>
+          {logo && !isPanelLogo && (
+            <img className={clsx(styles.cardLogo, isBestPracticesCard && styles.cardLogoFrameless)} src={logoUrl} />
+          )}
+          <div>
+            <div className={styles.examplesMetaRow}>
+              <span className={styles.examplesPill}>{examplePill}</span>
+            </div>
+            <div className={styles.cardTitleWrapper}>
+              <Heading as="h2" className={styles.cardTitle} title={label}>
+                {label}
+              </Heading>
+              {!hasInternalHref && <ExternalLinkIcon />}
+              {cardTags.map((tag) => (
+                <span key={tag.key} className={styles.cardTags}>
+                  {tag.label}
+                </span>
+              ))}
+            </div>
+            {description && (
+              <p className={styles.cardDescription} title={description}>
+                {description}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className={styles.examplesFooter} aria-hidden="true">
+          <hr className={styles.examplesDivider} />
+          <div className={styles.examplesFooterRow}>
+            <span className={styles.examplesFooterText}>Explore</span>
+            <span className={styles.examplesArrow}>↗</span>
+          </div>
+        </div>
+      </LinkComponent>
+    );
+  }
 
   return (
-    <CardLayout
-      href={href}
-      title={item.label}
-      logo={logo}
-      description={item.description ?? categoryItemsPlural(item.items.length)}
-    />
-  );
-}
-
-function CardLink({item}: {item: PropSidebarItemLink}): ReactNode {
-  // https://github.com/facebook/docusaurus/discussions/10476
-  //const icon = item?.customProps?.myEmoji ?? (isInternalUrl(item.href) ? '📄️' : '🔗');
-  const logo: string | null = item?.customProps?.logo || null;
-  const community: boolean = item?.customProps?.community || false;
-  const referenceArchitecture: boolean = item?.customProps?.referenceArchitecture || false;
-  const doc = useDocById(item.docId ?? undefined);
-
-  return (
-    <CardLayout
-      href={item.href}
-      logo={logo}
-      title={item.label}
-      description={item.description ?? doc?.description}
-      community={community}
-      referenceArchitecture={referenceArchitecture}
-    />
+    <LinkComponent href={href} className={clsx('card', styles.cardContainer, className)}>
+      {logo && <img className={styles.cardLogo} src={logoUrl} />}
+      <div>
+        <div className={styles.cardTitleWrapper}>
+          <Heading as="h2" className={styles.cardTitle} title={label}>
+            {label}
+          </Heading>
+          {!hasInternalHref && <ExternalLinkIcon />}
+          {cardTags.map((tag) => (
+            <span key={tag.key} className={styles.cardTags}>
+              {tag.label}
+            </span>
+          ))}
+        </div>
+        {description && (
+          <p className={styles.cardDescription} title={description}>
+            {description}
+          </p>
+        )}
+      </div>
+    </LinkComponent>
   );
 }
 
 export default function DocCard({item}: Props): ReactNode {
-  switch (item.type) {
-    case 'link':
-      return <CardLink item={item} />;
-    case 'category':
-      return <CardCategory item={item} />;
-    default:
-      throw new Error(`unknown item type ${JSON.stringify(item)}`);
+  if (item.type !== 'link' && item.type !== 'category') {
+    throw new Error(`unknown item type ${JSON.stringify(item)}`);
   }
+  return <CardLayout item={item} />;
 }

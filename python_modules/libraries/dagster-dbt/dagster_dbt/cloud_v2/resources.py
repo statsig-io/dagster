@@ -1,7 +1,7 @@
-import logging
+import random
+import time
 from collections.abc import Sequence
-from functools import cached_property
-from typing import NamedTuple, Optional, Union
+from typing import Literal, NamedTuple
 
 from dagster import (
     AssetCheckSpec,
@@ -9,11 +9,12 @@ from dagster import (
     AssetSpec,
     ConfigurableResource,
     Definitions,
+    Failure,
+    Resolvable,
     _check as check,
-    get_dagster_logger,
     multi_asset_check,
 )
-from dagster._annotations import beta
+from dagster._annotations import public
 from dagster._config.pythonic_config.resource import ResourceDependency
 from dagster._core.definitions.definitions_load_context import StateBackedDefinitionsLoader
 from dagster._record import record
@@ -21,6 +22,9 @@ from dagster._utils.cached_method import cached_method
 from pydantic import Field
 
 from dagster_dbt.asset_utils import (
+    DAGSTER_DBT_CLOUD_ACCOUNT_ID_METADATA_KEY,
+    DAGSTER_DBT_CLOUD_ENVIRONMENT_ID_METADATA_KEY,
+    DAGSTER_DBT_CLOUD_PROJECT_ID_METADATA_KEY,
     DBT_DEFAULT_EXCLUDE,
     DBT_DEFAULT_SELECT,
     DBT_DEFAULT_SELECTOR,
@@ -30,46 +34,78 @@ from dagster_dbt.asset_utils import (
 from dagster_dbt.cloud_v2.cli_invocation import DbtCloudCliInvocation
 from dagster_dbt.cloud_v2.client import DbtCloudWorkspaceClient
 from dagster_dbt.cloud_v2.run_handler import DbtCloudJobRunHandler
-from dagster_dbt.cloud_v2.types import (
-    DbtCloudAccount,
-    DbtCloudEnvironment,
-    DbtCloudJob,
-    DbtCloudProject,
-    DbtCloudWorkspaceData,
-)
+from dagster_dbt.cloud_v2.types import DbtCloudJob, DbtCloudWorkspaceData
 from dagster_dbt.dagster_dbt_translator import DagsterDbtTranslator, validate_opt_translator
 from dagster_dbt.utils import clean_name
 
 DAGSTER_ADHOC_PREFIX = "DAGSTER_ADHOC_JOB__"
 DBT_CLOUD_RECONSTRUCTION_METADATA_KEY_PREFIX = "__dbt_cloud"
+DAGSTER_DBT_CLOUD_ADHOC_JOB_WAIT_TIMEOUT_SECONDS = 300
+DAGSTER_DBT_CLOUD_ADHOC_JOB_WAIT_POLL_INTERVAL_SECONDS = 5
+
+DbtCloudAdhocJobPoolMode = Literal["overflow", "wait", "fail"]
 
 
-def get_dagster_adhoc_job_name(
-    project_id: int,
-    project_name: Optional[str],
-    environment_id: int,
-    environment_name: Optional[str],
-) -> str:
-    name = (
-        f"{DAGSTER_ADHOC_PREFIX}{project_name or project_id}__{environment_name or environment_id}"
-    )
+def get_dagster_adhoc_job_name(project_id: int, environment_id: int, index: int = 0) -> str:
+    """Returns the name of the ad hoc job for the given project, environment, and pool index.
+
+    The job at index 0 keeps the unsuffixed name to preserve the name of pre-existing
+    single-job deployments. Indices greater than 0 get an ``__{index}`` suffix.
+    """
+    base = f"{DAGSTER_ADHOC_PREFIX}{project_id}__{environment_id}"
+    name = base if index == 0 else f"{base}__{index}"
     # Clean the name and convert it to uppercase
     return clean_name(name).upper()
 
 
-@beta
+@public
 class DbtCloudCredentials(NamedTuple):
-    """The DbtCloudCredentials to access your dbt Cloud Workspace."""
+    """The DbtCloudCredentials to access your dbt Cloud workspace.
+
+    Args:
+        account_id (int): The ID of your dbt Cloud account.
+        token (str): Your dbt Cloud API token.
+        access_url (str): Your dbt Cloud workspace URL.
+    """
 
     account_id: int
     token: str
     access_url: str
 
 
-@beta
-class DbtCloudWorkspace(ConfigurableResource):
+@public
+class DbtCloudWorkspace(ConfigurableResource, Resolvable):
     """This class represents a dbt Cloud workspace and provides utilities
     to interact with dbt Cloud APIs.
+
+    Args:
+        credentials (DbtCloudCredentials): An instance of DbtCloudCredentials class.
+        project_id (int): The ID of the dbt cloud project to use for this resource.
+        environment_id (int): The ID of the environment to use for the dbt Cloud
+            project used in this resource.
+        adhoc_job_name (Optional[str]): The name of the ad hoc job that will be
+            created by Dagster in your dbt Cloud workspace. This ad hoc job is
+            used to parse your project and materialize your dbt Cloud assets.
+            If not provided, this job name will be generated using your project
+            ID and environment ID. When ``adhoc_job_pool_size > 1``, this value
+            is used as a prefix and the additional jobs receive an ``__{index}``
+            suffix.
+        adhoc_job_pool_size (int): The number of ad hoc jobs to create in your
+            dbt Cloud workspace. dbt Cloud only allows one concurrent run per
+            job, so a value greater than 1 lets Dagster run multiple dbt Cloud
+            invocations concurrently (e.g., partitioned backfills, two Dagster
+            jobs targeting different assets). Defaults to 1.
+        adhoc_job_pool_mode (Literal["overflow", "wait", "fail"]): What to do
+            when every ad hoc job in the pool already has an active run at
+            ``cli()`` time. ``overflow`` (default) triggers the run on the
+            first job regardless and lets dbt Cloud queue it. ``wait`` polls
+            until a job frees up. ``fail`` raises immediately.
+        request_max_retries (int): The maximum number of times requests to the
+            dbt Cloud API should be retried before failing.
+        request_retry_delay (float): Time (in seconds) to wait between each
+            request retry.
+        request_timeout: Time (in seconds) after which the requests to dbt Cloud
+            are declared timed out.
     """
 
     credentials: ResourceDependency[DbtCloudCredentials]
@@ -77,12 +113,31 @@ class DbtCloudWorkspace(ConfigurableResource):
     environment_id: int = Field(
         description="The ID of environment to use for the dbt Cloud project used in this resource."
     )
-    adhoc_job_name: Optional[str] = Field(
+    adhoc_job_name: str | None = Field(
         default=None,
         description=(
             "The name of the ad hoc job that will be created by Dagster in your dbt Cloud workspace. "
             "This ad hoc job is used to parse your project and materialize your dbt Cloud assets. "
-            "If not provided, this job name will be generated using your project ID and environment ID."
+            "If not provided, this job name will be generated using your project ID and environment ID. "
+            "When `adhoc_job_pool_size > 1`, this value is used as a prefix for the additional jobs, "
+            "which receive an `__{index}` suffix."
+        ),
+    )
+    adhoc_job_pool_size: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "The number of ad hoc jobs to create in your dbt Cloud workspace. dbt Cloud only "
+            "allows one concurrent run per job, so a value greater than 1 lets Dagster run "
+            "multiple dbt Cloud invocations concurrently."
+        ),
+    )
+    adhoc_job_pool_mode: DbtCloudAdhocJobPoolMode = Field(
+        default="overflow",
+        description=(
+            "What to do when every ad hoc job in the pool already has an active run at the time "
+            "a new invocation is requested. `overflow` triggers the run on the first job and lets "
+            "dbt Cloud queue it. `wait` polls until a job frees up. `fail` raises immediately."
         ),
     )
     request_max_retries: int = Field(
@@ -102,11 +157,6 @@ class DbtCloudWorkspace(ConfigurableResource):
     )
 
     @property
-    @cached_method
-    def _log(self) -> logging.Logger:
-        return get_dagster_logger()
-
-    @property
     def unique_id(self) -> str:
         """Unique ID for this dbt Cloud workspace, which is composed of the project ID and environment ID.
 
@@ -114,59 +164,6 @@ class DbtCloudWorkspace(ConfigurableResource):
             str: the unique ID for this dbt Cloud workspace.
         """
         return f"{self.project_id}-{self.environment_id}"
-
-    @cached_property
-    def account_name(self) -> Optional[str]:
-        """The name of the account for this dbt Cloud workspace.
-
-        Returns:
-            Optional[str]: the name of the account for this dbt Cloud workspace.
-        """
-        account = DbtCloudAccount.from_account_details(
-            account_details=self.get_client().get_account_details()
-        )
-        if not account.name:
-            self._log.warning(
-                f"Account name was not returned by the dbt Cloud API for account ID `{account.id}`. "
-                f"Make sure to set a name for this account in dbt Cloud."
-            )
-        return account.name
-
-    @cached_property
-    def project_name(self) -> Optional[str]:
-        """The name of the project for this dbt Cloud workspace.
-
-        Returns:
-            str: the name of the project for this dbt Cloud workspace.
-        """
-        project = DbtCloudProject.from_project_details(
-            project_details=self.get_client().get_project_details(project_id=self.project_id)
-        )
-        if not project.name:
-            self._log.warning(
-                f"Project name was not returned by the dbt Cloud API for project ID `{project.id}`. "
-                f"Make sure to set a name for this project in dbt Cloud."
-            )
-        return project.name
-
-    @cached_property
-    def environment_name(self) -> Optional[str]:
-        """The name of the environment for this dbt Cloud workspace.
-
-        Returns:
-            str: the name of the environment for this dbt Cloud workspace.
-        """
-        environment = DbtCloudEnvironment.from_environment_details(
-            environment_details=self.get_client().get_environment_details(
-                environment_id=self.environment_id
-            )
-        )
-        if not environment.name:
-            self._log.warning(
-                f"Environment name was not returned by the dbt Cloud API for environment ID `{environment.id}`. "
-                f"Make sure to set a name for this environment in dbt Cloud."
-            )
-        return environment.name
 
     @cached_method
     def get_client(self) -> DbtCloudWorkspaceClient:
@@ -184,60 +181,117 @@ class DbtCloudWorkspace(ConfigurableResource):
             request_timeout=self.request_timeout,
         )
 
-    def _get_or_create_dagster_adhoc_job(self) -> DbtCloudJob:
-        """Get or create an ad hoc dbt Cloud job for the given project and environment in this dbt Cloud Workspace.
+    def _get_adhoc_job_name_for_index(self, index: int) -> str:
+        if self.adhoc_job_name is not None:
+            return self.adhoc_job_name if index == 0 else f"{self.adhoc_job_name}__{index}"
+        return get_dagster_adhoc_job_name(
+            project_id=self.project_id,
+            environment_id=self.environment_id,
+            index=index,
+        )
+
+    def _get_or_create_dagster_adhoc_jobs(self) -> Sequence[DbtCloudJob]:
+        """Get or create the pool of ad hoc dbt Cloud jobs for this workspace.
+
+        The job at index 0 keeps the unsuffixed name so existing single-job deployments
+        continue to use the same dbt Cloud job after an upgrade.
 
         Returns:
-            DbtCloudJob: Internal representation of the dbt Cloud job.
+            Sequence[DbtCloudJob]: One DbtCloudJob per pool index, in order.
         """
         client = self.get_client()
-        expected_job_name = self.adhoc_job_name or get_dagster_adhoc_job_name(
-            project_id=self.project_id,
-            project_name=self.project_name,
-            environment_id=self.environment_id,
-            environment_name=self.environment_name,
-        )
-        jobs = [
-            DbtCloudJob.from_job_details(job_details)
+        expected_job_names = [
+            self._get_adhoc_job_name_for_index(index=i) for i in range(self.adhoc_job_pool_size)
+        ]
+        existing_jobs_by_name = {
+            job_details.get("name"): DbtCloudJob.from_job_details(job_details)
             for job_details in client.list_jobs(
                 project_id=self.project_id,
                 environment_id=self.environment_id,
             )
-        ]
+        }
 
-        if expected_job_name in {job.name for job in jobs}:
-            return next(job for job in jobs if job.name == expected_job_name)
-        return DbtCloudJob.from_job_details(
-            client.create_job(
-                project_id=self.project_id,
-                environment_id=self.environment_id,
-                job_name=expected_job_name,
-                description=(
-                    "This job is used by Dagster to parse your dbt Cloud workspace "
-                    "and to kick off runs of dbt Cloud models."
-                ),
+        adhoc_jobs: list[DbtCloudJob] = []
+        for expected_job_name in expected_job_names:
+            if expected_job_name in existing_jobs_by_name:
+                adhoc_jobs.append(existing_jobs_by_name[expected_job_name])
+                continue
+            adhoc_jobs.append(
+                DbtCloudJob.from_job_details(
+                    client.create_job(
+                        project_id=self.project_id,
+                        environment_id=self.environment_id,
+                        job_name=expected_job_name,
+                        description=(
+                            "This job is used by Dagster to parse your dbt Cloud workspace "
+                            "and to kick off runs of dbt Cloud models."
+                        ),
+                    )
+                )
             )
-        )
+        return adhoc_jobs
 
     @cached_method
     def fetch_workspace_data(self) -> DbtCloudWorkspaceData:
-        adhoc_job = self._get_or_create_dagster_adhoc_job()
+        adhoc_jobs = self._get_or_create_dagster_adhoc_jobs()
+        # Parse runs once at code-server load time on the first job of the pool;
+        # there is no need to round-robin since parse is sequential and rare.
+        parse_job = adhoc_jobs[0]
         run_handler = DbtCloudJobRunHandler.run(
-            job_id=adhoc_job.id,
+            job_id=parse_job.id,
             args=["parse"],
             client=self.get_client(),
         )
-        run_handler.wait_for_success()
+        run = run_handler.wait()
+        run.raise_for_status()
         return DbtCloudWorkspaceData(
             project_id=self.project_id,
             environment_id=self.environment_id,
-            adhoc_job_id=adhoc_job.id,
+            adhoc_job_ids=[job.id for job in adhoc_jobs],
             manifest=run_handler.get_manifest(),
             jobs=self.get_client().list_jobs(
                 project_id=self.project_id,
                 environment_id=self.environment_id,
             ),
         )
+
+    def _pick_available_adhoc_job_id(self, adhoc_job_ids: Sequence[int]) -> int:
+        """Greedy selection: return the first ad hoc job in the pool with no active
+        run. When all jobs are busy, fall back to the configured ``adhoc_job_pool_mode``.
+
+        For a pool of size 1, this short-circuits and never queries dbt Cloud.
+        """
+        if len(adhoc_job_ids) == 1:
+            return adhoc_job_ids[0]
+
+        deadline = time.time() + DAGSTER_DBT_CLOUD_ADHOC_JOB_WAIT_TIMEOUT_SECONDS
+        while True:
+            active_adhoc_job_ids = self.get_client().get_active_job_ids(
+                project_id=self.project_id,
+                environment_id=self.environment_id,
+                job_ids=adhoc_job_ids,
+            )
+            for job_id in adhoc_job_ids:
+                if job_id not in active_adhoc_job_ids:
+                    return job_id
+
+            if self.adhoc_job_pool_mode == "fail":
+                raise Failure(
+                    f"All {len(adhoc_job_ids)} ad hoc dbt Cloud jobs in the pool have an "
+                    f"active run. Increase `adhoc_job_pool_size` or set "
+                    f"`adhoc_job_pool_mode` to `overflow` or `wait`."
+                )
+            if self.adhoc_job_pool_mode == "overflow":
+                # Spread the overflow across the pool rather than always piling on
+                # the first job.
+                return random.choice(adhoc_job_ids)
+            # wait
+            if time.time() >= deadline:
+                raise Failure(
+                    f"Timed out after {DAGSTER_DBT_CLOUD_ADHOC_JOB_WAIT_TIMEOUT_SECONDS}s "
+                    f"waiting for an ad hoc dbt Cloud job in the pool to free up."
+                )
+            time.sleep(DAGSTER_DBT_CLOUD_ADHOC_JOB_WAIT_POLL_INTERVAL_SECONDS)
 
     def get_or_fetch_workspace_data(self) -> DbtCloudWorkspaceData:
         return DbtCloudWorkspaceDefsLoader(
@@ -255,8 +309,8 @@ class DbtCloudWorkspace(ConfigurableResource):
         select: str,
         exclude: str,
         selector: str,
-        dagster_dbt_translator: Optional[DagsterDbtTranslator] = None,
-    ) -> Sequence[Union[AssetSpec, AssetCheckSpec]]:
+        dagster_dbt_translator: DagsterDbtTranslator | None = None,
+    ) -> Sequence[AssetSpec | AssetCheckSpec]:
         dagster_dbt_translator = dagster_dbt_translator or DagsterDbtTranslator()
 
         with self.process_config_and_initialize_cm() as initialized_workspace:
@@ -286,7 +340,7 @@ class DbtCloudWorkspace(ConfigurableResource):
         select: str,
         exclude: str,
         selector: str,
-        dagster_dbt_translator: Optional[DagsterDbtTranslator] = None,
+        dagster_dbt_translator: DagsterDbtTranslator | None = None,
     ) -> Sequence[AssetSpec]:
         return [
             spec
@@ -304,7 +358,7 @@ class DbtCloudWorkspace(ConfigurableResource):
         select: str,
         exclude: str,
         selector: str,
-        dagster_dbt_translator: Optional[DagsterDbtTranslator] = None,
+        dagster_dbt_translator: DagsterDbtTranslator | None = None,
     ) -> Sequence[AssetCheckSpec]:
         return [
             spec
@@ -317,19 +371,27 @@ class DbtCloudWorkspace(ConfigurableResource):
             if isinstance(spec, AssetCheckSpec)
         ]
 
+    @public
     def cli(
         self,
         args: Sequence[str],
-        dagster_dbt_translator: Optional[DagsterDbtTranslator] = None,
-        context: Optional[AssetExecutionContext] = None,
+        dagster_dbt_translator: DagsterDbtTranslator | None = None,
+        context: AssetExecutionContext | None = None,
     ) -> DbtCloudCliInvocation:
-        """Creates a dbt cli invocation with the dbt Cloud client."""
+        """Creates a dbt CLI invocation with the dbt Cloud client.
+
+        Args:
+            args: (Sequence[str]): The dbt CLI command to execute.
+            dagster_dbt_translator (Optional[DagsterDbtTranslator]): Allows customizing how to map
+                dbt models, seeds, etc. to asset keys and asset metadata.
+            context (Optional[AssetExecutionContext]): The execution context.
+        """
         dagster_dbt_translator = validate_opt_translator(dagster_dbt_translator)
         dagster_dbt_translator = dagster_dbt_translator or DagsterDbtTranslator()
 
         client = self.get_client()
         workspace_data = self.get_or_fetch_workspace_data()
-        job_id = workspace_data.adhoc_job_id
+        job_id = self._pick_available_adhoc_job_id(workspace_data.adhoc_job_ids)
         manifest = workspace_data.manifest
 
         updated_params = get_updated_cli_invocation_params_for_context(
@@ -361,10 +423,9 @@ class DbtCloudWorkspace(ConfigurableResource):
         )
 
 
-@beta
 def load_dbt_cloud_asset_specs(
     workspace: DbtCloudWorkspace,
-    dagster_dbt_translator: Optional[DagsterDbtTranslator] = None,
+    dagster_dbt_translator: DagsterDbtTranslator | None = None,
     select: str = DBT_DEFAULT_SELECT,
     exclude: str = DBT_DEFAULT_EXCLUDE,
     selector: str = DBT_DEFAULT_SELECTOR,
@@ -377,10 +438,9 @@ def load_dbt_cloud_asset_specs(
     )
 
 
-@beta
 def load_dbt_cloud_check_specs(
     workspace: DbtCloudWorkspace,
-    dagster_dbt_translator: Optional[DagsterDbtTranslator] = None,
+    dagster_dbt_translator: DagsterDbtTranslator | None = None,
     select: str = DBT_DEFAULT_SELECT,
     exclude: str = DBT_DEFAULT_EXCLUDE,
     selector: str = DBT_DEFAULT_SELECTOR,
@@ -393,7 +453,6 @@ def load_dbt_cloud_check_specs(
     )
 
 
-@beta
 @record
 class DbtCloudWorkspaceDefsLoader(StateBackedDefinitionsLoader[DbtCloudWorkspaceData]):
     workspace: DbtCloudWorkspace
@@ -421,7 +480,13 @@ class DbtCloudWorkspaceDefsLoader(StateBackedDefinitionsLoader[DbtCloudWorkspace
         )
 
         all_asset_specs = [
-            spec.replace_attributes(kinds={"dbtcloud"} | spec.kinds - {"dbt"})
+            spec.replace_attributes(kinds={"dbtcloud"} | spec.kinds - {"dbt"}).merge_attributes(
+                metadata={
+                    DAGSTER_DBT_CLOUD_ACCOUNT_ID_METADATA_KEY: self.workspace.credentials.account_id,
+                    DAGSTER_DBT_CLOUD_PROJECT_ID_METADATA_KEY: state.project_id,
+                    DAGSTER_DBT_CLOUD_ENVIRONMENT_ID_METADATA_KEY: state.environment_id,
+                }
+            )
             for spec in all_asset_specs
         ]
 

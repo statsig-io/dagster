@@ -8,7 +8,6 @@
 
 import glob
 import os
-from typing import Union
 
 import pandas as pd
 from dagster import (
@@ -27,7 +26,7 @@ class LocalFileSystemIOManager(ConfigurableIOManager):
     def _get_fs_path(self, asset_key: AssetKey) -> str:
         return os.path.abspath(os.path.join(*asset_key.path))
 
-    def handle_output(self, context, obj: Union[PandasDF, SparkDF]):
+    def handle_output(self, context, obj: PandasDF | SparkDF):
         """This saves the DataFrame as a CSV using the layout written and expected by Spark/Hadoop.
 
         E.g. if the given storage maps the asset's path to the filesystem path "/a/b/c", a directory
@@ -50,7 +49,7 @@ class LocalFileSystemIOManager(ConfigurableIOManager):
         else:
             raise ValueError("Unexpected input type")
 
-    def load_input(self, context) -> Union[PandasDF, SparkDF]:
+    def load_input(self, context) -> PandasDF | SparkDF:
         """This reads a DataFrame from a CSV using the layout written and expected by Spark/Hadoop.
 
         E.g. if the given storage maps the asset's path to the filesystem path "/a/b/c", and that
@@ -70,7 +69,7 @@ class LocalFileSystemIOManager(ConfigurableIOManager):
             return pd.concat(map(pd.read_csv, paths))
         elif context.dagster_type.typing_type == SparkDF:
             return (
-                SparkSession.builder.getOrCreate()  # type: ignore
+                SparkSession.builder.getOrCreate()
                 .read.format("csv")
                 .options(header="true")
                 .load(self._get_fs_path(context.asset_key))

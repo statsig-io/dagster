@@ -3,7 +3,15 @@ import os
 import random
 import socket
 from collections.abc import Iterator, Mapping
-from typing import TypeVar
+from pathlib import Path
+from types import GenericAlias
+from typing import TypeGuard, TypeVar
+
+try:
+    import tomllib  # ty: ignore[unresolved-import]
+except ImportError:
+    # Python < 3.11 fallback
+    import tomli as tomllib
 
 T = TypeVar("T")
 
@@ -79,3 +87,43 @@ def environ(env: Mapping[str, str]) -> Iterator[None]:
 
 def get_boolean_string_value(tag_value: str):
     return tag_value.lower() not in {"false", "none", "0", ""}
+
+
+def safe_is_subclass(obj, cls: type[T]) -> TypeGuard[type[T]]:
+    return (
+        isinstance(obj, type)
+        and not isinstance(obj, GenericAlias)  # prevent exceptions on 3.9
+        and issubclass(obj, cls)
+    )
+
+
+def _read_pyproject_toml(directory: Path | str) -> dict | None:
+    """Read and parse pyproject.toml from a directory. Returns None if not found."""
+    if isinstance(directory, str):
+        directory = Path(directory)
+    pyproject_path = directory / "pyproject.toml"
+    if not pyproject_path.exists():
+        return None
+    with open(pyproject_path, "rb") as f:
+        return tomllib.load(f)
+
+
+def find_uv_workspace_root(start_path: Path | str) -> tuple[Path, dict] | None:
+    """Walk up directories to find a uv workspace root.
+
+    Returns (workspace_root_path, workspace_config) or None if not found.
+    A uv workspace is identified by [tool.uv.workspace] in pyproject.toml.
+    """
+    if isinstance(start_path, str):
+        start_path = Path(start_path)
+    current = start_path.resolve()
+    while True:
+        data = _read_pyproject_toml(current)
+        if data:
+            workspace_config = data.get("tool", {}).get("uv", {}).get("workspace", {})
+            if workspace_config:
+                return current, workspace_config
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent

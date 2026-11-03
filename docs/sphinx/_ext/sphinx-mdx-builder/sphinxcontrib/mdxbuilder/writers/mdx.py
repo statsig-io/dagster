@@ -6,7 +6,7 @@ import textwrap
 from collections.abc import Sequence
 from datetime import datetime
 from itertools import groupby
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from docutils import nodes, writers
 from docutils.nodes import Element
@@ -244,13 +244,38 @@ class MdxTranslator(SphinxTranslator):
 
         return current_obj
 
+    def _find_dagster_repo_root(self, source_file: str) -> str | None:
+        """Find the Dagster repository root by looking for python_modules directory.
+
+        Args:
+            source_file: Path to the source file
+
+        Returns:
+            Path to the repository root or None if not found
+        """
+        current_dir = os.path.dirname(os.path.abspath(source_file))
+
+        while current_dir and current_dir != os.path.dirname(current_dir):
+            # Check if this directory contains python_modules
+            python_modules_path = os.path.join(current_dir, "python_modules")
+            if os.path.isdir(python_modules_path):
+                # Additional validation: check for dagster package within python_modules
+                dagster_path = os.path.join(python_modules_path, "dagster")
+                if os.path.isdir(dagster_path):
+                    return current_dir
+
+            # Move up one directory
+            current_dir = os.path.dirname(current_dir)
+
+        return None
+
     ############################################################
     # Utility and State Methods
     ############################################################
     def add_text(self, text: str) -> None:
         self.states[-1].append((-1, text))
 
-    def get_source_github_url(self, objname: str, modname: str, fullname: str) -> Optional[str]:
+    def get_source_github_url(self, objname: str, modname: str, fullname: str) -> str | None:
         """Generate a GitHub URL for a Python object.
 
         Args:
@@ -278,12 +303,16 @@ class MdxTranslator(SphinxTranslator):
                 logger.warning(f"No object for {fullname}")
                 return None
 
-            # unwrap the root function if function is wrapped
-            while hasattr(obj, "__wrapped__"):
-                obj = obj.__wrapped__
+            # Don't unwrap enum classes as they should point to their definition
+            from enum import Enum
 
-            # Handle various patterns of function-wrapping objects
-            obj = self._unwrap_function_object(obj)
+            if not (isinstance(obj, type) and issubclass(obj, Enum)):
+                # unwrap the root function if function is wrapped
+                while hasattr(obj, "__wrapped__"):
+                    obj = obj.__wrapped__
+
+                # Handle various patterns of function-wrapping objects
+                obj = self._unwrap_function_object(obj)
 
             try:
                 source_file = inspect.getsourcefile(obj)
@@ -291,8 +320,15 @@ class MdxTranslator(SphinxTranslator):
                     logger.warning(f"No source file for {fullname}")
                     return None
 
-                # get relative path, and trim `..`
-                repo_path = os.path.relpath(source_file).replace("../", "")
+                # Find the repository root by looking for python_modules directory
+                repo_root = self._find_dagster_repo_root(source_file)
+                if repo_root:
+                    # Calculate relative path from repository root
+                    repo_path = os.path.relpath(source_file, repo_root)
+                else:
+                    # Fallback to original behavior if repo root not found
+                    repo_path = os.path.relpath(source_file).replace("../", "")
+
                 source_line = inspect.getsourcelines(obj)[1]
 
                 return f"{self.github_url}/{repo_path}#L{source_line}"
@@ -487,9 +523,9 @@ class MdxTranslator(SphinxTranslator):
         meta_description = self.builder.config.mdx_description_meta
         # Display index files at the top of their sections
         if "index.rst" in node.attributes["source"]:
-            sidebar_position = True
+            sidebar_position = "sidebar_position: 1\n"
         else:
-            sidebar_position = self.builder.config.mdx_sidebar_position
+            sidebar_position = "sidebar_position: 1000\n"
 
         # Escape single quotes in strings
         title = title.replace("'", "\\'")
@@ -505,8 +541,9 @@ class MdxTranslator(SphinxTranslator):
         if title_suffix:
             frontmatter += f" {title_suffix}"
         frontmatter += "'\n"
-        if sidebar_position:
-            frontmatter += "sidebar_position: 1\n"
+        frontmatter += sidebar_position
+        # if sidebar_position:
+        #     frontmatter += "sidebar_position: 1\n"
 
         if title_meta:
             frontmatter += f"title_meta: '{title}{title_meta}'\n"
@@ -553,6 +590,8 @@ class MdxTranslator(SphinxTranslator):
     depart_sidebar = depart_topic
 
     def visit_rubric(self, node: Element) -> None:
+        # Add blank line before rubrics to separate sections (e.g., between Returns and Examples)
+        self.add_text(self.nl)
         self.new_state(0)
 
     def depart_rubric(self, node: Element) -> None:
@@ -1190,8 +1229,8 @@ class MdxTranslator(SphinxTranslator):
         level = self._flag_to_level(flag_type)
 
         self.new_state()
-        self.add_text(f":::{level}[{flag_type}]\n")
-        self.add_text(f"{message}\n")
+        self.add_text(f":::{level} {flag_type}\n\n")
+        self.add_text(f"{message}")
 
     def depart_flag(self, node: Element) -> None:
         self.add_text("\n:::\n")

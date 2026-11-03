@@ -43,6 +43,9 @@ project = "Dagster"
 copyright = "2019, Dagster Labs, Inc"  # noqa: A001
 author = "Dagster Labs"
 
+# Base URL for the documentation site - used for generating correct inventory URIs
+html_baseurl = "https://docs.dagster.io/"
+
 # -- General configuration ---------------------------------------------------
 
 # NOTE: `sphinx.ext.*` extensions are built-in to sphinx-- all others are supplied by other
@@ -103,6 +106,7 @@ autodoc_member_order = "groupwise"
 autodoc_mock_imports = [
     "airflow",
     "azure",
+    "clickhouse_driver",
     "coloredlogs",
     "dask",
     "databricks",
@@ -128,7 +132,6 @@ autodoc_mock_imports = [
     "orjson",
     "pandas_gbq",
     "pandera",
-    "polars",
     "prometheus_client",
     "psycopg2",
     "pypd",

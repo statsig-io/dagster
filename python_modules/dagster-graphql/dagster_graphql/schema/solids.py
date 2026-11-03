@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING, Optional, Union
 import dagster._check as check
 import graphene
 from dagster._core.definitions import NodeHandle
-from dagster._core.remote_representation import RepresentedJob
 from dagster._core.remote_representation.external import RemoteJob
 from dagster._core.remote_representation.historical import HistoricalJob
+from dagster._core.remote_representation.represented import RepresentedJob
 from dagster._core.snap import DependencyStructureIndex, GraphDefSnap, OpDefSnap
 from dagster._core.snap.node import InputMappingSnap, OutputMappingSnap
 from dagster._core.storage.dagster_run import RunsFilter
@@ -478,12 +478,10 @@ class GrapheneSolidDefinition(graphene.ObjectType, ISolidDefinitionMixin):
         if not isinstance(_solid_def_snap, OpDefSnap):
             check.failed("Expected OpDefSnap")
         self._solid_def_snap = _solid_def_snap
-        super().__init__(name=solid_def_name, description=self._solid_def_snap.description)
+        super().__init__(name=solid_def_name, description=self._solid_def_snap.description)  # ty: ignore[missing-argument]
         ISolidDefinitionMixin.__init__(self, represented_pipeline, solid_def_name)
 
-    def resolve_config_field(
-        self, _graphene_info: ResolveInfo
-    ) -> Optional[GrapheneConfigTypeField]:
+    def resolve_config_field(self, _graphene_info: ResolveInfo) -> GrapheneConfigTypeField | None:
         return (
             GrapheneConfigTypeField(
                 get_config_type=self._represented_pipeline.config_schema_snapshot.get_config_snap,
@@ -500,7 +498,7 @@ class GrapheneSolidDefinition(graphene.ObjectType, ISolidDefinitionMixin):
             GrapheneResourceRequirement(key) for key in self._solid_def_snap.required_resource_keys
         ]
 
-    def resolve_pool(self, _graphene_info: ResolveInfo) -> Optional[str]:
+    def resolve_pool(self, _graphene_info: ResolveInfo) -> str | None:
         return self._solid_def_snap.pool
 
 
@@ -624,7 +622,7 @@ class GrapheneSolidHandle(graphene.ObjectType):
         )
         self._solid = solid
 
-    def resolve_stepStats(self, _graphene_info: ResolveInfo, limit: Optional[int]):
+    def resolve_stepStats(self, _graphene_info: ResolveInfo, limit: int | None):
         if self._solid.get_is_dynamic_mapped():
             return GrapheneSolidStepStatsUnavailableError(
                 message="Step stats are not available for dynamically-mapped ops"
@@ -690,7 +688,7 @@ class GrapheneCompositeSolidDefinition(graphene.ObjectType, ISolidDefinitionMixi
         )
         self._solid_def_snap = represented_pipeline.get_node_def_snap(solid_def_name)
         self._comp_solid_dep_index = represented_pipeline.get_dep_structure_index(solid_def_name)
-        super().__init__(name=solid_def_name, description=self._solid_def_snap.description)
+        super().__init__(name=solid_def_name, description=self._solid_def_snap.description)  # ty: ignore[missing-argument]
         ISolidDefinitionMixin.__init__(self, represented_pipeline, solid_def_name)
 
     def resolve_id(self, _graphene_info: ResolveInfo) -> str:
@@ -729,11 +727,11 @@ class GrapheneCompositeSolidDefinition(graphene.ObjectType, ISolidDefinitionMixi
 
     def resolve_solid_handle(
         self, _graphene_info: ResolveInfo, handleID: str
-    ) -> Optional[GrapheneSolidHandle]:
+    ) -> GrapheneSolidHandle | None:
         return build_solid_handles(self._represented_pipeline).get(handleID)
 
     def resolve_solid_handles(
-        self, _graphene_info: ResolveInfo, parentHandleID: Optional[str] = None
+        self, _graphene_info: ResolveInfo, parentHandleID: str | None = None
     ) -> Sequence[GrapheneSolidHandle]:
         handles = build_solid_handles(self._represented_pipeline)
 
@@ -756,7 +754,7 @@ class GrapheneCompositeSolidDefinition(graphene.ObjectType, ISolidDefinitionMixi
 
 def build_solid_definition(
     represented_pipeline: RepresentedJob, solid_def_name: str
-) -> Union[GrapheneSolidDefinition, GrapheneCompositeSolidDefinition]:
+) -> GrapheneSolidDefinition | GrapheneCompositeSolidDefinition:
     check.inst_param(represented_pipeline, "represented_pipeline", RepresentedJob)
     check.str_param(solid_def_name, "solid_def_name")
 

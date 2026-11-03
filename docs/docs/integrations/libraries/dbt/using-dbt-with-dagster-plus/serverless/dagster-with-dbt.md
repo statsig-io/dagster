@@ -10,11 +10,11 @@ Importing an existing dbt project in Dagster+ allows you to automatically load y
 
 To follow the steps in this guide, you'll need **Dagster+ Organization Admin**, **Admin**, or **Editor** permissions in order to create a code location.
 
-Additionally, Dagster+ requires several files to be present in your project. To learn more about the structure and files required in a dbt and Dagster project, see "[Creating a dbt project in a Dagster project](/integrations/libraries/dbt/creating-a-dbt-project-in-dagster)".
+Additionally, Dagster+ requires several files to be present in your project. To learn more about the structure and files required in a dbt and Dagster project, see [Creating a dbt project in a Dagster project](/integrations/libraries/dbt/using-dbt-with-dagster-plus).
 
 ## Step 1: Import your project in Dagster+
 
-In this section, we'll demonstrate how to import an existing project to Dagster+. Our example imports the project from a GitHub repository, but Dagster+ also supports Gitlab.
+In this section, we'll demonstrate how to import an existing project to Dagster+. Our example imports the project from a GitHub repository, but Dagster+ also supports GitLab.
 
 1. Sign in to your Dagster+ account.
 
@@ -24,20 +24,17 @@ In this section, we'll demonstrate how to import an existing project to Dagster+
 
 4. Click **Import a Dagster project**.
 
-5. At this point, you'll be prompted to select either GitHub or Gitlab. For this guide, we'll select **GitHub**.
+5. At this point, you'll be prompted to select either GitHub or GitLab. For this guide, we'll select **GitHub**.
 
-6. If prompted, sign into your GitHub account and complete the authorization process for the Dagster+ application. **Note**: The profile or organization you're using to authorize Dagster+ must have read and write access to the repository containing the project. After the authorization is complete, you'll be redirected back to Dagster+.
+6. If prompted, sign into your GitHub account and complete the authorization process for the Dagster+ application. **Note that the profile or organization you're using to authorize Dagster+ must have read and write access to the repository containing the project.** After the authorization is complete, you'll be redirected back to Dagster+.
 
-7. In Dagster+, locate and select the repository containing the project by using the dropdowns. **Note**: dbt projects must have `dbt_profiles.yml` and `profiles.yml` files in the repository root or an error will display.
+7. In Dagster+, locate and select the repository containing the project by using the dropdowns. **Note that dbt projects must have `dbt_profiles.yml` and `profiles.yml` files in the repository root or an error will display.**
 
 8. Click **Continue** to begin the import process. Dagster+ will directly commit the files to the repository.
 
 ## Step 2: Review the repository changes
 
-The file structure of the repository will change the first time a project is deployed using Dagster+. For dbt projects, a few things will happen:
-
-- **A [`dagster_cloud.yaml` file](/deployment/code-locations/dagster-cloud-yaml) will be created.** This file defines the project as a Dagster+ code location.
-- **A few `.yml` files, used for CI/CD, will be created in `.github/workflows`.** [These files](/deployment/dagster-plus/ci-cd/ci-cd-file-reference), named `branch_deployments.yml` and `deploy.yml`, manage the deployments of the repository.
+The file structure of the repository will change the first time a project is deployed using Dagster+. For dbt projects, a `.yml` workflow file, used for [CI/CD](/deployment/dagster-plus/deploying-code/configuring-ci-cd), will be created in `.github/workflows`. This file, named `dagster-plus-deploy.yml`, manages the deployments of the repository.
 
 ### How the repository will change after the project is deployed for the first time
 
@@ -50,8 +47,7 @@ After the Dagster+ changes, a dbt and Dagster project will include the files req
 my_dbt_and_dagster_project
 ├── .github                                                ## CI/CD files
 │   ├── workflows
-│   │   ├── branch_deployments.yml
-│   │   ├── deploy.yml
+│   │   ├── dagster-plus-deploy.yml
 ├── dbt
 │   ├── models
 │   │   ├── my_model.sql
@@ -68,20 +64,19 @@ my_dbt_and_dagster_project
 ├── .gitignore
 ├── LICENSE
 ├── README.md
-├── dagster_cloud.yaml                                     ## Dagster+ code location file
 ├── pyproject.toml
 └── setup.py
 ```
 
-## Step 3: Update the CI/CD files
+## Step 3: Update the CI/CD file
 
-The last step is to update the [CI/CD files](/deployment/dagster-plus/ci-cd/ci-cd-file-reference) in the repository. When you import a dbt project into Dagster+ using the **Import a Dagster project** option, you'll need to add a few steps to allow the dbt project to deploy successfully.
+The last step is to update the [CI/CD file](/deployment/dagster-plus/deploying-code/configuring-ci-cd) in the repository. When you import a dbt project into Dagster+ using the **Import a Dagster project** option, you'll need to add a few steps to allow the dbt project to deploy successfully.
 
-### Update `deploy.yml` and `branch_deployments.yml`
+### Update `dagster-plus-deploy.yml`
 
 1. In your Dagster project, locate the `.github/workflows` directory.
 
-2. Open the `deploy.yml` file.
+2. Open the `dagster-plus-deploy.yml` file.
 
 3. Locate the `Initialize build session` step.
 
@@ -105,9 +100,7 @@ The last step is to update the [CI/CD files](/deployment/dagster-plus/ci-cd/ci-c
 
 5. Save the changes.
 
-6. Open the `branch_deployments.yml` file and repeat steps 3 - 5.
-
-7. Commit the changes to the repository.
+6. Commit the changes to the repository.
 
 Once the new step is pushed to the remote, GitHub will automatically try to run a new job using the updated workflow.
 
@@ -119,13 +112,13 @@ To ensure your project parses correctly with `dbt parse`, you need to include cr
 2. Open the `profiles.yml` file and add the following:
    ```yaml
    my_profile:
-    target: dev
-    outputs:
-      dev:
-        type: snowflake
-        account: "{{ env_var('SNOWFLAKE_ACCOUNT', 'dummy-account') }}"
-        user: "{{ env_var('SNOWFLAKE_USER', 'dummy-user') }}"
-        password: "{{ env_var('SNOWFLAKE_PASSWORD', 'dummy-password') }}"
+     target: dev
+     outputs:
+       dev:
+         type: snowflake
+         account: "{{ env_var('SNOWFLAKE_ACCOUNT', 'dummy-account') }}"
+         user: "{{ env_var('SNOWFLAKE_USER', 'dummy-user') }}"
+         password: "{{ env_var('SNOWFLAKE_PASSWORD', 'dummy-password') }}"
    ```
 3. Save the changes.
 4. Commit the changes to the repository.

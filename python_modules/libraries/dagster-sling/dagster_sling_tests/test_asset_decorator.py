@@ -5,19 +5,18 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from dagster import (
     AssetExecutionContext,
     AssetKey,
     AssetSpec,
     Config,
     JsonMetadataValue,
-    LegacyFreshnessPolicy,
     file_relative_path,
 )
 from dagster._core.definitions.materialize import materialize
 from dagster._core.definitions.metadata.metadata_value import TextMetadataValue
 from dagster._core.definitions.tags import build_kind_tag
+from dagster_shared.yaml_utils import safe_load_yaml
 from dagster_sling import SlingReplicationParam, sling_assets
 from dagster_sling.dagster_sling_translator import DagsterSlingTranslator
 from dagster_sling.resources import SlingConnectionResource, SlingResource
@@ -112,7 +111,7 @@ def test_base_with_meta_config_translator():
     replication_config_path = file_relative_path(
         __file__, "replication_configs/base_with_meta_config/replication.yaml"
     )
-    replication_config = yaml.safe_load(Path(replication_config_path).read_bytes())
+    replication_config = safe_load_yaml(Path(replication_config_path).read_bytes())
 
     @sling_assets(replication_config=replication_config_path)
     def my_sling_assets(): ...
@@ -209,12 +208,6 @@ def test_base_with_meta_config_translator():
         AssetKey(["target", "departments"]): "group_2",
     }
 
-    assert my_sling_assets.legacy_freshness_policies_by_key == {
-        AssetKey(["target", "departments"]): LegacyFreshnessPolicy(
-            maximum_lag_minutes=0.0, cron_schedule="5 4 * * *", cron_schedule_timezone="UTC"
-        )
-    }
-
     assert (
         AssetKey(["target", "public", "transactions"])
         in my_sling_assets.auto_materialize_policies_by_key
@@ -276,9 +269,6 @@ def test_base_with_custom_tags_translator_legacy() -> None:
         def get_group_name(self, stream_definition):
             return super().get_group_name(stream_definition)
 
-        def get_freshness_policy(self, stream_definition):
-            return super().get_freshness_policy(stream_definition)
-
         def get_auto_materialize_policy(self, stream_definition):
             return super().get_auto_materialize_policy(stream_definition)
 
@@ -300,7 +290,7 @@ def test_base_with_default_meta_translator():
     replication_config_path = file_relative_path(
         __file__, "replication_configs/base_with_default_meta/replication.yaml"
     )
-    replication_config = yaml.safe_load(Path(replication_config_path).read_bytes())
+    replication_config = safe_load_yaml(Path(replication_config_path).read_bytes())
 
     @sling_assets(replication_config=replication_config_path)
     def my_sling_assets(): ...
@@ -425,7 +415,7 @@ def test_subset_with_asset_selection(
     asset_materializations = res.get_asset_materialization_events()
     assert len(asset_materializations) == 1
     found_asset_keys = {
-        mat.event_specific_data.materialization.asset_key  # pyright: ignore
+        mat.event_specific_data.materialization.asset_key  # ty: ignore
         for mat in asset_materializations
     }
     assert found_asset_keys == {AssetKey(["target", "main", "orders"])}
@@ -443,7 +433,7 @@ def test_subset_with_asset_selection(
     asset_materializations = res.get_asset_materialization_events()
     assert len(asset_materializations) == 2
     found_asset_keys = {
-        mat.event_specific_data.materialization.asset_key  # pyright: ignore
+        mat.event_specific_data.materialization.asset_key  # ty: ignore
         for mat in asset_materializations
     }
     assert found_asset_keys == {
@@ -486,7 +476,7 @@ def test_subset_with_run_config(
     asset_materializations = res.get_asset_materialization_events()
     assert len(asset_materializations) == 3  # no 'context_streams', no subset performed
     found_asset_keys = {
-        mat.event_specific_data.materialization.asset_key  # pyright: ignore
+        mat.event_specific_data.materialization.asset_key  # ty: ignore
         for mat in asset_materializations
     }
     assert found_asset_keys == {
@@ -517,7 +507,7 @@ def test_subset_with_run_config(
     asset_materializations = res.get_asset_materialization_events()
     assert len(asset_materializations) == 1
     found_asset_keys = {
-        mat.event_specific_data.materialization.asset_key  # pyright: ignore
+        mat.event_specific_data.materialization.asset_key  # ty: ignore
         for mat in asset_materializations
     }
     assert found_asset_keys == {
@@ -555,6 +545,9 @@ def test_table_name(
     assert asset_materializations[0].materialization.metadata[
         "dagster/table_name"
     ] == TextMetadataValue(text="SLING_SQLITE.main.orders")
+    assert asset_materializations[0].materialization.metadata[
+        "dagster/storage_kind"
+    ] == TextMetadataValue(text="SLING_SQLITE")
 
 
 def test_pool(replication_config: SlingReplicationParam):

@@ -4,7 +4,6 @@ import random
 import string
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Optional
 
 import dagster._check as check
 from dagster._core.pipes.client import PipesContextInjector, PipesParams
@@ -25,14 +24,14 @@ class PipesGCSContextInjector(PipesContextInjector):
 
     """
 
-    def __init__(self, *, bucket: str, client: GCSClient, key_prefix: Optional[str] = None):
+    def __init__(self, *, bucket: str, client: GCSClient, key_prefix: str | None = None):
         super().__init__()
         self.bucket = check.str_param(bucket, "bucket")
         self.key_prefix = check.opt_str_param(key_prefix, "key_prefix")
         self.client = client
 
     @contextmanager
-    def inject_context(self, context: PipesContextData) -> Iterator[PipesParams]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def inject_context(self, context: PipesContextData) -> Iterator[PipesParams]:
         key_prefix = (self.key_prefix or "") + "".join(random.choices(string.ascii_letters, k=30))
         key = os.path.join(key_prefix, _CONTEXT_FILENAME)
         self.client.get_bucket(self.bucket).blob(key).upload_from_string(json.dumps(context))

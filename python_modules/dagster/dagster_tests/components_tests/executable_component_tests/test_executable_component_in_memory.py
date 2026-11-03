@@ -1,16 +1,16 @@
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 import dagster as dg
 from dagster._core.definitions.asset_key import CoercibleToAssetKey
 from dagster._core.definitions.asset_selection import AssetSelection
-from dagster.components.core.tree import ComponentTree
+from dagster.components.core.component_tree import ComponentTree
 from dagster.components.lib.executable_component.component import ExecutableComponent
 from dagster.components.lib.executable_component.function_component import (
     FunctionComponent,
     FunctionSpec,
 )
-from dagster.components.testing import copy_code_to_file, scaffold_defs_sandbox
+from dagster.components.testing import copy_code_to_file, create_defs_folder_sandbox
 
 
 def asset_in_component(
@@ -49,8 +49,8 @@ def test_basic_singular_asset_with_callable() -> None:
 
 def assert_singular_component(
     component: FunctionComponent,
-    resources: Optional[Mapping[str, Any]] = None,
-    run_config: Optional[Mapping[str, Any]] = None,
+    resources: Mapping[str, Any] | None = None,
+    run_config: Mapping[str, Any] | None = None,
 ) -> None:
     defs = component.build_defs(ComponentTree.for_test().load_context)
     assets_def = defs.get_assets_def("asset")
@@ -186,17 +186,16 @@ def test_local_import() -> None:
         def execute_fn_to_copy(context):
             return dg.MaterializeResult(metadata={"foo": "bar"})
 
-    with scaffold_defs_sandbox(component_cls=FunctionComponent) as sandbox:
-        execute_path = sandbox.defs_folder_path / "execute.py"
-        copy_code_to_file(code_to_copy, execute_path)
-
-        with sandbox.load(
-            component_body={
-                "type": "dagster.components.lib.executable_component.function_component.FunctionComponent",
+    with create_defs_folder_sandbox() as sandbox:
+        component_path = sandbox.scaffold_component(
+            component_cls=FunctionComponent,
+            defs_path="function_component",
+            defs_yaml_contents={
+                "type": "dagster.FunctionComponent",
                 "attributes": {
                     "execution": {
                         "name": "op_name",
-                        "fn": ".execute.execute_fn_to_copy",
+                        "fn": ".function_component.execute.execute_fn_to_copy",
                     },
                     "assets": [
                         {
@@ -204,11 +203,18 @@ def test_local_import() -> None:
                         }
                     ],
                 },
-            }
-        ) as (component, defs):
+            },
+        )
+        execute_path = component_path / "execute.py"
+        copy_code_to_file(code_to_copy, execute_path)
+
+        with sandbox.load_component_and_build_defs(defs_path=component_path) as (
+            component,
+            defs,
+        ):
             assert isinstance(component, dg.FunctionComponent)
             assert isinstance(component.execution, FunctionSpec)
-            assert component.execution.fn.__name__ == "execute_fn_to_copy"
+            assert component.execution.fn.__name__ == "execute_fn_to_copy"  # ty: ignore[unresolved-attribute]
             assert isinstance(component.execution.fn(None), dg.MaterializeResult)
 
             assets_def = defs.get_assets_def("asset")

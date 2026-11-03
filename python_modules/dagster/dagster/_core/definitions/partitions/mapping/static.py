@@ -2,7 +2,7 @@ import collections.abc
 from collections import defaultdict
 from collections.abc import Collection, Mapping
 from datetime import datetime
-from typing import NamedTuple, Optional, Union, cast
+from typing import TYPE_CHECKING, NamedTuple, Optional
 
 import dagster._check as check
 from dagster._annotations import PublicAttr
@@ -15,9 +15,11 @@ from dagster._core.definitions.partitions.mapping.partition_mapping import (
 )
 from dagster._core.definitions.partitions.subset.partitions_subset import PartitionsSubset
 from dagster._core.errors import DagsterInvalidDefinitionError
-from dagster._core.instance import DynamicPartitionsStore
 from dagster._serdes import whitelist_for_serdes
 from dagster._utils.cached_method import cached_method
+
+if TYPE_CHECKING:
+    from dagster._core.instance import DynamicPartitionsStore
 
 
 @whitelist_for_serdes
@@ -28,7 +30,7 @@ class StaticPartitionMapping(
         [
             (
                 "downstream_partition_keys_by_upstream_partition_key",
-                PublicAttr[Mapping[str, Union[str, Collection[str]]]],
+                PublicAttr[Mapping[str, str | Collection[str]]],
             )
         ],
     ),
@@ -42,9 +44,7 @@ class StaticPartitionMapping(
 
     def __init__(
         self,
-        downstream_partition_keys_by_upstream_partition_key: Mapping[
-            str, Union[str, Collection[str]]
-        ],
+        downstream_partition_keys_by_upstream_partition_key: Mapping[str, str | Collection[str]],
     ):
         check.mapping_param(
             downstream_partition_keys_by_upstream_partition_key,
@@ -71,7 +71,7 @@ class StaticPartitionMapping(
     def validate_partition_mapping(
         self,
         upstream_partitions_def: PartitionsDefinition,
-        downstream_partitions_def: Optional[PartitionsDefinition],
+        downstream_partitions_def: PartitionsDefinition | None,
     ):
         if not isinstance(upstream_partitions_def, StaticPartitionsDefinition):
             raise DagsterInvalidDefinitionError(
@@ -81,12 +81,8 @@ class StaticPartitionMapping(
             raise DagsterInvalidDefinitionError(
                 "Downstream partitions definition must be a StaticPartitionsDefinition",
             )
-        self._check_upstream(
-            upstream_partitions_def=cast("StaticPartitionsDefinition", upstream_partitions_def)
-        )
-        self._check_downstream(
-            downstream_partitions_def=cast("StaticPartitionsDefinition", downstream_partitions_def)
-        )
+        self._check_upstream(upstream_partitions_def=upstream_partitions_def)
+        self._check_downstream(downstream_partitions_def=downstream_partitions_def)
 
     @cached_method
     def _check_upstream(self, *, upstream_partitions_def: StaticPartitionsDefinition):
@@ -121,13 +117,13 @@ class StaticPartitionMapping(
                 f" {extra_keys}"
             )
 
-    def get_downstream_partitions_for_partitions(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_downstream_partitions_for_partitions(  # ty: ignore[invalid-method-override]
         self,
         upstream_partitions_subset: PartitionsSubset,
         upstream_partitions_def: StaticPartitionsDefinition,
         downstream_partitions_def: StaticPartitionsDefinition,
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None,
     ) -> PartitionsSubset:
         with partition_loading_context(current_time, dynamic_partitions_store):
             self._check_downstream(downstream_partitions_def=downstream_partitions_def)
@@ -138,13 +134,13 @@ class StaticPartitionMapping(
                 downstream_keys.update(self._mapping[key])
             return downstream_subset.with_partition_keys(downstream_keys)
 
-    def get_upstream_mapped_partitions_result_for_partitions(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_upstream_mapped_partitions_result_for_partitions(  # ty: ignore[invalid-method-override]
         self,
-        downstream_partitions_subset: Optional[PartitionsSubset],
-        downstream_partitions_def: Optional[PartitionsDefinition],
+        downstream_partitions_subset: PartitionsSubset | None,
+        downstream_partitions_def: PartitionsDefinition | None,
         upstream_partitions_def: StaticPartitionsDefinition,
-        current_time: Optional[datetime] = None,
-        dynamic_partitions_store: Optional[DynamicPartitionsStore] = None,
+        current_time: datetime | None = None,
+        dynamic_partitions_store: Optional["DynamicPartitionsStore"] = None,
     ) -> UpstreamPartitionsResult:
         with partition_loading_context(current_time, dynamic_partitions_store):
             self._check_upstream(upstream_partitions_def=upstream_partitions_def)

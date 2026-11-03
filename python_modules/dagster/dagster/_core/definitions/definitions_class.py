@@ -1,11 +1,11 @@
 import warnings
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Annotated, Any, Callable, NamedTuple, Optional, Union
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Annotated, Any, NamedTuple, Optional, TypeAlias
 
 from dagster_shared.record import ImportFrom
 from dagster_shared.utils.cached_method import get_cached_method_cache
-from typing_extensions import Self, TypeAlias
+from typing_extensions import Self
 
 import dagster._check as check
 from dagster._annotations import deprecated, preview, public
@@ -54,18 +54,19 @@ from dagster._utils.warnings import disable_dagster_warnings
 
 if TYPE_CHECKING:
     from dagster._core.storage.asset_value_loader import AssetValueLoader
-    from dagster.components.core.tree import ComponentTree
+    from dagster.components.core.component_tree import ComponentTree
 
 
-TAssets: TypeAlias = Optional[
-    Iterable[Union[AssetsDefinition, AssetSpec, SourceAsset, CacheableAssetsDefinition]]
-]
-TSchedules: TypeAlias = Optional[
-    Iterable[Union[ScheduleDefinition, UnresolvedPartitionedAssetScheduleDefinition]]
-]
-TSensors: TypeAlias = Optional[Iterable[SensorDefinition]]
-TJobs: TypeAlias = Optional[Iterable[Union[JobDefinition, UnresolvedAssetJobDefinition]]]
-TAssetChecks: TypeAlias = Optional[Iterable[AssetsDefinition]]
+TAssets: TypeAlias = (
+    Iterable[AssetsDefinition | AssetSpec | SourceAsset | CacheableAssetsDefinition] | None
+)
+TSchedules: TypeAlias = (
+    Iterable[ScheduleDefinition | UnresolvedPartitionedAssetScheduleDefinition] | None
+)
+TSensors: TypeAlias = Iterable[SensorDefinition] | None
+TJob: TypeAlias = JobDefinition | UnresolvedAssetJobDefinition
+TJobs: TypeAlias = Iterable[TJob] | None
+TAssetChecks: TypeAlias = Iterable[AssetsDefinition] | None
 
 
 @public
@@ -75,9 +76,9 @@ def create_repository_using_definitions_args(
     schedules: TSchedules = None,
     sensors: TSensors = None,
     jobs: TJobs = None,
-    resources: Optional[Mapping[str, Any]] = None,
-    executor: Optional[Union[ExecutorDefinition, Executor]] = None,
-    loggers: Optional[Mapping[str, LoggerDefinition]] = None,
+    resources: Mapping[str, Any] | None = None,
+    executor: ExecutorDefinition | Executor | None = None,
+    loggers: Mapping[str, LoggerDefinition] | None = None,
     asset_checks: TAssetChecks = None,
 ) -> RepositoryDefinition:
     """Create a named repository using the same arguments as :py:class:`Definitions`. In older
@@ -118,8 +119,8 @@ def create_repository_using_definitions_args(
 
 
 class _AttachedObjects(NamedTuple):
-    jobs: Iterable[Union[JobDefinition, UnresolvedAssetJobDefinition]]
-    schedules: Iterable[Union[ScheduleDefinition, UnresolvedPartitionedAssetScheduleDefinition]]
+    jobs: Iterable[JobDefinition | UnresolvedAssetJobDefinition]
+    schedules: Iterable[ScheduleDefinition | UnresolvedPartitionedAssetScheduleDefinition]
     sensors: Iterable[SensorDefinition]
 
 
@@ -134,11 +135,9 @@ def _io_manager_needs_replacement(job: JobDefinition, resource_defs: Mapping[str
 
 
 def _attach_resources_to_jobs_and_instigator_jobs(
-    jobs: Optional[Iterable[Union[JobDefinition, UnresolvedAssetJobDefinition]]],
-    schedules: Optional[
-        Iterable[Union[ScheduleDefinition, UnresolvedPartitionedAssetScheduleDefinition]]
-    ],
-    sensors: Optional[Iterable[SensorDefinition]],
+    jobs: Iterable[JobDefinition | UnresolvedAssetJobDefinition] | None,
+    schedules: Iterable[ScheduleDefinition | UnresolvedPartitionedAssetScheduleDefinition] | None,
+    sensors: Iterable[SensorDefinition] | None,
     resource_defs: Mapping[str, Any],
 ) -> _AttachedObjects:
     """Given a list of jobs, schedules, and sensors along with top-level resource definitions,
@@ -195,7 +194,7 @@ def _attach_resources_to_jobs_and_instigator_jobs(
             }
         )
         for job in jobs
-        if job in unsatisfied_jobs
+        if isinstance(job, JobDefinition) and job in unsatisfied_jobs
     }
 
     # Update all jobs to use the resource bound version
@@ -245,11 +244,11 @@ def _create_repository_using_definitions_args(
     schedules: TSchedules = None,
     sensors: TSensors = None,
     jobs: TJobs = None,
-    resources: Optional[Mapping[str, Any]] = None,
-    executor: Optional[Union[ExecutorDefinition, Executor]] = None,
-    loggers: Optional[Mapping[str, LoggerDefinition]] = None,
+    resources: Mapping[str, Any] | None = None,
+    executor: ExecutorDefinition | Executor | None = None,
+    loggers: Mapping[str, LoggerDefinition] | None = None,
     asset_checks: TAssetChecks = None,
-    metadata: Optional[RawMetadataMapping] = None,
+    metadata: RawMetadataMapping | None = None,
     component_tree: Optional["ComponentTree"] = None,
 ) -> RepositoryDefinition:
     # First, dedupe all definition types.
@@ -295,8 +294,8 @@ def _create_repository_using_definitions_args(
 
 
 def _canonicalize_specs_to_assets_defs(
-    assets: Iterable[Union[AssetsDefinition, AssetSpec, SourceAsset, CacheableAssetsDefinition]],
-) -> Iterable[Union[AssetsDefinition, SourceAsset, CacheableAssetsDefinition]]:
+    assets: Iterable[AssetsDefinition | AssetSpec | SourceAsset | CacheableAssetsDefinition],
+) -> Iterable[AssetsDefinition | SourceAsset | CacheableAssetsDefinition]:
     asset_specs_by_partitions_def = defaultdict(list)
     for obj in assets:
         if isinstance(obj, AssetSpec):
@@ -324,6 +323,7 @@ class BindResourcesToJobs(list):
 
 
 @record_custom
+@public
 class Definitions(IHaveNew):
     """A set of definitions explicitly available and loadable by Dagster tools.
 
@@ -411,15 +411,17 @@ class Definitions(IHaveNew):
     schedules: TSchedules = None
     sensors: TSensors = None
     jobs: TJobs = None
-    resources: Optional[Mapping[str, Any]] = None
-    executor: Optional[Union[ExecutorDefinition, Executor]] = None
-    loggers: Optional[Mapping[str, LoggerDefinition]] = None
+    resources: Mapping[str, Any] | None = None
+    executor: ExecutorDefinition | Executor | None = None
+    loggers: Mapping[str, LoggerDefinition] | None = None
     # There's a bug that means that sometimes it's Dagster's fault when AssetsDefinitions are
     # passed here instead of AssetChecksDefinitions: https://github.com/dagster-io/dagster/issues/22064.
     # After we fix the bug, we should remove AssetsDefinition from the set of accepted types.
     asset_checks: TAssetChecks = None
     metadata: Mapping[str, MetadataValue]
-    component_tree: Optional[Annotated["ComponentTree", ImportFrom("dagster.components.core.tree")]]
+    component_tree: (
+        Annotated["ComponentTree", ImportFrom("dagster.components.core.component_tree")] | None
+    )
 
     def __new__(
         cls,
@@ -427,11 +429,11 @@ class Definitions(IHaveNew):
         schedules: TSchedules = None,
         sensors: TSensors = None,
         jobs: TJobs = None,
-        resources: Optional[Mapping[str, Any]] = None,
-        executor: Optional[Union[ExecutorDefinition, Executor]] = None,
-        loggers: Optional[Mapping[str, LoggerDefinition]] = None,
+        resources: Mapping[str, Any] | None = None,
+        executor: ExecutorDefinition | Executor | None = None,
+        loggers: Mapping[str, LoggerDefinition] | None = None,
         asset_checks: TAssetChecks = None,
-        metadata: Optional[RawMetadataMapping] = None,
+        metadata: RawMetadataMapping | None = None,
         component_tree: Optional["ComponentTree"] = None,
     ):
         instance = super().__new__(
@@ -492,7 +494,7 @@ class Definitions(IHaveNew):
         check.str_param(name, "name")
         return self.get_repository_def().get_job(name)
 
-    def dig_for_warning(self, name: str) -> Optional[str]:
+    def dig_for_warning(self, name: str) -> str | None:
         for job in self.jobs or []:
             if job.name == name:
                 if isinstance(job, JobDefinition):
@@ -577,10 +579,10 @@ class Definitions(IHaveNew):
         self,
         asset_key: CoercibleToAssetKey,
         *,
-        python_type: Optional[type] = None,
-        instance: Optional[DagsterInstance] = None,
-        partition_key: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        python_type: type | None = None,
+        instance: DagsterInstance | None = None,
+        partition_key: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> object:
         """Load the contents of an asset as a Python object.
 
@@ -610,9 +612,7 @@ class Definitions(IHaveNew):
         )
 
     @public
-    def get_asset_value_loader(
-        self, instance: Optional[DagsterInstance] = None
-    ) -> "AssetValueLoader":
+    def get_asset_value_loader(self, instance: DagsterInstance | None = None) -> "AssetValueLoader":
         """Returns an object that can load the contents of assets as Python objects.
 
         Invokes `load_input` on the :py:class:`IOManager` associated with the assets. Avoids
@@ -656,7 +656,7 @@ class Definitions(IHaveNew):
 
     def resolve_implicit_job_def_def_for_assets(
         self, asset_keys: Iterable[AssetKey]
-    ) -> Optional[JobDefinition]:
+    ) -> JobDefinition | None:
         return self.get_repository_def().get_implicit_job_def_for_assets(asset_keys)
 
     def get_assets_def(self, key: CoercibleToAssetKey) -> AssetsDefinition:
@@ -783,7 +783,7 @@ class Definitions(IHaveNew):
         loggers = {}
         logger_key_indexes: dict[str, int] = {}
         executor = None
-        executor_index: Optional[int] = None
+        executor_index: int | None = None
 
         for i, def_set in enumerate(def_sets):
             assets.extend(def_set.assets or [])
@@ -842,16 +842,6 @@ class Definitions(IHaveNew):
         )
 
     @public
-    @deprecated(
-        breaking_version="1.11",
-        additional_warn_text="Use resolve_all_asset_specs instead",
-        subject="get_all_asset_specs",
-    )
-    def get_all_asset_specs(self) -> Sequence[AssetSpec]:
-        """Returns an AssetSpec object for AssetsDefinitions and AssetSpec passed directly to the Definitions object."""
-        return self.resolve_all_asset_specs()
-
-    @public
     def resolve_all_asset_specs(self) -> Sequence[AssetSpec]:
         """Returns an AssetSpec object for every asset contained inside the resolved Definitions object."""
         asset_graph = self.resolve_asset_graph()
@@ -897,7 +887,7 @@ class Definitions(IHaveNew):
         self,
         *,
         func: Callable[[AssetSpec], AssetSpec],
-        selection: Optional[CoercibleToAssetSelection] = None,
+        selection: CoercibleToAssetSelection | None = None,
     ) -> "Definitions":
         """Map a function over the included AssetSpecs or AssetsDefinitions in this Definitions object, replacing specs in the sequence
         or specs in an AssetsDefinitions with the result of the function.
@@ -945,7 +935,7 @@ class Definitions(IHaveNew):
         self,
         *,
         func: Callable[[AssetSpec], AssetSpec],
-        selection: Optional[CoercibleToAssetSelection] = None,
+        selection: CoercibleToAssetSelection | None = None,
     ) -> "Definitions":
         """Map a function over the included AssetSpecs or AssetsDefinitions in this Definitions object, replacing specs in the sequence.
 
@@ -991,7 +981,7 @@ class Definitions(IHaveNew):
     def permissive_map_resolved_asset_specs(
         self,
         func: Callable[[AssetSpec], AssetSpec],
-        selection: Optional[CoercibleToAssetSelection],
+        selection: CoercibleToAssetSelection | None,
     ) -> "Definitions":
         """This is a permissive version of map_resolved_asset_specs that allows for non-spec asset types, i.e. SourceAssets and CacheableAssetsDefinitions."""
         target_keys = None
@@ -1015,7 +1005,7 @@ class Definitions(IHaveNew):
         ]
         return replace(self, assets=assets)
 
-    def with_resources(self, resources: Optional[Mapping[str, Any]]) -> "Definitions":
+    def with_resources(self, resources: Mapping[str, Any] | None) -> "Definitions":
         return Definitions.merge(self, Definitions(resources=resources)) if resources else self
 
     def has_resolved_repository_def(self) -> bool:
@@ -1027,13 +1017,19 @@ class Definitions(IHaveNew):
         """Run a provided update function on every contained definition that supports it
         to updated its metadata. Return a new Definitions object containing the updated objects.
         """
+        updated_jobs = _update_jobs_metadata(self.jobs, update)
+        updated_schedules = _update_schedules_metadata(self.schedules, update, updated_jobs)
+        updated_sensors = _update_sensors_metadata(self.sensors, update, updated_jobs)
+        updated_assets = _update_assets_metadata(self.assets, update)
+        updated_asset_checks = _update_checks_metadata(self.asset_checks, update)
+
         return replace(
             self,
-            jobs=_update_jobs_metadata(self.jobs, update),
-            schedules=_update_schedules_metadata(self.schedules, update),
-            sensors=_update_sensors_metadata(self.sensors, update),
-            assets=_update_assets_metadata(self.assets, update),
-            asset_checks=_update_checks_metadata(self.asset_checks, update),
+            jobs=updated_jobs.values(),
+            schedules=updated_schedules,
+            sensors=updated_sensors,
+            assets=updated_assets,
+            asset_checks=updated_asset_checks,
         )
 
 
@@ -1061,6 +1057,7 @@ def _update_assets_metadata(
 def _update_schedules_metadata(
     schedules: TSchedules,
     update: Callable[[RawMetadataMapping], RawMetadataMapping],
+    updated_jobs: Mapping[int, TJob],
 ) -> TSchedules:
     if not schedules:
         return schedules
@@ -1068,7 +1065,21 @@ def _update_schedules_metadata(
     updated_schedules = []
     for schedule in schedules:
         if isinstance(schedule, ScheduleDefinition):
-            updated_schedules.append(schedule.with_attributes(metadata=update(schedule.metadata)))
+            # updated schedule
+            new_attrs: dict[str, Any] = {"metadata": update(schedule.metadata)}
+
+            if schedule.has_job:
+                # use the already updated job if possible to ensure obj equality
+                if id(schedule.job) in updated_jobs:
+                    new_attrs["job"] = updated_jobs[id(schedule.job)]
+
+                else:  # otherwise, update the job metadata too
+                    new_attrs["job"] = schedule.job.with_metadata(
+                        update(schedule.job.metadata or {})
+                    )
+
+            updated_schedules.append(schedule.with_attributes(**new_attrs))
+
         elif isinstance(schedule, UnresolvedPartitionedAssetScheduleDefinition):
             updated_schedules.append(schedule.with_metadata(update(schedule.metadata or {})))
         else:
@@ -1080,6 +1091,7 @@ def _update_schedules_metadata(
 def _update_sensors_metadata(
     sensors: TSensors,
     update: Callable[[RawMetadataMapping], RawMetadataMapping],
+    updated_jobs: Mapping[int, TJob],
 ) -> TSensors:
     if not sensors:
         return sensors
@@ -1087,7 +1099,24 @@ def _update_sensors_metadata(
     updated_sensors = []
     for sensor in sensors:
         if isinstance(sensor, SensorDefinition):
-            updated_sensors.append(sensor.with_attributes(metadata=update(sensor.metadata)))
+            new_attrs: dict[str, Any] = {"metadata": update(sensor.metadata)}
+
+            if sensor.has_jobs:
+                new_sensor_jobs = []
+                for sensor_job in sensor.jobs:
+                    if isinstance(sensor_job, (JobDefinition, UnresolvedAssetJobDefinition)):
+                        # use the already updated job if possible to ensure obj equality
+                        if id(sensor_job) in updated_jobs:
+                            new_sensor_jobs.append(updated_jobs[id(sensor_job)])
+                        else:  # otherwise, update the job metadata too
+                            new_sensor_jobs.append(
+                                sensor_job.with_metadata(update(sensor_job.metadata or {}))
+                            )
+                    else:
+                        new_sensor_jobs.append(sensor_job)  # other types are not updated
+                new_attrs["jobs"] = new_sensor_jobs
+
+            updated_sensors.append(sensor.with_attributes(**new_attrs))
         else:
             check.assert_never(sensor)
 
@@ -1097,16 +1126,14 @@ def _update_sensors_metadata(
 def _update_jobs_metadata(
     jobs: TJobs,
     update: Callable[[RawMetadataMapping], RawMetadataMapping],
-) -> TJobs:
+) -> Mapping[int, TJob]:
     if not jobs:
-        return jobs
+        return {}
 
-    updated_jobs = []
+    updated_jobs = {}
     for job in jobs:
-        if isinstance(job, JobDefinition):
-            updated_jobs.append(job.with_metadata(update(job.metadata)))
-        elif isinstance(job, UnresolvedAssetJobDefinition):
-            updated_jobs.append(job.with_metadata(update(job.metadata or {})))
+        if isinstance(job, (JobDefinition, UnresolvedAssetJobDefinition)):
+            updated_jobs[id(job)] = job.with_metadata(update(job.metadata or {}))
         else:
             check.assert_never(job)
 

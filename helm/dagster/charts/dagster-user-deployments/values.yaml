@@ -4,10 +4,18 @@ global:
   dagsterHome: ""
   serviceAccountName: ""
   celeryConfigSecretName: ""
+  dagsterInstanceConfigMap: ""
 
 dagsterHome: "/opt/dagster/dagster_home"
 postgresqlSecretName: "dagster-postgresql-secret"
 celeryConfigSecretName: "dagster-celery-config-secret"
+
+# Include the Dagster instance configuration from the main chart's configmap in user code pods.
+# Set to true when user deployments are in the same namespace as the main Dagster chart.
+# This is necessary when using features that require access to the instance at code import/startup time,
+# such as StateBackedComponents.
+# Set to false when user deployments are in a different namespace to avoid mount issues.
+includeInstance: false
 
 ####################################################################################################
 # User Code Deployments: Configuration for user code containers to be loaded via GRPC server. For
@@ -27,6 +35,8 @@ deployments:
       # When a tag is not supplied, it will default as the Helm chart version.
       repository: "docker.io/dagster/user-code-example"
       tag: ~
+      # If digest is provided, it takes precedence over tag. Use format: sha256:abc123...
+      # digest: ~
       # Change with caution! If you're using a fixed tag for pipeline run images, changing the
       # image pull policy to anything other than "Always" will use a cached/stale image, which is
       # almost certainly not what you want.
@@ -39,14 +49,17 @@ deployments:
     #   - "dagster_test.test_project.test_jobs.repo"
     #   - "-a"
     #   - "define_demo_execution_repo"
-    # The `dagsterApiGrpcArgs` key can also be replaced with `codeServerArgs` to use a new
-    # experimental `dagster code-server start` command instead of `dagster api grpc`, which
-    # can reload its definitions from within the Dagster UI without needing to restart the
-    # user code deployment pod.
+    # The `dagsterApiGrpcArgs` key can also be replaced with `codeServerArgs` to use
+    # `dagster code-server start` instead of `dagster api grpc`, which can reload its
+    # definitions from within the Dagster UI without needing to restart the user code
+    # deployment pod.
     dagsterApiGrpcArgs:
       - "-f"
       - "/example_project/example_repo/repo.py"
     port: 3030
+
+    # Number of replicas of the user code gRPC server Deployment.
+    replicaCount: 1
 
     # Whether or not to include configuration specified for this user code deployment in the pods
     # launched for runs from that deployment
@@ -107,6 +120,21 @@ deployments:
 
     # Init containers to run before the main container. See:
     # https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+    #
+    # Image can be specified as a string or structured object:
+    #
+    # initContainers:
+    #   - name: init-permissions
+    #     image: "busybox:latest"  # Legacy string format
+    #     command: ["sh", "-c", "chmod 755 /data"]
+    #
+    #   - name: init-with-digest
+    #     image:                    # Structured format (digest takes precedence over tag)
+    #       repository: "busybox"
+    #       tag: "1.36"
+    #       digest: "sha256:abc123..."
+    #       pullPolicy: "IfNotPresent"
+    #     command: ["sh", "-c", "echo hello"]
     initContainers: []
 
     # Additional containers (i.e. sidecars) to run alongside the main container. See:

@@ -1,11 +1,10 @@
 import time
 from collections.abc import Sequence
-from typing import Optional
 
 import dagster._check as check
 import graphene
 from dagster import DefaultScheduleStatus
-from dagster._core.remote_representation import RemoteSchedule
+from dagster._core.remote_representation.external import RemoteSchedule
 from dagster._core.scheduler.instigation import InstigatorState, InstigatorStatus
 from dagster._time import get_current_timestamp
 
@@ -24,6 +23,7 @@ from dagster_graphql.schema.instigation import (
     GrapheneInstigationStatus,
 )
 from dagster_graphql.schema.metadata import GrapheneMetadataEntry
+from dagster_graphql.schema.owners import GrapheneDefinitionOwner, definition_owner_from_owner_str
 from dagster_graphql.schema.tags import GrapheneDefinitionTag
 from dagster_graphql.schema.util import ResolveInfo, non_null_list
 
@@ -57,6 +57,7 @@ class GrapheneSchedule(graphene.ObjectType):
         lower_limit=graphene.Int(),
     )
     assetSelection = graphene.Field(GrapheneAssetSelection)
+    owners = non_null_list(GrapheneDefinitionOwner)
     tags = non_null_list(GrapheneDefinitionTag)
     metadataEntries = non_null_list(GrapheneMetadataEntry)
 
@@ -66,8 +67,8 @@ class GrapheneSchedule(graphene.ObjectType):
     def __init__(
         self,
         remote_schedule: RemoteSchedule,
-        schedule_state: Optional[InstigatorState],
-        batch_loader: Optional[RepositoryScopedBatchLoader] = None,
+        schedule_state: InstigatorState | None,
+        batch_loader: RepositoryScopedBatchLoader | None = None,
     ):
         self._remote_schedule = check.inst_param(remote_schedule, "remote_schedule", RemoteSchedule)
 
@@ -134,16 +135,15 @@ class GrapheneSchedule(graphene.ObjectType):
         partition_set = repository.get_partition_set(self._remote_schedule.partition_set_name)
 
         return GraphenePartitionSet(
-            repository_handle=repository.handle,
             remote_partition_set=partition_set,
         )
 
     def resolve_futureTicks(
         self,
         _graphene_info: ResolveInfo,
-        cursor: Optional[float] = None,
-        limit: Optional[int] = None,
-        until: Optional[float] = None,
+        cursor: float | None = None,
+        limit: int | None = None,
+        until: float | None = None,
     ):
         cursor = cursor or time.time()
 
@@ -163,8 +163,7 @@ class GrapheneSchedule(graphene.ObjectType):
                     break
         else:
             limit = limit or 10
-            for _ in range(limit):
-                tick_times.append(next(time_iter).timestamp())
+            tick_times.extend(next(time_iter).timestamp() for _ in range(limit))
 
         schedule_selector = self._remote_schedule.schedule_selector
         future_ticks = [
@@ -182,9 +181,9 @@ class GrapheneSchedule(graphene.ObjectType):
     def resolve_potentialTickTimestamps(
         self,
         _graphene_info: ResolveInfo,
-        start_timestamp: Optional[float] = None,
-        upper_limit: Optional[int] = None,
-        lower_limit: Optional[int] = None,
+        start_timestamp: float | None = None,
+        upper_limit: int | None = None,
+        lower_limit: int | None = None,
     ):
         """Get timestamps when ticks will occur before and after a given timestamp.
 
@@ -210,8 +209,9 @@ class GrapheneSchedule(graphene.ObjectType):
             tick_times_below_timestamp.append(first_past_tick.timestamp())
             lower_limit -= 1
 
-        for _ in range(lower_limit):
-            tick_times_below_timestamp.append(next(descending_tick_iterator).timestamp())
+        tick_times_below_timestamp.extend(
+            next(descending_tick_iterator).timestamp() for _ in range(lower_limit)
+        )
 
         # Combine tick times < start_timestamp to tick times >= timestamp to get full
         # list. We reverse timestamp range because ticks should be in ascending order when we give the full list.
@@ -220,6 +220,11 @@ class GrapheneSchedule(graphene.ObjectType):
         ]
 
         return tick_times
+
+    def resolve_owners(self, _graphene_info: ResolveInfo):
+        return [
+            definition_owner_from_owner_str(owner) for owner in (self._remote_schedule.owners or [])
+        ]
 
     def resolve_tags(self, _graphene_info: ResolveInfo) -> Sequence[GrapheneDefinitionTag]:
         return [

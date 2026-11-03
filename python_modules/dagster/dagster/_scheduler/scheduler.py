@@ -5,10 +5,10 @@ import random
 import sys
 import threading
 from collections import defaultdict
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import AbstractContextManager, ExitStack
-from typing import TYPE_CHECKING, Callable, NamedTuple, Optional, Union, cast
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 from typing_extensions import Self
 
@@ -19,9 +19,8 @@ from dagster._core.definitions.selector import JobSubsetSelector
 from dagster._core.definitions.timestamp import TimestampWithTimezone
 from dagster._core.errors import DagsterCodeLocationLoadError, DagsterUserCodeUnreachableError
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation import RemoteSchedule
 from dagster._core.remote_representation.code_location import CodeLocation
-from dagster._core.remote_representation.external import RemoteJob
+from dagster._core.remote_representation.external import RemoteJob, RemoteSchedule
 from dagster._core.scheduler.instigation import (
     InstigatorState,
     InstigatorStatus,
@@ -37,7 +36,7 @@ from dagster._core.storage.tags import RUN_KEY_TAG, SCHEDULED_EXECUTION_TIME_TAG
 from dagster._core.telemetry import SCHEDULED_RUN_CREATED, hash_name, log_action
 from dagster._core.utils import InheritContextThreadPoolExecutor
 from dagster._core.workspace.context import IWorkspaceProcessContext
-from dagster._daemon.utils import DaemonErrorCapture
+from dagster._daemon.utils import DaemonErrorCapture, shuffled_round_robin_by_key
 from dagster._scheduler.stale import resolve_stale_or_missing_assets
 from dagster._time import get_current_datetime, get_current_timestamp
 from dagster._utils import DebugCrashFlags, SingleInstigatorDebugCrashFlags, check_for_debug_crash
@@ -181,7 +180,7 @@ class ScheduleIterationTimes(NamedTuple):
     this value is also determined in _write_and_get_next_checkpoint_timestamp.).
     """
 
-    cron_schedule: Union[str, Sequence[str]]
+    cron_schedule: str | Sequence[str]
     next_iteration_timestamp: float
     last_iteration_timestamp: float
 
@@ -272,12 +271,12 @@ def launch_scheduled_runs(
     logger: logging.Logger,
     end_datetime_utc: datetime.datetime,
     iteration_times: dict[str, ScheduleIterationTimes],
-    threadpool_executor: Optional[ThreadPoolExecutor] = None,
-    submit_threadpool_executor: Optional[ThreadPoolExecutor] = None,
-    scheduler_run_futures: Optional[dict[str, Future]] = None,
+    threadpool_executor: ThreadPoolExecutor | None = None,
+    submit_threadpool_executor: ThreadPoolExecutor | None = None,
+    scheduler_run_futures: dict[str, Future] | None = None,
     max_catchup_runs: int = DEFAULT_MAX_CATCHUP_RUNS,
     max_tick_retries: int = 0,
-    debug_crash_flags: Optional[DebugCrashFlags] = None,
+    debug_crash_flags: DebugCrashFlags | None = None,
     scheduler_delay_instrumentation: SchedulerDelayInstrumentation = default_scheduler_delay_instrumentation,
 ) -> "DaemonIterator":
     instance = workspace_process_context.instance
@@ -369,7 +368,12 @@ def launch_scheduled_runs(
         yield
         return
 
-    for schedule in running_schedules.values():
+    # Round-robin across code locations so a single code location with many schedules
+    # cannot consistently push schedules from other code locations to the back of the
+    # thread pool queue.
+    for schedule in shuffled_round_robin_by_key(
+        running_schedules.values(), key=lambda s: s.handle.location_name
+    ):
         error_info = None
         try:
             schedule_state = all_schedule_states.get(schedule.selector_id)
@@ -515,9 +519,9 @@ def launch_scheduled_runs_for_schedule(
     max_catchup_runs: int,
     max_tick_retries: int,
     tick_retention_settings: Mapping[TickStatus, int],
-    schedule_debug_crash_flags: Optional[SingleInstigatorDebugCrashFlags],
-    submit_threadpool_executor: Optional[ThreadPoolExecutor],
-    in_memory_last_iteration_timestamp: Optional[float],
+    schedule_debug_crash_flags: SingleInstigatorDebugCrashFlags | None,
+    submit_threadpool_executor: ThreadPoolExecutor | None,
+    in_memory_last_iteration_timestamp: float | None,
 ) -> ScheduleIterationTimes:
     # evaluate the tick immediately, but from within a thread.  The main thread should be able to
     # heartbeat to keep the daemon alive
@@ -550,17 +554,17 @@ def launch_scheduled_runs_for_schedule_iterator(
     max_catchup_runs: int,
     max_tick_retries: int,
     tick_retention_settings: Mapping[TickStatus, int],
-    schedule_debug_crash_flags: Optional[SingleInstigatorDebugCrashFlags],
-    submit_threadpool_executor: Optional[ThreadPoolExecutor],
-    in_memory_last_iteration_timestamp: Optional[float],
-) -> Generator[Union[None, SerializableErrorInfo, ScheduleIterationTimes], None, None]:
+    schedule_debug_crash_flags: SingleInstigatorDebugCrashFlags | None,
+    submit_threadpool_executor: ThreadPoolExecutor | None,
+    in_memory_last_iteration_timestamp: float | None,
+) -> Generator[SerializableErrorInfo | ScheduleIterationTimes | None, None, None]:
     schedule_state = check.inst_param(schedule_state, "schedule_state", InstigatorState)
     end_datetime_utc = check.inst_param(end_datetime_utc, "end_datetime_utc", datetime.datetime)
     instance = workspace_process_context.instance
 
     instigator_origin_id = remote_schedule.get_remote_origin_id()
     ticks = instance.get_ticks(instigator_origin_id, remote_schedule.selector_id, limit=1)
-    latest_tick: Optional[InstigatorTick] = ticks[0] if ticks else None
+    latest_tick: InstigatorTick | None = ticks[0] if ticks else None
 
     instigator_data = cast("ScheduleInstigatorData", schedule_state.instigator_data)
     start_timestamp_utc: float = instigator_data.start_timestamp or 0
@@ -759,10 +763,10 @@ def launch_scheduled_runs_for_schedule_iterator(
 
 
 class SubmitRunRequestResult(NamedTuple):
-    run_key: Optional[str]
-    error_info: Optional[SerializableErrorInfo]
-    existing_run: Optional[DagsterRun]
-    submitted_run: Optional[DagsterRun]
+    run_key: str | None
+    error_info: SerializableErrorInfo | None
+    existing_run: DagsterRun | None
+    submitted_run: DagsterRun | None
 
 
 def _submit_run_request(
@@ -799,6 +803,7 @@ def _submit_run_request(
             job_name=remote_schedule.job_name,
             op_selection=remote_schedule.op_selection,
             asset_selection=run_request.asset_selection,
+            asset_check_selection=run_request.asset_check_keys,
         )
 
         # reload the code_location on each submission, request_context derived data can become out date
@@ -859,9 +864,9 @@ def _schedule_runs_at_time(
     schedule_time: datetime.datetime,
     timezone_str: str,
     tick_context: _ScheduleLaunchContext,
-    submit_threadpool_executor: Optional[ThreadPoolExecutor],
-    debug_crash_flags: Optional[SingleInstigatorDebugCrashFlags] = None,
-) -> Generator[Union[None, SerializableErrorInfo, ScheduleIterationTimes], None, None]:
+    submit_threadpool_executor: ThreadPoolExecutor | None,
+    debug_crash_flags: SingleInstigatorDebugCrashFlags | None = None,
+) -> Generator[SerializableErrorInfo | ScheduleIterationTimes | None, None, None]:
     instance = workspace_process_context.instance
     repository_handle = remote_schedule.handle.repository_handle
 
@@ -963,7 +968,7 @@ def _get_existing_run_for_request(
     remote_schedule: RemoteSchedule,
     schedule_time: datetime.datetime,
     run_request: RunRequest,
-) -> Optional[DagsterRun]:
+) -> DagsterRun | None:
     tags = merge_dicts(
         DagsterRun.tags_for_schedule(remote_schedule),
         {
@@ -1054,9 +1059,15 @@ def _create_scheduler_run(
         remote_job_origin=remote_job.get_remote_origin(),
         job_code_origin=remote_job.get_python_origin(),
         asset_selection=(
-            frozenset(run_request.asset_selection) if run_request.asset_selection else None
+            frozenset(run_request.asset_selection)
+            if run_request.asset_selection is not None
+            else None
         ),
-        asset_check_selection=None,
+        asset_check_selection=(
+            frozenset(run_request.asset_check_keys)
+            if run_request.asset_check_keys is not None
+            else None
+        ),
         asset_graph=code_location.get_repository(
             remote_job.repository_handle.repository_name
         ).asset_graph,

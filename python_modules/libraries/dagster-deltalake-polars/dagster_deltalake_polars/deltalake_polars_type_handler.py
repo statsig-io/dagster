@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, Optional, Union
+from typing import Any, TypeAlias
 
 import polars as pl
 import pyarrow as pa
@@ -13,13 +13,13 @@ from dagster_deltalake.handler import (
 )
 from dagster_deltalake.io_manager import DeltaLakeIOManager, TableConnection
 
-PolarsTypes = Union[pl.DataFrame, pl.LazyFrame]
+PolarsTypes: TypeAlias = pl.DataFrame | pl.LazyFrame
 
 
 class DeltaLakePolarsTypeHandler(DeltalakeBaseArrowTypeHandler[PolarsTypes]):
-    def from_arrow(
+    def from_arrow(  # ty: ignore[invalid-method-override]
         self,
-        obj: Union[ds.Dataset, pa.RecordBatchReader],
+        obj: ds.Dataset | pa.RecordBatchReader,
         target_type: type[PolarsTypes],
     ) -> PolarsTypes:
         if isinstance(obj, pa.RecordBatchReader):
@@ -27,7 +27,7 @@ class DeltaLakePolarsTypeHandler(DeltalakeBaseArrowTypeHandler[PolarsTypes]):
         elif isinstance(obj, ds.Dataset):
             df = pl.scan_pyarrow_dataset(obj)
             if target_type == pl.DataFrame:
-                return df.collect()
+                return df.collect()  # ty: ignore[invalid-return-type]
             else:
                 return df
         else:
@@ -35,8 +35,8 @@ class DeltaLakePolarsTypeHandler(DeltalakeBaseArrowTypeHandler[PolarsTypes]):
 
     def to_arrow(self, obj: PolarsTypes) -> tuple[pa.RecordBatchReader, dict[str, Any]]:
         if isinstance(obj, pl.LazyFrame):
-            obj = obj.collect()
-        return obj.to_arrow().to_reader(), {"large_dtypes": True}
+            obj = obj.collect()  # ty: ignore[invalid-assignment]
+        return obj.to_arrow().to_reader(), {}  # ty: ignore[unresolved-attribute]
 
     def load_input(
         self,
@@ -69,5 +69,5 @@ class DeltaLakePolarsIOManager(DeltaLakeIOManager):
         return [DeltaLakePolarsTypeHandler(), DeltaLakePyArrowTypeHandler()]
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         return pl.DataFrame

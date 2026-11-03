@@ -27,8 +27,8 @@ try:
     import pandera.polars as pa_pl
     import polars as pl
 except ImportError:
-    pa_pl = None
-    pl = None
+    pa_pl = None  # ty: ignore[invalid-assignment]
+    pl = None  # ty: ignore[invalid-assignment]
 
 if TYPE_CHECKING:
     import pandera.pandas
@@ -37,6 +37,8 @@ if TYPE_CHECKING:
         import pandera.polars  # noqa: TC004
     except ImportError:
         pass
+
+from typing import TypeAlias
 
 import dagster._check as check
 import pandera.errors as pa_errors
@@ -52,7 +54,6 @@ from dagster import (
 from dagster._annotations import beta
 from dagster._core.definitions.metadata import MetadataValue
 from dagster_shared.libraries import DagsterLibraryRegistry
-from typing_extensions import TypeAlias
 
 from dagster_pandera.version import __version__
 
@@ -92,7 +93,7 @@ DagsterLibraryRegistry.register("dagster-pandera", __version__)
 
 @beta
 def pandera_schema_to_dagster_type(
-    schema: Union[DagsterPanderaSchema, DagsterPanderaSchemaModel],
+    schema: DagsterPanderaSchema | DagsterPanderaSchemaModel,
 ) -> DagsterType:
     """Convert a Pandera dataframe schema to a `DagsterType`.
 
@@ -157,7 +158,7 @@ _anonymous_schema_name_generator = (f"DagsterPanderaDataframe{i}" for i in itert
 
 
 def _extract_name_from_pandera_schema(
-    schema: Union[DagsterPanderaSchema, DagsterPanderaSchemaModel],
+    schema: DagsterPanderaSchema | DagsterPanderaSchemaModel,
 ) -> str:
     if isinstance(schema, type) and issubclass(schema, VALID_SCHEMA_MODEL_CLASSES):
         return str(
@@ -253,18 +254,20 @@ def _pandera_errors_to_type_check(
 
 
 def _pandera_schema_to_table_schema(schema: DagsterPanderaSchema) -> TableSchema:
-    df_constraints = _pandera_schema_wide_checks_to_table_constraints(schema.checks)  # pyright: ignore[reportArgumentType]
-    columns = [_pandera_column_to_table_column(col) for k, col in schema.columns.items()]
+    df_constraints = _pandera_schema_wide_checks_to_table_constraints(schema.checks)  # ty: ignore[invalid-argument-type]
+    columns = [_pandera_column_to_table_column(col) for col in schema.columns.values()]
     return TableSchema(columns=columns, constraints=df_constraints)
 
 
+# Union is required in the following functions because pandera types use a metaclass that doesn't
+# support the `|` operator at runtime, causing TypeError during module import.
 def _pandera_schema_wide_checks_to_table_constraints(
-    checks: Sequence[Union[pa.Check, pa.Hypothesis]],
+    checks: Sequence[Union[pa.Check, pa.Hypothesis]],  # noqa: UP007
 ) -> TableConstraints:
     return TableConstraints(other=[_pandera_check_to_table_constraint(check) for check in checks])
 
 
-def _pandera_check_to_table_constraint(pa_check: Union[pa.Check, pa.Hypothesis]) -> str:
+def _pandera_check_to_table_constraint(pa_check: Union[pa.Check, pa.Hypothesis]) -> str:  # noqa: UP007
     return _get_pandera_check_identifier(pa_check)
 
 
@@ -272,7 +275,9 @@ def _pandera_column_to_table_column(pa_column: DagsterPanderaColumn) -> TableCol
     constraints = TableColumnConstraints(
         nullable=pa_column.nullable,
         unique=pa_column.unique,
-        other=[_pandera_check_to_column_constraint(pa_check) for pa_check in pa_column.checks],
+        other=[
+            _pandera_check_to_column_constraint(pa_check) for pa_check in (pa_column.checks or [])
+        ],
     )
     name = check.not_none(pa_column.name, "name")
     name = name if isinstance(name, str) else "/".join(name)
@@ -311,7 +316,7 @@ def _pandera_check_to_column_constraint(pa_check: pa.Check) -> str:
         return _get_pandera_check_identifier(pa_check)
 
 
-def _get_pandera_check_identifier(pa_check: Union[pa.Check, pa.Hypothesis]) -> str:
+def _get_pandera_check_identifier(pa_check: Union[pa.Check, pa.Hypothesis]) -> str:  # noqa: UP007
     return pa_check.description or pa_check.error or pa_check.name or str(pa_check)
 
 

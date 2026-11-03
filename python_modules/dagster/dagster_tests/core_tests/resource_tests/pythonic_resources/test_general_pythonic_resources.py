@@ -1,7 +1,6 @@
 import enum
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Optional
 from unittest import mock
 
 import dagster as dg
@@ -13,7 +12,10 @@ from dagster import (
     InitResourceContext,
 )
 from dagster._check import CheckError
-from dagster._config.pythonic_config import ConfigurableResourceFactory
+from dagster._config.pythonic_config import (
+    ConfigurableResourceFactory,
+    infer_schema_from_config_class,
+)
 from dagster._utils.cached_method import cached_method
 from pydantic import (
     Field as PyField,
@@ -81,7 +83,7 @@ def test_invalid_config() -> None:
     with pytest.raises(
         ValidationError,
     ):
-        MyResource(foo="why")  # type: ignore
+        MyResource(foo="why")
 
 
 def test_caching_within_resource():
@@ -177,7 +179,7 @@ def test_abc_resource():
 
     # Can't instantiate abstract class
     with pytest.raises(TypeError):
-        Writer()  # pyright: ignore[reportAbstractUsage]
+        Writer()
 
     @dg.job(resource_defs={"writer": PrefixedWriterResource(prefix="greeting: ")})
     def prefixed_job():
@@ -202,7 +204,7 @@ def test_yield_in_resource_function():
     class ResourceWithCleanup(ConfigurableResourceFactory[bool]):
         idx: int
 
-        def create_resource(self, context):  # pyright: ignore[reportIncompatibleMethodOverride]
+        def create_resource(self, context):
             called.append(f"creation_{self.idx}")
             yield True
             called.append(f"cleanup_{self.idx}")
@@ -274,10 +276,10 @@ class AnIOManagerImplementation(dg.IOManager):
     def __init__(self, a_config_value: str):
         self.a_config_value = a_config_value
 
-    def load_input(self, _):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def load_input(self, _):  # ty: ignore[invalid-method-override]
         pass
 
-    def handle_output(self, _, obj):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def handle_output(self, _, obj):  # ty: ignore[invalid-method-override]
         pass
 
 
@@ -314,7 +316,7 @@ def test_io_manager_factory_class():
     class AnIOManagerFactory(dg.ConfigurableIOManagerFactory):
         a_config_value: str
 
-        def create_io_manager(self, _) -> dg.IOManager:  # pyright: ignore[reportIncompatibleMethodOverride]
+        def create_io_manager(self, _) -> dg.IOManager:  # ty: ignore[invalid-method-override]
             """Implement as one would implement a @io_manager decorator function."""
             return AnIOManagerImplementation(self.a_config_value)
 
@@ -502,7 +504,7 @@ def test_resources_which_return():
     assert completed["yes"]
 
     str_resource_partial = StringResource.configure_at_launch()
-    my_resource = MyResource(string_from_resource=str_resource_partial)  # pyright: ignore[reportArgumentType]
+    my_resource = MyResource(string_from_resource=str_resource_partial)
 
     defs = dg.Definitions(
         assets=[my_asset],
@@ -582,17 +584,17 @@ def test_nested_config_class_with_runtime_config(
     )
 
     class ParentResource(dg.ConfigurableResource):
-        child: ChildResource  # pyright: ignore[reportInvalidTypeForm]
+        child: ChildResource  # ty: ignore[invalid-type-form]
 
     @dg.asset
     def test_asset(
-        child: ChildResource,  # pyright: ignore[reportInvalidTypeForm]
+        child: ChildResource,  # ty: ignore[invalid-type-form]
         parent: ParentResource,
     ) -> None:
         assert child.date == "2025-01-21"
         assert parent.child.date == "2025-01-21"
 
-    child = ChildResource.configure_at_launch()
+    child = ChildResource.configure_at_launch()  # ty: ignore[unresolved-attribute]
     dg.materialize(
         [test_asset],
         resources={
@@ -660,7 +662,7 @@ def test_using_enum_complex() -> None:
 
     class MyResource(dg.ConfigurableResource):
         list_of_enums: list[MyEnum]
-        optional_enum: Optional[MyEnum] = None
+        optional_enum: MyEnum | None = None
 
     @dg.asset
     def an_asset(my_resource: MyResource):
@@ -912,7 +914,7 @@ def test_from_resource_context_and_to_config_empty() -> None:
 
     @dg.resource(config_schema=NoConfigResource.to_config_schema())
     def string_resource_function_style(context: InitResourceContext) -> str:
-        return NoConfigResource.from_resource_context(context).get_string()  # type: ignore  # (??)
+        return NoConfigResource.from_resource_context(context).get_string()  # (??)
 
     assert string_resource_function_style(dg.build_init_resource_context()) == "foo"
 
@@ -925,14 +927,14 @@ def test_context_on_resource_basic() -> None:
             self.get_resource_context()
 
     with pytest.raises(
-        CheckError, match="Attempted to get context before resource was initialized."
+        CheckError, match=r"Attempted to get context before resource was initialized."
     ):
         ContextUsingResource().access_context()
 
     # Can access context after binding one
     ContextUsingResource().with_replaced_resource_context(
         dg.build_init_resource_context()
-    ).access_context()
+    ).access_context()  # ty: ignore[unresolved-attribute]
 
     @dg.asset
     def my_test_asset(context_using: ContextUsingResource) -> None:
@@ -952,7 +954,7 @@ def test_context_on_resource_use_instance() -> None:
     executed = {}
 
     class OutputDirResource(dg.ConfigurableResource):
-        output_dir: Optional[str] = None
+        output_dir: str | None = None
 
         def get_effective_output_dir(self) -> str:
             if self.output_dir:
@@ -963,7 +965,7 @@ def test_context_on_resource_use_instance() -> None:
             return context.instance.storage_directory()
 
     with pytest.raises(
-        CheckError, match="Attempted to get context before resource was initialized."
+        CheckError, match=r"Attempted to get context before resource was initialized."
     ):
         OutputDirResource(output_dir=None).get_effective_output_dir()
 
@@ -976,7 +978,7 @@ def test_context_on_resource_use_instance() -> None:
             assert (
                 OutputDirResource(output_dir=None)
                 .with_replaced_resource_context(dg.build_init_resource_context(instance=instance))
-                .get_effective_output_dir()
+                .get_effective_output_dir()  # ty: ignore[unresolved-attribute]
                 == "/tmp"
             )
 
@@ -998,7 +1000,7 @@ def test_context_on_resource_runtime_config() -> None:
     executed = {}
 
     class OutputDirResource(dg.ConfigurableResource):
-        output_dir: Optional[str] = None
+        output_dir: str | None = None
 
         def get_effective_output_dir(self) -> str:
             if self.output_dir:
@@ -1037,7 +1039,7 @@ def test_context_on_resource_nested() -> None:
     executed = {}
 
     class OutputDirResource(dg.ConfigurableResource):
-        output_dir: Optional[str] = None
+        output_dir: str | None = None
 
         def get_effective_output_dir(self) -> str:
             if self.output_dir:
@@ -1051,7 +1053,7 @@ def test_context_on_resource_nested() -> None:
         output_dir: OutputDirResource
 
     with pytest.raises(
-        CheckError, match="Attempted to get context before resource was initialized."
+        CheckError, match=r"Attempted to get context before resource was initialized."
     ):
         OutputDirWrapperResource(
             output_dir=OutputDirResource(output_dir=None)
@@ -1119,3 +1121,33 @@ def test_partial_resource_checks() -> None:
         int_res=StrResource.configure_at_launch(),
         str_res=IntResource.configure_at_launch(),
     )
+
+
+def test_secret_field():
+    """Test that is_secret is extracted from json_schema_extra in ConfigurableResource."""
+
+    class MyResource(dg.ConfigurableResource):
+        api_key: str = PyField(
+            description="API key for authentication",
+            json_schema_extra={"dagster__is_secret": True},
+        )
+        host: str = PyField(description="Host URL")
+        password: str = PyField(json_schema_extra={"dagster__is_secret": True})
+
+    # Get the inferred schema
+    schema_field = infer_schema_from_config_class(MyResource)
+
+    # The schema should have the fields
+    fields_dict = schema_field.config_type.fields  # type: ignore
+
+    # Check that api_key is marked as secret
+    assert "api_key" in fields_dict
+    assert fields_dict["api_key"].is_secret is True
+
+    # Check that host is not marked as secret
+    assert "host" in fields_dict
+    assert fields_dict["host"].is_secret is False
+
+    # Check that password is marked as secret
+    assert "password" in fields_dict
+    assert fields_dict["password"].is_secret is True

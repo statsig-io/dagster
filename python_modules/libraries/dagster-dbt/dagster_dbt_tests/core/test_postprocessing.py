@@ -10,7 +10,6 @@ from dagster import (
     _check as check,
     materialize,
 )
-from dagster._check import CheckError
 from dagster._core.definitions.events import AssetMaterialization, Output
 from dagster._core.definitions.metadata.metadata_value import MetadataValue, TableMetadataValue
 from dagster._core.definitions.metadata.table import TableRecord
@@ -138,21 +137,27 @@ def test_row_count(request: pytest.FixtureRequest, target: str, manifest_fixture
     ), str(metadata_by_asset_key)
 
 
-def test_insights_err_not_snowflake_or_bq(
+def test_insights_skips_unsupported_adapter(
     test_jaffle_shop_manifest_standalone_duckdb_dbfile: dict[str, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    # On an unsupported adapter (here, DuckDB), `with_insights` is a graceful no-op: it logs a
+    # warning and passes the dbt events through unchanged rather than failing the run.
     @dbt_assets(manifest=test_jaffle_shop_manifest_standalone_duckdb_dbfile)
     def my_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
         yield from dbt.cli(["build"], context=context).stream().with_insights()
 
-    with pytest.raises(CheckError) as exc_info:
-        materialize(
-            [my_dbt_assets],
-            resources={"dbt": DbtCliResource(project_dir=os.fspath(test_jaffle_shop_path))},
-        )
+    result = materialize(
+        [my_dbt_assets],
+        resources={"dbt": DbtCliResource(project_dir=os.fspath(test_jaffle_shop_path))},
+    )
 
-    assert "is not supported for adapter type `duckdb`" in str(exc_info.value)
+    assert result.success
+    assert any(
+        "Insights is only supported for the Snowflake and BigQuery dbt adapters" in record.message
+        and "`duckdb`" in record.message
+        for record in caplog.records
+    ), [record.message for record in caplog.records]
 
 
 @pytest.mark.parametrize(
@@ -309,7 +314,7 @@ def test_attach_metadata(
         check.not_none(event.asset_key): event.materialization.metadata
         for event in result.get_asset_materialization_events()
     }
-    assert all("summary" in metadata for _, metadata in metadata_by_asset_key.items()), str(
+    assert all("summary" in metadata for metadata in metadata_by_asset_key.values()), str(
         metadata_by_asset_key
     )
 
@@ -321,3 +326,67 @@ def test_attach_metadata(
         len(summary.records) > 0 and "column_name" in summary.records[0].data
         for summary in summaries_by_asset_key.values()
     ), str(summaries_by_asset_key)
+
+
+def test_row_count_with_relative_path_in_profile(
+    test_jaffle_shop_manifest_standalone_duckdb_dbfile: dict[str, Any],
+) -> None:
+    """This test verifies that callbacks passed to _attach_metadata receive the correct
+    project_dir via the invocation, allowing them to resolve relative file paths
+    (e.g., private_key_path in profiles.yml) against the dbt project directory.
+    """
+    config_dir = test_jaffle_shop_path / "config"
+    config_dir.mkdir(exist_ok=True)
+    test_file = config_dir / "test_relative_path_marker.txt"
+
+    try:
+        test_file.write_text("test marker file")
+
+        def _check_relative_path_access(
+            invocation: DbtCliInvocation,
+            event: DbtDagsterEventType,
+        ):
+            if not isinstance(event, (AssetMaterialization, Output)):
+                return None
+
+            # Resolve relative paths against invocation.project_dir rather than relying
+            # on os.chdir, which is process-global and not thread-safe.
+            relative_path = invocation.project_dir / "config" / "test_relative_path_marker.txt"
+
+            if not relative_path.exists():
+                raise FileNotFoundError(
+                    f"Could not find {relative_path}. "
+                    "This indicates invocation.project_dir is not set correctly."
+                )
+
+            return {"relative_path_test": "success"}
+
+        @dbt_assets(manifest=test_jaffle_shop_manifest_standalone_duckdb_dbfile)
+        def my_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
+            event_iterator = dbt.cli(["build"], context=context).stream()
+            yield from event_iterator._attach_metadata(_check_relative_path_access)  # noqa: SLF001
+
+        result = materialize(
+            [my_dbt_assets],
+            resources={"dbt": DbtCliResource(project_dir=os.fspath(test_jaffle_shop_path))},
+        )
+
+        assert result.success
+
+        # Validate that the relative path check succeeded
+        metadata_by_asset_key = {
+            check.not_none(event.asset_key): event.materialization.metadata
+            for event in result.get_asset_materialization_events()
+        }
+
+        # Check that at least one asset has the relative_path_test metadata
+        # (indicating that relative path access worked from the metadata attachment function)
+        assert any(
+            "relative_path_test" in metadata for metadata in metadata_by_asset_key.values()
+        ), "Relative path test metadata not found, indicating working directory issue"
+
+    finally:
+        if test_file.exists():
+            test_file.unlink()
+        if config_dir.exists() and not any(config_dir.iterdir()):
+            config_dir.rmdir()

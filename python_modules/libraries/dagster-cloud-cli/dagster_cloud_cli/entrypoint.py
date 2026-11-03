@@ -4,9 +4,8 @@ import importlib.util
 import json
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from enum import Enum
-from typing import Callable, Optional
 
 import typer
 from typer.models import CommandInfo
@@ -18,6 +17,7 @@ from dagster_cloud_cli.commands.config import (
     app_configure as configure_app,
 )
 from dagster_cloud_cli.commands.deployment import app as deployment_app
+from dagster_cloud_cli.commands.integration import app as integration_app
 from dagster_cloud_cli.commands.job import app as job_app
 from dagster_cloud_cli.commands.organization import (
     app as organization_app,
@@ -33,8 +33,8 @@ has_dagster_cloud = importlib.util.find_spec("dagster_cloud") is not None
 
 
 if has_dagster_cloud:
-    from dagster_cloud.agent.cli import app as agent_app  # type: ignore
-    from dagster_cloud.pex.grpc.server.cli import app as pex_app  # type: ignore
+    from dagster_cloud.agent.cli import app as agent_app  # ty: ignore[unresolved-import]
+    from dagster_cloud.pex.grpc.server.cli import app as pex_app  # ty: ignore[unresolved-import]
 else:
     agent_app = create_stub_app("dagster-cloud")
     pex_app = create_stub_app("dagster-cloud")
@@ -43,7 +43,7 @@ else:
 def _import_commands(
     parent: typer.Typer,
     child: typer.Typer,
-    remap_fn: Optional[Callable[[CommandInfo], CommandInfo]] = None,
+    remap_fn: Callable[[CommandInfo], CommandInfo] | None = None,
 ) -> None:
     """Copies the commands from one Typer app to another.
     Equivalent of `add_typer` but doesn't add a subcommand.
@@ -198,6 +198,7 @@ app.add_typer(run_app, name="run", no_args_is_help=True, hidden=True)
 app.add_typer(serverless_app, name="serverless", no_args_is_help=True)
 app.add_typer(pex_app, name="pex", hidden=True, no_args_is_help=True)
 app.add_typer(ci_app, name="ci", no_args_is_help=True)
+app.add_typer(integration_app, name="integration", no_args_is_help=True)
 
 # Deprecated in favor of organization
 app.add_typer(legacy_settings_app, name="settings", hidden=True)

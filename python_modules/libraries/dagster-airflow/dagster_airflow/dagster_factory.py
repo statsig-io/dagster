@@ -1,6 +1,5 @@
 import os
 from collections.abc import Mapping
-from typing import Optional
 
 from airflow.models.connection import Connection
 from airflow.models.dagbag import DagBag
@@ -35,8 +34,8 @@ from dagster_airflow.utils import is_airflow_2_loaded_in_environment
 )
 def make_dagster_definitions_from_airflow_dag_bag(
     dag_bag: DagBag,
-    connections: Optional[list[Connection]] = None,
-    resource_defs: Optional[Mapping[str, ResourceDefinition]] = {},
+    connections: list[Connection] | None = None,
+    resource_defs: Mapping[str, ResourceDefinition] | None = {},
 ) -> Definitions:
     """Construct a Dagster definition corresponding to Airflow DAGs in DagBag.
 
@@ -87,8 +86,8 @@ def make_dagster_definitions_from_airflow_dag_bag(
 def make_dagster_definitions_from_airflow_dags_path(
     dag_path: str,
     safe_mode: bool = True,
-    connections: Optional[list[Connection]] = None,
-    resource_defs: Optional[Mapping[str, ResourceDefinition]] = {},
+    connections: list[Connection] | None = None,
+    resource_defs: Mapping[str, ResourceDefinition] | None = {},
 ) -> Definitions:
     """Construct a Dagster repository corresponding to Airflow DAGs in dag_path.
 
@@ -109,7 +108,6 @@ def make_dagster_definitions_from_airflow_dags_path(
 
     Args:
         dag_path (str): Path to directory or file that contains Airflow Dags
-        include_examples (bool): True to include Airflow's example DAGs. (default: False)
         safe_mode (bool): True to use Airflow's default heuristic to find files that contain DAGs
             (ie find files that contain both b'DAG' and b'airflow') (default: True)
         connections (List[Connection]): List of Airflow Connections to be created in the Airflow DB
@@ -126,12 +124,12 @@ def make_dagster_definitions_from_airflow_dags_path(
         resource_defs["airflow_db"] = make_ephemeral_airflow_db_resource(connections=connections)
 
     if (
-        resource_defs["airflow_db"].resource_fn.__qualname__.split(".")[0]
+        resource_defs["airflow_db"].resource_fn.__qualname__.split(".")[0]  # ty: ignore[unresolved-attribute]
         == "AirflowEphemeralDatabase"
     ):
         AirflowEphemeralDatabase._initialize_database(connections=connections)  # noqa: SLF001
     elif (
-        resource_defs["airflow_db"].resource_fn.__qualname__.split(".")[0]
+        resource_defs["airflow_db"].resource_fn.__qualname__.split(".")[0]  # ty: ignore[unresolved-attribute]
         == "AirflowPersistentDatabase"
     ):
         AirflowPersistentDatabase._initialize_database(  # noqa: SLF001
@@ -163,7 +161,7 @@ def make_dagster_definitions_from_airflow_dags_path(
     )
 )
 def make_dagster_definitions_from_airflow_example_dags(
-    resource_defs: Optional[Mapping[str, ResourceDefinition]] = {},
+    resource_defs: Mapping[str, ResourceDefinition] | None = {},
 ) -> Definitions:
     """Construct a Dagster repository for Airflow's example DAGs.
 
@@ -207,8 +205,8 @@ def make_dagster_definitions_from_airflow_example_dags(
 )
 def make_schedules_and_jobs_from_airflow_dag_bag(
     dag_bag: DagBag,
-    connections: Optional[list[Connection]] = None,
-    resource_defs: Optional[Mapping[str, ResourceDefinition]] = {},
+    connections: list[Connection] | None = None,
+    resource_defs: Mapping[str, ResourceDefinition] | None = {},
 ) -> tuple[list[ScheduleDefinition], list[JobDefinition]]:
     """Construct Dagster Schedules and Jobs corresponding to Airflow DagBag.
 

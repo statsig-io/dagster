@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from collections.abc import Sequence
 from contextlib import contextmanager
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import duckdb
 from dagster import IOManagerDefinition, OutputContext, io_manager
@@ -13,6 +13,7 @@ from dagster._core.storage.db_io_manager import (
     DbTypeHandler,
     TablePartitionDimension,
     TableSlice,
+    static_where_clause,
 )
 from dagster._core.storage.io_manager import dagster_maintained_io_manager
 from dagster._utils.backoff import backoff
@@ -23,7 +24,7 @@ DUCKDB_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def build_duckdb_io_manager(
-    type_handlers: Sequence[DbTypeHandler], default_load_type: Optional[type] = None
+    type_handlers: Sequence[DbTypeHandler], default_load_type: type | None = None
 ) -> IOManagerDefinition:
     """Builds an IO manager definition that reads inputs from and writes outputs to DuckDB.
 
@@ -232,7 +233,7 @@ class DuckDBIOManager(ConfigurableIOManagerFactory):
         ),
         default={},
     )
-    schema_: Optional[str] = Field(
+    schema_: str | None = Field(
         default=None, alias="schema", description="Name of the schema to use."
     )  # schema is a reserved word for pydantic
 
@@ -241,7 +242,7 @@ class DuckDBIOManager(ConfigurableIOManagerFactory):
     def type_handlers() -> Sequence[DbTypeHandler]: ...
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         return None
 
     def create_io_manager(self, context) -> DbIOManager:
@@ -280,7 +281,7 @@ class DuckDbClient(DbClient):
 
     @staticmethod
     @contextmanager
-    def connect(context, _):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def connect(context, _):
         config = context.resource_config["connection_config"]
 
         # support for `custom_user_agent` was added in v1.0.0
@@ -323,7 +324,7 @@ def _partition_where_clause(partition_dimensions: Sequence[TablePartitionDimensi
         (
             _time_window_where_clause(partition_dimension)
             if isinstance(partition_dimension.partitions, TimeWindow)
-            else _static_where_clause(partition_dimension)
+            else static_where_clause(partition_dimension)
         )
         for partition_dimension in partition_dimensions
     )
@@ -335,8 +336,3 @@ def _time_window_where_clause(table_partition: TablePartitionDimension) -> str:
     start_dt_str = start_dt.strftime(DUCKDB_DATETIME_FORMAT)
     end_dt_str = end_dt.strftime(DUCKDB_DATETIME_FORMAT)
     return f"""{table_partition.partition_expr} >= '{start_dt_str}' AND {table_partition.partition_expr} < '{end_dt_str}'"""
-
-
-def _static_where_clause(table_partition: TablePartitionDimension) -> str:
-    partitions = ", ".join(f"'{partition}'" for partition in table_partition.partitions)
-    return f"""{table_partition.partition_expr} in ({partitions})"""

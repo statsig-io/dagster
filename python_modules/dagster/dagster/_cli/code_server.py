@@ -3,13 +3,13 @@ import logging
 import os
 import sys
 import threading
-from typing import Optional
 
 import click
 import dagster_shared.seven as seven
 from dagster_shared.cli import python_pointer_options
+from dagster_shared.serdes.objects.models.defs_state_info import DefsStateInfo
 
-from dagster._cli.utils import assert_no_remaining_opts
+from dagster._cli.utils import assert_no_remaining_opts, resolve_serialized_defs_state_info
 from dagster._cli.workspace.cli_target import PythonPointerOpts
 from dagster._core.instance import InstanceRef
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
@@ -24,7 +24,9 @@ def get_default_proxy_server_heartbeat_timeout():
     return int(os.getenv("DAGSTER_PROXY_SERVER_HEARTBEAT_TIMEOUT", "30"))
 
 
-DEFAULT_HEARTBEAT_TIMEOUT = get_default_proxy_server_heartbeat_timeout()
+def get_default_grpc_proxy_heartbeat_ttl():
+    """Get the default heartbeat TTL for the gRPC proxy server."""
+    return int(os.getenv("DAGSTER_GRPC_PROXY_HEARTBEAT_TTL_SECONDS", "30"))
 
 
 @click.group(name="code-server")
@@ -161,8 +163,16 @@ def code_server_cli():
     "--heartbeat-timeout",
     type=click.INT,
     required=False,
-    default=DEFAULT_HEARTBEAT_TIMEOUT,
+    default=get_default_proxy_server_heartbeat_timeout(),
     help="How long to wait for a heartbeat from the caller before timing out. Only comes into play if --heartbeat is set. Defaults to 30 seconds.",
+)
+@click.option(
+    "--heartbeat-ttl",
+    type=click.INT,
+    required=False,
+    default=get_default_grpc_proxy_heartbeat_ttl(),
+    help="How long spawned API server processes will wait without receiving a heartbeat from clients before shutting down. This is separate from --heartbeat-timeout, which controls how long the proxy server itself waits for heartbeats from its caller. Defaults to 30 seconds.",
+    envvar="DAGSTER_GRPC_PROXY_HEARTBEAT_TTL_SECONDS",
 )
 @click.option(
     "--instance-ref",
@@ -171,24 +181,32 @@ def code_server_cli():
     help="[INTERNAL] Serialized InstanceRef to use for accessing the instance",
     envvar="DAGSTER_INSTANCE_REF",
 )
+@click.option(
+    "--defs-state-info",
+    type=click.STRING,
+    required=False,
+    help="[INTERNAL] Serialized DefsStateInfo to use for accessing the state versions",
+)
 @python_pointer_options
 def start_command(
-    port: Optional[int],
-    socket: Optional[str],
+    port: int | None,
+    socket: str | None,
     host: str,
-    max_workers: Optional[int],
+    max_workers: int | None,
     use_python_environment_entry_point: bool,
-    fixed_server_id: Optional[str],
+    fixed_server_id: str | None,
     log_level: str,
     log_format: str,
-    container_image: Optional[str],
-    container_context: Optional[str],
+    container_image: str | None,
+    container_context: str | None,
     inject_env_vars_from_instance: bool,
-    location_name: Optional[str],
+    location_name: str | None,
     startup_timeout: int,
     heartbeat: bool,
-    heartbeat_timeout,
-    instance_ref: Optional[str],
+    heartbeat_timeout: int,
+    heartbeat_ttl: int,
+    instance_ref: str | None,
+    defs_state_info: str | None,
     **other_opts,
 ):
     # deferring for import perf
@@ -239,6 +257,8 @@ def start_command(
 
     logger.info("Starting %s", server_desc)
 
+    resolved_defs_state_info = resolve_serialized_defs_state_info(defs_state_info, logger)
+
     server_termination_event = threading.Event()
 
     threadpool_executor = FuturesAwareThreadPoolExecutor(max_workers=max_workers)
@@ -258,6 +278,10 @@ def start_command(
         logger=logger,
         server_heartbeat=heartbeat,
         server_heartbeat_timeout=heartbeat_timeout,
+        heartbeat_ttl=heartbeat_ttl,
+        defs_state_info=deserialize_value(resolved_defs_state_info, DefsStateInfo)
+        if resolved_defs_state_info
+        else None,
     )
     server = DagsterGrpcServer(
         server_termination_event=server_termination_event,

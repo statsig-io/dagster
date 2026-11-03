@@ -1,12 +1,13 @@
 from typing import NamedTuple
 
 import sqlalchemy as db
+import sqlalchemy.exc
 from dagster_shared.serdes import deserialize_value
 from tqdm import tqdm
 
 from dagster._core.assets import AssetDetails
 from dagster._core.events.log import EventLogEntry
-from dagster._core.storage.sqlalchemy_compat import db_select
+from dagster._core.storage.sqlalchemy_compat import db_result, db_select
 from dagster._time import datetime_from_timestamp
 
 SECONDARY_INDEX_ASSET_KEY = "asset_key_table"  # builds the asset key table from the event log
@@ -26,12 +27,12 @@ def migrate_event_log_data(instance=None):
     """
     from dagster._core.storage.event_log.sql_event_log import SqlEventLogStorage
 
-    event_log_storage = instance._event_storage  # noqa: SLF001  # pyright: ignore[reportOptionalMemberAccess]
+    event_log_storage = instance._event_storage  # noqa: SLF001  # ty: ignore[unresolved-attribute]
 
     if not isinstance(event_log_storage, SqlEventLogStorage):
         return
 
-    for run in instance.get_runs():  # pyright: ignore[reportOptionalMemberAccess]
+    for run in instance.get_runs():  # ty: ignore[unresolved-attribute]
         for record in event_log_storage.get_records_for_run(run.run_id).records:
             event_log_storage.update_event_log_record(record.storage_id, record.event_log_entry)
 
@@ -55,7 +56,8 @@ def migrate_asset_key_data(event_log_storage, print_fn=None):
     with event_log_storage.index_connection() as conn:
         if print_fn:
             print_fn("Querying event logs.")
-        to_insert = conn.execute(query).fetchall()
+        with db_result(conn, query) as result:
+            to_insert = result.fetchall()
         if print_fn:
             print_fn(f"Found {len(to_insert)} records to index")
             to_insert = tqdm(to_insert)
@@ -64,10 +66,10 @@ def migrate_asset_key_data(event_log_storage, print_fn=None):
             try:
                 conn.execute(
                     AssetKeyTable.insert().values(
-                        asset_key=AssetKey.from_db_string(asset_key).to_string()  # pyright: ignore[reportOptionalMemberAccess]
+                        asset_key=AssetKey.from_db_string(asset_key).to_string()  # ty: ignore[unresolved-attribute]
                     )
                 )
-            except db.exc.IntegrityError:  # pyright: ignore[reportAttributeAccessIssue]
+            except db.exc.IntegrityError:
                 # asset key already present
                 pass
 
@@ -110,7 +112,7 @@ def migrate_asset_keys_index_columns(event_log_storage, print_fn=None):
                 wipe_timestamp = asset_details.last_wipe_timestamp if asset_details else None
 
             if last_materialization_str:
-                event_or_materialization = deserialize_value(last_materialization_str, NamedTuple)
+                event_or_materialization = deserialize_value(last_materialization_str, NamedTuple)  # ty: ignore[no-matching-overload]
 
                 if isinstance(event_or_materialization, EventLogEntry):
                     event = event_or_materialization
@@ -119,14 +121,15 @@ def migrate_asset_keys_index_columns(event_log_storage, print_fn=None):
                 materialization_query = (
                     db_select([SqlEventLogStorageTable.c.event])
                     .where(
-                        SqlEventLogStorageTable.c.asset_key == asset_key.to_string(),  # pyright: ignore[reportOptionalMemberAccess]
+                        SqlEventLogStorageTable.c.asset_key == asset_key.to_string(),  # ty: ignore[unresolved-attribute]
                     )
                     .order_by(SqlEventLogStorageTable.c.timestamp.desc())
                     .limit(1)
                 )
-                materialization_row = conn.execute(materialization_query).fetchone()
+                with db_result(conn, materialization_query) as mat_result:
+                    materialization_row = mat_result.fetchone()
                 if materialization_row:
-                    event = deserialize_value(materialization_row[0], NamedTuple)  # pyright: ignore[reportCallIssue,reportArgumentType]
+                    event = deserialize_value(materialization_row[0], NamedTuple)  # ty: ignore[no-matching-overload]
 
             if not event:
                 # this must be a wiped asset
@@ -140,7 +143,7 @@ def migrate_asset_keys_index_columns(event_log_storage, print_fn=None):
                         ),
                     )
                     .where(
-                        AssetKeyTable.c.asset_key == asset_key.to_string(),  # pyright: ignore[reportOptionalMemberAccess]
+                        AssetKeyTable.c.asset_key == asset_key.to_string(),  # ty: ignore[unresolved-attribute]
                     )
                 )
             else:
@@ -154,7 +157,7 @@ def migrate_asset_keys_index_columns(event_log_storage, print_fn=None):
                         ),
                     )
                     .where(
-                        AssetKeyTable.c.asset_key == asset_key.to_string(),  # pyright: ignore[reportOptionalMemberAccess]
+                        AssetKeyTable.c.asset_key == asset_key.to_string(),  # ty: ignore[unresolved-attribute]
                     )
                 )
 
@@ -169,11 +172,12 @@ def sql_asset_event_generator(conn, cursor=None, batch_size=1000):
         if cursor:
             query = query.where(SqlEventLogStorageTable.c.id < cursor)
         query = query.order_by(SqlEventLogStorageTable.c.id.desc()).limit(batch_size)
-        fetched = conn.execute(query).fetchall()
+        with db_result(conn, query) as result:
+            fetched = result.fetchall()
 
         for record_id, event_json in fetched:
             cursor = record_id
-            event_record = deserialize_value(event_json, NamedTuple)
+            event_record = deserialize_value(event_json, NamedTuple)  # ty: ignore[no-matching-overload]
             if not isinstance(event_record, EventLogEntry):
                 continue
             yield (record_id, event_record)

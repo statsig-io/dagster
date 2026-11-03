@@ -1,7 +1,14 @@
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
-from dagster import AssetsDefinition, multi_asset
-from dagster._annotations import beta
+from dagster import (
+    AssetsDefinition,
+    BackfillPolicy,
+    PartitionsDefinition,
+    TimeWindowPartitionsDefinition,
+    multi_asset,
+)
+from dagster._annotations import public
 from dagster._core.errors import DagsterInvariantViolationError
 
 from dagster_dbt.asset_utils import (
@@ -16,16 +23,18 @@ from dagster_dbt.cloud_v2.resources import DbtCloudWorkspace
 from dagster_dbt.dagster_dbt_translator import DagsterDbtTranslator
 
 
-@beta
+@public
 def dbt_cloud_assets(
     *,
     workspace: DbtCloudWorkspace,
     select: str = DBT_DEFAULT_SELECT,
     exclude: str = DBT_DEFAULT_EXCLUDE,
     selector: str = DBT_DEFAULT_SELECTOR,
-    name: Optional[str] = None,
-    group_name: Optional[str] = None,
-    dagster_dbt_translator: Optional[DagsterDbtTranslator] = None,
+    name: str | None = None,
+    group_name: str | None = None,
+    dagster_dbt_translator: DagsterDbtTranslator | None = None,
+    partitions_def: PartitionsDefinition | None = None,
+    backfill_policy: BackfillPolicy | None = None,
 ) -> Callable[[Callable[..., Any]], AssetsDefinition]:
     """Create a definition for how to compute a set of dbt Cloud resources,
     described by a manifest.json for a given dbt Cloud workspace.
@@ -42,6 +51,11 @@ def dbt_cloud_assets(
         dagster_dbt_translator (Optional[DagsterDbtTranslator], optional): The translator to use
             to convert dbt Cloud content into :py:class:`dagster.AssetSpec`.
             Defaults to :py:class:`DagsterDbtTranslator`.
+        partitions_def (Optional[PartitionsDefinition]): Defines the set of partition keys that
+            compose the dbt Cloud assets.
+        backfill_policy (Optional[BackfillPolicy]): If a partitions_def is defined, this determines
+            the behavior when launching backfills for the assets. Defaults to single-run backfill
+            policy when a TimeWindowPartitionsDefinition is provided.
     """
     dagster_dbt_translator = dagster_dbt_translator or DagsterDbtTranslator()
 
@@ -61,9 +75,16 @@ def dbt_cloud_assets(
     if any([spec for spec in specs if spec.group_name]) and group_name:
         raise DagsterInvariantViolationError(
             f"Cannot set group_name parameter on dbt_cloud_assets for dbt Cloud workspace with account "
-            f"{workspace.account_name}, project {workspace.project_name} and environment {workspace.environment_name} -"
+            f"{workspace.credentials.account_id}, project {workspace.project_id} and environment {workspace.environment_id} -"
             f" one or more of the dbt Cloud asset specs have a group_name defined."
         )
+
+    if (
+        partitions_def
+        and isinstance(partitions_def, TimeWindowPartitionsDefinition)
+        and not backfill_policy
+    ):
+        backfill_policy = BackfillPolicy.single_run()
 
     return multi_asset(
         name=name,
@@ -77,4 +98,6 @@ def dbt_cloud_assets(
             exclude=exclude,
             selector=selector,
         ),
+        partitions_def=partitions_def,
+        backfill_policy=backfill_policy,
     )

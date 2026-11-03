@@ -1,14 +1,9 @@
-from typing import Callable, Optional
+from collections.abc import Callable
 from unittest import mock
 
 import pytest
-import responses
-from dagster_dg_core.utils import ensure_dagster_dg_tests_import
-
-ensure_dagster_dg_tests_import()
-
 from dagster_dg_cli.utils.plus import gql
-from dagster_dg_core_tests.utils import ProxyRunner, isolated_example_workspace
+from dagster_test.dg_utils.utils import ProxyRunner, isolated_example_workspace
 
 from dagster_dg_cli_tests.cli_tests.plus_tests.utils import mock_gql_response
 
@@ -23,7 +18,7 @@ def mock_get_or_create_agent_token():
 
 @pytest.fixture
 def mock_token_gql_responses() -> Callable[[str], None]:
-    def _mock(description: Optional[str] = None) -> None:
+    def _mock(description: str | None = None) -> None:
         mock_gql_response(
             query=gql.AGENT_TOKENS_QUERY,
             json_data={
@@ -45,7 +40,6 @@ def mock_token_gql_responses() -> Callable[[str], None]:
     return _mock
 
 
-@responses.activate
 @pytest.mark.parametrize("description", ["Used in dagster-workspace GitHub Actions", None])
 def test_create_ci_api_token(
     dg_plus_cli_config,

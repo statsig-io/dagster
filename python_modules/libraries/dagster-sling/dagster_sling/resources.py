@@ -8,10 +8,8 @@ import time
 import uuid
 from collections.abc import Generator, Iterator, Sequence
 from enum import Enum
-from subprocess import PIPE, STDOUT, Popen
-from typing import IO, Any, AnyStr, Optional, Union
+from typing import IO, Any, AnyStr
 
-import sling
 from dagster import (
     AssetExecutionContext,
     AssetMaterialization,
@@ -97,7 +95,7 @@ class SlingConnectionResource(PermissiveConfig):
                 host=EnvVar("SNOWFLAKE_HOST"),
                 user=EnvVar("SNOWFLAKE_USER"),
                 database=EnvVar("SNOWFLAKE_DATABASE"),
-                password=EnvVar("SNOWFLAKE_PASSWORD"),
+                private_key=EnvVar("SNOWFLAKE_PRIVATE_KEY"),
                 role=EnvVar("SNOWFLAKE_ROLE")
             )
     """
@@ -108,7 +106,7 @@ class SlingConnectionResource(PermissiveConfig):
     type: str = Field(
         description="Type of the source connection, must match the Sling connection types. Use 'file' for local storage."
     )
-    connection_string: Optional[str] = Field(
+    connection_string: str | None = Field(
         description="The optional connection string for the source database, if not using keyword arguments.",
         default=None,
     )
@@ -138,7 +136,7 @@ class SlingResource(ConfigurableResource):
                         host=EnvVar("SNOWFLAKE_HOST"),
                         user=EnvVar("SNOWFLAKE_USER"),
                         database=EnvVar("SNOWFLAKE_DATABASE"),
-                        password=EnvVar("SNOWFLAKE_PASSWORD"),
+                        private_key=EnvVar("SNOWFLAKE_PRIVATE_KEY"),
                         role=EnvVar("SNOWFLAKE_ROLE"),
                     ),
                 ]
@@ -150,7 +148,7 @@ class SlingResource(ConfigurableResource):
 
     @staticmethod
     def _get_replication_streams_for_context(
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
     ) -> dict[str, Any]:
         """Computes the sling replication streams config for a given execution context with an
         assets def, possibly involving a subset selection of sling assets.
@@ -168,7 +166,7 @@ class SlingResource(ConfigurableResource):
         if run_config:  # triggered via sensor
             run_config_ops = run_config.get("ops", {})
             if isinstance(run_config_ops, dict):
-                assets_op_config = run_config_ops.get(assets_def.op.name, {}).get("config", {})
+                assets_op_config = run_config_ops.get(assets_def.op.name, {}).get("config", {})  # ty: ignore[no-matching-overload]
             else:
                 assets_op_config = {}
             context_streams = assets_op_config.get("context_streams", {})
@@ -216,7 +214,7 @@ class SlingResource(ConfigurableResource):
         return d
 
     def _query_metadata(
-        self, metadata_string: str, start_time: float, base_metadata: Union[list, None] = None
+        self, metadata_string: str, start_time: float, base_metadata: list | None = None
     ):
         """Metadata quering using regular expression from standard sling log.
 
@@ -279,8 +277,12 @@ class SlingResource(ConfigurableResource):
             yield
 
     def _clean_line(self, line: str) -> str:
-        """Removes ANSI escape sequences from a line of output."""
-        return ANSI_ESCAPE.sub("", line).replace("INF", "")
+        """Removes ANSI escape sequences and Sling log prefixes from a line of output."""
+        line = ANSI_ESCAPE.sub("", line)
+        # Remove Sling log format prefix: "{timestamp} {LEVEL} " (e.g., "1:04PM INF ")
+        # Match pattern: optional timestamp followed by log level (INF, WRN, ERR, DBG) and space
+        line = re.sub(r"^\d{1,2}:\d{2}[AP]M\s+(INF|WRN|ERR|DBG)\s+", "", line)
+        return line
 
     def _clean_timestamp_log(self, line: str):
         """Remove timestamp from log gather from sling cli to reduce redundency in dagster log.
@@ -305,17 +307,6 @@ class SlingResource(ConfigurableResource):
             assert isinstance(line, bytes)
             fmt_line = bytes.decode(line, encoding=encoding, errors="replace")
             yield self._clean_line(fmt_line)
-
-    def _exec_sling_cmd(
-        self, cmd, stdin=None, stdout=PIPE, stderr=STDOUT, encoding="utf8"
-    ) -> Generator[str, None, None]:
-        with Popen(cmd, shell=True, stdin=stdin, stdout=stdout, stderr=stderr) as proc:
-            if proc.stdout:
-                yield from self._process_stdout(proc.stdout, encoding=encoding)
-
-            proc.wait()
-            if proc.returncode != 0:
-                raise Exception("Sling command failed with error code %s", proc.returncode)
 
     def _parse_json_table_output(self, table_output: dict[str, Any]) -> list[dict[str, str]]:
         column_keys: list[str] = table_output["fields"]
@@ -368,15 +359,17 @@ class SlingResource(ConfigurableResource):
         Returns:
             str: The output from the Sling CLI.
         """
+        import sling
+
         with environ({"SLING_OUTPUT": "json"}) if force_json else contextlib.nullcontext():
             return subprocess.check_output(args=[sling.SLING_BIN, *args], text=True)
 
     def replicate(
         self,
         *,
-        context: Union[OpExecutionContext, AssetExecutionContext],
-        replication_config: Optional[SlingReplicationParam] = None,
-        dagster_sling_translator: Optional[DagsterSlingTranslator] = None,
+        context: OpExecutionContext | AssetExecutionContext,
+        replication_config: SlingReplicationParam | None = None,
+        dagster_sling_translator: DagsterSlingTranslator | None = None,
         debug: bool = False,
         stream: bool = False,
     ) -> SlingEventIterator[SlingEventType]:
@@ -415,7 +408,7 @@ class SlingResource(ConfigurableResource):
     def _replicate(
         self,
         *,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         replication_config: dict[str, Any],
         dagster_sling_translator: DagsterSlingTranslator,
         debug: bool,
@@ -450,13 +443,15 @@ class SlingResource(ConfigurableResource):
 
     def _batch_sling_replicate(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         replication_config: dict[str, Any],
         dagster_sling_translator: DagsterSlingTranslator,
         env: dict,
         debug: bool,
-    ) -> Generator[Union[MaterializeResult, AssetMaterialization], None, None]:
+    ) -> Generator[MaterializeResult | AssetMaterialization, None, None]:
         """Underlying function to run replication and fetch metadata in batch mode."""
+        import sling
+
         # convert to dict to enable updating the index
         context_streams = self._get_replication_streams_for_context(context)
 
@@ -471,7 +466,7 @@ class SlingResource(ConfigurableResource):
         temp_dir = tempfile.gettempdir()
         temp_file = os.path.join(temp_dir, f"sling-replication-{uid}.json")
 
-        with open(temp_file, "w") as file:
+        with open(temp_file, "w", encoding="utf-8") as file:
             json.dump(replication_config, file, cls=sling.JsonEncoder)
 
         logger.debug(f"Replication config: {replication_config}")
@@ -513,6 +508,7 @@ class SlingResource(ConfigurableResource):
                 "stream_name": stream_definition["name"],
                 **TableMetadataSet(
                     table_name=table_name,
+                    storage_kind=destination_name,
                 ),
             }
 
@@ -523,13 +519,15 @@ class SlingResource(ConfigurableResource):
 
     def _stream_sling_replicate(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         replication_config: dict[str, Any],
         dagster_sling_translator: DagsterSlingTranslator,
         env: dict,
         debug: bool,
-    ) -> Generator[Union[MaterializeResult, AssetMaterialization], None, None]:
+    ) -> Generator[MaterializeResult | AssetMaterialization, None, None]:
         """Underlying function to run replication and fetch metadata in stream mode."""
+        import sling
+
         # define variable to use to compute metadata during run
         current_stream = None
         metadata_text = []
@@ -545,7 +543,7 @@ class SlingResource(ConfigurableResource):
         temp_dir = tempfile.gettempdir()
         temp_file = os.path.join(temp_dir, f"sling-replication-{uid}.json")
 
-        with open(temp_file, "w") as file:
+        with open(temp_file, "w", encoding="utf-8") as file:
             json.dump(replication_config, file, cls=sling.JsonEncoder)
 
         logger.debug(f"Replication config: {replication_config}")
@@ -613,9 +611,9 @@ class SlingResource(ConfigurableResource):
                     metadata["stream_name"] = current_stream
                     logger.debug(metadata)
                     if context.has_assets_def:
-                        yield MaterializeResult(asset_key=asset_key, metadata=metadata)  # pyright: ignore[reportPossiblyUnboundVariable]
+                        yield MaterializeResult(asset_key=asset_key, metadata=metadata)
                     else:
-                        yield AssetMaterialization(asset_key=asset_key, metadata=metadata)  # pyright: ignore[reportPossiblyUnboundVariable]
+                        yield AssetMaterialization(asset_key=asset_key, metadata=metadata)
 
                     current_stream = None
                     metadata_text = []

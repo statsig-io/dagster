@@ -1,14 +1,16 @@
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
-from dagster._annotations import beta, deprecated
+from dagster._annotations import beta
 from dagster._core.definitions.asset_key import AssetKey
 from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
 from dagster._core.definitions.metadata.metadata_set import NamespacedMetadataSet, TableMetadataSet
 from dagster._record import record
 from dagster._utils.cached_method import cached_method
 from dagster_shared.serdes import whitelist_for_serdes
+from dateutil.parser import isoparse
 
 from dagster_airbyte.utils import generate_table_schema, get_airbyte_connection_table_name
 
@@ -23,31 +25,20 @@ class AirbyteJobStatusType(str, Enum):
     INCOMPLETE = "incomplete"
 
 
-@deprecated(breaking_version="1.10", additional_warn_text="Use `AirbyteJobStatusType` instead.")
-class AirbyteState:
-    RUNNING = AirbyteJobStatusType.RUNNING
-    SUCCEEDED = AirbyteJobStatusType.SUCCEEDED
-    CANCELLED = AirbyteJobStatusType.CANCELLED
-    PENDING = AirbyteJobStatusType.PENDING
-    FAILED = AirbyteJobStatusType.FAILED
-    ERROR = AirbyteJobStatusType.ERROR
-    INCOMPLETE = AirbyteJobStatusType.INCOMPLETE
-
-
 @record
 class AirbyteConnectionTableProps:
     table_name: str
-    stream_prefix: Optional[str]
+    stream_prefix: str | None
     stream_name: str
     json_schema: Mapping[str, Any]
     connection_id: str
     connection_name: str
-    destination_type: Optional[str]
-    database: Optional[str]
-    schema: Optional[str]
+    destination_type: str | None
+    database: str | None
+    schema: str | None
 
     @property
-    def fully_qualified_table_name(self) -> Optional[str]:
+    def fully_qualified_table_name(self) -> str | None:
         return (
             f"{self.database}.{self.schema}.{self.stream_name}"
             if self.database and self.schema
@@ -62,7 +53,7 @@ class AirbyteConnection:
 
     id: str
     name: str
-    stream_prefix: Optional[str]
+    stream_prefix: str | None
     streams: Mapping[str, "AirbyteStream"]
     destination_id: str
 
@@ -92,8 +83,8 @@ class AirbyteDestination:
 
     id: str
     type: str
-    database: Optional[str]
-    schema: Optional[str]
+    database: str | None
+    schema: str | None
 
     @classmethod
     def from_destination_details(
@@ -138,6 +129,13 @@ class AirbyteJob:
 
     id: int
     status: str
+    type: str
+    connection_id: str | None = None
+    start_time: datetime | None = None
+    last_updated_at: datetime | None = None
+    duration: str | None = None
+    bytes_synced: int | None = None
+    rows_synced: int | None = None
 
     @classmethod
     def from_job_details(
@@ -147,6 +145,15 @@ class AirbyteJob:
         return cls(
             id=job_details["jobId"],
             status=job_details["status"],
+            type=job_details["jobType"],
+            connection_id=job_details.get("connectionId"),
+            start_time=isoparse(job_details["startTime"]) if "startTime" in job_details else None,
+            last_updated_at=isoparse(job_details["lastUpdatedAt"])
+            if "lastUpdatedAt" in job_details
+            else None,
+            duration=job_details.get("duration"),
+            bytes_synced=job_details.get("bytesScanned"),
+            rows_synced=job_details.get("rowsSynced"),
         )
 
 
@@ -170,24 +177,24 @@ class AirbyteWorkspaceData:
         for connection in self.connections_by_id.values():
             destination = self.destinations_by_id[connection.destination_id]
 
-            for stream in connection.streams.values():
-                if stream.selected:
-                    data.append(
-                        AirbyteConnectionTableProps(
-                            table_name=get_airbyte_connection_table_name(
-                                stream_prefix=connection.stream_prefix,
-                                stream_name=stream.name,
-                            ),
-                            stream_prefix=connection.stream_prefix,
-                            stream_name=stream.name,
-                            json_schema=stream.json_schema,
-                            connection_id=connection.id,
-                            connection_name=connection.name,
-                            destination_type=destination.type,
-                            database=destination.database,
-                            schema=destination.schema,
-                        )
-                    )
+            data.extend(
+                AirbyteConnectionTableProps(
+                    table_name=get_airbyte_connection_table_name(
+                        stream_prefix=connection.stream_prefix,
+                        stream_name=stream.name,
+                    ),
+                    stream_prefix=connection.stream_prefix,
+                    stream_name=stream.name,
+                    json_schema=stream.json_schema,
+                    connection_id=connection.id,
+                    connection_name=connection.name,
+                    destination_type=destination.type,
+                    database=destination.database,
+                    schema=destination.schema,
+                )
+                for stream in connection.streams.values()
+                if stream.selected
+            )
 
         return data
 
@@ -195,7 +202,7 @@ class AirbyteWorkspaceData:
 class AirbyteMetadataSet(NamespacedMetadataSet):
     connection_id: str
     connection_name: str
-    stream_prefix: Optional[str] = None
+    stream_prefix: str | None = None
 
     @classmethod
     def namespace(cls) -> str:
@@ -221,6 +228,7 @@ class DagsterAirbyteTranslator:
             **TableMetadataSet(
                 column_schema=column_schema,
                 table_name=props.fully_qualified_table_name,
+                storage_kind=props.destination_type,
             ),
             **AirbyteMetadataSet(
                 connection_id=props.connection_id,

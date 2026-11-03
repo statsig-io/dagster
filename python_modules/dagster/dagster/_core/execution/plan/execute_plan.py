@@ -1,7 +1,6 @@
 import sys
 from collections.abc import Iterator, Sequence
 from contextlib import ExitStack
-from typing import Optional, cast
 
 from dagster_shared.error import DagsterError
 
@@ -33,7 +32,7 @@ from dagster._utils.error import SerializableErrorInfo, serializable_error_info_
 def inner_plan_execution_iterator(
     job_context: PlanExecutionContext,
     execution_plan: ExecutionPlan,
-    instance_concurrency_context: Optional[InstanceConcurrencyContext] = None,
+    instance_concurrency_context: InstanceConcurrencyContext | None = None,
 ) -> Iterator[DagsterEvent]:
     check.inst_param(job_context, "pipeline_context", PlanExecutionContext)
     check.inst_param(execution_plan, "execution_plan", ExecutionPlan)
@@ -42,6 +41,7 @@ def inner_plan_execution_iterator(
     with execution_plan.start(
         retry_mode=job_context.retry_mode,
         instance_concurrency_context=instance_concurrency_context,
+        step_dependency_config=job_context.step_dependency_config,
     ) as active_execution:
         with ExitStack() as capture_stack:
             # begin capturing logs for the whole process
@@ -65,10 +65,7 @@ def inner_plan_execution_iterator(
                     active_execution.sleep_til_ready()
                     continue
 
-                step_context = cast(
-                    "StepExecutionContext",
-                    job_context.for_step(step, active_execution.get_known_state()),
-                )
+                step_context = job_context.for_step(step, active_execution.get_known_state())
                 step_event_list = []
 
                 missing_resources = [
@@ -173,7 +170,7 @@ def _trigger_hook(
             yield DagsterEvent.hook_completed(step_context, hook_def)
 
 
-def _user_failure_data_for_exc(exc: Optional[BaseException]) -> Optional[UserFailureData]:
+def _user_failure_data_for_exc(exc: BaseException | None) -> UserFailureData | None:
     if isinstance(exc, Failure):
         return UserFailureData(
             label="intentional-failure",
@@ -307,6 +304,7 @@ def dagster_event_sequence_for_step(
 
     # case (3) in top comment
     except DagsterUserCodeExecutionError as dagster_user_error:
+        assert dagster_user_error.user_exception is not None
         step_context.capture_step_exception(dagster_user_error.user_exception)
         yield step_failure_event_from_exc_info(
             step_context,

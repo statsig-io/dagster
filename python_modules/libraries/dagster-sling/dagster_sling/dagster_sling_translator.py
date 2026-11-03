@@ -1,8 +1,8 @@
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
-from dagster import AssetKey, AssetSpec, AutoMaterializePolicy, LegacyFreshnessPolicy, MetadataValue
+from dagster import AssetKey, AssetSpec, AutoMaterializePolicy, MetadataValue
 from dagster._annotations import public, superseded
 from dagster._utils.names import clean_name_lower_with_dots
 from dagster._utils.warnings import supersession_warning
@@ -41,9 +41,6 @@ class DagsterSlingTranslator:
             ),
             group_name=self._resolve_back_compat_method(
                 "get_group_name", self._default_group_name_fn, stream_definition
-            ),
-            legacy_freshness_policy=self._resolve_back_compat_method(
-                "get_freshness_policy", self._default_freshness_policy_fn, stream_definition
             ),
             auto_materialize_policy=self._resolve_back_compat_method(
                 "get_auto_materialize_policy",
@@ -292,7 +289,7 @@ class DagsterSlingTranslator:
         additional_warn_text="Use `DagsterSlingTranslator.get_asset_spec(...).description` instead.",
     )
     @public
-    def get_description(self, stream_definition: Mapping[str, Any]) -> Optional[str]:
+    def get_description(self, stream_definition: Mapping[str, Any]) -> str | None:
         """Retrieves the description for a given stream definition.
 
         This method checks the provided stream definition for a description. It first looks
@@ -308,7 +305,7 @@ class DagsterSlingTranslator:
         """
         return self._default_description_fn(stream_definition)
 
-    def _default_description_fn(self, stream_definition: Mapping[str, Any]) -> Optional[str]:
+    def _default_description_fn(self, stream_definition: Mapping[str, Any]) -> str | None:
         """Retrieves the description for a given stream definition.
 
         This method checks the provided stream definition for a description. It first looks
@@ -433,7 +430,7 @@ class DagsterSlingTranslator:
         additional_warn_text="Use `DagsterSlingTranslator.get_asset_spec(...).group_name` instead.",
     )
     @public
-    def get_group_name(self, stream_definition: Mapping[str, Any]) -> Optional[str]:
+    def get_group_name(self, stream_definition: Mapping[str, Any]) -> str | None:
         """Retrieves the group name for a given stream definition.
 
         This method checks the provided stream definition for a group name in the metadata
@@ -448,7 +445,7 @@ class DagsterSlingTranslator:
         """
         return self._default_group_name_fn(stream_definition)
 
-    def _default_group_name_fn(self, stream_definition: Mapping[str, Any]) -> Optional[str]:
+    def _default_group_name_fn(self, stream_definition: Mapping[str, Any]) -> str | None:
         """Retrieves the group name for a given stream definition.
 
         This method checks the provided stream definition for a group name in the metadata
@@ -466,64 +463,12 @@ class DagsterSlingTranslator:
         return meta.get("dagster", {}).get("group")
 
     @superseded(
-        additional_warn_text="Use `DagsterSlingTranslator.get_asset_spec(...).freshness_policy` instead.",
-    )
-    @public
-    def get_freshness_policy(
-        self, stream_definition: Mapping[str, Any]
-    ) -> Optional[LegacyFreshnessPolicy]:
-        """Retrieves the freshness policy for a given stream definition.
-
-        This method checks the provided stream definition for a specific configuration
-        indicating a freshness policy. If the configuration is found, it constructs and
-        returns a FreshnessPolicy object based on the provided parameters. Otherwise,
-        it returns None.
-
-        Parameters:
-            stream_definition (Mapping[str, Any]): A dictionary representing the stream definition,
-            which includes configuration details.
-
-        Returns:
-            Optional[FreshnessPolicy]: A FreshnessPolicy object if the configuration is found,
-            otherwise None.
-        """
-        return self._default_freshness_policy_fn(stream_definition)
-
-    def _default_freshness_policy_fn(
-        self, stream_definition: Mapping[str, Any]
-    ) -> Optional[LegacyFreshnessPolicy]:
-        """Retrieves the freshness policy for a given stream definition.
-
-        This method checks the provided stream definition for a specific configuration
-        indicating a freshness policy. If the configuration is found, it constructs and
-        returns a FreshnessPolicy object based on the provided parameters. Otherwise,
-        it returns None.
-
-        Parameters:
-            stream_definition (Mapping[str, Any]): A dictionary representing the stream definition,
-            which includes configuration details.
-
-        Returns:
-            Optional[FreshnessPolicy]: A FreshnessPolicy object if the configuration is found,
-            otherwise None.
-        """
-        config = stream_definition.get("config", {}) or {}
-        meta = config.get("meta", {})
-        freshness_policy_config = meta.get("dagster", {}).get("freshness_policy")
-        if freshness_policy_config:
-            return LegacyFreshnessPolicy(
-                maximum_lag_minutes=float(freshness_policy_config["maximum_lag_minutes"]),
-                cron_schedule=freshness_policy_config.get("cron_schedule"),
-                cron_schedule_timezone=freshness_policy_config.get("cron_schedule_timezone"),
-            )
-
-    @superseded(
         additional_warn_text="Use `DagsterSlingTranslator.get_asset_spec(...).auto_materialize_policy` instead.",
     )
     @public
     def get_auto_materialize_policy(
         self, stream_definition: Mapping[str, Any]
-    ) -> Optional[AutoMaterializePolicy]:
+    ) -> AutoMaterializePolicy | None:
         """Defines the auto-materialize policy for a given stream definition.
 
         This method checks the provided stream definition for a specific configuration
@@ -542,7 +487,7 @@ class DagsterSlingTranslator:
 
     def _default_auto_materialize_policy_fn(
         self, stream_definition: Mapping[str, Any]
-    ) -> Optional[AutoMaterializePolicy]:
+    ) -> AutoMaterializePolicy | None:
         """Defines the auto-materialize policy for a given stream definition.
 
         This method checks the provided stream definition for a specific configuration

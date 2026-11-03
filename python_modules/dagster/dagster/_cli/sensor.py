@@ -2,7 +2,6 @@ import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Optional
 
 import click
 from dagster_shared.cli import workspace_options
@@ -29,7 +28,7 @@ from dagster._cli.workspace.cli_target import (
 )
 from dagster._core.definitions.run_request import InstigatorType
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation import RemoteRepository
+from dagster._core.remote_representation.external import RemoteRepository
 from dagster._core.scheduler.instigation import (
     InstigatorState,
     InstigatorStatus,
@@ -134,7 +133,7 @@ def execute_list_command(
 @click.option("--start-all", help="start all sensors", is_flag=True, default=False)
 @workspace_options
 @repository_options
-def sensor_start_command(sensor_name: Optional[str], start_all: bool, **other_opts: object):
+def sensor_start_command(sensor_name: str | None, start_all: bool, **other_opts: object):
     workspace_opts = WorkspaceOpts.extract_from_cli_options(other_opts)
     repository_opts = RepositoryOpts.extract_from_cli_options(other_opts)
     assert_no_remaining_opts(other_opts)
@@ -149,7 +148,7 @@ def sensor_start_command(sensor_name: Optional[str], start_all: bool, **other_op
 
 def execute_start_command(
     *,
-    sensor_name: Optional[str],
+    sensor_name: str | None,
     start_all: bool,
     workspace_opts: WorkspaceOpts,
     repository_opts: RepositoryOpts,
@@ -165,7 +164,7 @@ def execute_start_command(
                     instance.start_sensor(sensor)
                 print_fn(f"Started all sensors for repository {repo.name}")
             except DagsterInvariantViolationError as ex:
-                raise click.UsageError(ex)  # pyright: ignore[reportArgumentType]
+                raise click.UsageError(ex)  # ty: ignore[invalid-argument-type]
         else:
             if not sensor_name:
                 raise click.UsageError("Missing sensor name argument")
@@ -173,7 +172,7 @@ def execute_start_command(
                 sensor = repo.get_sensor(sensor_name)
                 instance.start_sensor(sensor)
             except DagsterInvariantViolationError as ex:
-                raise click.UsageError(ex)  # pyright: ignore[reportArgumentType]
+                raise click.UsageError(ex)  # ty: ignore[invalid-argument-type]
 
             print_fn(f"Started sensor {sensor_name}")
 
@@ -213,7 +212,7 @@ def execute_stop_command(
                 sensor,
             )
         except DagsterInvariantViolationError as ex:
-            raise click.UsageError(ex)  # pyright: ignore[reportArgumentType]
+            raise click.UsageError(ex)  # ty: ignore[invalid-argument-type]
 
         print_fn(f"Stopped sensor {sensor_name}")
 
@@ -240,9 +239,9 @@ def execute_stop_command(
 @repository_options
 def sensor_preview_command(
     sensor_name: str,
-    since: Optional[float],
-    last_run_key: Optional[str],
-    cursor: Optional[str],
+    since: float | None,
+    last_run_key: str | None,
+    cursor: str | None,
     **other_opts: object,
 ):
     workspace_opts = WorkspaceOpts.extract_from_cli_options(other_opts)
@@ -263,14 +262,16 @@ def sensor_preview_command(
 def execute_preview_command(
     *,
     sensor_name: str,
-    since: Optional[float],
-    last_run_key: Optional[str],
-    cursor: Optional[str],
+    since: float | None,
+    last_run_key: str | None,
+    cursor: str | None,
     workspace_opts: WorkspaceOpts,
     repository_opts: RepositoryOpts,
     print_fn: PrintFn,
-    instance: Optional[DagsterInstance] = None,
+    instance: DagsterInstance | None = None,
 ):
+    from dagster._daemon.sensor import fetch_existing_runs
+
     # We don't call _get_repo here because we need the code location.
     with (
         get_instance_for_cli() as instance,
@@ -296,7 +297,7 @@ def execute_preview_command(
             )
         except Exception:
             error_info = serializable_error_info_from_exc_info(sys.exc_info())
-            print_fn(f"Failed to resolve sensor for {sensor.name} : {error_info.to_string()}")  # pyright: ignore[reportPossiblyUnboundVariable]
+            print_fn(f"Failed to resolve sensor for {sensor.name} : {error_info.to_string()}")
             return
 
         if not sensor_runtime_data.run_requests:
@@ -307,14 +308,31 @@ def execute_preview_command(
             else:
                 print_fn(f"Sensor returned false for {sensor.name}, skipping")
         else:
-            print_fn(
-                "Sensor returning run requests for {num} run(s):\n\n{run_requests}".format(
-                    num=len(sensor_runtime_data.run_requests),
-                    run_requests="\n".join(
-                        dump_run_config_yaml(run_request.run_config)
-                        for run_request in sensor_runtime_data.run_requests
-                    ),
+            existing_runs = fetch_existing_runs(instance, sensor, sensor_runtime_data.run_requests)
+            skipped_run_requests = []
+            returned_run_requests = []
+
+            for run_request in sensor_runtime_data.run_requests:
+                if run_request.run_key in existing_runs:
+                    skipped_run_requests.append(run_request)
+                else:
+                    returned_run_requests.append(run_request)
+
+            if skipped_run_requests:
+                rr_string = "\n".join(
+                    dump_run_config_yaml(run_request.run_config)
+                    for run_request in skipped_run_requests
                 )
+                print_fn(
+                    f"Skipping run requests for {len(skipped_run_requests)} run(s) that already have runs matching their run_keys:\n\n{rr_string}"
+                )
+
+            rr_string = "\n".join(
+                dump_run_config_yaml(run_request.run_config)
+                for run_request in returned_run_requests
+            )
+            print_fn(
+                f"Sensor returning run requests for {len(returned_run_requests)} run(s):\n\n{rr_string}"
             )
 
 
@@ -332,7 +350,7 @@ def execute_preview_command(
 @workspace_options
 @repository_options
 def sensor_cursor_command(
-    sensor_name: str, cursor_value: Optional[str], delete: bool, **other_opts: object
+    sensor_name: str, cursor_value: str | None, delete: bool, **other_opts: object
 ):
     workspace_opts = WorkspaceOpts.extract_from_cli_options(other_opts)
     repository_opts = RepositoryOpts.extract_from_cli_options(other_opts)
@@ -350,7 +368,7 @@ def sensor_cursor_command(
 def execute_cursor_command(
     *,
     sensor_name: str,
-    cursor_value: Optional[str],
+    cursor_value: str | None,
     delete: bool,
     workspace_opts: WorkspaceOpts,
     repository_opts: RepositoryOpts,
@@ -383,12 +401,12 @@ def execute_cursor_command(
             instance.update_instigator_state(
                 job_state.with_data(
                     SensorInstigatorData(
-                        last_tick_timestamp=job_state.instigator_data.last_tick_timestamp,  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-                        last_run_key=job_state.instigator_data.last_run_key,  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+                        last_tick_timestamp=job_state.instigator_data.last_tick_timestamp,  # ty: ignore[unresolved-attribute]
+                        last_run_key=job_state.instigator_data.last_run_key,  # ty: ignore[unresolved-attribute]
                         min_interval=sensor.min_interval_seconds,
                         cursor=cursor_value,
-                        last_tick_start_timestamp=job_state.instigator_data.last_tick_start_timestamp,  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
-                        last_sensor_start_timestamp=job_state.instigator_data.last_sensor_start_timestamp,  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+                        last_tick_start_timestamp=job_state.instigator_data.last_tick_start_timestamp,  # ty: ignore[unresolved-attribute]
+                        last_sensor_start_timestamp=job_state.instigator_data.last_sensor_start_timestamp,  # ty: ignore[unresolved-attribute]
                         sensor_type=sensor.sensor_type,
                     ),
                 )

@@ -1,11 +1,12 @@
 import time
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import dagster_shared.seven as seven
 from typing_extensions import Self
 
 from dagster import _check as check
+from dagster._annotations import public
 from dagster._config.config_schema import UserConfigSchema
 from dagster._core.errors import (
     DagsterInvariantViolationError,
@@ -25,12 +26,13 @@ if TYPE_CHECKING:
 
 
 # note: this class is a top level export, so we defer many imports til use for performance
+@public
 class DefaultRunLauncher(RunLauncher, ConfigurableClass):
     """Launches runs against running GRPC servers."""
 
     def __init__(
         self,
-        inst_data: Optional[ConfigurableClassData] = None,
+        inst_data: ConfigurableClassData | None = None,
     ):
         self._inst_data = inst_data
 
@@ -39,7 +41,7 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
         super().__init__()
 
     @property
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         return self._inst_data
 
     @classmethod
@@ -139,7 +141,7 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
         if GRPC_INFO_TAG not in tags:
             return None
 
-        grpc_info = seven.json.loads(tags.get(GRPC_INFO_TAG))  # pyright: ignore[reportArgumentType]
+        grpc_info = seven.json.loads(tags.get(GRPC_INFO_TAG))  # ty: ignore[invalid-argument-type]
 
         return DagsterGrpcClient(
             port=grpc_info.get("port"),
@@ -195,7 +197,7 @@ class DefaultRunLauncher(RunLauncher, ConfigurableClass):
                 for run_id in self._run_ids
                 if (
                     self._instance.get_run_by_id(run_id)
-                    and not self._instance.get_run_by_id(run_id).is_finished  # pyright: ignore[reportOptionalMemberAccess]
+                    and not self._instance.get_run_by_id(run_id).is_finished  # ty: ignore[unresolved-attribute]
                 )
             ]
 

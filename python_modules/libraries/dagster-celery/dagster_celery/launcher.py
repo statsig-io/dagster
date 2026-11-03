@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from celery import Celery
 from dagster import (
@@ -43,17 +43,17 @@ class CeleryRunLauncher(RunLauncher, ConfigurableClass):
     starts runs as Celery tasks.
     """
 
-    _instance: DagsterInstance  # pyright: ignore[reportIncompatibleMethodOverride]
+    _instance: DagsterInstance
     celery: Celery
 
     def __init__(
         self,
         default_queue: str,
-        broker: Optional[str] = None,
-        backend: Optional[str] = None,
-        include: Optional[list[str]] = None,
-        config_source: Optional[dict] = None,
-        inst_data: Optional[ConfigurableClassData] = None,
+        broker: str | None = None,
+        backend: str | None = None,
+        include: list[str] | None = None,
+        config_source: dict | None = None,
+        inst_data: ConfigurableClassData | None = None,
     ) -> None:
         self._inst_data = check.opt_inst_param(inst_data, "inst_data", ConfigurableClassData)
 
@@ -129,7 +129,7 @@ class CeleryRunLauncher(RunLauncher, ConfigurableClass):
             set_exit_code_on_failure=True,
         )
 
-        task = create_resume_job_task(args)
+        task = create_resume_job_task(self.celery)
         task_signature = task.si(
             execute_job_args_packed=pack_value(args),
         )
@@ -200,8 +200,8 @@ class CeleryRunLauncher(RunLauncher, ConfigurableClass):
 
     @override
     def get_run_worker_debug_info(
-        self, run: DagsterRun, include_container_logs: Optional[bool] = True
-    ) -> Optional[str]:
+        self, run: DagsterRun, include_container_logs: bool | None = True
+    ) -> str | None:
         task_id = run.tags[DAGSTER_CELERY_TASK_ID_TAG]
 
         result: AsyncResult = self.celery.AsyncResult(task_id)
@@ -218,7 +218,7 @@ class CeleryRunLauncher(RunLauncher, ConfigurableClass):
         )
 
     @property
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         return self._inst_data
 
     @classmethod

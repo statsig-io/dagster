@@ -2,6 +2,7 @@ import dagster as dg
 import pytest
 from dagster import AssetSelection, DefaultSensorStatus
 from dagster._check import ParameterCheckError
+from dagster._core.definitions.asset_key import AssetJobKey
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
 )
@@ -34,7 +35,7 @@ def test_constructor(selection: AssetSelection, user_code: bool) -> None:
     if not user_code:
         with pytest.raises(
             NotImplementedError,
-            match="Automation condition sensors cannot be evaluated like regular user-space sensors.",
+            match=r"Automation condition sensors cannot be evaluated like regular user-space sensors.",
         ):
             automation_sensor(dg.build_sensor_context())
 
@@ -52,6 +53,28 @@ def test_default_condition() -> None:
         use_user_code_server=True,
     )
     assert sensor.default_condition == AutomationCondition.eager()
+
+
+def test_asset_job_keys_not_supported_with_user_code_server() -> None:
+    with pytest.raises(ParameterCheckError, match="job automation conditions"):
+        dg.AutomationConditionSensorDefinition(
+            "foo",
+            target="*",
+            use_user_code_server=True,
+            asset_job_keys={AssetJobKey(job_name="some_job")},
+        )
+
+    # fine on a daemon-evaluated sensor
+    sensor = dg.AutomationConditionSensorDefinition(
+        "foo", target="*", asset_job_keys={AssetJobKey(job_name="some_job")}
+    )
+    assert sensor.asset_job_keys == {AssetJobKey(job_name="some_job")}
+
+    # an empty set does not trip the guard
+    sensor = dg.AutomationConditionSensorDefinition(
+        "foo", target="*", use_user_code_server=True, asset_job_keys=set()
+    )
+    assert sensor.asset_job_keys == set()
 
 
 def test_limits() -> None:

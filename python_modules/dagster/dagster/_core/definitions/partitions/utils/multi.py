@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, NamedTuple, Optional, cast
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._core.definitions.partitions.context import (
     PartitionLoadingContext,
     partition_loading_context,
@@ -15,12 +16,15 @@ from dagster._core.storage.tags import (
 from dagster._record import record
 
 if TYPE_CHECKING:
+    from dagster._core.definitions.partitions.definition.multi import MultiPartitionsDefinition
     from dagster._core.definitions.partitions.definition.partitions_definition import (
         PartitionsDefinition,
     )
     from dagster._core.definitions.partitions.definition.time_window import (
         TimeWindowPartitionsDefinition,
     )
+    from dagster._core.definitions.partitions.partition_key_range import PartitionKeyRange
+    from dagster._core.definitions.partitions.utils.time_window import TimeWindow
 
 INVALID_STATIC_PARTITIONS_KEY_CHARACTERS = set(["|", ",", "[", "]"])
 
@@ -49,6 +53,23 @@ def has_one_dimension_time_window_partitioning(
     return False
 
 
+def time_window_for_partition_key_range(
+    partitions_def: "PartitionsDefinition",
+    key_range: "PartitionKeyRange",
+) -> "TimeWindow":
+    """Compute the TimeWindow spanning a PartitionKeyRange for a time-partitioned definition.
+
+    The partitions_def must satisfy has_one_dimension_time_window_partitioning.
+    """
+    from dagster._core.definitions.partitions.utils.time_window import TimeWindow
+
+    typed_def = cast("TimeWindowPartitionsDefinition | MultiPartitionsDefinition", partitions_def)
+    return TimeWindow(
+        typed_def.time_window_for_partition_key(key_range.start).start,
+        typed_def.time_window_for_partition_key(key_range.end).end,
+    )
+
+
 def get_time_partitions_def(
     partitions_def: Optional["PartitionsDefinition"],
 ) -> Optional["TimeWindowPartitionsDefinition"]:
@@ -75,7 +96,7 @@ def get_time_partitions_def(
 
 
 def get_time_partition_key(
-    partitions_def: Optional["PartitionsDefinition"], partition_key: Optional[str]
+    partitions_def: Optional["PartitionsDefinition"], partition_key: str | None
 ) -> str:
     from dagster._core.definitions.partitions.definition.multi import MultiPartitionsDefinition
     from dagster._core.definitions.partitions.definition.time_window import (
@@ -110,6 +131,7 @@ class PartitionDimensionKey(
         )
 
 
+@public
 class MultiPartitionKey(str):
     """A multi-dimensional partition key stores the partition key for each dimension.
     Subclasses the string class to keep partition key type as a string.
@@ -142,7 +164,7 @@ class MultiPartitionKey(str):
 
         return str_key
 
-    def __getnewargs__(self):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def __getnewargs__(self):
         # When this instance is pickled, replace the argument to __new__ with the
         # dimension key mapping instead of the string representation.
         return ({dim_key.dimension_name: dim_key.partition_key for dim_key in self.dimension_keys},)
@@ -175,7 +197,7 @@ def get_multipartition_key_from_tags(tags: Mapping[str, str]) -> str:
 class MultiPartitionCursor:
     """A cursor for MultiPartitionsDefinition that tracks last seen keys for each dimension."""
 
-    last_seen_key: Optional[MultiPartitionKey]
+    last_seen_key: MultiPartitionKey | None
 
     def __str__(self) -> str:
         return self.to_string()
@@ -189,7 +211,7 @@ class MultiPartitionCursor:
         return base64.b64encode(bytes(raw, encoding="utf-8")).decode("utf-8")
 
     @classmethod
-    def from_cursor(cls, cursor: Optional[str]):
+    def from_cursor(cls, cursor: str | None):
         if cursor is None:
             return MultiPartitionCursor(last_seen_key=None)
 
@@ -229,6 +251,8 @@ class PartitionDimensionDefinition(
             and self.name == other.name
             and self.partitions_def == other.partitions_def
         )
+
+    __hash__ = None
 
 
 class MultiDimensionalPartitionKeyIterator:
@@ -341,7 +365,7 @@ class MultiDimensionalPartitionKeyIterator:
             state[dim_name] < 0 for dim_name in state
         )
 
-    def _partition_key_from_state(self, state, dimension_keys) -> Optional[MultiPartitionKey]:
+    def _partition_key_from_state(self, state, dimension_keys) -> MultiPartitionKey | None:
         if self._is_state_invalid(state, dimension_keys):
             return None
 

@@ -1,16 +1,18 @@
 import abc
+import logging
 import os
 from collections.abc import Mapping, Sequence
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 from dagster_shared.error import DagsterError
 from typing_extensions import Self
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._config import Field, IntSource
 from dagster._core.definitions.run_request import InstigatorType
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation import RemoteSchedule
+from dagster._core.remote_representation.external import RemoteSchedule
 from dagster._core.scheduler.instigation import (
     InstigatorState,
     InstigatorStatus,
@@ -59,6 +61,7 @@ class SchedulerDebugInfo(
         )
 
 
+@public
 class Scheduler(abc.ABC):
     """Abstract base class for a scheduler. This component is responsible for interfacing with
     an external system such as cron to ensure scheduled repeated execution according.
@@ -82,6 +85,22 @@ class Scheduler(abc.ABC):
         stored_state = instance.get_instigator_state(
             remote_schedule.get_remote_origin_id(), remote_schedule.selector_id
         )
+        # If the stored state has a different instigator type (e.g., this was a
+        # sensor with the same name), delete the invalid row so later reads
+        # don't re-hit it and we don't short-circuit on the old state's status
+        # or copy over incompatible data.
+        if stored_state and stored_state.instigator_type != InstigatorType.SCHEDULE:
+            logging.getLogger("dagster").warning(
+                "Deleting stored %s instigator state for %s since a schedule with the "
+                "same name is being started.",
+                stored_state.instigator_type.value,
+                remote_schedule.get_remote_origin_id(),
+            )
+            instance.delete_instigator_state(
+                remote_schedule.get_remote_origin_id(), remote_schedule.selector_id
+            )
+            stored_state = None
+
         computed_state = remote_schedule.get_current_instigator_state(stored_state)
         if computed_state.is_running:
             return computed_state
@@ -111,7 +130,7 @@ class Scheduler(abc.ABC):
         instance: DagsterInstance,
         schedule_origin_id: str,
         schedule_selector_id: str,
-        remote_schedule: Optional[RemoteSchedule],
+        remote_schedule: RemoteSchedule | None,
     ) -> InstigatorState:
         """Updates the status of the given schedule to `InstigatorStatus.STOPPED` in schedule storage,.
 
@@ -124,6 +143,25 @@ class Scheduler(abc.ABC):
         check.opt_inst_param(remote_schedule, "remote_schedule", RemoteSchedule)
 
         stored_state = instance.get_instigator_state(schedule_origin_id, schedule_selector_id)
+        # If the stored state has a different instigator type (e.g., this was a
+        # sensor with the same name), delete the invalid row so later reads
+        # don't re-hit it and we don't short-circuit on the old state's status
+        # or copy over incompatible data. Only do this when we have a
+        # remote_schedule — without it we have no way to rebuild a correct
+        # state.
+        if (
+            stored_state
+            and remote_schedule
+            and stored_state.instigator_type != InstigatorType.SCHEDULE
+        ):
+            logging.getLogger("dagster").warning(
+                "Deleting stored %s instigator state for %s since a schedule with the "
+                "same name is being stopped.",
+                stored_state.instigator_type.value,
+                schedule_origin_id,
+            )
+            instance.delete_instigator_state(schedule_origin_id, schedule_selector_id)
+            stored_state = None
 
         if not remote_schedule:
             computed_state = stored_state
@@ -172,6 +210,20 @@ class Scheduler(abc.ABC):
         stored_state = instance.get_instigator_state(
             remote_schedule.get_remote_origin_id(), remote_schedule.selector_id
         )
+        # If the stored state has a different instigator type (e.g., this was a
+        # sensor with the same name), delete the invalid row so we add a fresh
+        # state of the correct type below.
+        if stored_state and stored_state.instigator_type != InstigatorType.SCHEDULE:
+            logging.getLogger("dagster").warning(
+                "Deleting stored %s instigator state for %s since a schedule with the "
+                "same name is being reset.",
+                stored_state.instigator_type.value,
+                remote_schedule.get_remote_origin_id(),
+            )
+            instance.delete_instigator_state(
+                remote_schedule.get_remote_origin_id(), remote_schedule.selector_id
+            )
+            stored_state = None
 
         new_status = InstigatorStatus.DECLARED_IN_CODE
 
@@ -221,7 +273,7 @@ class DagsterDaemonScheduler(Scheduler, ConfigurableClass):
         self,
         max_catchup_runs: int = DEFAULT_MAX_CATCHUP_RUNS,
         max_tick_retries: int = 0,
-        inst_data: Optional[ConfigurableClassData] = None,
+        inst_data: ConfigurableClassData | None = None,
     ):
         self.max_catchup_runs = check.opt_int_param(
             max_catchup_runs, "max_catchup_runs", DEFAULT_MAX_CATCHUP_RUNS
@@ -230,7 +282,7 @@ class DagsterDaemonScheduler(Scheduler, ConfigurableClass):
         self._inst_data = inst_data
 
     @property
-    def inst_data(self) -> Optional[ConfigurableClassData]:
+    def inst_data(self) -> ConfigurableClassData | None:
         return self._inst_data
 
     @classmethod

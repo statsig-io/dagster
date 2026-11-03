@@ -1,14 +1,14 @@
 import base64
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from enum import Enum
-from typing import Callable, Literal, NamedTuple, Optional, Union
+from typing import Literal, NamedTuple, TypeAlias
 
+from dagster_shared.record import record
 from dagster_shared.seven import json
-from typing_extensions import TypeAlias
 
 import dagster._check as check
-from dagster._annotations import PublicAttr
+from dagster._annotations import PublicAttr, public
 from dagster._core.definitions.events import AssetKey, AssetMaterialization, AssetObservation
 from dagster._core.events import EVENT_TYPE_TO_PIPELINE_RUN_STATUS, DagsterEventType
 from dagster._core.events.log import EventLogEntry
@@ -63,6 +63,7 @@ class EventLogCursor(NamedTuple):
         return EventLogCursor(EventLogCursorType.STORAGE_ID, storage_id)
 
 
+@public
 class RunShardedEventsCursor(NamedTuple):
     """Pairs an id-based event log cursor with a timestamp-based run cursor, for improved
     performance on run-sharded event log storages (e.g. the default SqliteEventLogStorage). For
@@ -89,10 +90,11 @@ AssetEventType: TypeAlias = Literal[
     DagsterEventType.ASSET_FAILED_TO_MATERIALIZE,
 ]
 
-EventCursor: TypeAlias = Union[int, RunShardedEventsCursor]
+EventCursor: TypeAlias = int | RunShardedEventsCursor
 
 
 @whitelist_for_serdes
+@public
 class EventLogRecord(NamedTuple):
     """Internal representation of an event record, as stored in a
     :py:class:`~dagster._core.storage.event_log.EventLogStorage`.
@@ -112,7 +114,7 @@ class EventLogRecord(NamedTuple):
         return self.event_log_entry.timestamp
 
     @property
-    def asset_key(self) -> Optional[AssetKey]:
+    def asset_key(self) -> AssetKey | None:
         dagster_event = self.event_log_entry.dagster_event
         if dagster_event:
             return dagster_event.asset_key
@@ -120,7 +122,7 @@ class EventLogRecord(NamedTuple):
         return None
 
     @property
-    def partition_key(self) -> Optional[str]:
+    def partition_key(self) -> str | None:
         dagster_event = self.event_log_entry.dagster_event
         if dagster_event:
             return dagster_event.partition
@@ -128,15 +130,15 @@ class EventLogRecord(NamedTuple):
         return None
 
     @property
-    def asset_materialization(self) -> Optional[AssetMaterialization]:
+    def asset_materialization(self) -> AssetMaterialization | None:
         return self.event_log_entry.asset_materialization
 
     @property
-    def asset_observation(self) -> Optional[AssetObservation]:
+    def asset_observation(self) -> AssetObservation | None:
         return self.event_log_entry.asset_observation
 
     @property
-    def asset_event(self) -> Optional[Union[AssetMaterialization, AssetObservation]]:
+    def asset_event(self) -> AssetMaterialization | AssetObservation | None:
         return self.asset_materialization or self.asset_observation
 
     @property
@@ -158,18 +160,19 @@ class EventRecordsResult(NamedTuple):
 
 
 @whitelist_for_serdes
+@public
 class EventRecordsFilter(
     NamedTuple(
         "_EventRecordsFilter",
         [
             ("event_type", DagsterEventType),
-            ("asset_key", Optional[AssetKey]),
-            ("asset_partitions", Optional[Sequence[str]]),
-            ("after_cursor", Optional[EventCursor]),
-            ("before_cursor", Optional[EventCursor]),
-            ("after_timestamp", Optional[float]),
-            ("before_timestamp", Optional[float]),
-            ("storage_ids", Optional[Sequence[int]]),
+            ("asset_key", AssetKey | None),
+            ("asset_partitions", Sequence[str] | None),
+            ("after_cursor", EventCursor | None),
+            ("before_cursor", EventCursor | None),
+            ("after_timestamp", float | None),
+            ("before_timestamp", float | None),
+            ("storage_ids", Sequence[int] | None),
         ],
     )
 ):
@@ -199,13 +202,13 @@ class EventRecordsFilter(
     def __new__(
         cls,
         event_type: DagsterEventType,
-        asset_key: Optional[AssetKey] = None,
-        asset_partitions: Optional[Sequence[str]] = None,
-        after_cursor: Optional[EventCursor] = None,
-        before_cursor: Optional[EventCursor] = None,
-        after_timestamp: Optional[float] = None,
-        before_timestamp: Optional[float] = None,
-        storage_ids: Optional[Sequence[int]] = None,
+        asset_key: AssetKey | None = None,
+        asset_partitions: Sequence[str] | None = None,
+        after_cursor: EventCursor | None = None,
+        before_cursor: EventCursor | None = None,
+        after_timestamp: float | None = None,
+        before_timestamp: float | None = None,
+        storage_ids: Sequence[int] | None = None,
     ):
         check.opt_sequence_param(asset_partitions, "asset_partitions", of_type=str)
         check.inst_param(event_type, "event_type", DagsterEventType)
@@ -229,8 +232,8 @@ class EventRecordsFilter(
 
     @staticmethod
     def get_cursor_params(
-        cursor: Optional[str] = None, ascending: bool = False
-    ) -> tuple[Optional[int], Optional[int]]:
+        cursor: str | None = None, ascending: bool = False
+    ) -> tuple[int | None, int | None]:
         if not cursor:
             return None, None
 
@@ -242,7 +245,7 @@ class EventRecordsFilter(
         return before_cursor, after_cursor
 
     @property
-    def tags(self) -> Optional[Mapping[str, Union[str, Sequence[str]]]]:
+    def tags(self) -> Mapping[str, str | Sequence[str]] | None:
         return None
 
 
@@ -252,12 +255,12 @@ class AssetRecordsFilter(
         "_AssetRecordsFilter",
         [
             ("asset_key", PublicAttr[AssetKey]),
-            ("asset_partitions", PublicAttr[Optional[Sequence[str]]]),
-            ("after_timestamp", PublicAttr[Optional[float]]),
-            ("before_timestamp", PublicAttr[Optional[float]]),
-            ("after_storage_id", PublicAttr[Optional[int]]),
-            ("before_storage_id", PublicAttr[Optional[int]]),
-            ("storage_ids", PublicAttr[Optional[Sequence[int]]]),
+            ("asset_partitions", PublicAttr[Sequence[str] | None]),
+            ("after_timestamp", PublicAttr[float | None]),
+            ("before_timestamp", PublicAttr[float | None]),
+            ("after_storage_id", PublicAttr[int | None]),
+            ("before_storage_id", PublicAttr[int | None]),
+            ("storage_ids", PublicAttr[Sequence[int] | None]),
         ],
     )
 ):
@@ -272,9 +275,9 @@ class AssetRecordsFilter(
             events with timestamp greater than the provided value are returned.
         before_timestamp (Optional[float]): Filter parameter such that only event records for
             events with timestamp less than the provided value are returned.
-        after_storage_id (Optional[float]): Filter parameter such that only event records for
+        after_storage_id (Optional[int]): Filter parameter such that only event records for
             events with storage_id greater than the provided value are returned.
-        before_storage_id (Optional[float]): Filter parameter such that only event records for
+        before_storage_id (Optional[int]): Filter parameter such that only event records for
             events with storage_id less than the provided value are returned.
         storage_ids (Optional[Sequence[int]]): Filter parameter such that only event records for
             the given storage ids are returned.
@@ -285,12 +288,12 @@ class AssetRecordsFilter(
     def __new__(
         cls,
         asset_key: AssetKey,
-        asset_partitions: Optional[Sequence[str]] = None,
-        after_timestamp: Optional[float] = None,
-        before_timestamp: Optional[float] = None,
-        after_storage_id: Optional[int] = None,
-        before_storage_id: Optional[int] = None,
-        storage_ids: Optional[Sequence[int]] = None,
+        asset_partitions: Sequence[str] | None = None,
+        after_timestamp: float | None = None,
+        before_timestamp: float | None = None,
+        after_storage_id: int | None = None,
+        before_storage_id: int | None = None,
+        storage_ids: Sequence[int] | None = None,
     ):
         return super().__new__(
             cls,
@@ -306,7 +309,7 @@ class AssetRecordsFilter(
         )
 
     def to_event_records_filter(
-        self, event_type: AssetEventType, cursor: Optional[str] = None, ascending: bool = False
+        self, event_type: AssetEventType, cursor: str | None = None, ascending: bool = False
     ) -> EventRecordsFilter:
         before_cursor_storage_id, after_cursor_storage_id = EventRecordsFilter.get_cursor_params(
             cursor, ascending
@@ -336,8 +339,17 @@ class AssetRecordsFilter(
         )
 
     @property
-    def tags(self) -> Optional[Mapping[str, Union[str, Sequence[str]]]]:
+    def tags(self) -> Mapping[str, str | Sequence[str]] | None:
         return None
+
+
+@record
+class PartitionKeyFilter:
+    """Filter for the partition keys that should be included in the result. Allows for filtering on
+    unpartitioned assets, specific partition keys, or a combination of both.
+    """
+
+    key: str | None
 
 
 @whitelist_for_serdes
@@ -346,12 +358,12 @@ class RunStatusChangeRecordsFilter(
         "_RunStatusChangeRecordsFilter",
         [
             ("event_type", PublicAttr[RunStatusChangeEventType]),
-            ("after_timestamp", PublicAttr[Optional[float]]),
-            ("before_timestamp", PublicAttr[Optional[float]]),
-            ("after_storage_id", PublicAttr[Optional[int]]),
-            ("before_storage_id", PublicAttr[Optional[int]]),
-            ("storage_ids", PublicAttr[Optional[Sequence[int]]]),
-            ("job_names", Optional[Sequence[str]]),
+            ("after_timestamp", PublicAttr[float | None]),
+            ("before_timestamp", PublicAttr[float | None]),
+            ("after_storage_id", PublicAttr[int | None]),
+            ("before_storage_id", PublicAttr[int | None]),
+            ("storage_ids", PublicAttr[Sequence[int] | None]),
+            ("job_names", Sequence[str] | None),
         ],
     )
 ):
@@ -363,9 +375,9 @@ class RunStatusChangeRecordsFilter(
             events with timestamp greater than the provided value are returned.
         before_timestamp (Optional[float]): Filter parameter such that only event records for
             events with timestamp less than the provided value are returned.
-        after_storage_id (Optional[float]): Filter parameter such that only event records for
+        after_storage_id (Optional[int]): Filter parameter such that only event records for
             events with storage_id greater than the provided value are returned.
-        before_storage_id (Optional[float]): Filter parameter such that only event records for
+        before_storage_id (Optional[int]): Filter parameter such that only event records for
             events with storage_id less than the provided value are returned.
         storage_ids (Optional[Sequence[int]]): Filter parameter such that only event records for
             the given storage ids are returned.
@@ -374,12 +386,12 @@ class RunStatusChangeRecordsFilter(
     def __new__(
         cls,
         event_type: RunStatusChangeEventType,
-        after_timestamp: Optional[float] = None,
-        before_timestamp: Optional[float] = None,
-        after_storage_id: Optional[int] = None,
-        before_storage_id: Optional[int] = None,
-        storage_ids: Optional[Sequence[int]] = None,
-        job_names: Optional[Sequence[str]] = None,
+        after_timestamp: float | None = None,
+        before_timestamp: float | None = None,
+        after_storage_id: int | None = None,
+        before_storage_id: int | None = None,
+        storage_ids: Sequence[int] | None = None,
+        job_names: Sequence[str] | None = None,
     ):
         if event_type not in EVENT_TYPE_TO_PIPELINE_RUN_STATUS:
             check.failed("Invalid event type for run status change event filter")
@@ -396,7 +408,7 @@ class RunStatusChangeRecordsFilter(
         )
 
     def to_event_records_filter_without_job_names(
-        self, cursor: Optional[str] = None, ascending: bool = False
+        self, cursor: str | None = None, ascending: bool = False
     ) -> EventRecordsFilter:
         before_cursor_storage_id, after_cursor_storage_id = EventRecordsFilter.get_cursor_params(
             cursor, ascending

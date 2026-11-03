@@ -3,7 +3,7 @@ import textwrap
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from dagster_dg_core.utils import activate_venv
 
@@ -35,10 +35,11 @@ SNIPPETS_DIR = (
 
 def _swap_to_mock_powerbi_component(path: Path) -> None:
     path.write_text(
-        path.read_text().replace(
+        path.read_text(encoding="utf-8").replace(
             "dagster_powerbi.PowerBIWorkspaceComponent",
             "my_project.defs.powerbi_ingest.test_powerbi_utils.MockPowerBIComponent",
-        )
+        ),
+        encoding="utf-8",
     )
 
 

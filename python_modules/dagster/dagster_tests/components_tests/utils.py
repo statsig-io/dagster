@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import TracebackType
-from typing import Any, Iterable, Mapping, Optional, TypeVar, Union  # noqa: UP035
+from typing import Any, Iterable, Mapping, TypeVar  # noqa: UP035
 
 import dagster as dg
 import tomlkit
@@ -17,11 +17,12 @@ from click.testing import Result
 from dagster import Component
 from dagster._utils import alter_sys_path, pushd
 from dagster._utils.pydantic_yaml import enrich_validation_errors_with_source_position
+from dagster.components.core.component_tree import ComponentTree
 from dagster.components.core.defs_module import (
+    ComponentPath,
     asset_post_processor_list_from_post_processing_dict,
     context_with_injected_scope,
 )
-from dagster.components.core.tree import ComponentTree
 from dagster.components.resolved.core_models import post_process_defs
 from dagster.components.utils import ensure_loadable_path
 from dagster_shared import check
@@ -34,10 +35,13 @@ T_Component = TypeVar("T_Component", bound=Component)
 
 def load_context_and_component_for_test(
     component_type: type[T_Component],
-    attrs: Union[str, dict[str, Any]],
-    template_vars_module: Optional[str] = None,
+    attrs: str | dict[str, Any],
+    template_vars_module: str | None = None,
 ) -> tuple[dg.ComponentLoadContext, T_Component]:
-    context = ComponentTree.for_test().load_context
+    tree = ComponentTree.for_test()
+    # Root load_context is keyed at ComponentRootLoc(); swap in a ComponentPath
+    # so template vars that read `context.path` work.
+    context = tree.load_context.for_component_loc(ComponentPath.from_path(tree.defs_module_path))
     model_cls = check.not_none(
         component_type.get_model_cls(), "Component must have schema for direct test"
     )
@@ -57,7 +61,7 @@ def load_context_and_component_for_test(
 
 
 def load_component_for_test(
-    component_type: type[T_Component], attrs: Union[str, dict[str, Any]]
+    component_type: type[T_Component], attrs: str | dict[str, Any]
 ) -> T_Component:
     _, component = load_context_and_component_for_test(component_type, attrs)
     return component
@@ -66,7 +70,7 @@ def load_component_for_test(
 def build_component_defs_for_test(
     component_type: type[dg.Component],
     attrs: dict[str, Any],
-    post_processing: Optional[Mapping[str, Any]] = None,
+    post_processing: Mapping[str, Any] | None = None,
 ) -> dg.Definitions:
     context, component = load_context_and_component_for_test(component_type, attrs)
     return post_process_defs(
@@ -113,7 +117,7 @@ def temp_code_location_bar() -> Iterator[None]:
         Path("bar/bar/lib").mkdir(parents=True)
         Path("bar/bar/components").mkdir(parents=True)
         Path("bar/bar/defs").mkdir(parents=True)
-        with open("bar/pyproject.toml", "w") as f:
+        with open("bar/pyproject.toml", "w", encoding="utf-8") as f:
             f.write(generate_component_lib_pyproject_toml("bar", is_project=True))
         Path("bar/bar/__init__.py").touch()
         Path("bar/bar/definitions.py").touch()
@@ -124,7 +128,7 @@ def temp_code_location_bar() -> Iterator[None]:
 
 
 def _setup_component_in_folder(
-    src_path: str, dst_path: str, local_component_defn_to_inject: Optional[Path]
+    src_path: str, dst_path: str, local_component_defn_to_inject: Path | None
 ) -> None:
     origin_path = Path(__file__).parent / "integration_tests" / "integration_test_defs" / src_path
 
@@ -134,9 +138,7 @@ def _setup_component_in_folder(
 
 
 @contextlib.contextmanager
-def inject_component(
-    src_path: str, local_component_defn_to_inject: Optional[Path]
-) -> Iterator[str]:
+def inject_component(src_path: str, local_component_defn_to_inject: Path | None) -> Iterator[str]:
     with tempfile.TemporaryDirectory() as tmpdir:
         _setup_component_in_folder(src_path, tmpdir, local_component_defn_to_inject)
         yield tmpdir
@@ -144,7 +146,7 @@ def inject_component(
 
 @contextlib.contextmanager
 def create_project_from_components(
-    *src_paths: str, local_component_defn_to_inject: Optional[Path] = None
+    *src_paths: str, local_component_defn_to_inject: Path | None = None
 ) -> Iterator[tuple[Path, str]]:
     """Scaffolds a project with the given components in a temporary directory,
     injecting the provided local component defn into each component's __init__.py.
@@ -167,7 +169,7 @@ def create_project_from_components(
         (defs_dir / "__init__.py").touch()
 
         with alter_sys_path(to_add=[str(project_root)], to_remove=[]):
-            with open(project_root / "pyproject.toml", "w") as f:
+            with open(project_root / "pyproject.toml", "w", encoding="utf-8") as f:
                 f.write(generate_component_lib_pyproject_toml(location_name, is_project=True))
 
             for src_path in src_paths:
@@ -224,10 +226,10 @@ def print_exception_info(
 
 @contextmanager
 def modify_toml(path: Path) -> Iterator[tomlkit.TOMLDocument]:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         toml = tomlkit.parse(f.read())
     yield toml
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(tomlkit.dumps(toml))
 
 

@@ -1,10 +1,11 @@
 import collections.abc
 import inspect
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from functools import update_wrapper
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import dagster._check as check
+from dagster._annotations import beta_param, public
 from dagster._core.definitions.asset_selection import AssetSelection, CoercibleToAssetSelection
 from dagster._core.definitions.asset_sensor_definition import AssetSensorDefinition
 from dagster._core.definitions.events import AssetKey
@@ -33,27 +34,29 @@ if TYPE_CHECKING:
     )
 
 
+@beta_param(param="owners")
+@public
 def sensor(
-    job_name: Optional[str] = None,
+    job_name: str | None = None,
     *,
-    name: Optional[str] = None,
-    minimum_interval_seconds: Optional[int] = None,
-    description: Optional[str] = None,
-    job: Optional[ExecutableDefinition] = None,
-    jobs: Optional[Sequence[ExecutableDefinition]] = None,
+    name: str | None = None,
+    minimum_interval_seconds: int | None = None,
+    description: str | None = None,
+    job: ExecutableDefinition | None = None,
+    jobs: Sequence[ExecutableDefinition] | None = None,
     default_status: DefaultSensorStatus = DefaultSensorStatus.STOPPED,
-    asset_selection: Optional[CoercibleToAssetSelection] = None,
-    required_resource_keys: Optional[set[str]] = None,
-    tags: Optional[Mapping[str, str]] = None,
-    metadata: Optional[RawMetadataMapping] = None,
-    target: Optional[
-        Union[
-            "CoercibleToAssetSelection",
-            "AssetsDefinition",
-            "JobDefinition",
-            "UnresolvedAssetJobDefinition",
-        ]
-    ] = None,
+    asset_selection: CoercibleToAssetSelection | None = None,
+    required_resource_keys: set[str] | None = None,
+    tags: Mapping[str, str] | None = None,
+    metadata: RawMetadataMapping | None = None,
+    target: Union[
+        "CoercibleToAssetSelection",
+        "AssetsDefinition",
+        "JobDefinition",
+        "UnresolvedAssetJobDefinition",
+    ]
+    | None = None,
+    owners: Sequence[str] | None = None,
 ) -> Callable[[RawSensorEvaluationFunction], SensorDefinition]:
     """Creates a sensor where the decorated function is used as the sensor's evaluation function.
 
@@ -92,6 +95,9 @@ def sensor(
             It can take :py:class:`~dagster.AssetSelection` objects and anything coercible to it (e.g. `str`, `Sequence[str]`, `AssetKey`, `AssetsDefinition`).
             It can also accept :py:class:`~dagster.JobDefinition` (a function decorated with `@job` is an instance of `JobDefinition`) and `UnresolvedAssetJobDefinition` (the return value of :py:func:`~dagster.define_asset_job`) objects.
             This is a parameter that will replace `job`, `jobs`, and `asset_selection`.
+        owners (Optional[Sequence[str]]): A list of strings representing owners of the sensor.
+            Each string can be a user's email address, or a team name prefixed with `team:`,
+            e.g. `team:finops`.
     """
     check.opt_str_param(name, "name")
 
@@ -99,7 +105,7 @@ def sensor(
         check.callable_param(fn, "fn")
 
         sensor_def = SensorDefinition.dagster_internal_init(
-            name=name or fn.__name__,
+            name=name or fn.__name__,  # ty: ignore[unresolved-attribute]
             job_name=job_name,
             evaluation_fn=fn,
             minimum_interval_seconds=minimum_interval_seconds,
@@ -112,6 +118,7 @@ def sensor(
             tags=tags,
             metadata=metadata,
             target=target,
+            owners=owners,
         )
 
         update_wrapper(sensor_def, wrapped=fn)
@@ -121,19 +128,20 @@ def sensor(
     return inner
 
 
+@public
 def asset_sensor(
     asset_key: AssetKey,
     *,
-    job_name: Optional[str] = None,
-    name: Optional[str] = None,
-    minimum_interval_seconds: Optional[int] = None,
-    description: Optional[str] = None,
-    job: Optional[ExecutableDefinition] = None,
-    jobs: Optional[Sequence[ExecutableDefinition]] = None,
+    job_name: str | None = None,
+    name: str | None = None,
+    minimum_interval_seconds: int | None = None,
+    description: str | None = None,
+    job: ExecutableDefinition | None = None,
+    jobs: Sequence[ExecutableDefinition] | None = None,
     default_status: DefaultSensorStatus = DefaultSensorStatus.STOPPED,
-    required_resource_keys: Optional[set[str]] = None,
-    tags: Optional[Mapping[str, str]] = None,
-    metadata: Optional[RawMetadataMapping] = None,
+    required_resource_keys: set[str] | None = None,
+    tags: Mapping[str, str] | None = None,
+    metadata: RawMetadataMapping | None = None,
 ) -> Callable[
     [
         AssetMaterializationFunction,
@@ -201,7 +209,7 @@ def asset_sensor(
 
     def inner(fn: AssetMaterializationFunction) -> AssetSensorDefinition:
         check.callable_param(fn, "fn")
-        sensor_name = name or fn.__name__
+        sensor_name = name or fn.__name__  # ty: ignore[unresolved-attribute]
 
         def _wrapped_fn(*args, **kwargs) -> Any:
             result = fn(*args, **kwargs)
@@ -229,7 +237,7 @@ def asset_sensor(
 
         # Preserve any resource arguments from the underlying function, for when we inspect the
         # wrapped function later on
-        _wrapped_fn = update_wrapper(_wrapped_fn, wrapped=fn)
+        _wrapped_fn = update_wrapper(_wrapped_fn, wrapped=fn)  # ty: ignore[invalid-assignment]
 
         return AssetSensorDefinition(
             name=sensor_name,
@@ -249,20 +257,21 @@ def asset_sensor(
     return inner
 
 
+@public
 def multi_asset_sensor(
-    monitored_assets: Union[Sequence[AssetKey], AssetSelection],
+    monitored_assets: Sequence[AssetKey] | AssetSelection,
     *,
-    job_name: Optional[str] = None,
-    name: Optional[str] = None,
-    minimum_interval_seconds: Optional[int] = None,
-    description: Optional[str] = None,
-    job: Optional[ExecutableDefinition] = None,
-    jobs: Optional[Sequence[ExecutableDefinition]] = None,
+    job_name: str | None = None,
+    name: str | None = None,
+    minimum_interval_seconds: int | None = None,
+    description: str | None = None,
+    job: ExecutableDefinition | None = None,
+    jobs: Sequence[ExecutableDefinition] | None = None,
     default_status: DefaultSensorStatus = DefaultSensorStatus.STOPPED,
-    request_assets: Optional[AssetSelection] = None,
-    required_resource_keys: Optional[set[str]] = None,
-    tags: Optional[Mapping[str, str]] = None,
-    metadata: Optional[RawMetadataMapping] = None,
+    request_assets: AssetSelection | None = None,
+    required_resource_keys: set[str] | None = None,
+    tags: Mapping[str, str] | None = None,
+    metadata: RawMetadataMapping | None = None,
 ) -> Callable[
     [
         MultiAssetMaterializationFunction,
@@ -318,7 +327,7 @@ def multi_asset_sensor(
 
     def inner(fn: MultiAssetMaterializationFunction) -> MultiAssetSensorDefinition:
         check.callable_param(fn, "fn")
-        sensor_name = name or fn.__name__
+        sensor_name = name or fn.__name__  # ty: ignore[unresolved-attribute]
 
         sensor_def = MultiAssetSensorDefinition(
             name=sensor_name,

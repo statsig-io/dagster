@@ -4,10 +4,10 @@ import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
 from functools import reduce
-from typing import AbstractSet, Optional, Union, cast  # noqa: UP035
+from typing import AbstractSet, TypeAlias, TypeGuard, Union, cast  # noqa: UP035
 
+from dagster_shared.error import DagsterError
 from dagster_shared.serdes import whitelist_for_serdes
-from typing_extensions import TypeAlias, TypeGuard
 
 import dagster._check as check
 from dagster._annotations import beta_param, deprecated, public
@@ -21,7 +21,7 @@ from dagster._core.definitions.asset_key import (
 )
 from dagster._core.definitions.assets.definition.assets_definition import AssetsDefinition
 from dagster._core.definitions.assets.graph.asset_graph import AssetGraph
-from dagster._core.definitions.assets.graph.base_asset_graph import BaseAssetGraph, BaseAssetNode
+from dagster._core.definitions.assets.graph.base_asset_graph import BaseAssetGraph
 from dagster._core.definitions.resolved_asset_deps import resolve_similar_asset_names
 from dagster._core.definitions.source_asset import SourceAsset
 from dagster._core.errors import DagsterInvalidSubsetError
@@ -53,6 +53,17 @@ def is_coercible_to_asset_selection(
     )
 
 
+def _wildcard_to_regex(pattern: str) -> re.Pattern[str]:
+    return re.compile("^" + re.escape(pattern).replace("\\*", ".*") + "$")
+
+
+class DagsterInvalidAssetSelectionError(DagsterError):
+    """An error raised when an invalid asset selection is provided."""
+
+    pass
+
+
+@public
 class AssetSelection(ABC):
     """An AssetSelection defines a query over a set of assets and asset checks, normally all that are defined in a project.
 
@@ -114,7 +125,7 @@ class AssetSelection(ABC):
     @public
     @staticmethod
     def assets(
-        *assets_defs: Union[AssetsDefinition, CoercibleToAssetKey],
+        *assets_defs: AssetsDefinition | CoercibleToAssetKey,
     ) -> "KeysAssetSelection":
         """Returns a selection that includes all of the provided assets and asset checks that target
         them.
@@ -260,7 +271,7 @@ class AssetSelection(ABC):
         return TagAssetSelection(key=key, value=value, include_sources=include_sources)
 
     @staticmethod
-    def kind(kind: Optional[str], include_sources: bool = False) -> "AssetSelection":
+    def kind(kind: str | None, include_sources: bool = False) -> "AssetSelection":
         """Returns a selection that includes materializable assets that have the provided kind, and
         all the asset checks that target them.
 
@@ -292,7 +303,7 @@ class AssetSelection(ABC):
             check.failed(f"Invalid tag selection string: {string}. Must have no more than one '='.")
 
     @staticmethod
-    def owner(owner: Optional[str]) -> "AssetSelection":
+    def owner(owner: str | None) -> "AssetSelection":
         """Returns a selection that includes assets that have the provided owner, and all the
         asset checks that target them.
 
@@ -304,7 +315,7 @@ class AssetSelection(ABC):
     @public
     @staticmethod
     def checks_for_assets(
-        *assets_defs: Union[AssetsDefinition, CoercibleToAssetKey],
+        *assets_defs: AssetsDefinition | CoercibleToAssetKey,
     ) -> "AssetChecksForAssetKeysSelection":
         """Returns a selection with the asset checks that target the provided assets.
 
@@ -319,7 +330,7 @@ class AssetSelection(ABC):
     @public
     @staticmethod
     def checks(
-        *assets_defs_or_check_keys: Union[AssetsDefinition, AssetCheckKey],
+        *assets_defs_or_check_keys: AssetsDefinition | AssetCheckKey,
     ) -> "AssetCheckKeysSelection":
         """Returns a selection that includes all of the provided asset checks or check keys."""
         assets_defs = [ad for ad in assets_defs_or_check_keys if isinstance(ad, AssetsDefinition)]
@@ -333,7 +344,7 @@ class AssetSelection(ABC):
 
     @public
     def downstream(
-        self, depth: Optional[int] = None, include_self: bool = True
+        self, depth: int | None = None, include_self: bool = True
     ) -> "DownstreamAssetSelection":
         """Returns a selection that includes all assets that are downstream of any of the assets in
         this selection, selecting the assets in this selection by default. Includes the asset checks targeting the returned assets. Iterates through each
@@ -352,7 +363,7 @@ class AssetSelection(ABC):
 
     @public
     def upstream(
-        self, depth: Optional[int] = None, include_self: bool = True
+        self, depth: int | None = None, include_self: bool = True
     ) -> "UpstreamAssetSelection":
         """Returns a selection that includes all materializable assets that are upstream of any of
         the assets in this selection, selecting the assets in this selection by default. Includes
@@ -475,7 +486,7 @@ class AssetSelection(ABC):
 
     def resolve(
         self,
-        all_assets: Union[Iterable[Union[AssetsDefinition, SourceAsset]], BaseAssetGraph],
+        all_assets: Iterable[AssetsDefinition | SourceAsset] | BaseAssetGraph,
         allow_missing: bool = False,
     ) -> AbstractSet[AssetKey]:
         """Returns the set of asset keys in all_assets that match this selection.
@@ -546,7 +557,7 @@ class AssetSelection(ABC):
             tag_str = string[len("tag:") :]
             return cls.tag_string(tag_str)
 
-        check.failed(f"Invalid selection string: {string}")
+        raise DagsterInvalidAssetSelectionError(f"Invalid selection string: {string}")
 
     @classmethod
     def from_coercible(cls, selection: CoercibleToAssetSelection) -> "AssetSelection":
@@ -577,7 +588,7 @@ class AssetSelection(ABC):
         ):
             return cls.assets(*cast("Sequence[AssetKey]", selection))
         else:
-            check.failed(
+            raise DagsterError(
                 "selection argument must be one of str, Sequence[str], Sequence[AssetKey],"
                 " Sequence[AssetsDefinition], Sequence[SourceAsset], AssetSelection. Was"
                 f" {type(selection)}."
@@ -622,7 +633,7 @@ class AssetSelection(ABC):
 @whitelist_for_serdes
 @record
 class AllSelection(AssetSelection):
-    include_sources: Optional[bool] = None
+    include_sources: bool | None = None
 
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
@@ -648,7 +659,7 @@ class AllAssetCheckSelection(AssetSelection):
     ) -> AbstractSet[AssetKey]:
         return set()
 
-    def resolve_checks_inner(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def resolve_checks_inner(  # ty: ignore[invalid-method-override]
         self, asset_graph: AssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetCheckKey]:
         return asset_graph.asset_check_keys
@@ -667,7 +678,7 @@ class AssetChecksForAssetKeysSelection(AssetSelection):
     ) -> AbstractSet[AssetKey]:
         return set()
 
-    def resolve_checks_inner(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def resolve_checks_inner(  # ty: ignore[invalid-method-override]
         self, asset_graph: AssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetCheckKey]:
         return {
@@ -690,7 +701,7 @@ class AssetCheckKeysSelection(AssetSelection):
     ) -> AbstractSet[AssetKey]:
         return set()
 
-    def resolve_checks_inner(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def resolve_checks_inner(  # ty: ignore[invalid-method-override]
         self, asset_graph: AssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetCheckKey]:
         specified_keys = set(self.selected_asset_check_keys)
@@ -737,6 +748,8 @@ class OperandListAssetSelection(AssetSelection):
     def needs_parentheses_when_operand(self) -> bool:
         return True
 
+    __hash__ = None
+
 
 @whitelist_for_serdes
 class AndAssetSelection(OperandListAssetSelection):
@@ -751,7 +764,7 @@ class AndAssetSelection(OperandListAssetSelection):
             ),
         )
 
-    def resolve_checks_inner(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def resolve_checks_inner(  # ty: ignore[invalid-method-override]
         self, asset_graph: AssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetCheckKey]:
         return reduce(
@@ -779,7 +792,7 @@ class OrAssetSelection(OperandListAssetSelection):
             ),
         )
 
-    def resolve_checks_inner(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def resolve_checks_inner(  # ty: ignore[invalid-method-override]
         self, asset_graph: AssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetCheckKey]:
         return reduce(
@@ -807,7 +820,7 @@ class SubtractAssetSelection(AssetSelection):
             asset_graph, allow_missing=allow_missing
         ) - self.right.resolve_inner(asset_graph, allow_missing=allow_missing)
 
-    def resolve_checks_inner(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def resolve_checks_inner(  # ty: ignore[invalid-method-override]
         self, asset_graph: AssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetCheckKey]:
         return self.left.resolve_checks_inner(
@@ -886,14 +899,14 @@ class MaterializableAssetSelection(ChainedAssetSelection):
         return {
             asset_key
             for asset_key in self.child.resolve_inner(asset_graph, allow_missing=allow_missing)
-            if cast("BaseAssetNode", asset_graph.get(asset_key)).is_materializable
+            if asset_key in asset_graph.materializable_asset_keys
         }
 
 
 @whitelist_for_serdes
 @record
 class DownstreamAssetSelection(ChainedAssetSelection):
-    depth: Optional[int]
+    depth: int | None
     include_self: bool
 
     def resolve_inner(
@@ -933,16 +946,12 @@ class GroupsAssetSelection(AssetSelection):
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetKey]:
-        base_set = (
-            asset_graph.get_all_asset_keys()
-            if self.include_sources
-            else asset_graph.materializable_asset_keys
-        )
         return {
             key
             for group in self.selected_groups
-            for key in asset_graph.asset_keys_for_group(group)
-            if key is not None and key in base_set
+            for key in asset_graph.asset_keys_for_group(
+                group, require_materializable=not self.include_sources
+            )
         }
 
     def to_serializable_asset_selection(self, asset_graph: BaseAssetGraph) -> "AssetSelection":
@@ -959,43 +968,103 @@ class GroupsAssetSelection(AssetSelection):
 
 @whitelist_for_serdes
 @record
+class GroupWildCardAssetSelection(AssetSelection):
+    """Selection of assets whose group_name matches a wildcard pattern.
+
+    Patterns use ``*`` to match any sequence of characters (including ``/``),
+    so ``marketing/*`` matches both ``marketing/foo`` and
+    ``marketing/foo/bar``.
+    """
+
+    selected_group_wildcard: str
+    include_sources: bool
+
+    def resolve_inner(
+        self, asset_graph: BaseAssetGraph, allow_missing: bool
+    ) -> AbstractSet[AssetKey]:
+        regex = _wildcard_to_regex(self.selected_group_wildcard)
+        return {
+            node.key
+            for node in asset_graph.asset_nodes
+            if node.group_name is not None
+            and regex.match(node.group_name)
+            and (self.include_sources or node.is_materializable)
+        }
+
+    def to_serializable_asset_selection(self, asset_graph: BaseAssetGraph) -> "AssetSelection":
+        return self
+
+    def to_selection_str(self) -> str:
+        return f'group:"{self.selected_group_wildcard}"'
+
+
+@whitelist_for_serdes
+@record
 class KindAssetSelection(AssetSelection):
     include_sources: bool
-    kind_str: Optional[str]
+    kind_str: str | None
 
     def resolve_inner(
         self,
         asset_graph: BaseAssetGraph,
         allow_missing: bool,
     ) -> AbstractSet[AssetKey]:
-        base_set = (
-            asset_graph.get_all_asset_keys()
-            if self.include_sources
-            else asset_graph.materializable_asset_keys
-        )
+        base_nodes = {
+            node.key: node
+            for node in asset_graph.asset_nodes
+            if self.include_sources or node.is_materializable
+        }
 
         if self.kind_str is None:
             return {
-                key
-                for key in base_set
-                if (
-                    not any(
-                        tag_key.startswith(KIND_PREFIX)
-                        for tag_key in (asset_graph.get(key).tags or {})
-                    )
-                )
+                node.key
+                for node in base_nodes.values()
+                if (not any(tag_key.startswith(KIND_PREFIX) for tag_key in (node.tags or {})))
             }
         else:
             return {
                 key
-                for key in base_set
-                if asset_graph.get(key).tags.get(f"{KIND_PREFIX}{self.kind_str}") is not None
+                for key, node in base_nodes.items()
+                if node.tags.get(f"{KIND_PREFIX}{self.kind_str}") is not None
             }
 
     def to_selection_str(self) -> str:
         if self.kind_str is None:
             return "kind:<null>"
         return f'kind:"{self.kind_str}"'
+
+
+IS_ATTRIBUTE_VALUES = frozenset({"external", "materializable"})
+
+
+@whitelist_for_serdes
+@record
+class IsAttributeAssetSelection(AssetSelection):
+    """Selects assets by a boolean structural attribute on the asset node.
+
+    Supported values: ``"external"`` (asset nodes where ``is_external`` is True)
+    and ``"materializable"`` (asset nodes where ``is_materializable`` is True).
+    These are logical inverses today — both derive from the asset's execution
+    type — but are kept as separate values so the surface syntax reads
+    naturally in both directions (``is:external`` vs. ``is:materializable``).
+    """
+
+    attribute: str
+
+    def resolve_inner(
+        self, asset_graph: BaseAssetGraph, allow_missing: bool
+    ) -> AbstractSet[AssetKey]:
+        if self.attribute == "external":
+            return {node.key for node in asset_graph.asset_nodes if node.is_external}
+        if self.attribute == "materializable":
+            return {node.key for node in asset_graph.asset_nodes if node.is_materializable}
+        raise DagsterInvalidSubsetError(
+            f"Unsupported 'is:' attribute value {self.attribute!r}. "
+            f"Supported values are: {sorted(IS_ATTRIBUTE_VALUES)}."
+        )
+
+    def to_selection_str(self) -> str:
+        return f"is:{self.attribute}"
 
 
 @whitelist_for_serdes
@@ -1008,13 +1077,13 @@ class TagAssetSelection(AssetSelection):
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetKey]:
-        base_set = (
-            asset_graph.get_all_asset_keys()
-            if self.include_sources
-            else asset_graph.materializable_asset_keys
-        )
+        base_nodes = {
+            node.key: node
+            for node in asset_graph.asset_nodes
+            if self.include_sources or node.is_materializable
+        }
 
-        return {key for key in base_set if asset_graph.get(key).tags.get(self.key) == self.value}
+        return {key for key, node in base_nodes.items() if node.tags.get(self.key) == self.value}
 
     def to_selection_str(self) -> str:
         if self.value:
@@ -1026,16 +1095,12 @@ class TagAssetSelection(AssetSelection):
 @whitelist_for_serdes
 @record
 class OwnerAssetSelection(AssetSelection):
-    selected_owner: Optional[str]
+    selected_owner: str | None
 
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetKey]:
-        return {
-            key
-            for key in asset_graph.get_all_asset_keys()
-            if self.selected_owner in asset_graph.get(key).owners
-        }
+        return {node.key for node in asset_graph.asset_nodes if self.selected_owner in node.owners}
 
     def to_selection_str(self) -> str:
         if self.selected_owner is None:
@@ -1050,7 +1115,7 @@ class CodeLocationAssetSelection(AssetSelection):
     an in-process asset graph.
     """
 
-    selected_code_location: Optional[str]
+    selected_code_location: str | None
 
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
@@ -1072,12 +1137,8 @@ class CodeLocationAssetSelection(AssetSelection):
             asset_keys = set()
             location = location_name.split("@")[1]
             name = location_name.split("@")[0]
-            for asset_key in asset_graph.remote_asset_nodes_by_key:
-                repo_handle = (
-                    asset_graph.get(asset_key)
-                    .resolve_to_singular_repo_scoped_node()
-                    .repository_handle
-                )
+            for asset_key, node in asset_graph.remote_asset_nodes_by_key.items():
+                repo_handle = node.resolve_to_singular_repo_scoped_node().repository_handle
                 if repo_handle.location_name == location and repo_handle.repository_name == name:
                     asset_keys.add(asset_key)
             return asset_keys
@@ -1085,13 +1146,11 @@ class CodeLocationAssetSelection(AssetSelection):
         # Otherwise, filter only by location name
         return {
             key
-            for key in asset_graph.remote_asset_nodes_by_key
+            for key, node in asset_graph.remote_asset_nodes_by_key.items()
             if (
-                asset_graph.get(key)
-                .resolve_to_singular_repo_scoped_node()
-                .repository_handle.location_name
+                node.resolve_to_singular_repo_scoped_node().repository_handle.location_name
+                == self.selected_code_location
             )
-            == self.selected_code_location
         }
 
     def to_selection_str(self) -> str:
@@ -1107,7 +1166,7 @@ class ColumnAssetSelection(AssetSelection):
     an in-process asset graph.
     """
 
-    selected_column: Optional[str]
+    selected_column: str | None
 
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
@@ -1128,7 +1187,7 @@ class TableNameAssetSelection(AssetSelection):
     an in-process asset graph.
     """
 
-    selected_table_name: Optional[str]
+    selected_table_name: str | None
 
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
@@ -1172,7 +1231,7 @@ class ChangedInBranchAssetSelection(AssetSelection):
     an in-process asset graph.
     """
 
-    selected_changed_in_branch: Optional[str]
+    selected_changed_in_branch: str | None
 
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
@@ -1189,7 +1248,7 @@ class ChangedInBranchAssetSelection(AssetSelection):
 @whitelist_for_serdes
 @record
 class StatusAssetSelection(AssetSelection):
-    selected_status: Optional[str]
+    selected_status: str | None
 
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
@@ -1201,6 +1260,138 @@ class StatusAssetSelection(AssetSelection):
         if self.selected_status is None:
             return "status:<null>"
         return f'status:"{self.selected_status}"'
+
+
+@whitelist_for_serdes
+@record
+class AutomationTypeAssetSelection(AssetSelection):
+    """Used to represent a UI asset selection by automation type. This should not be resolved against
+    an in-process asset graph.
+    """
+
+    selected_automation_type: str | None
+
+    def resolve_inner(
+        self, asset_graph: BaseAssetGraph, allow_missing: bool
+    ) -> AbstractSet[AssetKey]:
+        """This should not be invoked in user code."""
+        raise NotImplementedError
+
+    def to_selection_str(self) -> str:
+        if self.selected_automation_type is None:
+            return "automation_type:<null>"
+        return f'automation_type:"{self.selected_automation_type}"'
+
+
+@whitelist_for_serdes
+@record
+class SensorNameAssetSelection(AssetSelection):
+    """Used to represent a UI asset selection by sensor name. This should not be resolved against
+    an in-process asset graph.
+    """
+
+    selected_sensor: str | None
+
+    def resolve_inner(
+        self, asset_graph: BaseAssetGraph, allow_missing: bool
+    ) -> AbstractSet[AssetKey]:
+        from dagster._core.definitions.assets.graph.remote_asset_graph import (
+            RemoteWorkspaceAssetGraph,
+        )
+
+        asset_graph = check.inst(
+            asset_graph,
+            RemoteWorkspaceAssetGraph,
+            "sensor: cannot be used to select assets in user code.",
+        )
+
+        if self.selected_sensor is None:
+            return set()
+
+        return {
+            key
+            for key, node in asset_graph.remote_asset_nodes_by_key.items()
+            if any(
+                self.selected_sensor in info.targeting_sensor_names
+                for info in node.repo_scoped_asset_infos
+            )
+        }
+
+    def to_selection_str(self) -> str:
+        if self.selected_sensor is None:
+            return "sensor:<null>"
+        return f'sensor:"{self.selected_sensor}"'
+
+
+@whitelist_for_serdes
+@record
+class ScheduleNameAssetSelection(AssetSelection):
+    """Used to represent a UI asset selection by schedule name. This should not be resolved against
+    an in-process asset graph.
+    """
+
+    selected_schedule: str | None
+
+    def resolve_inner(
+        self, asset_graph: BaseAssetGraph, allow_missing: bool
+    ) -> AbstractSet[AssetKey]:
+        from dagster._core.definitions.assets.graph.remote_asset_graph import (
+            RemoteWorkspaceAssetGraph,
+        )
+
+        asset_graph = check.inst(
+            asset_graph,
+            RemoteWorkspaceAssetGraph,
+            "schedule: cannot be used to select assets in user code.",
+        )
+
+        if self.selected_schedule is None:
+            return set()
+
+        return {
+            key
+            for key, node in asset_graph.remote_asset_nodes_by_key.items()
+            if any(
+                self.selected_schedule in info.targeting_schedule_names
+                for info in node.repo_scoped_asset_infos
+            )
+        }
+
+    def to_selection_str(self) -> str:
+        if self.selected_schedule is None:
+            return "schedule:<null>"
+        return f'schedule:"{self.selected_schedule}"'
+
+
+@whitelist_for_serdes
+@record
+class JobAssetSelection(AssetSelection):
+    """Used to represent a UI asset selection by job name. This should not be resolved against
+    an in-process asset graph.
+    """
+
+    selected_job: str | None
+
+    def resolve_inner(
+        self, asset_graph: BaseAssetGraph, allow_missing: bool
+    ) -> AbstractSet[AssetKey]:
+        from dagster._core.definitions.assets.graph.remote_asset_graph import RemoteAssetGraph
+
+        asset_graph = check.inst(
+            asset_graph,
+            RemoteAssetGraph,
+            "job: cannot be used to select assets in user code.",
+        )
+
+        if self.selected_job is None:
+            return set()
+
+        return set(asset_graph.get_materialization_asset_keys_for_job(self.selected_job))
+
+    def to_selection_str(self) -> str:
+        if self.selected_job is None:
+            return "job:<null>"
+        return f'job:"{self.selected_job}"'
 
 
 @whitelist_for_serdes
@@ -1302,13 +1493,69 @@ class KeySubstringAssetSelection(AssetSelection):
 
 @whitelist_for_serdes
 @record
+class PartitionsAssetSelection(AssetSelection):
+    """Selects assets based on their partition definition type.
+
+    Valid values for ``selected_partitions``:
+    - ``"none"`` - selects unpartitioned assets
+    - ``"static"`` - selects assets with a ``StaticPartitionsDefinition``
+    - ``"dynamic"`` - selects assets with a ``DynamicPartitionsDefinition``
+    - ``"time"`` - selects assets with a ``TimeWindowPartitionsDefinition`` (including hourly, daily,
+      weekly, and monthly subclasses)
+    - ``"multipartitions"`` - selects assets with a ``MultiPartitionsDefinition``
+    """
+
+    selected_partitions: str | None
+
+    def resolve_inner(
+        self,
+        asset_graph: BaseAssetGraph,
+        allow_missing: bool,
+    ) -> AbstractSet[AssetKey]:
+        from dagster._core.definitions.partitions.definition.dynamic import (
+            DynamicPartitionsDefinition,
+        )
+        from dagster._core.definitions.partitions.definition.multi import MultiPartitionsDefinition
+        from dagster._core.definitions.partitions.definition.static import (
+            StaticPartitionsDefinition,
+        )
+        from dagster._core.definitions.partitions.definition.time_window import (
+            TimeWindowPartitionsDefinition,
+        )
+
+        partition_type = self.selected_partitions
+
+        def _matches(node) -> bool:
+            partitions_def = node.partitions_def
+            if partition_type == "none" or partition_type is None:
+                return partitions_def is None
+            elif partition_type == "static":
+                return isinstance(partitions_def, StaticPartitionsDefinition)
+            elif partition_type == "dynamic":
+                return isinstance(partitions_def, DynamicPartitionsDefinition)
+            elif partition_type == "time":
+                return isinstance(partitions_def, TimeWindowPartitionsDefinition)
+            elif partition_type == "multipartitions":
+                return isinstance(partitions_def, MultiPartitionsDefinition)
+            return False
+
+        return {node.key for node in asset_graph.asset_nodes if _matches(node)}
+
+    def to_selection_str(self) -> str:
+        if self.selected_partitions is None:
+            return "partitions:<null>"
+        return f'partitions:"{self.selected_partitions}"'
+
+
+@whitelist_for_serdes
+@record
 class KeyWildCardAssetSelection(AssetSelection):
     selected_key_wildcard: str
 
     def resolve_inner(
         self, asset_graph: BaseAssetGraph, allow_missing: bool
     ) -> AbstractSet[AssetKey]:
-        regex = re.compile("^" + re.escape(self.selected_key_wildcard).replace("\\*", ".*") + "$")
+        regex = _wildcard_to_regex(self.selected_key_wildcard)
         return {
             key for key in asset_graph.get_all_asset_keys() if regex.match(key.to_user_string())
         }
@@ -1320,7 +1567,7 @@ class KeyWildCardAssetSelection(AssetSelection):
 def _fetch_all_upstream(
     selection: AbstractSet[AssetKey],
     asset_graph: BaseAssetGraph,
-    depth: Optional[int] = None,
+    depth: int | None = None,
     include_self: bool = True,
 ) -> AbstractSet[AssetKey]:
     return operator.sub(
@@ -1337,7 +1584,7 @@ def _fetch_all_upstream(
 @whitelist_for_serdes
 @record
 class UpstreamAssetSelection(ChainedAssetSelection):
-    depth: Optional[int]
+    depth: int | None
     include_self: bool
 
     def resolve_inner(

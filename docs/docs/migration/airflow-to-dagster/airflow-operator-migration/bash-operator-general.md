@@ -8,7 +8,7 @@ In this page, we'll explain migrating an Airflow `BashOperator` to Dagster.
 
 :::note
 
-If using the `BashOperator` to execute dbt commands, see "[Migrating an Airflow BashOperator (dbt) to Dagster](/migration/airflow-to-dagster/airflow-operator-migration/bash-operator-dbt)".
+If using the `BashOperator` to execute dbt commands, see [Migrating an Airflow BashOperator (dbt) to Dagster](/migration/airflow-to-dagster/airflow-operator-migration/bash-operator-dbt).
 
 :::
 
@@ -45,7 +45,7 @@ You can write a Dagster <PyObject section="assets" object="asset" module="dagste
 
 ### Step 3: Using dagster-airlift to proxy execution
 
-Finally, you can use `dagster-airlift` to proxy the execution of the original task to Dagster. For more information, see "[Migrate from Airflow to Dagster at the task level](/migration/airflow-to-dagster/airlift-v1/task-level-migration)".
+Finally, you can use `dagster-airlift` to proxy the execution of the original task to Dagster. For more information, see [Migrate from Airflow to Dagster at the task level](/migration/airflow-to-dagster/airlift-v1/task-level-migration).
 
 ### Step 4: Implementing richer integrations
 
@@ -53,12 +53,12 @@ For many of the use cases that you might be using the BashOperator for, Dagster 
 
 #### Running a Python script
 
-As mentioned above, you can use the <PyObject section="pipes" object="PipesSubprocessClient" module="dagster"/> to run a Python script in a subprocess. But you can also modify this script to send additional information and logging back to Dagster. See the [Dagster Pipes tutorial](/guides/build/external-pipelines) for more information.
+As mentioned above, you can use the <PyObject section="pipes" object="PipesSubprocessClient" module="dagster"/> to run a Python script in a subprocess. But you can also modify this script to send additional information and logging back to Dagster. See the [Dagster Pipes tutorial](/integrations/external-pipelines) for more information.
 
 #### Running a dbt command
 
-We have a whole guide for switching from the `BashOperator` to the `dbt` integration in Dagster. For more information, see "[Migrating an Airflow BashOperator (dbt) to Dagster](/migration/airflow-to-dagster/airflow-operator-migration/bash-operator-dbt)".
+We have a whole guide for switching from the `BashOperator` to the `dbt` integration in Dagster. For more information, see [Migrating an Airflow BashOperator (dbt) to Dagster](/migration/airflow-to-dagster/airflow-operator-migration/bash-operator-dbt).
 
 #### Running S3 Sync or other AWS CLI commands
 
-Dagster has a rich set of integrations for AWS services. For example, you can use the <PyObject section="libraries" object="s3.S3Resource" module="dagster_aws"/> to interact with S3 directly.
+Dagster has a rich set of integrations for AWS services. For example, you can use the <PyObject section="libraries" integration="aws" object="s3.S3Resource" module="dagster_aws"/> to interact with S3 directly.

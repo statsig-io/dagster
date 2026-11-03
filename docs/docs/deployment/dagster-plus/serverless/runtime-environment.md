@@ -3,7 +3,10 @@ description: Customizing the Dagster+ Serverless runtime environment.
 sidebar_label: Runtime environment
 sidebar_position: 1000
 title: Serverless runtime environment
+tags: [dagster-plus-feature]
 ---
+
+import ServerlessDeployYml from '@site/docs/partials/\_ServerlessDeployYml.md';
 
 By default, Dagster+ Serverless will package your code as PEX files and deploy them on Docker images. Using PEX files significantly reduces the time to deploy since it does not require building a new Docker image and provisioning a new container for every code change. However, you are able to customize the Serverless runtime environment in various ways:
 
@@ -16,56 +19,82 @@ By default, Dagster+ Serverless will package your code as PEX files and deploy t
 
 ## Add dependencies
 
-You can add dependencies by including the corresponding Python libraries in your Dagster project's `setup.py` file. These should follow [PEP 508](https://peps.python.org/pep-0508).
+You can add dependencies by including the corresponding Python libraries in your Dagster project's package configuration file.
 
-<CodeExample
-  path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/example_setup.py"
-  language="Python"
-  title="Example setup.py"
-/>
+<Tabs groupId="package-manager">
+  <TabItem value="uv" label="uv">
+   If you are using `uv` with a `pyproject.toml` file, you should follow the [pyproject.toml specification](https://packaging.python.org/en/latest/specifications/pyproject-toml/#pyproject-toml-spec).
+    <CodeExample
+      path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/example_pyproject.toml"
+      language="TOML"
+      title="Example pyproject.toml"
+    />
+  </TabItem>
+  <TabItem value="pip" label="pip">
+    If you are using `pip` with a `setup.py` file, you should follow [PEP 508](https://peps.python.org/pep-0508).
 
-You can also use a tarball to install a dependency, such as if `pip` is unable to resolve a package using `dependency_links`. For example, `soda` and `soda-snowflake` provide tarballs that you can include in the `install_requires` section:
+    <CodeExample
+      path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/example_setup.py"
+      language="Python"
+      title="Example setup.py"
+    />
 
-```python
-from setuptools import find_packages, setup
+    :::info
 
-setup(
-    name="quickstart_etl",
-    packages=find_packages(exclude=["quickstart_etl_tests"]),
-    install_requires=[
-        "dagster",
-        "boto3",
-        "pandas",
-        "matplotlib",
-        'soda @ https://pypi.cloud.soda.io/packages/soda-1.6.2.tar.gz',
-        'soda-snowflake @ https://pypi.cloud.soda.io/packages/soda_snowflake-1.6.2.tar.gz'
-    ],
-    extras_require={"dev": ["dagster-webserver", "pytest"]},
-)
-```
+    If you are using a `setup.py` file, you will need to add a TOML configuration file to the root of your project in order to make it `dg`-compatible and use Components. For more information, see [Converting an existing project](/guides/build/projects/moving-to-components/migrating-project).
 
-To add a package from a private GitHub repository, see [Use private Python packages](#use-private-python-packages)
+    :::
+
+  </TabItem>
+</Tabs>
+
+### Adding dependencies from tarballs
+
+<Tabs groupId="package-manager">
+  <TabItem value="uv" label="uv">
+    <CodeExample
+      path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/example_tarball_pyproject.toml"
+      language="TOML"
+      title="Example pyproject.toml with tarball links"
+    />
+  </TabItem>
+  <TabItem value="pip" label="pip">
+    <CodeExample
+      path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/example_tarball_setup.py"
+      language="Python"
+      title="Example setup.py with tarball links"
+    />
+  </TabItem>
+</Tabs>
+
+:::tip
+
+To add a package from a private GitHub repository, see [Use private Python packages](#use-private-python-packages).
+
+:::
 
 ## Use a different Python version
 
-Python versions 3.9 through 3.13 are all supported for Serverless deployments. You can specify the Python version you want to use in your GitHub or GitLab workflow, or by using the `dagster-cloud` CLI.
+Python versions 3.9 through 3.13 are all supported for Serverless deployments. You can specify the Python version you want to use in your GitHub or GitLab workflow, or by using the [`dagster-cloud` CLI](/api/clis/dagster-cloud-cli).
 
 <Tabs groupId="method">
 <TabItem value="GitHub" label="GitHub">
-In your `.github/workflows/deploy.yml` file, update the `PYTHON_VERSION` environment variable with your desired Python version:
-<CodeExample path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/github_python_version.yaml" language="yaml" title="Updating the Python version in deploy.yml" />
+In your `.github/workflows/dagster-plus-deploy.yml` file, update the `PYTHON_VERSION` environment variable with your desired Python version:
+<CodeExample path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/github_python_version.yaml" language="yaml" title="Updating the Python version in dagster-plus-deploy.yml" />
+
+<ServerlessDeployYml />
 
 </TabItem>
 <TabItem value="GitLab" label="GitLab">
 1. Open your `.gitlab-ci.yml` file. If your `.gitlab-ci.yml` contains an `include` with a link to a Dagster provided CI/CD template:
-    <CodeExample path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/gitlab_template.yaml" language="yaml" />
+    <CodeExample path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/gitlab_template.yaml" language="yaml" />
 
     Follow the link and replace the contents of your `.gitlab-ci.yml` with the YAML document at the link address. Otherwise, continue to the next step.
 
 3. Update the `PYTHON_VERSION` environment variable with your desired Python version
 
 <CodeExample
-  path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/gitlab_python_version.yaml"
+  path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/gitlab_python_version.yaml"
   language="yaml"
   title="Updating the Python version in .gitlab-ci.yml"
 />
@@ -86,10 +115,12 @@ Dagster+ runs your code on a Docker image that we build as follows:
 - The standard Python "slim" Docker image, such as python:3.10-slim is used as the base
 - The dagster-cloud[serverless] module installed in the image
 
-You can [add dependencies](#add-dependencies) in your `setup.py` file, but when that is not possible you can build and upload a custom base image that will be used to run your Python code:
+You can [add dependencies](#add-dependencies) in your `pyproject.toml` or `setup.py` file, but when that is not possible, you can build and upload a custom base image that will be used to run your Python code:
 
 :::note
-Setting a custom base image isn't supported for GitLab CI/CD workflows out of the box, but you can write a custom GitLab CI/CD yaml file that implements the manual steps noted.
+
+Setting a custom base image isn't supported for GitLab CI/CD workflows out of the box, but you can write a custom GitLab CI/CD YAML file that implements the manual steps noted.
+
 :::
 
 1.  Include `dagster-cloud` and `dagster-cloud[serverless]` as dependencies in your Docker image by adding the following lines to your `Dockerfile`:
@@ -104,13 +135,17 @@ Setting a custom base image isn't supported for GitLab CI/CD workflows out of th
     ```bash
     docker build -t dagster-project:latest --platform=linux/amd64 .
     ```
+
     :::
+
 3.  Upload your Docker image to Dagster+ using the `upload-base-image` command. This command will print out the tag used in Dagster+ to identify your image:
 
     ```bash
     dagster-cloud serverless upload-base-image local-image:tag
     ```
+
     To use the uploaded image run:
+
     ```bash
     dagster-cloud serverless deploy-python-executable ... --base-image-tag=sha256_518ad2f92b078c63c60e89f0310f13f19d3a1c7ea9e1976d67d59fcb7040d0d6
     ```
@@ -121,13 +156,15 @@ Setting a custom base image isn't supported for GitLab CI/CD workflows out of th
 
   <TabItem value="GitHub" label="GitHub">
 
-In your `.github/workflows/deploy.yml` file, add the `SERVERLESS_BASE_IMAGE_TAG` environment variable and set it to the tag printed out in the previous step:
+In your `.github/workflows/dagster-plus-deploy.yml` file, add the `SERVERLESS_BASE_IMAGE_TAG` environment variable and set it to the tag printed out in the previous step:
 
 <CodeExample
-  path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/github_base_image.yaml"
+  path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/github_base_image.yaml"
   language="yaml"
-  title="Setting a custom base image in deploy.yml"
+  title="Setting a custom base image in dagster-plus-deploy.yml"
 />
+
+<ServerlessDeployYml />
 
   </TabItem>
 
@@ -146,25 +183,58 @@ dagster-cloud serverless deploy-python-executable \
 
 ## Include data files
 
-To add data files to your deployment, use the [Data Files Support](https://setuptools.pypa.io/en/latest/userguide/datafiles.html) built into Python's `setup.py`. This requires adding a `package_data` or `include_package_data` keyword in the call to `setup()` in `setup.py`. For example, given this directory structure:
+<Tabs groupId="package-manager">
+  <TabItem value="uv" label="uv">
 
-```
-- setup.py
-- quickstart_etl/
-  - __init__.py
-  - definitions.py
-  - data/
-    - file1.txt
-    - file2.csv
-```
+    To add data files to your deployment, create a `data` directory under the `src/{PACKAGE NAME}` directory:
 
-If you want to include the data folder, modify your `setup.py` to add the `package_data` line:
+    ```bash
+    .
+    ├── pyproject.toml
+    ├── tests
+    │   ├── __init__.py
+    │   └── test_defs.py
+    ├── README.md
+    ├── src
+    │   └── quickstart_etl
+    │       ├── __init__.py
+    │       ├── data
+    │       │   ├── file1.txt
+    │       │   └── file2.csv
+    │       ├── definitions.py
+    │       └── defs
+    │           └── assets
+    │               ├── __init__.py
+    │               ├── hackernews.py
+    │               └── schedules.py
+    └── workspace.yaml
+    ```
 
-<CodeExample
-  path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/data_files_setup.py"
-  language="Python"
-  title="Loading data files in setup.py"
-/>
+  </TabItem>
+  <TabItem value="pip" label="pip">
+    To add data files to your deployment, use the [data files support](https://setuptools.pypa.io/en/latest/userguide/datafiles.html) built into Python's `setup.py`. This requires adding a `package_data` or `include_package_data` keyword in the call to `setup()` in `setup.py`. For example, given this directory structure:
+
+    ```bash
+    .
+    ├── quickstart_etl
+    │   ├── data
+    │   │   ├── file1.txt
+    │   │   └── file2.txt
+    │   ├── definitions.py
+    │   └── init.py
+    └── setup.py
+    ```
+
+    To include the data folder, modify your `setup.py` to add the `package_data` line:
+
+    <CodeExample
+      path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/data_files_setup.py"
+      language="Python"
+      title="Loading data files in setup.py"
+    />
+
+  </TabItem>
+</Tabs>
 
 ## Disable PEX deploys
 
@@ -172,20 +242,22 @@ You have the option to disable PEX-based deploys and deploy using a Docker image
 
 <Tabs groupId="method">
 <TabItem value="GitHub" label="GitHub">
-In your `.github/workflows/deploy.yml` file, update the `ENABLE_FAST_DEPLOYS` environment variable to `false`:
-<CodeExample path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/github_disable_pex.yaml" language="yaml" title="Disable PEX deploys in deploy.yml" />
+In your `.github/workflows/dagster-plus-deploy.yml` file, update the `ENABLE_FAST_DEPLOYS` environment variable to `false`:
+<CodeExample path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/github_disable_pex.yaml" language="yaml" title="Disable PEX deploys in dagster-plus-deploy.yml" />
+
+<ServerlessDeployYml />
 
 </TabItem>
 <TabItem value="GitLab" label="GitLab">
 1. Open your `.gitlab-ci.yml` file. If your `.gitlab-ci.yml` contains an `include` with a link to a Dagster provided CI/CD template:
-    <CodeExample path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/gitlab_template.yaml" language="yaml" />
+    <CodeExample path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/gitlab_template.yaml" language="yaml" />
 
     Follow the link and replace the contents of your `.gitlab-ci.yml` with the YAML document at the link address. Otherwise, continue to the next step.
 
 3. Update the `DISABLE_FAST_DEPLOYS` variable to `true`
 
 <CodeExample
-  path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/gitlab_disable_pex.yaml"
+  path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/gitlab_disable_pex.yaml"
   language="yaml"
   title="Disable PEX deploys in .gitlab-ci.yml"
 />
@@ -215,22 +287,24 @@ In the root of your repo, you can provide two optional shell scripts: `dagster_c
 This method is the most flexible, but requires setting up a pipeline outside of Dagster to build a custom base image.
 
 :::note
+
 Setting a custom base image isn't supported for GitLab CI/CD workflows out of the box, but you can write a custom GitLab CI/CD yaml file that implements the manual steps noted.
+
 :::
 
-1.  Build you base image
-2.  Specify this base image tag in your GitHub workflow, or using the `dagster-cloud` CLI:
+1. Build you base image
+2. Specify this base image tag in your GitHub workflow, or using the `dagster-cloud` CLI:
 
 <Tabs groupId="method">
 
 <TabItem value="GitHub" label="GitHub">
 
-In your `.github/workflows/deploy.yml` file, add the `SERVERLESS_BASE_IMAGE_TAG` environment variable and set it to the tag printed out in the previous step:
+In your `.github/workflows/dagster-plus-deploy.yml` file, add the `SERVERLESS_BASE_IMAGE_TAG` environment variable and set it to the tag printed out in the previous step:
 
 <CodeExample
-  path="docs_snippets/docs_snippets/dagster-plus/deployment/serverless/runtime-environment/github_no_pex_custom_base_image.yaml"
+  path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/github_no_pex_custom_base_image.yaml"
   language="yaml"
-  title="Setting a custom base image in `deploy.yml`"
+  title="Setting a custom base image in `dagster-plus-deploy.yml`"
 />
 
 </TabItem>
@@ -254,11 +328,11 @@ dagster-cloud serverless deploy --base-image=my_base_image:latest --location-nam
 
 If you use PEX deploys in your workflow (`ENABLE_FAST_DEPLOYS: 'true'`), the following steps can install a package from a private GitHub repository, e.g. `my-org/private-repo`, as a dependency:
 
-1.  In your `deploy.yml` file, add the following to the top of `steps:` section in the `dagster-cloud-default-deploy` job.
+1.  In your `dagster-plus-deploy.yml` file, add the following to the top of `steps:` section in the `dagster-cloud-default-deploy` job.
 
     ```yaml
     - name: Checkout internal repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v6
       with:
         token: ${{ secrets.GH_PAT }}
         repository: my-org/private-repo
@@ -284,12 +358,61 @@ If you use PEX deploys in your workflow (`ENABLE_FAST_DEPLOYS: 'true'`), the fol
     ```
 
 2.  Create a GitHub personal access token and set it as the `GH_PAT` secret for your Actions.
-3.  In your Dagster project's `setup.py` file, add your package name to the `install_requires` section:
-    ```python
-        install_requires=[
-          "dagster",
-          "dagster-cloud",
-          "private-package",   # add this line - must match your private Python package name
-    ```
+3.  Add your package to your Dagster project's package configuration file:
 
-Once the `deploy.yml` is updated and changes pushed to your repo, then any subsequent code deploy should checkout your private repository, build the package and install it as a dependency in your Dagster+ project. Repeat the above steps for your `branch_deployments.yml` if needed.
+  <Tabs groupId="package-manager">
+    <TabItem value="uv" label="uv">
+      In your `pyproject.toml` file, add your package name to the `dependencies` section:
+
+          <CodeExample
+            path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/private_packages_pyproject.toml"
+            language="toml"
+            title="Adding private packages to pyproject.toml"
+          />
+
+    </TabItem>
+    <TabItem value="pip" label="pip">
+      In your `setup.py` file, add your package name to the `install_requires` section:
+
+      <CodeExample
+        path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/private_packages_setup.py"
+        language="python"
+        title="Adding private packages to setup.py"
+      />
+    </TabItem>
+
+  </Tabs>
+
+Once the `dagster-plus-deploy.yml` is updated and changes pushed to your repo, then any subsequent code deploy should checkout your private repository, build the package and install it as a dependency in your Dagster+ project.
+
+:::note
+
+If you have separate `deploy.yml` and `branch_deployments.yml` files, you will need to repeat the above steps for your `branch_deployments.yml` as needed.
+
+:::
+
+## Suppress debug logs
+
+By default, `managed_python_loggers` only applies to standard Python loggers - it does not affect loggers created with `get_dagster_logger()`. If you configure `python_log_level: INFO` but debug logs from `get_dagster_logger()` continue to appear, switch to the standard Python logging module.
+
+1. Replace `get_dagster_logger()` with a standard Python logger:
+
+   <CodeExample
+     path="docs_snippets/docs_snippets/deployment/dagster_plus/serverless/runtime-environment/suppress_debug_logs.py"
+     startAfter="start_suppress_debug_logs"
+     endBefore="end_suppress_debug_logs"
+     title="Standard Python logger replacement"
+   />
+
+2. Add the logger name to `managed_python_loggers` in your deployment settings:
+
+   ```yaml
+   python_logs:
+     managed_python_loggers:
+       - your_logger_name
+     python_log_level: INFO
+   ```
+
+3. Verify that debug messages are suppressed while `INFO`-level messages continue to appear.
+
+For more information, see the [Python logging documentation](https://docs.python.org/3/library/logging.html).

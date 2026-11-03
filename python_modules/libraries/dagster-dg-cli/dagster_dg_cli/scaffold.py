@@ -2,7 +2,7 @@ import json
 import textwrap
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal, TypeAlias
 
 import click
 import dagster_shared.check as check
@@ -11,7 +11,6 @@ from dagster_dg_core.utils import snakecase
 from dagster_shared.scaffold import scaffold_subtree
 from dagster_shared.serdes.objects.package_entry import EnvRegistryKey
 from dagster_shared.seven import match_module_pattern
-from typing_extensions import TypeAlias
 
 ScaffoldFormatOptions: TypeAlias = Literal["yaml", "python"]
 
@@ -21,7 +20,7 @@ def scaffold_component(
 ) -> None:
     module_parts = module_name.split(".")
     module_path = dg_context.root_path
-    for i in range(len(module_parts) - 1):
+    for i in range(len(dg_context.root_module_name.split(".")), len(module_parts) - 1):
         module = ".".join(module_parts[: i + 1])
         module_path = dg_context.get_path_for_local_module(module, require_exists=False)
         if not module_path.exists():
@@ -40,10 +39,10 @@ def scaffold_component(
 
     # backcompat -- dagster_dg_cli.plugin entry point
     if dg_context.has_registry_module_entry_point:
-        with open(module_path / "__init__.py") as f:
+        with open(module_path / "__init__.py", encoding="utf-8") as f:
             lines = f.readlines()
         lines.append(f"from {module_name} import {class_name} as {class_name}\n")
-        with open(module_path / "__init__.py", "w") as f:
+        with open(module_path / "__init__.py", "w", encoding="utf-8") as f:
             f.writelines(lines)
 
     # no plugin entry point, add to project plugin modules
@@ -65,7 +64,7 @@ def scaffold_component(
 def scaffold_inline_component(
     path: Path,
     typename: str,
-    superclass: Optional[str],
+    superclass: str | None,
     dg_context: "DgContext",
 ) -> None:
     full_path = dg_context.defs_path / path
@@ -119,9 +118,10 @@ def scaffold_inline_component(
 def scaffold_registry_object(
     path: Path,
     typename: str,
-    scaffold_params: Optional[Mapping[str, Any]],
+    scaffold_params: Mapping[str, Any] | None,
     dg_context: "DgContext",
     scaffold_format: ScaffoldFormatOptions,
+    append: bool = False,
 ) -> None:
     from dagster.components.component_scaffolding import scaffold_object
 
@@ -131,4 +131,5 @@ def scaffold_registry_object(
         json.dumps(scaffold_params) if scaffold_params else None,
         scaffold_format,
         dg_context.root_path,
+        append,
     )

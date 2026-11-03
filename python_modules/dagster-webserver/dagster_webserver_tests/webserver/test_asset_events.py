@@ -157,8 +157,10 @@ def test_report_asset_materialization_apis_consistent(
 
     for k, v in sample_payload.items():
         if k == "asset_key":
+            assert isinstance(v, str)
             assert mat.asset_key == AssetKey(v)
         elif k == "metadata":
+            assert isinstance(v, dict)
             assert mat.metadata.keys() == v.keys()
         elif k == "data_version":
             tags = mat.tags
@@ -228,6 +230,26 @@ def test_report_asset_check_endpoint(instance: DagsterInstance, test_client: Tes
     )
 
 
+def test_report_asset_check_endpoint_with_partition(
+    instance: DagsterInstance, test_client: TestClient
+):
+    my_asset_key = "my_asset"
+    my_check = "my_partition_check"
+    response = test_client.post(
+        f"/report_asset_check/{my_asset_key}",
+        json={
+            "check_name": my_check,
+            "passed": True,
+            "partition": "2024-01-01",
+        },
+    )
+    assert response.status_code == 200, response.json()
+
+    evaluation = _assert_stored_check_eval(instance, my_asset_key, my_check)
+    assert evaluation.passed
+    assert evaluation.partition == "2024-01-01"
+
+
 def test_report_asset_check_evaluation_apis_consistent(
     instance: DagsterInstance, test_client: TestClient
 ):
@@ -238,6 +260,7 @@ def test_report_asset_check_evaluation_apis_consistent(
         "metadata": {"meta": "data"},
         "severity": "WARN",
         "passed": False,
+        "partition": "2024-01-01",
     }
 
     # sample has entry for all supported params (banking on usage of enum)
@@ -253,13 +276,17 @@ def test_report_asset_check_evaluation_apis_consistent(
         if k == "check_name":
             assert evaluation.check_name == v
         elif k == "asset_key":
+            assert isinstance(v, str)
             assert evaluation.asset_key == AssetKey(v)
         elif k == "metadata":
+            assert isinstance(v, dict)
             assert evaluation.metadata.keys() == v.keys()
         elif k == "passed":
             assert evaluation.passed == v
         elif k == "severity":
             assert evaluation.severity.value == v
+        elif k == "partition":
+            assert evaluation.partition == v
         else:
             assert False, (
                 "need to add validation that sample payload content was written successfully"
@@ -270,7 +297,7 @@ def test_report_asset_check_evaluation_apis_consistent(
     skip_set = {"self"}
     params = [p for p in sig.parameters if p not in skip_set]
 
-    KNOWN_DIFF = set()
+    KNOWN_DIFF = {"partition"}
 
     assert set(sample_payload.keys()).difference(set(params)) == KNOWN_DIFF
 
@@ -318,8 +345,10 @@ def test_report_asset_observation_apis_consistent(
 
     for k, v in sample_payload.items():
         if k == "asset_key":
+            assert isinstance(v, str)
             assert obs.asset_key == AssetKey(v)
         elif k == "metadata":
+            assert isinstance(v, dict)
             assert obs.metadata.keys() == v.keys()
         elif k == "data_version":
             tags = obs.tags
@@ -336,3 +365,34 @@ def test_report_asset_observation_apis_consistent(
             )
 
     # expect test to cover PipesContext.report_asset_observation once added
+
+
+def test_report_asset_materialization_endpoint_read_only_forbidden(
+    instance: DagsterInstance, read_only_test_client: TestClient
+):
+    asset_key = "read_only_mat_asset"
+    response = read_only_test_client.post(f"/report_asset_materialization/{asset_key}")
+    assert response.status_code == 401
+    assert response.json() == {"error": "Not authorized to report runless asset events."}
+    assert instance.get_latest_materialization_event(AssetKey(asset_key)) is None
+
+
+def test_report_asset_check_endpoint_read_only_forbidden(
+    instance: DagsterInstance, read_only_test_client: TestClient
+):
+    asset_key = "read_only_check_asset"
+    response = read_only_test_client.post(
+        f"/report_asset_check/{asset_key}",
+        json={"check_name": "my_check", "passed": True},
+    )
+    assert response.status_code == 401
+    assert response.json() == {"error": "Not authorized to report runless asset events."}
+
+
+def test_report_asset_observation_endpoint_read_only_forbidden(
+    instance: DagsterInstance, read_only_test_client: TestClient
+):
+    asset_key = "read_only_obs_asset"
+    response = read_only_test_client.post(f"/report_asset_observation/{asset_key}")
+    assert response.status_code == 401
+    assert response.json() == {"error": "Not authorized to report runless asset events."}

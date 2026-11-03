@@ -1,11 +1,10 @@
 from collections.abc import Sequence
-from typing import Optional
 
 from dagster_shared.serdes import whitelist_for_serdes
 
 from dagster._core.asset_graph_view.entity_subset import EntitySubset
 from dagster._core.asset_graph_view.serializable_entity_subset import SerializableEntitySubset
-from dagster._core.definitions.asset_key import T_EntityKey
+from dagster._core.definitions.asset_key import EntityKey, T_EntityKey
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
     AutomationResult,
@@ -30,7 +29,7 @@ class NewlyTrueCondition(BuiltinAutomationCondition[T_EntityKey]):
 
     def _get_previous_child_true_subset(
         self, context: AutomationContext[T_EntityKey]
-    ) -> Optional[EntitySubset[T_EntityKey]]:
+    ) -> EntitySubset[T_EntityKey] | None:
         """Returns the true subset of the child from the previous tick, which is stored in the
         extra state field of the cursor.
         """
@@ -39,7 +38,19 @@ class NewlyTrueCondition(BuiltinAutomationCondition[T_EntityKey]):
             return None
         return context.asset_graph_view.get_subset_from_serializable_subset(true_subset)
 
-    async def evaluate(self, context: AutomationContext) -> AutomationResult:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_node_unique_id(
+        self,
+        *,
+        parent_unique_id: str | None,
+        index: int | None,
+        target_key: EntityKey | None,
+    ) -> str:
+        # newly true conditions should have stable cursoring logic regardless of where they
+        # exist in the broader condition tree, as they're always evaluated over the entire
+        # subset
+        return self._get_stable_unique_id(target_key)
+
+    async def evaluate(self, context: AutomationContext) -> AutomationResult:  # ty: ignore[invalid-method-override]
         # evaluate child condition
         child_result = await context.for_child_condition(
             self.operand,

@@ -1,5 +1,4 @@
 # pyright: reportUnnecessaryTypeIgnoreComment=false
-# ruff: noqa: T201
 
 import os
 
@@ -32,33 +31,18 @@ def _make_dagster_package(package_name: str):
     jinja_env = Environment(loader=FileSystemLoader(templates_path))
 
     files_to_create = {
-        ".coveragerc": {
-            "path": os.path.join(package_path, ".coveragerc"),
-            "has_todos": False,
-            "kwargs": {},
-        },
         "LICENSE": {
             "path": os.path.join(package_path, "LICENSE"),
             "has_todos": False,
             "kwargs": {},
-        },
-        "MANIFEST.in": {
-            "path": os.path.join(package_path, "MANIFEST.in"),
-            "has_todos": False,
-            "kwargs": {"underscore_name": package_name_underscore},
         },
         "README.md": {
             "path": os.path.join(package_path, "README.md"),
             "has_todos": False,
             "kwargs": {"hyphen_name": package_name},
         },
-        "setup.cfg": {
-            "path": os.path.join(package_path, "setup.cfg"),
-            "has_todos": False,
-            "kwargs": {"underscore_name": package_name_underscore},
-        },
-        "setup.py": {
-            "path": os.path.join(package_path, "setup.py"),
+        "pyproject.toml": {
+            "path": os.path.join(package_path, "pyproject.toml"),
             "has_todos": True,
             "kwargs": {
                 "underscore_name": package_name_underscore,
@@ -95,21 +79,23 @@ def _make_dagster_package(package_name: str):
         },
     }
 
-    has_todos = []
+    has_todos: list[str] = []
 
     for to_create, variables in files_to_create.items():
         print(f"Writing {to_create}")
         template = jinja_env.get_template(f"{to_create}.tmpl")
-        with open(variables["path"], "w") as f:
+        path = variables["path"]
+        assert isinstance(path, str)
+        with open(path, "w", encoding="utf-8") as f:
             template.stream(**variables["kwargs"]).dump(f)  # type: ignore
 
         if variables["has_todos"]:
-            has_todos.append(variables["path"])
+            has_todos.append(path)
 
     # test __init__.py
     path = os.path.join(tests_path, "__init__.py")
     print(f"Writing {path}")
-    with open(path, "w"):
+    with open(path, "w", encoding="utf-8"):
         pass
 
     # API docs
@@ -121,7 +107,7 @@ def _make_dagster_package(package_name: str):
     )
     template = jinja_env.get_template("api-docs.rst.tmpl")
     print(f"Writing {docs_path}")
-    with open(docs_path, "w") as f:
+    with open(docs_path, "w", encoding="utf-8") as f:
         template.stream(
             hyphen_name=package_name,
             underscore_name=package_name_underscore,

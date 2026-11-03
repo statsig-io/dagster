@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, Callable, Optional, Type, TypeVar, Union, overload
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Optional, TypeVar, overload
 
 import dagster._check as check
 from dagster._core.types.dagster_type import (
@@ -9,13 +10,13 @@ from dagster._core.types.dagster_type import (
 if TYPE_CHECKING:
     from dagster._core.types.config_schema import DagsterTypeLoader
 
-T_Type = TypeVar("T_Type", bound=Type[object])
+T_Type = TypeVar("T_Type", bound=type[object])
 
 
 @overload
 def usable_as_dagster_type(
-    name: Optional[str] = ...,
-    description: Optional[str] = ...,
+    name: str | None = ...,
+    description: str | None = ...,
     loader: Optional["DagsterTypeLoader"] = ...,
 ) -> Callable[[T_Type], T_Type]: ...
 
@@ -27,10 +28,10 @@ def usable_as_dagster_type(
 
 
 def usable_as_dagster_type(
-    name: Optional[Union[str, T_Type]] = None,
-    description: Optional[str] = None,
+    name: str | T_Type | None = None,
+    description: str | None = None,
     loader: Optional["DagsterTypeLoader"] = None,
-) -> Union[T_Type, Callable[[T_Type], T_Type]]:
+) -> T_Type | Callable[[T_Type], T_Type]:
     """Decorate a Python class to make it usable as a Dagster Type.
 
     This is intended to make it straightforward to annotate existing business logic classes to

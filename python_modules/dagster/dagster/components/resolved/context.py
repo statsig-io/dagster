@@ -1,9 +1,8 @@
-import os
 import sys
 import traceback
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Optional, TypeVar, Union, overload
+from typing import Any, TypeVar, overload
 
 from dagster_shared.yaml_utils.source_position import SourcePositionTree
 from pydantic import BaseModel
@@ -14,40 +13,7 @@ from dagster._core.definitions.declarative_automation.automation_condition impor
 )
 from dagster._record import copy, record
 from dagster.components.resolved.errors import ResolutionException
-
-T = TypeVar("T")
-
-
-class EnvScope:
-    def __call__(self, key: str, default: Optional[Union[str, Any]] = ...) -> Optional[str]:
-        value = os.environ.get(key, default=default)
-        if value is ...:
-            raise ResolutionException(
-                f"Environment variable {key} is not set and no default value was provided."
-                f" To provide a default value, use e.g. `env('{key}', 'default_value')`."
-            )
-        return value
-
-    def __getattr__(self, key: str) -> Optional[str]:
-        # jinja2 applies a hasattr check to any scope fn - we avoid raising our own exception
-        # for this access
-        if key.startswith("jinja"):
-            raise AttributeError(f"{key} not found")
-
-        return os.environ.get(key)
-
-    def __getitem__(self, key: str) -> Optional[str]:
-        raise ResolutionException(
-            f"To access environment variables, use dot access or the `env` function, e.g. `env.{key}` or `env('{key}')`"
-        )
-
-
-def automation_condition_scope() -> Mapping[str, Any]:
-    return {
-        "eager": AutomationCondition.eager,
-        "on_cron": AutomationCondition.on_cron,
-    }
-
+from dagster.components.resolved.scopes import DatetimeScope, DeprecatedScope, DgScope, EnvScope
 
 T = TypeVar("T")
 
@@ -81,20 +47,34 @@ class ResolutionContext:
     """
 
     scope: Mapping[str, Any]
-    path: list[Union[str, int]] = []
-    source_position_tree: Optional[SourcePositionTree] = None
+    path: list[str | int] = []
+    source_position_tree: SourcePositionTree | None = None
     # dict where you can stash arbitrary objects. Used to store references to ComponentLoadContext
     # We are structuring this way to make it easier to use Resolved outside of the context of
     # the component system in the future
     stash: dict[str, Any] = {}
 
-    def at_path(self, path_part: Union[str, int]):
+    def at_path(self, path_part: str | int):
         return copy(self, path=[*self.path, path_part])
 
     @staticmethod
-    def default(source_position_tree: Optional[SourcePositionTree] = None) -> "ResolutionContext":
+    def default(source_position_tree: SourcePositionTree | None = None) -> "ResolutionContext":
+        # Create the automation_condition object for backward compatibility
+        automation_condition_obj = {
+            "eager": AutomationCondition.eager,
+            "on_cron": AutomationCondition.on_cron,
+        }
+
         return ResolutionContext(
-            scope={"env": EnvScope(), "automation_condition": automation_condition_scope()},
+            scope={
+                "env": EnvScope(),
+                "dg": DgScope(),
+                "datetime": DatetimeScope(),
+                # Backward compatibility - deprecated, will be removed in 1.13.0
+                "automation_condition": DeprecatedScope(
+                    "automation_condition.*", "dg.AutomationCondition.*", automation_condition_obj
+                ),
+            },
             source_position_tree=source_position_tree,
         )
 
@@ -206,7 +186,7 @@ class ResolutionContext:
     def resolve_value(self, val: Sequence) -> Sequence: ...
 
     @public
-    def resolve_value(self, val: Any, as_type: Optional[type] = None) -> Any:
+    def resolve_value(self, val: Any, as_type: type | None = None) -> Any:
         """Recursively resolves templated values in a nested object. This is typically
         invoked inside a :py:class:`~dagster.Resolver`'s `resolve_fn` to resolve all
         nested template values in the input object.

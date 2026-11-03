@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from dagster import FloatMetadataValue
-from dagster_dbt.core.dbt_cli_event import DbtCliEventMessage
+from dagster_dbt.core.dbt_cli_event import DbtCoreCliEventMessage
 from dagster_dbt.dagster_dbt_translator import DagsterDbtTranslator
 
 
@@ -58,7 +58,7 @@ def test_microbatch_log_model_result_to_asset():
         "logs": [],
     }
 
-    event_message = DbtCliEventMessage(
+    event_message = DbtCoreCliEventMessage(
         raw_event=microbatch_log_model_result,
         event_history_metadata=microbatch_event_history_metadata,
     )
@@ -149,7 +149,7 @@ def test_incremental_log_model_result_to_asset():
         "logs": [],
     }
 
-    event_message = DbtCliEventMessage(
+    event_message = DbtCoreCliEventMessage(
         raw_event=incremental_log_model_result,
         event_history_metadata=incremental_event_history_metadata,
     )
@@ -196,3 +196,31 @@ def test_incremental_log_model_result_to_asset():
     assert asset_materialization_event.metadata.get("Execution Duration") == FloatMetadataValue(
         value=execution_duration_seconds
     )
+
+
+def test_log_test_result_without_node_info():
+    """Regression test: LogTestResult without node_info should not crash to_default_asset_events."""
+    raw_event = {
+        "data": {},  # No node_info
+        "info": {
+            "name": "LogTestResult",
+            "level": "info",
+            "msg": "test message",
+        },
+    }
+
+    event_message = DbtCoreCliEventMessage(
+        raw_event=raw_event,
+        event_history_metadata={},
+    )
+
+    # Verify is_result_event returns False (the fix)
+    assert event_message.is_result_event is False
+
+    # Verify to_default_asset_events doesn't crash and returns empty
+    events = list(
+        event_message.to_default_asset_events(
+            manifest={}, dagster_dbt_translator=DagsterDbtTranslator()
+        )
+    )
+    assert events == []

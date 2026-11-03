@@ -47,27 +47,35 @@ def build_source_pex(
 
 
 def _build_local_package(local_dir: str, build_dir: str, python_interpreter: str):
-    curdir = os.curdir
-    os.chdir(local_dir)
-    try:
-        if os.path.exists("setup.py"):
-            ui.print(f"Building package at {local_dir!r} using {python_interpreter} setup.py build")
-            command = [
-                python_interpreter,
-                "setup.py",
-                "build",
-                "--build-lib",
-                build_dir,
-            ]
-            subprocess.run(command, capture_output=True, check=True)
+    if os.path.exists(os.path.join(local_dir, "setup.py")):
+        ui.print(f"Building package at {local_dir!r} using {python_interpreter} setup.py build")
+        command = [
+            python_interpreter,
+            "setup.py",
+            "build",
+            "--build-lib",
+            build_dir,
+        ]
+        subprocess.run(command, check=True, cwd=local_dir)
+    elif os.path.exists(os.path.join(local_dir, "pyproject.toml")):
+        install_args = ["--target", build_dir, "--no-deps", "."]
+        uv_path = shutil.which("uv")
+        if uv_path:
+            ui.print(f"Building package at {local_dir!r} using uv pip install")
+            command = [uv_path, "pip", "install", "--python", python_interpreter, *install_args]
         else:
-            ui.warn(f"No setup.py found in {local_dir!r} - will not build.")
-    finally:
-        os.chdir(curdir)
+            ui.print(f"Building package at {local_dir!r} using {python_interpreter} -m pip install")
+            command = [python_interpreter, "-m", "pip", "install", *install_args]
+        subprocess.run(command, check=True, cwd=local_dir)
+    else:
+        ui.warn(f"No setup.py or pyproject.toml found in {local_dir!r} - will not build.")
 
 
 def build_pex_using_setup_py(
-    code_directory: str, local_package_paths: list[str], tmp_pex_path, python_version
+    code_directory: str,
+    local_package_paths: list[str],
+    tmp_pex_path,
+    python_version,
 ):
     """Builds package using setup.py and copies built output into PEX."""
     python_interpreter = util.python_interpreter_for(python_version)
@@ -76,11 +84,15 @@ def build_pex_using_setup_py(
 
         for local_dir in local_package_paths:
             _build_local_package(
-                local_dir=local_dir, build_dir=build_dir, python_interpreter=python_interpreter
+                local_dir=local_dir,
+                build_dir=build_dir,
+                python_interpreter=python_interpreter,
             )
 
         _build_local_package(
-            local_dir=code_directory, build_dir=build_dir, python_interpreter=python_interpreter
+            local_dir=code_directory,
+            build_dir=build_dir,
+            python_interpreter=python_interpreter,
         )
 
         # We always include the code_directory source in a special package called working_directory

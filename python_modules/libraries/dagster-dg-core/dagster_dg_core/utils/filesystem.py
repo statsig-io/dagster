@@ -1,8 +1,8 @@
 import datetime
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from dagster_shared.scaffold import DEFAULT_FILE_EXCLUDE_PATTERNS
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -20,7 +20,7 @@ class PathChangeHandler(FileSystemEventHandler):
     def __init__(
         self,
         paths: Sequence[Path],
-        includes: Optional[Sequence[str]],
+        includes: Sequence[str] | None,
         excludes: Sequence[str],
         callback: Callable[[str], Any],
     ):
@@ -33,7 +33,7 @@ class PathChangeHandler(FileSystemEventHandler):
         )
         self.clear_and_execute(self._prev_hash)
 
-    def dispatch(self, _event: FileSystemEvent):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def dispatch(self, _event: FileSystemEvent):  # ty: ignore[invalid-method-override]
         new_hash = hash_paths(self._paths, self._includes, self._excludes, error_on_missing=False)
 
         if new_hash != self._prev_hash:
@@ -44,7 +44,7 @@ class PathChangeHandler(FileSystemEventHandler):
         clear_screen()
         self._callback(new_hash)
         current_time = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"\nUpdated at {current_time}, watching for changes...")  # noqa: T201
+        print(f"\nUpdated at {current_time}, watching for changes...", flush=True)  # noqa: T201
 
 
 # This is a global variable that is used to signal the watcher to exit in tests
@@ -54,7 +54,7 @@ SHOULD_WATCHER_EXIT = False
 def watch_paths(
     paths: Sequence[Path],
     callback: Callable[[str], Any],
-    includes: Optional[Sequence[str]] = None,
+    includes: Sequence[str] | None = None,
     excludes: Sequence[str] = DEFAULT_FILE_EXCLUDE_PATTERNS,
 ):
     """Watches the given paths for changes and calls the callback when they change.
@@ -72,7 +72,10 @@ def watch_paths(
     observer = Observer()
     handler = PathChangeHandler(paths, includes, excludes, callback)
     for path in paths:
-        observer.schedule(handler, str(path), recursive=True)
+        # `hash_paths` already tolerates missing paths; mirror that here so the
+        # observer can start when an optional watched path (e.g. uv.lock) is absent.
+        if path.exists():
+            observer.schedule(handler, str(path), recursive=True)
     observer.start()
     try:
         while observer.is_alive() and not SHOULD_WATCHER_EXIT:

@@ -1,7 +1,7 @@
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager, suppress
 from enum import Enum
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from dagster_cloud_cli.core.graphql_client import (
     DagsterCloudGraphQLClient,
@@ -15,8 +15,8 @@ def graphql_client_from_url(
     url: str,
     token: str,
     retries: int = 3,
-    deployment_name: Optional[str] = None,
-    headers: Optional[dict[str, Any]] = None,
+    deployment_name: str | None = None,
+    headers: dict[str, Any] | None = None,
 ) -> Generator[DagsterCloudGraphQLClient, None, None]:
     with create_cloud_webserver_client(
         url.rstrip("/"), token, retries, deployment_name=deployment_name, headers=headers
@@ -24,7 +24,7 @@ def graphql_client_from_url(
         yield client
 
 
-def url_from_config(organization: str, deployment: Optional[str] = None) -> str:
+def url_from_config(organization: str, deployment: str | None = None) -> str:
     """Gets the Cloud webserver base url for a given organization and API token.
     Uses the default deployment if none is specified.
     """
@@ -54,15 +54,15 @@ class CliInputCodeLocation:
     def __init__(
         self,
         name: str,
-        python_file: Optional[str] = None,
-        package_name: Optional[str] = None,
-        image: Optional[str] = None,
-        module_name: Optional[str] = None,
-        working_directory: Optional[str] = None,
-        executable_path: Optional[str] = None,
-        attribute: Optional[str] = None,
-        commit_hash: Optional[str] = None,
-        url: Optional[str] = None,
+        python_file: str | None = None,
+        package_name: str | None = None,
+        image: str | None = None,
+        module_name: str | None = None,
+        working_directory: str | None = None,
+        executable_path: str | None = None,
+        attribute: str | None = None,
+        commit_hash: str | None = None,
+        url: str | None = None,
     ):
         self.name = name
 
@@ -142,6 +142,20 @@ def fetch_agent_type(client: DagsterCloudGraphQLClient) -> DagsterPlusDeployment
     return DagsterPlusDeploymentAgentType(
         client.execute(AGENT_TYPE_QUERY)["data"]["currentDeployment"]["agentType"]
     )
+
+
+DEPLOYMENT_NAME_QUERY = """
+query CliCurrentDeploymentName {
+    currentDeployment {
+        deploymentName
+    }
+}
+"""
+
+
+def fetch_deployment_name(client: DagsterCloudGraphQLClient) -> str:
+    """The deployment the client is pointed at, which may be encoded in the url rather than passed."""
+    return client.execute(DEPLOYMENT_NAME_QUERY)["data"]["currentDeployment"]["deploymentName"]
 
 
 WORKSPACE_ENTRIES_QUERY = """
@@ -576,17 +590,17 @@ def create_or_update_branch_deployment(
     branch_name: str,
     commit_hash: str,
     timestamp: float,
-    branch_url: Optional[str] = None,
-    pull_request_url: Optional[str] = None,
-    pull_request_status: Optional[str] = None,
-    pull_request_number: Optional[str] = None,
-    commit_message: Optional[str] = None,
-    commit_url: Optional[str] = None,
-    author_name: Optional[str] = None,
-    author_email: Optional[str] = None,
-    author_avatar_url: Optional[str] = None,
-    base_deployment_name: Optional[str] = None,
-    snapshot_base_condition: Optional[SnapshotBaseDeploymentCondition] = None,
+    branch_url: str | None = None,
+    pull_request_url: str | None = None,
+    pull_request_status: str | None = None,
+    pull_request_number: str | None = None,
+    commit_message: str | None = None,
+    commit_url: str | None = None,
+    author_name: str | None = None,
+    author_email: str | None = None,
+    author_avatar_url: str | None = None,
+    base_deployment_name: str | None = None,
+    snapshot_base_condition: SnapshotBaseDeploymentCondition | None = None,
 ) -> str:
     result = client.execute(
         CREATE_OR_UPDATE_BRANCH_DEPLOYMENT,
@@ -680,9 +694,9 @@ def launch_run(
     job_name: str,
     tags: dict[str, Any],
     config: dict[str, Any],
-    asset_keys: Optional[list[str]],
+    asset_keys: list[str] | None,
 ) -> str:
-    formatted_tags = [{"key": cast("str", k), "value": cast("str", v)} for k, v in tags.items()]
+    formatted_tags = [{"key": k, "value": v} for k, v in tags.items()]
 
     params: dict[str, Any] = {
         "selector": {
@@ -715,6 +729,7 @@ query CliGetEcrInfo {
         awsRegion
         awsAuthToken
         registryAllowCustomBase
+        registryIsHarbor
         registryUrl
     }
 }
@@ -728,6 +743,7 @@ def get_ecr_info(client: DagsterCloudGraphQLClient) -> Any:
         "aws_region": data["serverless"]["awsRegion"],
         "aws_auth_token": data["serverless"]["awsAuthToken"],
         "allow_custom_base": data["serverless"]["registryAllowCustomBase"],
+        "is_harbor": data["serverless"].get("registryIsHarbor", False),
     }
 
 
@@ -774,8 +790,8 @@ def mark_cli_event(
     event_type: CliEventType,
     duration_seconds: float,
     success: bool = True,
-    tags: Optional[list[str]] = None,
-    message: Optional[str] = None,
+    tags: list[str] | None = None,
+    message: str | None = None,
 ) -> Any:
     with suppress(Exception):
         result = client.execute(
@@ -845,3 +861,181 @@ def delete_branch_deployment(client: DagsterCloudGraphQLClient, deployment: str)
         raise Exception(f"Unable to delete deployment: {result}")
 
     return result["data"]["deleteDeployment"]["deploymentId"]
+
+
+SET_ATLAN_INTEGRATION_SETTINGS_MUTATION = """
+    mutation CliSetAtlanIntegrationSettings($atlanIntegrationSettings: AtlanIntegrationSettingsInput!) {
+        setAtlanIntegrationSettings(atlanIntegrationSettings: $atlanIntegrationSettings) {
+            __typename
+            ... on SetAtlanIntegrationSettingsSuccess {
+                organization
+                success
+            }
+            ...on UnauthorizedError {
+                message
+            }
+            ... on PythonError {
+                message
+                stack
+            }
+        }
+    }
+"""
+
+
+DELETE_ATLAN_INTEGRATION_SETTINGS_MUTATION = """
+    mutation CliDeleteAtlanIntegrationSettings {
+        deleteAtlanIntegrationSettings {
+            __typename
+            ...on DeleteAtlanIntegrationSuccess {
+                organization
+                success
+            }
+            ...on UnauthorizedError {
+                message
+            }
+            ... on PythonError {
+                message
+                stack
+            }
+        }
+    }
+"""
+
+
+GET_ATLAN_INTEGRATION_SETTINGS_QUERY = """
+    query CliGetAtlanIntegrationSettings {
+        atlanIntegration {
+            atlanIntegrationSettingsOrError {
+                __typename
+                ... on AtlanIntegrationSettings {
+                    token
+                    domain
+                }
+                ... on AtlanIntegrationSettingsUnset {
+                    __typename
+                }
+                ... on UnauthorizedError {
+                    message
+                }
+                ... on PythonError {
+                    message
+                    stack
+                }
+            }
+        }
+    }
+"""
+
+
+ATLAN_INTEGRATION_PREFLIGHT_CHECK_QUERY = """
+    query CliAtlanIntegrationPreflightCheck {
+        atlanIntegration {
+            atlanIntegrationPreflightCheckOrError {
+                __typename
+                ... on AtlanIntegrationPreflightCheckSuccess {
+                    __typename
+                    success
+                }
+                ... on AtlanIntegrationPreflightCheckFailure {
+                    errorCode
+                    errorMessage
+                }
+                ... on AtlanIntegrationSettingsUnset {
+                    __typename
+                }
+                ... on UnauthorizedError {
+                    message
+                }
+                ... on PythonError {
+                    message
+                    stack
+                }
+            }
+        }
+    }
+"""
+
+
+def set_atlan_integration_settings(
+    client: DagsterCloudGraphQLClient,
+    token: str,
+    domain: str,
+) -> tuple[str, bool]:
+    result = client.execute(
+        SET_ATLAN_INTEGRATION_SETTINGS_MUTATION,
+        variable_values={"atlanIntegrationSettings": {"token": token, "domain": domain}},
+    )
+
+    if (
+        result["data"]["setAtlanIntegrationSettings"]["__typename"]
+        != "SetAtlanIntegrationSettingsSuccess"
+    ):
+        raise Exception(f"Unable to set Atlan integration settings: {result}")
+
+    return result["data"]["setAtlanIntegrationSettings"]["organization"], result["data"][
+        "setAtlanIntegrationSettings"
+    ]["success"]
+
+
+def delete_atlan_integration_settings(
+    client: DagsterCloudGraphQLClient,
+) -> tuple[str, bool]:
+    result = client.execute(
+        DELETE_ATLAN_INTEGRATION_SETTINGS_MUTATION,
+    )
+
+    if (
+        result["data"]["deleteAtlanIntegrationSettings"]["__typename"]
+        != "DeleteAtlanIntegrationSuccess"
+    ):
+        raise Exception(f"Unable to delete Atlan integration settings: {result}")
+
+    return result["data"]["deleteAtlanIntegrationSettings"]["organization"], result["data"][
+        "deleteAtlanIntegrationSettings"
+    ]["success"]
+
+
+def get_atlan_integration_settings(
+    client: DagsterCloudGraphQLClient,
+) -> dict:
+    result = client.execute(
+        GET_ATLAN_INTEGRATION_SETTINGS_QUERY,
+    )
+
+    settings_data = result["data"]["atlanIntegration"]["atlanIntegrationSettingsOrError"]
+    typename = settings_data["__typename"]
+
+    if typename == "AtlanIntegrationSettingsUnset":
+        raise Exception("No Atlan integration settings configured")
+    elif typename in ("UnauthorizedError", "PythonError"):
+        raise Exception(f"Unable to get Atlan integration settings: {result}")
+
+    return {
+        "token": settings_data["token"],
+        "domain": settings_data["domain"],
+    }
+
+
+def atlan_integration_preflight_check(
+    client: DagsterCloudGraphQLClient,
+) -> dict:
+    result = client.execute(
+        ATLAN_INTEGRATION_PREFLIGHT_CHECK_QUERY,
+    )
+
+    check_data = result["data"]["atlanIntegration"]["atlanIntegrationPreflightCheckOrError"]
+    typename = check_data["__typename"]
+
+    if typename == "AtlanIntegrationPreflightCheckSuccess":
+        return {"success": True}
+    elif typename == "AtlanIntegrationPreflightCheckFailure":
+        return {
+            "success": False,
+            "error_code": check_data["errorCode"],
+            "error_message": check_data["errorMessage"],
+        }
+    elif typename == "AtlanIntegrationSettingsUnset":
+        raise Exception("No Atlan integration settings configured")
+    else:
+        raise Exception(f"Unable to perform Atlan integration preflight check: {result}")

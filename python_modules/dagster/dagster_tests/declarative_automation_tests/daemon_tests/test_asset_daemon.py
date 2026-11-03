@@ -2,17 +2,19 @@ import dataclasses
 import datetime
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext
-from typing import Any, Optional, cast
+from typing import Any, cast
 from unittest import mock
 
 import dagster as dg
+import dagster._check as check
 import pytest
 from dagster import AutoMaterializeRule, AutomationCondition, DagsterInstance
 from dagster._core.definitions.asset_daemon_cursor import AssetDaemonCursor
 from dagster._core.definitions.asset_selection import AssetSelection
 from dagster._core.definitions.auto_materialize_policy import AutoMaterializePolicy
-from dagster._core.definitions.sensor_definition import DefaultSensorStatus
+from dagster._core.definitions.sensor_definition import DefaultSensorStatus, SensorType
 from dagster._core.scheduler.instigation import (
+    InstigatorState,
     InstigatorStatus,
     InstigatorTick,
     InstigatorType,
@@ -77,7 +79,7 @@ from dagster_tests.declarative_automation_tests.scenario_utils.scenario_state im
 @contextmanager
 def get_daemon_instance(
     paused: bool = False,
-    extra_overrides: Optional[Mapping[str, Any]] = None,
+    extra_overrides: Mapping[str, Any] | None = None,
 ) -> Generator[dg.DagsterInstance, None, None]:
     with mock.patch(
         "dagster._core.instance.DagsterInstance.get_tick_termination_check_interval",
@@ -112,28 +114,33 @@ mid_iteration_terminate_scenarios = [
         initial_spec=two_distinct_partitions_graphs.with_current_time(time_partitions_start_str)
         .with_current_time_advanced(days=1, hours=1)
         .with_all_eager(),
-        execution_fn=lambda state: state.with_runs(
-            *[
-                run_request(["A"], partition_key=hour_partition_key(state.current_time, delta=-i))
-                for i in range(25)
-            ],
-            run_request(["C"], partition_key=day_partition_key(state.current_time)),
-        )
-        .evaluate_tick(stop_mid_iteration=True)
-        .assert_requested_runs_for_stopped_iteration(
-            1,
-            run_request(asset_keys=["B"], partition_key=hour_partition_key(state.current_time)),
-            run_request(asset_keys=["D"], partition_key=day_partition_key(state.current_time)),
-        )
-        .with_current_time_advanced(minutes=10)
-        .start_asset_daemon()  # starts the daemon again for non-sensor tests
-        .evaluate_tick()
-        .assert_requested_runs()  # doesn't resubmit the stopped runs
-        .with_current_time_advanced(hours=1)
-        .evaluate_tick()
-        .assert_requested_runs(
-            run_request(
-                asset_keys=["A", "B"], partition_key=hour_partition_key(state.current_time, delta=1)
+        execution_fn=lambda state: (
+            state.with_runs(
+                *[
+                    run_request(
+                        ["A"], partition_key=hour_partition_key(state.current_time, delta=-i)
+                    )
+                    for i in range(25)
+                ],
+                run_request(["C"], partition_key=day_partition_key(state.current_time)),
+            )
+            .evaluate_tick(stop_mid_iteration=True)
+            .assert_requested_runs_for_stopped_iteration(
+                1,
+                run_request(asset_keys=["B"], partition_key=hour_partition_key(state.current_time)),
+                run_request(asset_keys=["D"], partition_key=day_partition_key(state.current_time)),
+            )
+            .with_current_time_advanced(minutes=10)
+            .start_asset_daemon()  # starts the daemon again for non-sensor tests
+            .evaluate_tick()
+            .assert_requested_runs()  # doesn't resubmit the stopped runs
+            .with_current_time_advanced(hours=1)
+            .evaluate_tick()
+            .assert_requested_runs(
+                run_request(
+                    asset_keys=["A", "B"],
+                    partition_key=hour_partition_key(state.current_time, delta=1),
+                )
             )
         ),
     ),
@@ -182,73 +189,89 @@ auto_materialize_sensor_scenarios = [
         )
         .with_current_time("2020-01-01T00:05")
         .with_additional_repositories([extra_definitions]),
-        execution_fn=lambda state: state.evaluate_tick()
-        .assert_requested_runs(run_request(["A"]))
-        .assert_evaluation("A", [AssetRuleEvaluationSpec(basic_hourly_cron_rule)])
-        # next tick should not request any more runs
-        .with_current_time_advanced(seconds=30)
-        .evaluate_tick()
-        .assert_requested_runs()
-        # still no runs should be requested
-        .with_current_time_advanced(minutes=50)
-        .evaluate_tick()
-        .assert_requested_runs()
-        # moved to a new cron schedule tick, request another run
-        .with_current_time_advanced(minutes=10)
-        .evaluate_tick()
-        .assert_requested_runs(run_request(["A"]))
-        .assert_evaluation("A", [AssetRuleEvaluationSpec(basic_hourly_cron_rule)]),
+        execution_fn=lambda state: (
+            state.evaluate_tick()
+            .assert_requested_runs(run_request(["A"]))
+            .assert_evaluation("A", [AssetRuleEvaluationSpec(basic_hourly_cron_rule)])
+            # next tick should not request any more runs
+            .with_current_time_advanced(seconds=30)
+            .evaluate_tick()
+            .assert_requested_runs()
+            # still no runs should be requested
+            .with_current_time_advanced(minutes=50)
+            .evaluate_tick()
+            .assert_requested_runs()
+            # moved to a new cron schedule tick, request another run
+            .with_current_time_advanced(minutes=10)
+            .evaluate_tick()
+            .assert_requested_runs(run_request(["A"]))
+            .assert_evaluation("A", [AssetRuleEvaluationSpec(basic_hourly_cron_rule)])
+        ),
     ),
     AssetDaemonScenario(
         id="sensor_interval_respected",
         initial_spec=two_assets_in_sequence.with_all_eager().with_additional_repositories(
             [extra_definitions]
         ),
-        execution_fn=lambda state: state.with_runs(run_request(["A", "B"]))
-        .evaluate_tick()
-        .assert_requested_runs()  # No runs initially
-        .with_runs(run_request(["A"]))
-        .evaluate_tick()
-        .assert_requested_runs()  # Still no runs because no time has passed
-        .with_current_time_advanced(seconds=10)  # 5 seconds later, no new tick
-        .evaluate_tick()
-        .assert_requested_runs()
-        .with_current_time_advanced(seconds=20)  # Once 30 seconds have passed, runs are created
-        .evaluate_tick()
-        .assert_requested_runs(run_request(["B"])),
+        execution_fn=lambda state: (
+            state.with_runs(run_request(["A", "B"]))
+            .evaluate_tick()
+            .assert_requested_runs()  # No runs initially
+            .with_runs(run_request(["A"]))
+            .evaluate_tick()
+            .assert_requested_runs()  # Still no runs because no time has passed
+            .with_current_time_advanced(seconds=10)  # 5 seconds later, no new tick
+            .evaluate_tick()
+            .assert_requested_runs()
+            .with_current_time_advanced(seconds=20)  # Once 30 seconds have passed, runs are created
+            .evaluate_tick()
+            .assert_requested_runs(run_request(["B"]))
+        ),
     ),
     AssetDaemonScenario(
         id="one_asset_never_materialized",
         initial_spec=one_asset.with_all_eager().with_additional_repositories([extra_definitions]),
-        execution_fn=lambda state: state.evaluate_tick()
-        .assert_requested_runs(run_request(asset_keys=["A"]))
-        .assert_evaluation(
-            "A", [AssetRuleEvaluationSpec(rule=AutoMaterializeRule.materialize_on_missing())]
+        execution_fn=lambda state: (
+            state.evaluate_tick()
+            .assert_requested_runs(run_request(asset_keys=["A"]))
+            .assert_evaluation(
+                "A", [AssetRuleEvaluationSpec(rule=AutoMaterializeRule.materialize_on_missing())]
+            )
         ),
     ),
     AssetDaemonScenario(
         id="one_asset_already_launched",
         initial_spec=one_asset.with_all_eager().with_additional_repositories([extra_definitions]),
-        execution_fn=lambda state: state.evaluate_tick()
-        .assert_requested_runs(run_request(asset_keys=["A"]))
-        .with_current_time_advanced(seconds=30)
-        .evaluate_tick()
-        .assert_requested_runs(),
+        execution_fn=lambda state: (
+            state.evaluate_tick()
+            .assert_requested_runs(run_request(asset_keys=["A"]))
+            .with_current_time_advanced(seconds=30)
+            .evaluate_tick()
+            .assert_requested_runs()
+        ),
     ),
     AssetDaemonScenario(
         id="one_upstream_observable_asset",
         initial_spec=one_upstream_observable_asset.with_asset_properties(
             automation_condition=AutomationCondition.cron_tick_passed("*/10 * * * *"),
         ),
-        execution_fn=lambda state: state.evaluate_tick()
-        .assert_requested_runs()
-        .with_current_time_advanced(minutes=10)
-        .evaluate_tick()
-        .assert_requested_runs(run_request(["A", "B"])),
+        execution_fn=lambda state: (
+            state.evaluate_tick()
+            .assert_requested_runs()
+            .with_current_time_advanced(minutes=10)
+            .evaluate_tick()
+            .assert_requested_runs(run_request(["A", "B"]))
+        ),
     ),
 ]
 
 
+# Per-scenario daemon work (submitting many partitioned run requests through the synchronous
+# run coordinator) is CPU-bound and routinely takes >120s under EKS pod CPU contention. The
+# slowest scenario, `hourly_to_daily_partitions_never_materialized`, submits 73 partitioned
+# runs in a single tick and hits the 240s pyproject-wide pytest-timeout fallback. Widen the
+# budget for this whole test function so the safety net does not fire on legitimate work.
+@pytest.mark.timeout(600)
 @pytest.mark.parametrize(
     "scenario", daemon_scenarios, ids=[scenario.id for scenario in daemon_scenarios]
 )
@@ -449,6 +472,12 @@ daemon_sensor_scenario = AssetDaemonScenario(
                 default_status=DefaultSensorStatus.STOPPED,
                 minimum_interval_seconds=15,
             ),
+            dg.AutomationConditionSensorDefinition(
+                name="auto_materialize_sensor_no_assets",
+                target=AssetSelection.groups("nonexistant"),
+                default_status=DefaultSensorStatus.STOPPED,
+                minimum_interval_seconds=15,
+            ),
             # default sensor picks up "C"
         ]
     ).with_all_eager(3),
@@ -482,6 +511,48 @@ def _assert_sensor_state(
     assert len(ticks) == expected_num_ticks
 
 
+def test_auto_materialize_sensor_enforced_minimum_interval():
+    with get_daemon_instance(paused=False) as instance:
+        with environ({"DAGSTER_ASSET_DAEMON_MINIMUM_ALLOWED_MIN_INTERVAL": "60"}):
+            result = daemon_sensor_scenario.evaluate_daemon(instance)
+
+            sensor_states = instance.schedule_storage.all_instigator_state(  # ty: ignore[unresolved-attribute]
+                instigator_type=InstigatorType.SENSOR
+            )
+            assert len(sensor_states) == 1
+            _assert_sensor_state(
+                instance,
+                "auto_materialize_sensor_a",
+                expected_num_ticks=1,
+                expected_status=InstigatorStatus.DECLARED_IN_CODE,
+            )
+
+            # would run a tick based on interval in code, but minimum allowed interval is set via env var to 30 seconds
+            result = result.with_current_time_advanced(seconds=59)
+            result = result.evaluate_tick()
+            daemon_sensor_scenario.evaluate_daemon(instance)
+            sensor_states = instance.schedule_storage.all_instigator_state(  # ty: ignore[unresolved-attribute]
+                instigator_type=InstigatorType.SENSOR
+            )
+
+            _assert_sensor_state(
+                instance,
+                "auto_materialize_sensor_a",
+                expected_num_ticks=1,
+                expected_status=InstigatorStatus.DECLARED_IN_CODE,
+            )
+
+            result = result.with_current_time_advanced(seconds=1)
+            result = result.evaluate_tick()
+
+            _assert_sensor_state(
+                instance,
+                "auto_materialize_sensor_a",
+                expected_num_ticks=2,
+                expected_status=InstigatorStatus.DECLARED_IN_CODE,
+            )
+
+
 def test_auto_materialize_sensor_no_transition():
     # have not been using global AMP before - first tick does not create
     # any sensor states except for the one that is declared in code
@@ -492,7 +563,7 @@ def test_auto_materialize_sensor_no_transition():
 
         assert get_has_migrated_to_sensors(instance)
 
-        sensor_states = instance.schedule_storage.all_instigator_state(  # pyright: ignore[reportOptionalMemberAccess]
+        sensor_states = instance.schedule_storage.all_instigator_state(  # ty: ignore[unresolved-attribute]
             instigator_type=InstigatorType.SENSOR
         )
 
@@ -515,7 +586,7 @@ def test_auto_materialize_sensor_no_transition():
         result = result.with_current_time_advanced(seconds=30)
         result = result.evaluate_tick()
         daemon_sensor_scenario.evaluate_daemon(instance)
-        sensor_states = instance.schedule_storage.all_instigator_state(  # pyright: ignore[reportOptionalMemberAccess]
+        sensor_states = instance.schedule_storage.all_instigator_state(  # ty: ignore[unresolved-attribute]
             instigator_type=InstigatorType.SENSOR
         )
         assert len(sensor_states) == 1
@@ -569,11 +640,11 @@ def test_auto_materialize_sensor_transition():
 
         assert get_has_migrated_to_sensors(instance)
 
-        sensor_states = instance.schedule_storage.all_instigator_state(  # pyright: ignore[reportOptionalMemberAccess]
+        sensor_states = instance.schedule_storage.all_instigator_state(  # ty: ignore[unresolved-attribute]
             instigator_type=InstigatorType.SENSOR
         )
 
-        assert len(sensor_states) == 3  # sensor states for each sensor were created
+        assert len(sensor_states) == 4  # sensor states for each sensor were created
 
         # Only sensor that was set with default status RUNNING turned on and ran
         _assert_sensor_state(
@@ -594,16 +665,33 @@ def test_auto_materialize_sensor_transition():
             expected_num_ticks=1,
             expected_status=InstigatorStatus.RUNNING,
         )
+        _assert_sensor_state(
+            instance,
+            "auto_materialize_sensor_no_assets",
+            expected_num_ticks=0,
+            expected_status=InstigatorStatus.RUNNING,
+        )
+
+        asset_graph = daemon_sensor_scenario.initial_spec.asset_graph
+        defs = daemon_sensor_scenario.initial_spec.defs
 
         for sensor_state in sensor_states:
-            # cursor was propagated to each sensor, so all subsequent evaluation IDs are higher
-            assert (
-                asset_daemon_cursor_from_instigator_serialized_cursor(
+            if sensor_state.instigator_name == "auto_materialize_sensor_no_assets":
+                assert cast("SensorInstigatorData", sensor_state.instigator_data).cursor is None
+            else:
+                asset_daemon_cursor = asset_daemon_cursor_from_instigator_serialized_cursor(
                     cast("SensorInstigatorData", sensor_state.instigator_data).cursor,
                     None,
-                ).evaluation_id
-                > pre_sensor_evaluation_id
-            )
+                )
+
+                assert asset_daemon_cursor.evaluation_id > pre_sensor_evaluation_id
+
+                assert (
+                    asset_daemon_cursor.previous_condition_cursors_by_key.keys()
+                    == check.not_none(
+                        defs.get_sensor_def(sensor_state.instigator_name).asset_selection
+                    ).resolve(asset_graph)
+                )
 
 
 # this scenario simulates the true default case in which we have an implicit default sensor
@@ -691,6 +779,97 @@ def test_auto_materialize_sensor_name_transition() -> None:
             )
 
 
+def test_copy_default_auto_materialize_sensor_states_skips_non_matching_sensors() -> None:
+    """Regression test: _copy_default_auto_materialize_sensor_states should only copy state from
+    sensors named 'default_auto_materialize_sensor' with sensor_type AUTO_MATERIALIZE. It must
+    not copy state from unrelated sensors (wrong name or wrong type).
+    """
+    from dagster._core.remote_origin import (
+        GrpcServerCodeLocationOrigin,
+        RemoteInstigatorOrigin,
+        RemoteRepositoryOrigin,
+    )
+    from dagster._daemon.asset_daemon import AssetDaemon
+
+    repo_origin = RemoteRepositoryOrigin(
+        code_location_origin=GrpcServerCodeLocationOrigin(
+            host="localhost", port=1234, location_name="test_location"
+        ),
+        repository_name="__repository__",
+    )
+
+    def _make_state(
+        name: str,
+        sensor_type: SensorType | None = None,
+    ) -> InstigatorState:
+        origin = RemoteInstigatorOrigin(
+            repository_origin=repo_origin,
+            instigator_name=name,
+        )
+        return InstigatorState(
+            origin,
+            InstigatorType.SENSOR,
+            InstigatorStatus.RUNNING,
+            SensorInstigatorData(sensor_type=sensor_type),
+        )
+
+    # The sensor that SHOULD be migrated
+    matching_state = _make_state("default_auto_materialize_sensor", SensorType.AUTO_MATERIALIZE)
+    # An unrelated sensor with a different name and AUTO_MATERIALIZE type
+    other_am_state = _make_state("some_other_sensor", SensorType.AUTO_MATERIALIZE)
+    # An unrelated sensor with a different name and STANDARD type
+    standard_state = _make_state("my_standard_sensor", SensorType.STANDARD)
+    # A sensor with the right name but wrong type (should not be migrated)
+    wrong_type_state = _make_state("default_auto_materialize_sensor", SensorType.STANDARD)
+
+    all_states: dict[str, InstigatorState] = {}
+    for state in [matching_state, other_am_state, standard_state]:
+        selector_id = state.origin.get_selector().get_id()
+        all_states[selector_id] = state
+
+    daemon = AssetDaemon(settings={}, pre_sensor_interval_seconds=30)
+
+    with get_daemon_instance(paused=False) as instance:
+        # Pre-populate the states
+        for state in all_states.values():
+            instance.add_instigator_state(state)
+
+        result = daemon._copy_default_auto_materialize_sensor_states(instance, all_states)  # noqa: SLF001
+
+        migrated_names = {s.instigator_name for s in result.values()}
+
+        # The matching sensor should have been copied to the new name
+        assert "default_automation_condition_sensor" in migrated_names
+        # The original states should still be present
+        assert "default_auto_materialize_sensor" in migrated_names
+        assert "some_other_sensor" in migrated_names
+        assert "my_standard_sensor" in migrated_names
+
+        # Crucially: the number of entries should be exactly 4 (3 original + 1 migrated copy).
+        # Before the fix, unrelated sensors would also produce spurious copies.
+        assert len(result) == 4
+
+        # Verify the migrated state has the correct cursor data from the matching sensor
+        migrated_states = [
+            s for s in result.values() if s.instigator_name == "default_automation_condition_sensor"
+        ]
+        assert len(migrated_states) == 1
+        assert migrated_states[0].instigator_data == matching_state.instigator_data
+
+    # Also verify that a sensor with the right name but wrong type is NOT migrated
+    wrong_type_states: dict[str, InstigatorState] = {}
+    selector_id = wrong_type_state.origin.get_selector().get_id()
+    wrong_type_states[selector_id] = wrong_type_state
+
+    with get_daemon_instance(paused=False) as instance:
+        instance.add_instigator_state(wrong_type_state)
+        result = daemon._copy_default_auto_materialize_sensor_states(instance, wrong_type_states)  # noqa: SLF001
+
+        # Should not have created a new entry - wrong sensor type
+        assert len(result) == 1
+        assert all(s.instigator_name == "default_auto_materialize_sensor" for s in result.values())
+
+
 @pytest.mark.parametrize("num_threads", [0, 4])
 def test_auto_materialize_sensor_ticks(num_threads):
     with get_daemon_instance(
@@ -733,11 +912,11 @@ def test_auto_materialize_sensor_ticks(num_threads):
                 instance, threadpool_executor=threadpool_executor
             )
 
-            sensor_states = instance.schedule_storage.all_instigator_state(  # pyright: ignore[reportOptionalMemberAccess]
+            sensor_states = instance.schedule_storage.all_instigator_state(  # ty: ignore[unresolved-attribute]
                 instigator_type=InstigatorType.SENSOR
             )
 
-            assert len(sensor_states) == 3  # sensor states for each sensor were created
+            assert len(sensor_states) == 4  # sensor states for each sensor were created
 
             # Only sensor that was set with default status RUNNING turned on and ran
             _assert_sensor_state(
@@ -775,10 +954,10 @@ def test_auto_materialize_sensor_ticks(num_threads):
             result = result.start_sensor("auto_materialize_sensor_b")
             result = result.with_current_time_advanced(seconds=15)
             result = result.evaluate_tick()
-            sensor_states = instance.schedule_storage.all_instigator_state(  # pyright: ignore[reportOptionalMemberAccess]
+            sensor_states = instance.schedule_storage.all_instigator_state(  # ty: ignore[unresolved-attribute]
                 instigator_type=InstigatorType.SENSOR
             )
-            assert len(sensor_states) == 3
+            assert len(sensor_states) == 4
 
             # No new tick yet for A since only 15 seconds have passed
             _assert_sensor_state(
@@ -805,11 +984,11 @@ def test_auto_materialize_sensor_ticks(num_threads):
             result = result.with_current_time_advanced(seconds=15)
             result = result.evaluate_tick()
 
-            sensor_states = instance.schedule_storage.all_instigator_state(  # pyright: ignore[reportOptionalMemberAccess]
+            sensor_states = instance.schedule_storage.all_instigator_state(  # ty: ignore[unresolved-attribute]
                 instigator_type=InstigatorType.SENSOR
             )
 
-            assert len(sensor_states) == 3
+            assert len(sensor_states) == 4
             _assert_sensor_state(
                 instance,
                 "auto_materialize_sensor_a",
@@ -919,7 +1098,7 @@ def test_auto_materialize_sensor_ticks(num_threads):
             # than the pre-sensor evaluation ID and they are increasing for each sensor
             sensor_states = [
                 sensor_state
-                for sensor_state in instance.schedule_storage.all_instigator_state(  # pyright: ignore[reportOptionalMemberAccess]
+                for sensor_state in instance.schedule_storage.all_instigator_state(  # ty: ignore[unresolved-attribute]
                     instigator_type=InstigatorType.SENSOR
                 )
             ]

@@ -1,17 +1,16 @@
 import collections.abc
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
+from types import UnionType
 from typing import (
     Annotated,
     Any,
-    Callable,
     ForwardRef,
     Generic,
     Literal,
     NamedTuple,
-    Optional,
     TypeVar,
     Union,
     get_args,
@@ -19,12 +18,6 @@ from typing import (
 )
 
 from dagster_shared.check.functions import CheckError, TypeOrTupleOfTypes, failed, invariant
-
-try:
-    # this type only exists in python 3.10+
-    from types import UnionType  # type: ignore
-except ImportError:
-    UnionType = Union
 
 NoneType = type(None)
 
@@ -60,7 +53,7 @@ class EvalContext(NamedTuple):
     def capture_from_frame(
         depth: int,
         *,
-        add_to_local_ns: Optional[Mapping[str, Any]] = None,
+        add_to_local_ns: Mapping[str, Any] | None = None,
     ) -> "EvalContext":
         """Capture the global and local namespaces via the stack frame.
 
@@ -114,28 +107,29 @@ class EvalContext(NamedTuple):
             **self.local_ns,
         }
 
-    def eval_forward_ref(self, ref: ForwardRef) -> Optional[type]:
+    def eval_forward_ref(self, ref: ForwardRef) -> type | None:
         if ref.__forward_arg__ in self.lazy_imports:
             # if we are going to add a lazy import for the type,
             # return a placeholder to grab the name from
             return type(ref.__forward_arg__, (_LazyImportPlaceholder,), {})
         try:
-            if sys.version_info <= (3, 9):
-                return ref._evaluate(  # noqa # type: ignore
-                    globalns=self.get_merged_ns(),
-                    localns={},
-                )
-            elif sys.version_info < (3, 12, 4):
+            if sys.version_info < (3, 12, 4):
                 return ref._evaluate(  # noqa
                     globalns=self.get_merged_ns(),
                     localns={},
                     recursive_guard=frozenset(),
                 )
-            else:  # type_params added in 3.12.4
+            elif sys.version_info < (3, 14):  # type_params added in 3.12.4
                 return ref._evaluate(  # noqa
                     globalns=self.get_merged_ns(),
                     localns={},
                     recursive_guard=frozenset(),
+                    type_params=(),
+                )
+            else:  # changed to ForwardRef.evaluate in 3.14
+                return ref.evaluate(
+                    globals=self.get_merged_ns(),
+                    locals={},
                     type_params=(),
                 )
         except NameError as e:
@@ -165,9 +159,9 @@ _SampleGeneric = _GenClass[str]
 
 
 def _coerce_type(
-    ttype: Optional[TypeOrTupleOfTypes],
+    ttype: TypeOrTupleOfTypes | None,
     eval_ctx: EvalContext,
-) -> Optional[TypeOrTupleOfTypes]:
+) -> TypeOrTupleOfTypes | None:
     # coerce input type in to the type we want to pass to the check call
 
     # Any type translates to passing None for the of_type argument
@@ -215,7 +209,7 @@ def _coerce_type(
 
 def _container_pair_args(
     args: tuple[type, ...], eval_ctx
-) -> tuple[Optional[TypeOrTupleOfTypes], Optional[TypeOrTupleOfTypes]]:
+) -> tuple[TypeOrTupleOfTypes | None, TypeOrTupleOfTypes | None]:
     # process tuple of types as if its two arguments to a container type
 
     if len(args) == 2:
@@ -226,7 +220,7 @@ def _container_pair_args(
 
 def _container_single_arg(
     args: tuple[type, ...], eval_ctx: EvalContext
-) -> Optional[TypeOrTupleOfTypes]:
+) -> TypeOrTupleOfTypes | None:
     # process tuple of types as if its the single argument to a container type
 
     if len(args) == 1:
@@ -235,7 +229,7 @@ def _container_single_arg(
     return None
 
 
-def _name(target: Optional[TypeOrTupleOfTypes]) -> str:
+def _name(target: TypeOrTupleOfTypes | None) -> str:
     # turn a type or tuple of types in to its string representation for printing
 
     if target is None:
@@ -342,7 +336,7 @@ def build_check_call_str(
         elif origin is collections.abc.Mapping:
             return f'{INJECTED_CHECK_VAR}.mapping_param({name}, "{name}", {_name(pair_left)}, {_name(pair_right)})'
         elif origin is collections.abc.Set:
-            return f'{INJECTED_CHECK_VAR}.set_param({name}, "{name}", {_name(single)})'
+            return f'{INJECTED_CHECK_VAR}.abstract_set_param({name}, "{name}", {_name(single)})'
         elif origin in (UnionType, Union):
             # optional
             if pair_right is type(None):
@@ -384,7 +378,7 @@ def build_check_call_str(
                     elif inner_origin is collections.abc.Mapping:
                         return f'{name} if {name} is None else {INJECTED_CHECK_VAR}.opt_nullable_mapping_param({name}, "{name}", {_name(inner_pair_left)}, {_name(inner_pair_right)})'
                     elif inner_origin is collections.abc.Set:
-                        return f'{name} if {name} is None else {INJECTED_CHECK_VAR}.opt_nullable_set_param({name}, "{name}", {_name(inner_single)})'
+                        return f'{name} if {name} is None else {INJECTED_CHECK_VAR}.opt_nullable_abstract_set_param({name}, "{name}", {_name(inner_single)})'
                     elif is_record(inner_origin):
                         it = _name(inner_origin)
                         return f'{name} if {name} is None or isinstance({name}, {it}) else {INJECTED_CHECK_VAR}.opt_inst_param({name}, "{name}", {it})'

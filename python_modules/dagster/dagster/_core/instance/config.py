@@ -44,8 +44,8 @@ def is_dagster_home_set() -> bool:
 def dagster_instance_config(
     base_dir: str,
     config_filename: str = DAGSTER_CONFIG_YAML_FILENAME,
-    overrides: Optional[Mapping[str, object]] = None,
-) -> tuple[Mapping[str, Any], Optional[type["DagsterInstance"]]]:
+    overrides: Mapping[str, object] | None = None,
+) -> tuple[Mapping[str, Any], type["DagsterInstance"] | None]:
     check.str_param(base_dir, "base_dir")
     check.invariant(os.path.isdir(base_dir), "base_dir should be a directory")
     overrides = check.opt_mapping_param(overrides, "overrides")
@@ -335,7 +335,7 @@ def retention_config_schema() -> Field:
 
 
 def get_tick_retention_settings(
-    settings: Optional[Mapping[str, Any]],
+    settings: Mapping[str, Any] | None,
     default_retention_settings: Mapping["TickStatus", int],
 ) -> Mapping["TickStatus", int]:
     if not settings or not settings.get("purge_after_days"):
@@ -344,7 +344,7 @@ def get_tick_retention_settings(
     purge_value = settings["purge_after_days"]
     if isinstance(purge_value, int):
         # set a number of days retention value for all tick types
-        return {status: purge_value for status, _ in default_retention_settings.items()}
+        return {status: purge_value for status in default_retention_settings.keys()}
 
     elif isinstance(purge_value, dict):
         return {
@@ -578,6 +578,7 @@ def dagster_instance_config_schema() -> Mapping[str, Field]:
             is_required=False,
         ),
         "secrets": secrets_loader_config_schema(),
+        "defs_state_storage": config_field_for_configurable_class(),
         "retention": retention_config_schema(),
         "backfills": backfills_daemon_config(),
         "sensors": sensors_daemon_config(),
@@ -619,9 +620,9 @@ class PoolGranularity(Enum):
 
 @record
 class PoolConfig:
-    pool_granularity: Optional[PoolGranularity]
-    default_pool_limit: Optional[int]
-    op_granularity_run_buffer: Optional[int]
+    pool_granularity: PoolGranularity | None
+    default_pool_limit: int | None
+    op_granularity_run_buffer: int | None
 
 
 @record
@@ -655,6 +656,7 @@ class ConcurrencyConfig:
                     "op_granularity_run_buffer",
                     run_coordinator_run_queue_config.op_concurrency_slot_buffer,
                 ),
+                max_concurrent_runs_all_branch_deployments=run_coordinator_run_queue_config.max_concurrent_runs_all_branch_deployments,
             )
         else:
             run_queue_config = None

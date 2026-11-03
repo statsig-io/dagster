@@ -1,5 +1,5 @@
 from collections.abc import Iterator, Mapping, Sequence
-from typing import AbstractSet, Any, Optional  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Any  # noqa: UP035
 
 import dagster._check as check
 from dagster._annotations import deprecated, public
@@ -25,6 +25,9 @@ from dagster._core.instance import DagsterInstance
 from dagster._core.log_manager import DagsterLogManager
 from dagster._core.storage.dagster_run import DagsterRun
 from dagster._utils.forked_pdb import ForkedPdb
+
+if TYPE_CHECKING:
+    from dagster._core.definitions.partitions.utils.multi import MultiPartitionKey
 
 
 def _copy_docs_from_op_execution_context(obj):
@@ -83,6 +86,7 @@ def _get_deprecation_kwargs(attr: str) -> Mapping[str, Any]:
     return deprecation_kwargs
 
 
+@public
 class AssetExecutionContext:
     def __init__(self, op_execution_context: OpExecutionContext) -> None:
         self._op_execution_context = check.inst_param(
@@ -202,7 +206,7 @@ class AssetExecutionContext:
     @deprecated(**_get_deprecation_kwargs("get_tag"))
     @public
     @_copy_docs_from_op_execution_context
-    def get_tag(self, key: str) -> Optional[str]:
+    def get_tag(self, key: str) -> str | None:
         return self.op_execution_context.get_tag(key)
 
     @deprecated(**_get_deprecation_kwargs("get_op_execution_context"))
@@ -269,7 +273,7 @@ class AssetExecutionContext:
     @deprecated(**_get_deprecation_kwargs("get_mapping_key"))
     @public
     @_copy_docs_from_op_execution_context
-    def get_mapping_key(self) -> Optional[str]:
+    def get_mapping_key(self) -> str | None:
         return self.op_execution_context.get_mapping_key()
 
     @deprecated(**_get_deprecation_kwargs("selected_output_names"))
@@ -357,7 +361,7 @@ class AssetExecutionContext:
 
     @property
     @_copy_docs_from_op_execution_context
-    def step_launcher(self) -> Optional[StepLauncher]:
+    def step_launcher(self) -> StepLauncher | None:
         return self.op_execution_context.step_launcher
 
     @_copy_docs_from_op_execution_context
@@ -377,6 +381,12 @@ class AssetExecutionContext:
     @_copy_docs_from_op_execution_context
     def partition_key(self) -> str:
         return self.op_execution_context.partition_key
+
+    @public
+    @property
+    @_copy_docs_from_op_execution_context
+    def multi_partition_key(self) -> "MultiPartitionKey":
+        return self.op_execution_context.multi_partition_key
 
     @public
     @property
@@ -456,8 +466,8 @@ class AssetExecutionContext:
     def add_output_metadata(
         self,
         metadata: Mapping[str, Any],
-        output_name: Optional[str] = None,
-        mapping_key: Optional[str] = None,
+        output_name: str | None = None,
+        mapping_key: str | None = None,
     ) -> None:
         return self.op_execution_context.add_output_metadata(
             metadata=metadata,
@@ -469,8 +479,8 @@ class AssetExecutionContext:
     def add_asset_metadata(
         self,
         metadata: Mapping[str, Any],
-        asset_key: Optional[CoercibleToAssetKey] = None,
-        partition_key: Optional[str] = None,
+        asset_key: CoercibleToAssetKey | None = None,
+        partition_key: str | None = None,
     ) -> None:
         """Add metadata to an asset materialization event. This metadata will be
         available in the Dagster UI.
@@ -540,8 +550,8 @@ class AssetExecutionContext:
     def get_output_metadata(
         self,
         output_name: str,
-        mapping_key: Optional[str] = None,
-    ) -> Optional[Mapping[str, Any]]:
+        mapping_key: str | None = None,
+    ) -> Mapping[str, Any] | None:
         return self.op_execution_context.get_output_metadata(
             output_name=output_name,
             mapping_key=mapping_key,
@@ -559,7 +569,7 @@ class AssetExecutionContext:
 
     @public
     @_copy_docs_from_op_execution_context
-    def get_asset_provenance(self, asset_key: AssetKey) -> Optional[DataProvenance]:
+    def get_asset_provenance(self, asset_key: AssetKey) -> DataProvenance | None:
         return self.op_execution_context.get_asset_provenance(asset_key=asset_key)
 
     @_copy_docs_from_op_execution_context
@@ -590,11 +600,11 @@ class AssetExecutionContext:
 
     @property
     @_copy_docs_from_op_execution_context
-    def typed_event_stream_error_message(self) -> Optional[str]:
+    def typed_event_stream_error_message(self) -> str | None:
         return self.op_execution_context.typed_event_stream_error_message
 
     @_copy_docs_from_op_execution_context
-    def set_requires_typed_event_stream(self, *, error_message: Optional[str] = None) -> None:
+    def set_requires_typed_event_stream(self, *, error_message: str | None = None) -> None:
         self.op_execution_context.set_requires_typed_event_stream(error_message=error_message)
 
     @_copy_docs_from_op_execution_context
@@ -602,8 +612,8 @@ class AssetExecutionContext:
         self,
         asset_key: AssetKey,
         *,
-        python_type: Optional[type] = None,
-        partition_key: Optional[str] = None,
+        python_type: type | None = None,
+        partition_key: str | None = None,
     ) -> Any:
         return self.op_execution_context.load_asset_value(
             asset_key=asset_key,

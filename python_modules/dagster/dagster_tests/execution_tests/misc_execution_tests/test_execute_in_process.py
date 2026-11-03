@@ -214,7 +214,7 @@ def test_output_value_error():
 
     with pytest.raises(
         dg.DagsterInvariantViolationError,
-        match="Attempted to retrieve top-level outputs for 'my_job', which has no outputs.",
+        match=r"Attempted to retrieve top-level outputs for 'my_job', which has no outputs.",
     ):
         result.output_value()
 
@@ -369,7 +369,7 @@ def test_retries_exceeded():
         "Exception: I have failed"
         in result.filter_events(lambda evt: evt.is_step_failure)[
             0
-        ].event_specific_data.error_display_string  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+        ].event_specific_data.error_display_string  # ty: ignore[unresolved-attribute]
     )
 
 

@@ -4,15 +4,14 @@ from typing import (  # noqa: UP035
     TYPE_CHECKING,
     AbstractSet,
     Callable,
-    Optional,
-    Union,
+    TypeAlias,
+    TypeGuard,
     cast,
     overload,
 )
 
-from typing_extensions import TypeAlias, TypeGuard
-
 import dagster._check as check
+from dagster._annotations import public
 from dagster._core.decorator_utils import has_at_least_one_parameter
 from dagster._core.definitions.config import is_callable_valid_config_arg
 from dagster._core.definitions.definition_config_schema import (
@@ -25,12 +24,10 @@ from dagster._core.definitions.resource_definition import ResourceDefinition, Re
 if TYPE_CHECKING:
     from dagster._core.execution.context.input import InputContext
 
-InputLoadFn: TypeAlias = Union[
-    Callable[["InputContext"], object],
-    Callable[[], object],
-]
+InputLoadFn: TypeAlias = Callable[["InputContext"], object] | Callable[[], object]
 
 
+@public
 class InputManager(ABC):
     """Base interface for classes that are responsible for loading solid inputs."""
 
@@ -55,6 +52,7 @@ class IInputManagerDefinition:
         """
 
 
+@public
 class InputManagerDefinition(ResourceDefinition, IInputManagerDefinition):
     """Definition of an input manager resource.
 
@@ -70,11 +68,11 @@ class InputManagerDefinition(ResourceDefinition, IInputManagerDefinition):
     def __init__(
         self,
         resource_fn: ResourceFunction,
-        config_schema: Optional[CoercableToConfigSchema] = None,
-        description: Optional[str] = None,
-        input_config_schema: Optional[CoercableToConfigSchema] = None,
-        required_resource_keys: Optional[AbstractSet[str]] = None,
-        version: Optional[str] = None,
+        config_schema: CoercableToConfigSchema | None = None,
+        description: str | None = None,
+        input_config_schema: CoercableToConfigSchema | None = None,
+        required_resource_keys: AbstractSet[str] | None = None,
+        version: str | None = None,
     ):
         self._input_config_schema = convert_user_facing_definition_config_schema(
             input_config_schema
@@ -93,7 +91,7 @@ class InputManagerDefinition(ResourceDefinition, IInputManagerDefinition):
 
     def copy_for_configured(
         self,
-        description: Optional[str],
+        description: str | None,
         config_schema: CoercableToConfigSchema,
     ) -> "InputManagerDefinition":
         return InputManagerDefinition(
@@ -113,21 +111,22 @@ def input_manager(
 
 @overload
 def input_manager(
-    config_schema: Optional[CoercableToConfigSchema] = None,
-    description: Optional[str] = None,
-    input_config_schema: Optional[CoercableToConfigSchema] = None,
-    required_resource_keys: Optional[AbstractSet[str]] = None,
-    version: Optional[str] = None,
+    config_schema: CoercableToConfigSchema | None = None,
+    description: str | None = None,
+    input_config_schema: CoercableToConfigSchema | None = None,
+    required_resource_keys: AbstractSet[str] | None = None,
+    version: str | None = None,
 ) -> Callable[[InputLoadFn], InputManagerDefinition]: ...
 
 
+@public
 def input_manager(
-    config_schema: Union[InputLoadFn, Optional[CoercableToConfigSchema]] = None,
-    description: Optional[str] = None,
-    input_config_schema: Optional[CoercableToConfigSchema] = None,
-    required_resource_keys: Optional[AbstractSet[str]] = None,
-    version: Optional[str] = None,
-) -> Union[InputManagerDefinition, Callable[[InputLoadFn], InputManagerDefinition]]:
+    config_schema: InputLoadFn | CoercableToConfigSchema | None = None,
+    description: str | None = None,
+    input_config_schema: CoercableToConfigSchema | None = None,
+    required_resource_keys: AbstractSet[str] | None = None,
+    version: str | None = None,
+) -> InputManagerDefinition | Callable[[InputLoadFn], InputManagerDefinition]:
     """Define an input manager.
 
     Input managers load op inputs, either from upstream outputs or by providing default values.
@@ -189,7 +188,7 @@ def input_manager(
     return _wrap
 
 
-def _is_input_load_fn(obj: Union[InputLoadFn, CoercableToConfigSchema]) -> TypeGuard[InputLoadFn]:
+def _is_input_load_fn(obj: InputLoadFn | CoercableToConfigSchema) -> TypeGuard[InputLoadFn]:
     return callable(obj) and not is_callable_valid_config_arg(obj)
 
 
@@ -215,10 +214,10 @@ class _InputManagerDecoratorCallable:
     def __init__(
         self,
         config_schema: CoercableToConfigSchema = None,
-        description: Optional[str] = None,
-        version: Optional[str] = None,
+        description: str | None = None,
+        version: str | None = None,
         input_config_schema: CoercableToConfigSchema = None,
-        required_resource_keys: Optional[AbstractSet[str]] = None,
+        required_resource_keys: AbstractSet[str] | None = None,
     ):
         self.config_schema = config_schema
         self.description = check.opt_str_param(description, "description")

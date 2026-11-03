@@ -28,11 +28,14 @@ from typing import (  # noqa: UP035
     Dict,  # noqa: F401
     Generic,
     List,  # noqa: F401
+    Literal,
     NamedTuple,
     Optional,
     Set,  # noqa: F401
     Tuple,  # noqa: F401
     Type,  # noqa: F401
+    TypeAlias,
+    TypeGuard,
     TypeVar,
     Union,
     cast,
@@ -51,7 +54,6 @@ from dagster_shared.utils.hash import (
     make_hashable as make_hashable,
 )
 from filelock import FileLock
-from typing_extensions import Literal, TypeAlias, TypeGuard
 
 import dagster._check as check
 from dagster._utils.internal_init import IHasInternalInit as IHasInternalInit
@@ -77,12 +79,12 @@ DEFAULT_WORKSPACE_YAML_FILENAME = "workspace.yaml"
 
 PrintFn: TypeAlias = Callable[[Any], None]
 
-SingleInstigatorDebugCrashFlags: TypeAlias = Mapping[str, Union[int, Exception]]
+SingleInstigatorDebugCrashFlags: TypeAlias = Mapping[str, int | Exception]
 DebugCrashFlags: TypeAlias = Mapping[str, SingleInstigatorDebugCrashFlags]
 
 
 def check_for_debug_crash(
-    debug_crash_flags: Optional[SingleInstigatorDebugCrashFlags], key: str
+    debug_crash_flags: SingleInstigatorDebugCrashFlags | None, key: str
 ) -> None:
     if not debug_crash_flags:
         return
@@ -221,7 +223,7 @@ def mkdir_p(path: str) -> str:
 
 def get_prop_or_key(elem: object, key: str) -> object:
     if isinstance(elem, Mapping):
-        return elem.get(key)
+        return elem.get(key)  # ty: ignore[invalid-argument-type]
     else:
         return getattr(elem, key)
 
@@ -248,7 +250,7 @@ def check_script(path: str, return_code: int = 0) -> None:
 
 
 def check_cli_execute_file_job(
-    path: str, pipeline_fn_name: str, env_file: Optional[str] = None
+    path: str, pipeline_fn_name: str, env_file: str | None = None
 ) -> None:
     from dagster._core.test_utils import instance_for_test
 
@@ -313,7 +315,7 @@ def ensure_gen(thing_or_gen: T) -> Generator[T, Any, Any]:
 
 
 def ensure_gen(
-    thing_or_gen: Union[T, Iterator[T], Generator[T, Any, Any]],
+    thing_or_gen: T | Iterator[T] | Generator[T, Any, Any],
 ) -> Generator[T, Any, Any]:
     if not inspect.isgenerator(thing_or_gen):
         thing_or_gen = cast("T", thing_or_gen)
@@ -323,7 +325,7 @@ def ensure_gen(
 
         return _gen_thing()
 
-    return thing_or_gen
+    return cast("Generator[T, Any, Any]", thing_or_gen)
 
 
 def ensure_dir(file_path: str) -> str:
@@ -417,12 +419,12 @@ class EventGenerationManager(Generic[T_GeneratedContext]):
         self,
         generator: Iterator[Union["DagsterEvent", T_GeneratedContext]],
         object_cls: type[T_GeneratedContext],
-        require_object: Optional[bool] = True,
+        require_object: bool | None = True,
     ):
         self.generator = check.generator(generator)
         self.object_cls: type[T_GeneratedContext] = check.class_param(object_cls, "object_cls")
         self.require_object = check.bool_param(require_object, "require_object")
-        self.object: Optional[T_GeneratedContext] = None
+        self.object: T_GeneratedContext | None = None
         self.did_setup = False
         self.did_teardown = False
 
@@ -461,6 +463,17 @@ def is_enum_value(value: object) -> bool:
 
 def git_repository_root() -> str:
     return subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).decode("utf-8").strip()
+
+
+_DAGSTER_OSS_SUBDIRECTORY = "dagster-oss"
+
+
+def discover_oss_root(path: Path) -> Path:
+    while path != path.parent:
+        if (path / ".git").exists() or path.name == _DAGSTER_OSS_SUBDIRECTORY:
+            return path
+        path = path.parent
+    raise ValueError("Could not find OSS root")
 
 
 def segfault() -> None:
@@ -576,7 +589,7 @@ class Counter:
         return copy
 
 
-traced_counter: contextvars.ContextVar[Optional[Counter]] = contextvars.ContextVar(
+traced_counter: contextvars.ContextVar[Counter | None] = contextvars.ContextVar(
     "traced_counts",
     default=None,
 )
@@ -591,7 +604,7 @@ def traced(func: T_Callable) -> T_Callable:
     def inner(*args, **kwargs):
         counter = traced_counter.get()
         if counter and isinstance(counter, Counter):
-            counter.increment(func.__qualname__)
+            counter.increment(func.__qualname__)  # ty: ignore[unresolved-attribute]
 
         return func(*args, **kwargs)
 
@@ -640,7 +653,7 @@ def is_named_tuple_subclass(klass: type[object]) -> TypeGuard[type[NamedTuple]]:
 
 @overload
 def normalize_to_repository(
-    definitions_or_repository: Optional[Union["Definitions", "RepositoryDefinition"]] = ...,
+    definitions_or_repository: Union["Definitions", "RepositoryDefinition"] | None = ...,
     repository: Optional["RepositoryDefinition"] = ...,
     error_on_none: Literal[True] = ...,
 ) -> "RepositoryDefinition": ...
@@ -648,14 +661,14 @@ def normalize_to_repository(
 
 @overload
 def normalize_to_repository(
-    definitions_or_repository: Optional[Union["Definitions", "RepositoryDefinition"]] = ...,
+    definitions_or_repository: Union["Definitions", "RepositoryDefinition"] | None = ...,
     repository: Optional["RepositoryDefinition"] = ...,
     error_on_none: Literal[False] = ...,
 ) -> Optional["RepositoryDefinition"]: ...
 
 
 def normalize_to_repository(
-    definitions_or_repository: Optional[Union["Definitions", "RepositoryDefinition"]] = None,
+    definitions_or_repository: Union["Definitions", "RepositoryDefinition"] | None = None,
     repository: Optional["RepositoryDefinition"] = None,
     error_on_none: bool = True,
 ) -> Optional["RepositoryDefinition"]:
@@ -686,8 +699,8 @@ def xor(a: object, b: object) -> bool:
     return bool(a) != bool(b)
 
 
-def tail_file(path_or_fd: Union[str, int], should_stop: Callable[[], bool]) -> Iterator[str]:
-    with open(path_or_fd) as output_stream:
+def tail_file(path_or_fd: str | int, should_stop: Callable[[], bool]) -> Iterator[str]:
+    with open(path_or_fd, encoding="utf-8") as output_stream:
         while True:
             line = output_stream.readline()
             if line:

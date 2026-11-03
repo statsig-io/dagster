@@ -33,7 +33,7 @@ The Delta Lake I/O manager requires some configuration to set up your Delta Lake
 
 With this configuration, if you materialized an asset called `iris_dataset`, the Delta Lake I/O manager would store the data within a folder `iris/iris_dataset` under the provided root directory `path/to/deltalake`.
 
-Finally, in the <PyObject section="definitions" module="dagster" object="Definitions" /> object, we assign the <PyObject section="libraries" module="dagster_deltalake_pandas" object="DeltaLakePandasIOManager" /> to the `io_manager` key. `io_manager` is a reserved key to set the default I/O manager for your assets.
+Finally, in the <PyObject section="definitions" module="dagster" object="Definitions" /> object, we assign the <PyObject section="libraries" integration="deltalake" module="dagster_deltalake_pandas" object="DeltaLakePandasIOManager" /> to the `io_manager` key. `io_manager` is a reserved key to set the default I/O manager for your assets.
 
 ## Step 2: Create Delta Lake tables
 
@@ -94,8 +94,8 @@ When finished, your code should look like the following:
 
 ## Related
 
-For more Delta Lake features, refer to the [Delta Lake reference](/integrations/libraries/deltalake/reference).
+For more Delta Lake features, see the [Delta Lake reference](/integrations/libraries/deltalake/reference).
 
 For more information on asset definitions, see the [Assets documentation](/guides/build/assets/defining-assets).
 
-For more information on I/O managers, refer to the [I/O manager documentation](/guides/build/io-managers).
+For more information on I/O managers, see the [I/O manager documentation](/guides/build/io-managers).

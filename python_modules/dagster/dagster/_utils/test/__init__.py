@@ -62,7 +62,7 @@ from dagster._utils.temp_file import (
 
 
 def create_test_pipeline_execution_context(
-    logger_defs: Optional[Mapping[str, LoggerDefinition]] = None,
+    logger_defs: Mapping[str, LoggerDefinition] | None = None,
 ) -> PlanExecutionContext:
     loggers = check.opt_mapping_param(
         logger_defs, "logger_defs", key_type=str, value_type=LoggerDefinition
@@ -87,7 +87,9 @@ def create_test_pipeline_execution_context(
     executor = create_executor(creation_data)
 
     return PlanExecutionContext(
-        plan_data=create_plan_data(creation_data, True, executor.retries),
+        plan_data=create_plan_data(
+            creation_data, True, executor.retries, executor.step_dependency_config
+        ),
         execution_data=create_execution_data(
             context_creation_data=creation_data,
             scoped_resources_builder=scoped_resources_builder,
@@ -133,7 +135,7 @@ def build_job_with_input_stubs(
 
     return JobDefinition(
         name=job_def.name + "_stubbed",
-        graph_def=GraphDefinition(
+        graph_def=GraphDefinition(  # ty: ignore[missing-argument]
             node_defs=[*job_def.top_level_node_defs, *stub_node_defs],
             dependencies=deps,  # type: ignore
         ),
@@ -143,7 +145,7 @@ def build_job_with_input_stubs(
 
 def wrap_op_in_graph(
     op_def: OpDefinition,
-    tags: Optional[Mapping[str, Any]] = None,
+    tags: Mapping[str, Any] | None = None,
     do_input_mapping: bool = True,
     do_output_mapping: bool = True,
 ) -> GraphDefinition:
@@ -151,16 +153,15 @@ def wrap_op_in_graph(
     check.opt_mapping_param(tags, "tags", key_type=str)
 
     if do_input_mapping:
-        input_mappings = []
-        for input_name in op_def.ins.keys():
-            # create an input mapping to the inner node with the same name.
-            input_mappings.append(
-                InputMapping(
-                    graph_input_name=input_name,
-                    mapped_node_name=op_def.name,
-                    mapped_node_input_name=input_name,
-                )
+        # create an input mapping to the inner node with the same name.
+        input_mappings = [
+            InputMapping(
+                graph_input_name=input_name,
+                mapped_node_name=op_def.name,
+                mapped_node_input_name=input_name,
             )
+            for input_name in op_def.ins.keys()
+        ]
     else:
         input_mappings = None
 
@@ -190,14 +191,14 @@ def wrap_op_in_graph(
 
 def wrap_op_in_graph_and_execute(
     op_def: OpDefinition,
-    resources: Optional[Mapping[str, Any]] = None,
-    input_values: Optional[Mapping[str, Any]] = None,
-    tags: Optional[Mapping[str, Any]] = None,
-    run_config: Optional[Mapping[str, object]] = None,
+    resources: Mapping[str, Any] | None = None,
+    input_values: Mapping[str, Any] | None = None,
+    tags: Mapping[str, Any] | None = None,
+    run_config: Mapping[str, object] | None = None,
     raise_on_error: bool = True,
     do_input_mapping: bool = True,
     do_output_mapping: bool = True,
-    logger_defs: Optional[Mapping[str, LoggerDefinition]] = None,
+    logger_defs: Mapping[str, LoggerDefinition] | None = None,
 ) -> ExecuteInProcessResult:
     """Execute a single op in an ephemeral, in-process job.
 
@@ -260,7 +261,7 @@ class FilesystemTestScheduler(Scheduler, ConfigurableClass):
         self._inst_data = inst_data
 
     @property
-    def inst_data(self) -> object:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def inst_data(self) -> object:
         return self._inst_data
 
     @classmethod
@@ -277,7 +278,7 @@ class FilesystemTestScheduler(Scheduler, ConfigurableClass):
     def debug_info(self) -> str:
         return ""
 
-    def get_logs_path(self, _instance: DagsterInstance, schedule_origin_id: str) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_logs_path(self, _instance: DagsterInstance, schedule_origin_id: str) -> str:  # ty: ignore[invalid-method-override]
         check.str_param(schedule_origin_id, "schedule_origin_id")
         return os.path.join(self._artifacts_dir, "logs", schedule_origin_id, "scheduler.log")
 
@@ -301,8 +302,8 @@ class ConcurrencyEnabledSqliteTestEventLogStorage(SqliteEventLogStorage, Configu
     def __init__(
         self,
         base_dir: str,
-        sleep_interval: Optional[float] = None,
-        inst_data: Optional[ConfigurableClassData] = None,
+        sleep_interval: float | None = None,
+        inst_data: ConfigurableClassData | None = None,
     ):
         self._sleep_interval = sleep_interval
         self._check_calls = defaultdict(int)
@@ -314,21 +315,21 @@ class ConcurrencyEnabledSqliteTestEventLogStorage(SqliteEventLogStorage, Configu
         return {"base_dir": StringSource, "sleep_interval": Field(float, is_required=False)}
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
-        cls, inst_data: Optional[ConfigurableClassData], config_value: TestStorageConfig
+    def from_config_value(  # ty: ignore[invalid-method-override]
+        cls, inst_data: ConfigurableClassData | None, config_value: TestStorageConfig
     ) -> "ConcurrencyEnabledSqliteTestEventLogStorage":
         return ConcurrencyEnabledSqliteTestEventLogStorage(inst_data=inst_data, **config_value)
 
     @property
-    def supports_global_concurrency_limits(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
+    def supports_global_concurrency_limits(self) -> bool:
         return True
 
     def get_records_for_run(
         self,
         run_id: str,
-        cursor: Optional[str] = None,
-        of_type: Optional[Union[DagsterEventType, set[DagsterEventType]]] = None,
-        limit: Optional[int] = None,
+        cursor: str | None = None,
+        of_type: DagsterEventType | set[DagsterEventType] | None = None,
+        limit: int | None = None,
         ascending: bool = True,
     ) -> EventLogConnection:
         self._records_for_run_calls[run_id] = self._records_for_run_calls[run_id] + 1

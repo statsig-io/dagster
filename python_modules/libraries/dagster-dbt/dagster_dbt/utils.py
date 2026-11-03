@@ -1,15 +1,34 @@
 from argparse import Namespace
-from collections.abc import Mapping
-from typing import AbstractSet, Any, cast  # noqa: UP035
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, AbstractSet, Any, Optional, cast  # noqa: UP035
 
 import dagster_shared.check as check
+import orjson
 from dagster import AssetKey
 from dagster._utils.names import clean_name_lower
 from packaging import version
 
+from dagster_dbt.compat import DBT_PYTHON_VERSION
+
+if TYPE_CHECKING:
+    from dagster_dbt.core.resource import DbtProject
+
 # dbt resource types that may be considered assets
 ASSET_RESOURCE_TYPES = ["model", "seed", "snapshot"]
 
+# Manifest collections holding nodes that participate in the selection graph. Mirrors the
+# collections dbt itself walks in `Manifest.build_parent_and_child_maps`; keep in sync with it.
+_GRAPH_MEMBER_COLLECTIONS = (
+    "nodes",
+    "sources",
+    "exposures",
+    "functions",
+    "metrics",
+    "semantic_models",
+    "saved_queries",
+    "unit_tests",
+)
 
 clean_name = clean_name_lower
 
@@ -22,11 +41,71 @@ def dagster_name_fn(dbt_resource_props: Mapping[str, Any]) -> str:
     return dbt_resource_props["unique_id"].replace(".", "_").replace("-", "_").replace("*", "_star")
 
 
-def select_unique_ids_from_manifest(
+def select_unique_ids(
+    select: str,
+    exclude: str,
+    selector: str,
+    project: Optional["DbtProject"],
+    manifest_json: Mapping[str, Any],
+) -> AbstractSet[str]:
+    """Given dbt selection paramters, return the unique ids of all resources that match that selection."""
+    manifest_version = version.parse(manifest_json.get("metadata", {}).get("dbt_version", "0.0.0"))
+    # dbt-core available, fastest to use the library directly
+    if DBT_PYTHON_VERSION is not None:
+        return _select_unique_ids_from_manifest(select, exclude, selector, manifest_json, project)
+    # dbt Fusion available, efficient(ish) to invoke the CLI for selection
+    if manifest_version.major >= 2 and project is not None:
+        return _select_unique_ids_from_cli(select, exclude, selector, project)
+    else:
+        # in theory, as long as dbt-core is a dependency of dagster-dbt, this can't happen, but adding
+        # this for now to be safe
+        check.failed(
+            "dbt-core is not installed and no `project` was passed to `select_unique_ids`. "
+            "This can happen if you are using the dbt Cloud integration without the dbt-core package installed."
+        )
+
+
+def _select_unique_ids_from_cli(
+    select: str,
+    exclude: str,
+    selector: str,
+    project: "DbtProject",
+) -> AbstractSet[str]:
+    """Uses the available dbt CLI to list the unique ids of the selected models. This is not recommended if
+    dbt-core is available, as it will be slower than using the manifest.
+    """
+    from dagster_dbt.core.resource import DbtCliResource
+
+    cmd = ["list", "--output", "json"]
+    if select and select != "fqn:*":
+        cmd.append("--select")
+        cmd.append(select)
+    if exclude:
+        cmd.append("--exclude")
+        cmd.append(exclude)
+    if selector:
+        cmd.append("--selector")
+        cmd.append(selector)
+
+    raw_events = DbtCliResource(project_dir=project).cli(cmd)._stream_stdout()  # noqa
+    unique_ids = set()
+    for event in raw_events:
+        if isinstance(event, dict):
+            try:
+                msg = orjson.loads(event.get("info", {}).get("msg", "{}"))
+            except orjson.JSONDecodeError:
+                continue
+            unique_ids.add(msg.get("unique_id"))
+
+    return unique_ids - {None}
+
+
+def _select_unique_ids_from_manifest(
     select: str,
     exclude: str,
     selector: str,
     manifest_json: Mapping[str, Any],
+    project: Optional["DbtProject"] = None,
 ) -> AbstractSet[str]:
     """Method to apply a selection string to an existing manifest.json file."""
     import dbt.graph.cli as graph_cli
@@ -35,7 +114,6 @@ def select_unique_ids_from_manifest(
     from dbt.contracts.graph.nodes import SavedQuery, SemanticModel
     from dbt.contracts.selection import SelectorFile
     from dbt.graph.selector_spec import IndirectSelection, SelectionSpec
-    from dbt.version import __version__ as dbt_version
     from networkx import DiGraph
 
     select_specified = select and select != "fqn:*"
@@ -59,7 +137,7 @@ def select_unique_ids_from_manifest(
             return _DictShim(ret) if isinstance(ret, dict) else ret
 
     unit_tests = {}
-    if version.parse(dbt_version) >= version.parse("1.8.0"):
+    if DBT_PYTHON_VERSION is not None and DBT_PYTHON_VERSION >= version.parse("1.8.0"):
         from dbt.contracts.graph.nodes import UnitTestDefinition
 
         unit_tests = (
@@ -74,19 +152,31 @@ def select_unique_ids_from_manifest(
             else {}
         )
 
+    functions = {}
+    if DBT_PYTHON_VERSION is not None and DBT_PYTHON_VERSION >= version.parse("1.11.0"):
+        from dbt.contracts.graph.nodes import FunctionNode  # ty: ignore
+
+        functions = (
+            {
+                "functions": {
+                    unique_id: FunctionNode.from_dict(info)
+                    for unique_id, info in manifest_json["functions"].items()
+                }
+            }
+            if manifest_json.get("functions")
+            else {}
+        )
+
     manifest = Manifest(
-        nodes={unique_id: _DictShim(info) for unique_id, info in manifest_json["nodes"].items()},
-        sources={
-            unique_id: _DictShim(info)
-            for unique_id, info in manifest_json["sources"].items()  # type: ignore
+        nodes={unique_id: _DictShim(info) for unique_id, info in manifest_json["nodes"].items()},  # ty: ignore[invalid-argument-type]
+        sources={  # ty: ignore[invalid-argument-type]
+            unique_id: _DictShim(info) for unique_id, info in manifest_json["sources"].items()
         },
-        metrics={
-            unique_id: _DictShim(info)
-            for unique_id, info in manifest_json["metrics"].items()  # type: ignore
+        metrics={  # ty: ignore[invalid-argument-type]
+            unique_id: _DictShim(info) for unique_id, info in manifest_json["metrics"].items()
         },
-        exposures={
-            unique_id: _DictShim(info)
-            for unique_id, info in manifest_json["exposures"].items()  # type: ignore
+        exposures={  # ty: ignore[invalid-argument-type]
+            unique_id: _DictShim(info) for unique_id, info in manifest_json["exposures"].items()
         },
         **(  # type: ignore
             {
@@ -121,11 +211,23 @@ def select_unique_ids_from_manifest(
             else {}
         ),
         **unit_tests,
+        **functions,
     )
 
     child_map = manifest_json["child_map"]
 
-    graph = graph_selector.Graph(DiGraph(incoming_graph_data=child_map))
+    digraph = DiGraph(incoming_graph_data=child_map)
+    # dbt-fusion omits nodes with neither parents nor children from `child_map`, and a node
+    # absent from the graph can never be selected. Add every graph member back so isolated
+    # nodes stay selectable; a no-op for dbt-core, which keys `child_map` by every node.
+    # See https://github.com/dagster-io/dagster/issues/33801.
+    digraph.add_nodes_from(
+        unique_id
+        for collection in _GRAPH_MEMBER_COLLECTIONS
+        for unique_id in manifest_json.get(collection, {})
+    )
+
+    graph = graph_selector.Graph(digraph)
 
     # create a parsed selection from the select string
     _set_flag_attrs(
@@ -153,8 +255,26 @@ def select_unique_ids_from_manifest(
 
     # execute this selection against the graph
     node_selector = graph_selector.NodeSelector(graph, manifest)
-    selected, _ = node_selector.select_nodes(parsed_spec)
+    with _dbt_selector_project_root(project):
+        selected, _ = node_selector.select_nodes(parsed_spec)
     return selected
+
+
+@contextmanager
+def _dbt_selector_project_root(project: Optional["DbtProject"]) -> Iterator[None]:
+    """Set dbt's project root context so path selectors can match manifest file paths."""
+    if not project:
+        yield
+        return
+
+    try:
+        from dbt_common.events.contextvars import task_contextvars
+    except ImportError:
+        yield
+        return
+
+    with task_contextvars(project_root=str(project.project_dir)):
+        yield
 
 
 def _set_flag_attrs(kvs: dict[str, Any]):

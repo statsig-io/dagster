@@ -16,10 +16,10 @@ def instance():
 
 class TestDagsterWebserver(DagsterWebserver):
     def test_req_ctx_endpoint(self, request: Request):
-        ctx = self.make_request_context(request)
-        # instantiate cached property with backref
-        _ = ctx.instance_queryer
-        return JSONResponse({"name": ctx.__class__.__name__})
+        with self.request_context(request) as ctx:
+            # instantiate cached property with backref
+            _ = ctx.instance_queryer
+            return JSONResponse({"name": ctx.__class__.__name__})
 
     def build_routes(self):
         return [
@@ -34,6 +34,21 @@ def test_client(instance):
         instance=instance,
         version=__version__,
         read_only=False,
+        workspace_load_target=workspace_opts_to_load_target(
+            WorkspaceOpts(empty_workspace=True),
+        ),
+    )
+
+    app = TestDagsterWebserver(process_context).create_asgi_app(debug=True)
+    return TestClient(app)
+
+
+@pytest.fixture(scope="session")
+def read_only_test_client(instance):
+    process_context = WorkspaceProcessContext(
+        instance=instance,
+        version=__version__,
+        read_only=True,
         workspace_load_target=workspace_opts_to_load_target(
             WorkspaceOpts(empty_workspace=True),
         ),

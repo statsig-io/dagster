@@ -1,11 +1,15 @@
 import hashlib
 import os
+import shutil
+import tempfile
 import textwrap
+from argparse import ArgumentParser
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, AbstractSet, Annotated, Any, Final, Optional, Union  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet, Annotated, Any, Final  # noqa: UP035
 
+import yaml
 from dagster import (
     AssetCheckKey,
     AssetCheckSpec,
@@ -18,7 +22,6 @@ from dagster import (
     DagsterInvalidDefinitionError,
     DagsterInvariantViolationError,
     DefaultScheduleStatus,
-    LegacyFreshnessPolicy,
     OpExecutionContext,
     RunConfig,
     ScheduleDefinition,
@@ -33,20 +36,26 @@ from dagster._core.definitions.metadata import TableMetadataSet
 from dagster._core.errors import DagsterInvalidPropertyError
 from dagster._core.types.dagster_type import Nothing
 from dagster._record import ImportFrom, record
+from dagster_shared.record import replace
 
 from dagster_dbt.dbt_project import DbtProject
 from dagster_dbt.metadata_set import DbtMetadataSet
-from dagster_dbt.utils import ASSET_RESOURCE_TYPES, dagster_name_fn, select_unique_ids_from_manifest
+from dagster_dbt.utils import ASSET_RESOURCE_TYPES, dagster_name_fn, select_unique_ids
 
 if TYPE_CHECKING:
     from dagster_dbt.dagster_dbt_translator import DagsterDbtTranslator, DbtManifestWrapper
 
+DAGSTER_DBT_METADATA_NAMESPACE = "dagster_dbt/"
 DAGSTER_DBT_MANIFEST_METADATA_KEY = "dagster_dbt/manifest"
 DAGSTER_DBT_TRANSLATOR_METADATA_KEY = "dagster_dbt/dagster_dbt_translator"
+DAGSTER_DBT_PROJECT_METADATA_KEY = "dagster_dbt/project"
 DAGSTER_DBT_SELECT_METADATA_KEY = "dagster_dbt/select"
 DAGSTER_DBT_EXCLUDE_METADATA_KEY = "dagster_dbt/exclude"
 DAGSTER_DBT_SELECTOR_METADATA_KEY = "dagster_dbt/selector"
 DAGSTER_DBT_UNIQUE_ID_METADATA_KEY = "dagster_dbt/unique_id"
+DAGSTER_DBT_CLOUD_ACCOUNT_ID_METADATA_KEY = "dagster_dbt/cloud_account_id"
+DAGSTER_DBT_CLOUD_PROJECT_ID_METADATA_KEY = "dagster_dbt/cloud_project_id"
+DAGSTER_DBT_CLOUD_ENVIRONMENT_ID_METADATA_KEY = "dagster_dbt/cloud_environment_id"
 
 DBT_DEFAULT_SELECT = "fqn:*"
 DBT_DEFAULT_EXCLUDE = ""
@@ -54,6 +63,71 @@ DBT_DEFAULT_SELECTOR = ""
 
 DBT_INDIRECT_SELECTION_ENV: Final[str] = "DBT_INDIRECT_SELECTION"
 DBT_EMPTY_INDIRECT_SELECTION: Final[str] = "empty"
+
+# Threshold for switching to selector file to avoid CLI argument length limits
+# https://github.com/dagster-io/dagster/issues/16997
+_SELECTION_ARGS_THRESHOLD: Final[int] = 200
+
+
+def extract_runtime_selection_from_args(
+    args: Sequence[str],
+) -> tuple[list[str], list[str], list[str]]:
+    """Pull --select/--exclude out of user-supplied dbt CLI args.
+
+    When the asset-graph selection is large enough to trigger the generated-selector branch,
+    dbt silently ignores runtime --select/--exclude passed alongside --selector. This helper
+    extracts those flags so callers can fold the values into the selector yaml and strip them
+    from the argv that dbt actually sees.
+
+    Returns:
+        (cleaned_args, runtime_selects, runtime_excludes)
+    """
+    parser = ArgumentParser()
+    parser.add_argument("--select", "-s", "--models", "-m", dest="select", action="append")
+    parser.add_argument("--exclude", action="append")
+    known, cleaned = parser.parse_known_args(list(args))
+
+    raw_selects = known.select if known.select is not None else []
+    raw_excludes = known.exclude if known.exclude is not None else []
+    selects = [v for raw in raw_selects for v in raw.split()]
+    excludes = [v for raw in raw_excludes for v in raw.split()]
+    return cleaned, selects, excludes
+
+
+def _parse_selection_args(
+    selection_args: list[str],
+) -> tuple[list[str] | None, list[str] | None]:
+    """Parse selection args into separate select and exclude resource lists.
+
+    This function is designed for dagster-dbt's internal argument format, where select/exclude
+    values are passed as a single space-separated string (e.g., ["--select", "model1 model2"]).
+    This matches how dagster-dbt constructs these arguments in get_subset_selection_for_context.
+    It does not handle the dbt CLI's alternative format of multiple --select flags.
+
+    Args:
+        selection_args: CLI arguments in dagster-dbt's internal format,
+            e.g., ["--select", "model1 model2", "--exclude", "model3"]
+
+    Returns:
+        Tuple of (select_resources, exclude_resources) where each is a list of resource names
+        or None if not present.
+    """
+    select_resources: list[str] | None = None
+    exclude_resources: list[str] | None = None
+
+    i = 0
+    while i < len(selection_args):
+        if selection_args[i] == "--select" and i + 1 < len(selection_args):
+            select_resources = selection_args[i + 1].split(" ")
+            i += 2
+        elif selection_args[i] == "--exclude" and i + 1 < len(selection_args):
+            exclude_resources = selection_args[i + 1].split(" ")
+            i += 2
+        else:
+            i += 1
+
+    return select_resources, exclude_resources
+
 
 DUPLICATE_ASSET_KEY_ERROR_MESSAGE = (
     "The following dbt resources are configured with identical Dagster asset keys."
@@ -93,7 +167,9 @@ def get_asset_key_for_model(dbt_assets: Sequence[AssetsDefinition], model_name: 
     check.sequence_param(dbt_assets, "dbt_assets", of_type=AssetsDefinition)
     check.str_param(model_name, "model_name")
 
-    manifest, dagster_dbt_translator = get_manifest_and_translator_from_dbt_assets(dbt_assets)
+    manifest, dagster_dbt_translator, dbt_project = get_manifest_and_translator_from_dbt_assets(
+        dbt_assets
+    )
 
     matching_model_ids = [
         unique_id
@@ -107,7 +183,7 @@ def get_asset_key_for_model(dbt_assets: Sequence[AssetsDefinition], model_name: 
     return dagster_dbt_translator.get_asset_spec(
         manifest,
         next(iter(matching_model_ids)),
-        None,
+        dbt_project,
     ).key
 
 
@@ -151,7 +227,9 @@ def get_asset_keys_by_output_name_for_source(
     check.sequence_param(dbt_assets, "dbt_assets", of_type=AssetsDefinition)
     check.str_param(source_name, "source_name")
 
-    manifest, dagster_dbt_translator = get_manifest_and_translator_from_dbt_assets(dbt_assets)
+    manifest, dagster_dbt_translator, dbt_project = get_manifest_and_translator_from_dbt_assets(
+        dbt_assets
+    )
 
     matching = {
         unique_id: value
@@ -163,7 +241,9 @@ def get_asset_keys_by_output_name_for_source(
         raise KeyError(f"Could not find a dbt source with name: {source_name}")
 
     return {
-        dagster_name_fn(value): dagster_dbt_translator.get_asset_spec(manifest, unique_id, None).key
+        dagster_name_fn(value): dagster_dbt_translator.get_asset_spec(
+            manifest, unique_id, dbt_project
+        ).key
         for unique_id, value in matching.items()
     }
 
@@ -210,8 +290,8 @@ def get_asset_key_for_source(dbt_assets: Sequence[AssetsDefinition], source_name
 def build_dbt_asset_selection(
     dbt_assets: Sequence[AssetsDefinition],
     dbt_select: str = DBT_DEFAULT_SELECT,
-    dbt_exclude: Optional[str] = DBT_DEFAULT_EXCLUDE,
-    dbt_selector: Optional[str] = DBT_DEFAULT_SELECTOR,
+    dbt_exclude: str | None = DBT_DEFAULT_EXCLUDE,
+    dbt_selector: str | None = DBT_DEFAULT_SELECTOR,
 ) -> AssetSelection:
     """Build an asset selection for a dbt selection string.
 
@@ -265,7 +345,9 @@ def build_dbt_asset_selection(
             bar_plus_and_foo_and_downstream_selection = bar_plus_and_foo_selection.downstream()
 
     """
-    manifest, dagster_dbt_translator = get_manifest_and_translator_from_dbt_assets(dbt_assets)
+    manifest, dagster_dbt_translator, dbt_project = get_manifest_and_translator_from_dbt_assets(
+        dbt_assets
+    )
     [dbt_assets_definition] = dbt_assets
 
     dbt_assets_select = dbt_assets_definition.op.tags[DAGSTER_DBT_SELECT_METADATA_KEY]
@@ -284,12 +366,14 @@ def build_dbt_asset_selection(
         select=dbt_assets_select,
         exclude=dbt_assets_exclude,
         selector=dbt_assets_selector,
+        project=dbt_project,
     ) & DbtManifestAssetSelection.build(
         manifest=manifest,
         dagster_dbt_translator=dagster_dbt_translator,
         select=dbt_select,
         exclude=dbt_exclude or DBT_DEFAULT_EXCLUDE,
         selector=dbt_selector or DBT_DEFAULT_SELECTOR,
+        project=dbt_project,
     )
 
 
@@ -298,12 +382,12 @@ def build_schedule_from_dbt_selection(
     job_name: str,
     cron_schedule: str,
     dbt_select: str = DBT_DEFAULT_SELECT,
-    dbt_exclude: Optional[str] = DBT_DEFAULT_EXCLUDE,
+    dbt_exclude: str | None = DBT_DEFAULT_EXCLUDE,
     dbt_selector: str = DBT_DEFAULT_SELECTOR,
-    schedule_name: Optional[str] = None,
-    tags: Optional[Mapping[str, str]] = None,
-    config: Optional[RunConfig] = None,
-    execution_timezone: Optional[str] = None,
+    schedule_name: str | None = None,
+    tags: Mapping[str, object] | None = None,
+    config: RunConfig | None = None,
+    execution_timezone: str | None = None,
     default_status: DefaultScheduleStatus = DefaultScheduleStatus.STOPPED,
 ) -> ScheduleDefinition:
     """Build a schedule to materialize a specified set of dbt resources from a dbt selection string.
@@ -318,8 +402,8 @@ def build_schedule_from_dbt_selection(
         dbt_exclude (Optional[str]): A dbt selection string to exclude a set of dbt resources.
         dbt_selector (str): A dbt selector to select resources to materialize.
         schedule_name (Optional[str]): The name of the dbt schedule to create.
-        tags (Optional[Mapping[str, str]]): A dictionary of tags (string key-value pairs) to attach
-            to the scheduled runs.
+        tags (Optional[Mapping[str, object]]): A set of key-value tags to attach to the scheduled
+            runs. Values that are not already strings will be serialized as JSON.
         config (Optional[RunConfig]): The config that parameterizes the execution of this schedule.
         execution_timezone (Optional[str]): Timezone in which the schedule should run.
             Supported strings for timezones are the ones provided by the
@@ -365,15 +449,16 @@ def build_schedule_from_dbt_selection(
 
 def get_manifest_and_translator_from_dbt_assets(
     dbt_assets: Sequence[AssetsDefinition],
-) -> tuple[Mapping[str, Any], "DagsterDbtTranslator"]:
+) -> tuple[Mapping[str, Any], "DagsterDbtTranslator", DbtProject | None]:
     check.invariant(len(dbt_assets) == 1, "Exactly one dbt AssetsDefinition is required")
     dbt_assets_def = dbt_assets[0]
     metadata_by_key = dbt_assets_def.metadata_by_key or {}
     first_asset_key = next(iter(dbt_assets_def.metadata_by_key.keys()))
     first_metadata = metadata_by_key.get(first_asset_key, {})
-    manifest_wrapper: Optional[DbtManifestWrapper] = first_metadata.get(
+    manifest_wrapper: DbtManifestWrapper | None = first_metadata.get(
         DAGSTER_DBT_MANIFEST_METADATA_KEY
     )
+    project = first_metadata.get(DAGSTER_DBT_PROJECT_METADATA_KEY)
     if manifest_wrapper is None:
         raise DagsterInvariantViolationError(
             f"Expected to find dbt manifest metadata on asset {first_asset_key.to_user_string()},"
@@ -387,7 +472,7 @@ def get_manifest_and_translator_from_dbt_assets(
             " but did not. Did you pass in assets that weren't generated by @dbt_assets?"
         )
 
-    return manifest_wrapper.manifest, dagster_dbt_translator
+    return manifest_wrapper.manifest, dagster_dbt_translator, project
 
 
 def get_asset_keys_to_resource_props(
@@ -408,14 +493,29 @@ class DbtCliInvocationPartialParams:
         "DagsterDbtTranslator", ImportFrom("dagster_dbt.dagster_dbt_translator")
     ]
     selection_args: Sequence[str]
-    indirect_selection: Optional[str]
+    indirect_selection: str | None
+    dbt_project: DbtProject | None
 
 
 def get_updated_cli_invocation_params_for_context(
-    context: Optional[Union[OpExecutionContext, AssetExecutionContext]],
+    context: OpExecutionContext | AssetExecutionContext | None,
     manifest: Mapping[str, Any],
     dagster_dbt_translator: "DagsterDbtTranslator",
+    *,
+    runtime_selects: Sequence[str] | None = None,
+    runtime_excludes: Sequence[str] | None = None,
 ) -> DbtCliInvocationPartialParams:
+    """Build the partial params (manifest, translator, selection_args, etc.) for a dbt CLI
+    invocation tied to a Dagster context.
+
+    ``runtime_selects`` and ``runtime_excludes`` carry the --select/--exclude values that
+    were passed to ``dbt.cli(args=...)`` — callers are expected to extract them from the
+    raw argv via ``extract_runtime_selection_from_args`` before invoking this function.
+    Splitting that parsing out keeps this function's concern narrow: routing already-parsed
+    runtime selection into either the generated selector yaml or the computed selection_args.
+    """
+    runtime_selects = runtime_selects or ()
+    runtime_excludes = runtime_excludes or ()
     try:
         assets_def = context.assets_def if context else None
     except DagsterInvalidPropertyError:
@@ -425,8 +525,16 @@ def get_updated_cli_invocation_params_for_context(
 
     selection_args: list[str] = []
     indirect_selection = os.getenv(DBT_INDIRECT_SELECTION_ENV, None)
+    dbt_project = None
+    used_generated_selector = False
     if context and assets_def is not None:
-        manifest, dagster_dbt_translator = get_manifest_and_translator_from_dbt_assets([assets_def])
+        manifest, dagster_dbt_translator, dbt_project = get_manifest_and_translator_from_dbt_assets(
+            [assets_def]
+        )
+
+        # Get project_dir from dbt_project if available
+        project_dir = Path(dbt_project.project_dir) if dbt_project else None
+        target_project = dbt_project
 
         selection_args, indirect_selection_override = get_subset_selection_for_context(
             context=context,
@@ -437,16 +545,87 @@ def get_updated_cli_invocation_params_for_context(
             dagster_dbt_translator=dagster_dbt_translator,
             current_dbt_indirect_selection_env=indirect_selection,
         )
+        # Parse selection args to get select and exclude resources
+        select_resources, exclude_resources = _parse_selection_args(selection_args)
+        total_resources = len(select_resources or []) + len(exclude_resources or [])
+
+        if select_resources and project_dir and total_resources > _SELECTION_ARGS_THRESHOLD:
+            temp_project_dir = tempfile.mkdtemp()
+            shutil.copytree(project_dir, temp_project_dir, dirs_exist_ok=True)
+            selectors_path = Path(temp_project_dir) / "selectors.yml"
+
+            # Delete any existing selectors, we need to create our own
+            if selectors_path.exists():
+                selectors_path.unlink()
+
+            selector_name = f"dagster_run_{context.run_id}"
+            # Build selector definition with union of selected resources
+            # and optional exclude section nested inside the union
+            # See: https://docs.getdbt.com/reference/node-selection/yaml-selectors
+            # Note: exclude must be nested inside the union array, not a sibling key
+            union_items: list[Any] = list(select_resources)
+            union_items.extend(runtime_selects)
+            effective_excludes: list[str] = list(exclude_resources) if exclude_resources else []
+            effective_excludes.extend(runtime_excludes)
+            if effective_excludes:
+                union_items.append({"exclude": effective_excludes})
+
+            temp_selectors = {
+                "selectors": [
+                    {
+                        "name": selector_name,
+                        "definition": {"union": union_items},
+                    }
+                ]
+            }
+            selectors_path.write_text(yaml.safe_dump(temp_selectors))
+            logger.warning(
+                f"DBT selection of {total_resources} resources exceeds threshold of "
+                f"{_SELECTION_ARGS_THRESHOLD}. Executing materialization against temporary "
+                f"copy of DBT project at {temp_project_dir} with ephemeral selector "
+                f"{selector_name!r}. dbt silently ignores runtime --select/--exclude flags "
+                "alongside --selector; any --select/--exclude passed to dbt.cli() has been "
+                "folded into this selector. To skip running tests on dbt build, pass "
+                "--exclude resource_type:test to dbt.cli()."
+            )
+            if runtime_selects:
+                logger.warning(
+                    f"Folded runtime --select {runtime_selects!r} into generated selector "
+                    f"{selector_name!r} and stripped these flags from the dbt CLI args."
+                )
+            if runtime_excludes:
+                logger.warning(
+                    f"Folded runtime --exclude {runtime_excludes!r} into generated selector "
+                    f"{selector_name!r} and stripped these flags from the dbt CLI args."
+                )
+            selection_args = ["--selector", selector_name]
+            target_project = replace(dbt_project, project_dir=Path(temp_project_dir))
+            used_generated_selector = True
 
         indirect_selection = (
             indirect_selection_override if indirect_selection_override else indirect_selection
         )
+    else:
+        target_project = dbt_project
+
+    # extract_runtime_selection_from_args (in core/resource.py) stripped these flags
+    # from the user's argv; re-attach them onto selection_args so dbt still sees them.
+    # Skipped when the selector-yaml branch ran — that branch folded the values into
+    # the yaml and dbt silently ignores --select/--exclude alongside --selector.
+    # Prepended (not appended) to preserve pre-refactor argv order, which dbt's
+    # multi-flag precedence relies on.
+    if not used_generated_selector:
+        if runtime_selects:
+            selection_args = ["--select", " ".join(runtime_selects), *selection_args]
+        if runtime_excludes:
+            selection_args = ["--exclude", " ".join(runtime_excludes), *selection_args]
 
     return DbtCliInvocationPartialParams(
         manifest=manifest,
         dagster_dbt_translator=dagster_dbt_translator,
         selection_args=selection_args,
         indirect_selection=indirect_selection,
+        dbt_project=target_project,
     )
 
 
@@ -512,6 +691,9 @@ def default_metadata_from_dbt_resource_props(
             dbt_resource_props.get("database"),
             dbt_resource_props.get("schema"),
             dbt_resource_props.get("alias"),
+            dbt_resource_props.get("name")
+            if dbt_resource_props.get("resource_type") == "source"
+            else None,
         ]
         if relation_part
     ]
@@ -527,7 +709,7 @@ def default_metadata_from_dbt_resource_props(
     }
 
 
-def default_group_from_dbt_resource_props(dbt_resource_props: Mapping[str, Any]) -> Optional[str]:
+def default_group_from_dbt_resource_props(dbt_resource_props: Mapping[str, Any]) -> str | None:
     """Get the group name for a dbt node.
 
     If a Dagster group is configured in the metadata for the node, use that.
@@ -549,7 +731,7 @@ def default_group_from_dbt_resource_props(dbt_resource_props: Mapping[str, Any])
 
 def group_from_dbt_resource_props_fallback_to_directory(
     dbt_resource_props: Mapping[str, Any],
-) -> Optional[str]:
+) -> str | None:
     """Get the group name for a dbt node.
 
     Has the same behavior as the default_group_from_dbt_resource_props, except for that, if no group can be determined
@@ -572,14 +754,14 @@ def group_from_dbt_resource_props_fallback_to_directory(
 
 def default_owners_from_dbt_resource_props(
     dbt_resource_props: Mapping[str, Any],
-) -> Optional[Sequence[str]]:
+) -> Sequence[str] | None:
     dagster_metadata = dbt_resource_props.get("meta", {}).get("dagster", {})
     owners_config = dagster_metadata.get("owners")
 
     if owners_config:
         return owners_config
 
-    owner: Optional[Union[str, Sequence[str]]] = (
+    owner: str | Sequence[str] | None = (
         (dbt_resource_props.get("group") or {}).get("owner", {}).get("email")
     )
 
@@ -589,28 +771,9 @@ def default_owners_from_dbt_resource_props(
     return [owner] if isinstance(owner, str) else owner
 
 
-def default_freshness_policy_fn(
-    dbt_resource_props: Mapping[str, Any],
-) -> Optional[LegacyFreshnessPolicy]:
-    dagster_metadata = dbt_resource_props.get("meta", {}).get("dagster", {})
-    freshness_policy_config = dagster_metadata.get("freshness_policy", {})
-
-    freshness_policy = (
-        LegacyFreshnessPolicy(
-            maximum_lag_minutes=float(freshness_policy_config["maximum_lag_minutes"]),
-            cron_schedule=freshness_policy_config.get("cron_schedule"),
-            cron_schedule_timezone=freshness_policy_config.get("cron_schedule_timezone"),
-        )
-        if freshness_policy_config
-        else None
-    )
-
-    return freshness_policy
-
-
 def default_auto_materialize_policy_fn(
     dbt_resource_props: Mapping[str, Any],
-) -> Optional[AutoMaterializePolicy]:
+) -> AutoMaterializePolicy | None:
     dagster_metadata = dbt_resource_props.get("meta", {}).get("dagster", {})
     auto_materialize_policy_config = dagster_metadata.get("auto_materialize_policy", {})
 
@@ -626,7 +789,7 @@ def default_description_fn(dbt_resource_props: Mapping[str, Any], display_raw_sq
         dbt_resource_props.get("raw_sql") or dbt_resource_props.get("raw_code", ""), "    "
     )
     description_sections = [
-        dbt_resource_props["description"]
+        dbt_resource_props.get("description")
         or f"dbt {dbt_resource_props['resource_type']} {dbt_resource_props['name']}",
     ]
     if display_raw_sql:
@@ -639,8 +802,8 @@ def default_asset_check_fn(
     dagster_dbt_translator: "DagsterDbtTranslator",
     asset_key: AssetKey,
     test_unique_id: str,
-    project: Optional[DbtProject],
-) -> Optional[AssetCheckSpec]:
+    project: DbtProject | None,
+) -> AssetCheckSpec | None:
     if not dagster_dbt_translator.settings.enable_asset_checks:
         return None
 
@@ -663,7 +826,7 @@ def default_asset_check_fn(
     }
     additional_deps.discard(asset_key)
 
-    severity = test_resource_props.get("config", {}).get("severity", "error")
+    severity = test_resource_props.get("config", {}).get("severity") or "error"
     blocking = severity.lower() == "error"
 
     return AssetCheckSpec(
@@ -676,8 +839,8 @@ def default_asset_check_fn(
     )
 
 
-def default_code_version_fn(dbt_resource_props: Mapping[str, Any]) -> Optional[str]:
-    code: Optional[str] = dbt_resource_props.get("raw_sql") or dbt_resource_props.get("raw_code")
+def default_code_version_fn(dbt_resource_props: Mapping[str, Any]) -> str | None:
+    code: str | None = dbt_resource_props.get("raw_sql") or dbt_resource_props.get("raw_code")
     if code:
         return hashlib.sha1(code.encode("utf-8")).hexdigest()
 
@@ -698,6 +861,7 @@ def is_non_asset_node(dbt_resource_props: Mapping[str, Any]):
             resource_type == "metric",
             resource_type == "semantic_model",
             resource_type == "saved_query",
+            resource_type == "function",
             resource_type == "model"
             and dbt_resource_props.get("config", {}).get("materialized") == "ephemeral",
         ]
@@ -742,6 +906,18 @@ def get_upstream_unique_ids(
     return upstreams
 
 
+def _build_child_map(manifest: Mapping[str, Any]) -> Mapping[str, AbstractSet[str]]:
+    """Manifests produced by early versions of dbt Fusion do not contain a child map, so we need to build it manually."""
+    if manifest.get("child_map"):
+        return manifest["child_map"]
+
+    child_map = defaultdict(set)
+    for unique_id, node in manifest["nodes"].items():
+        for upstream_unique_id in get_upstream_unique_ids(manifest, node):
+            child_map[upstream_unique_id].add(unique_id)
+    return child_map
+
+
 def build_dbt_specs(
     *,
     translator: "DagsterDbtTranslator",
@@ -749,19 +925,18 @@ def build_dbt_specs(
     select: str,
     exclude: str,
     selector: str,
-    io_manager_key: Optional[str],
-    project: Optional[DbtProject],
+    io_manager_key: str | None,
+    project: DbtProject | None,
 ) -> tuple[Sequence[AssetSpec], Sequence[AssetCheckSpec]]:
-    selected_unique_ids = select_unique_ids_from_manifest(
-        select=select,
-        exclude=exclude,
-        selector=selector,
-        manifest_json=manifest,
+    selected_unique_ids = select_unique_ids(
+        select=select, exclude=exclude, selector=selector, project=project, manifest_json=manifest
     )
 
     specs: list[AssetSpec] = []
     check_specs: dict[str, AssetCheckSpec] = {}
     key_by_unique_id: dict[str, AssetKey] = {}
+
+    child_map = _build_child_map(manifest)
     for unique_id in selected_unique_ids:
         resource_props = get_node(manifest, unique_id)
         resource_type = resource_props["resource_type"]
@@ -786,8 +961,8 @@ def build_dbt_specs(
         specs.append(spec)
 
         # add check specs associated with the asset
-        for child_unique_id in manifest["child_map"][unique_id]:
-            if not child_unique_id.startswith("test"):
+        for child_unique_id in child_map.get(unique_id, []):
+            if child_unique_id not in selected_unique_ids or not child_unique_id.startswith("test"):
                 continue
             check_spec = translator.get_asset_check_spec(
                 asset_spec=spec,
@@ -809,7 +984,7 @@ def build_dbt_specs(
                 upstream_id.startswith("source")
                 and translator.settings.enable_source_tests_as_checks
             ):
-                for child_unique_id in manifest["child_map"][upstream_id]:
+                for child_unique_id in child_map.get(upstream_id, []):
                     if not child_unique_id.startswith("test"):
                         continue
                     check_spec = translator.get_asset_check_spec(
@@ -874,8 +1049,8 @@ def get_asset_check_key_for_test(
     manifest: Mapping[str, Any],
     dagster_dbt_translator: "DagsterDbtTranslator",
     test_unique_id: str,
-    project: Optional[DbtProject],
-) -> Optional[AssetCheckKey]:
+    project: DbtProject | None,
+) -> AssetCheckKey | None:
     if not test_unique_id.startswith("test"):
         return None
 
@@ -943,14 +1118,14 @@ def get_checks_on_sources_upstream_of_selected_assets(
 
 
 def get_subset_selection_for_context(
-    context: Union[OpExecutionContext, AssetExecutionContext],
+    context: OpExecutionContext | AssetExecutionContext,
     manifest: Mapping[str, Any],
-    select: Optional[str],
-    exclude: Optional[str],
-    selector: Optional[str],
+    select: str | None,
+    exclude: str | None,
+    selector: str | None,
     dagster_dbt_translator: "DagsterDbtTranslator",
-    current_dbt_indirect_selection_env: Optional[str],
-) -> tuple[list[str], Optional[str]]:
+    current_dbt_indirect_selection_env: str | None,
+) -> tuple[list[str], str | None]:
     """Generate a dbt selection string and DBT_INDIRECT_SELECTION setting to execute the selected
     resources in a subsetted execution context.
 
@@ -1163,5 +1338,8 @@ def get_node(manifest: Mapping[str, Any], unique_id: str) -> Mapping[str, Any]:
 
     if unique_id in manifest.get("unit_tests", {}):
         return manifest["unit_tests"][unique_id]
+
+    if unique_id in manifest.get("functions", {}):
+        return manifest["functions"][unique_id]
 
     check.failed(f"Could not find {unique_id} in dbt manifest")

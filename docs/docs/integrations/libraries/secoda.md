@@ -1,6 +1,7 @@
 ---
 title: Dagster & Secoda
 sidebar_label: Secoda
+sidebar_position: 1
 description: Connect Dagster to Secoda and see metadata related to your Dagster assets, asset groups and jobs right in Secoda. Simplify your team's access, and remove the need to switch between tools.
 tags: [community-supported, metadata]
 source:
@@ -10,6 +11,10 @@ sidebar_custom_props:
   community: true
 partnerlink: https://www.secoda.co/integrations/dagster
 ---
+
+import CommunityIntegration from '@site/docs/partials/\_CommunityIntegration.md';
+
+<CommunityIntegration />
 
 <p>{frontMatter.description}</p>
 

@@ -1,6 +1,7 @@
 ---
 title: Dagster & GCP BigQuery
 sidebar_label: BigQuery
+sidebar_position: 2
 description: Integrate with GCP BigQuery.
 tags: [dagster-supported, storage]
 source: https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-gcp
@@ -8,11 +9,9 @@ pypi: https://pypi.org/project/dagster-gcp/
 sidebar_custom_props:
   logo: images/integrations/gcp-bigquery.svg
 partnerlink: https://cloud.google.com/bigquery
+canonicalUrl: '/integrations/libraries/gcp/bigquery'
+slug: '/integrations/libraries/gcp/bigquery'
 ---
-
-import Beta from '@site/docs/partials/\_Beta.md';
-
-<Beta />
 
 The Google Cloud Platform BigQuery integration allows data engineers to easily query and store data in the BigQuery data warehouse through the use of the `BigQueryResource`.
 

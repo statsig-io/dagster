@@ -6,7 +6,6 @@ from dagster import (
     AssetsDefinition,
     _check as check,
 )
-from dagster._annotations import beta
 from dagster._core.definitions.asset_checks.asset_check_factories.freshness_checks.last_update import (
     build_last_update_freshness_checks,
 )
@@ -27,13 +26,18 @@ from dagster._core.errors import DagsterInvariantViolationError
 if TYPE_CHECKING:
     from dagster import AssetKey
 
+from dagster._symbol_annotations.lifecycle import superseded
+
 from dagster_dbt.asset_utils import (
     get_asset_keys_to_resource_props,
     get_manifest_and_translator_from_dbt_assets,
 )
 
 
-@beta
+@superseded(
+    additional_warn_text="Create `FreshnessPolicy` objects for your dbt models by overriding `get_asset_spec` "
+    "in your `DagsterDbtTranslator`, or by updating the `translation` configuration of your `DbtProjectComponent` instead."
+)
 def build_freshness_checks_from_dbt_assets(
     *,
     dbt_assets: Sequence[AssetsDefinition],
@@ -92,7 +96,7 @@ def build_freshness_checks_from_dbt_assets(
     asset_key_to_assets_def: dict[AssetKey, AssetsDefinition] = {}
     asset_key_to_resource_props: Mapping[AssetKey, Mapping[str, Any]] = {}
     for assets_def in dbt_assets:
-        manifest, translator = get_manifest_and_translator_from_dbt_assets([assets_def])
+        manifest, translator, _ = get_manifest_and_translator_from_dbt_assets([assets_def])
         asset_key_to_resource_props_for_def = get_asset_keys_to_resource_props(manifest, translator)
         for asset_key in asset_to_keys_iterable(assets_def):
             if asset_key not in asset_key_to_resource_props_for_def:
@@ -133,7 +137,7 @@ def build_freshness_checks_from_dbt_assets(
 
             freshness_checks.extend(
                 build_last_update_freshness_checks(
-                    assets=[translator.get_asset_key(dbt_resource_props)],  # pyright: ignore[reportPossiblyUnboundVariable]
+                    assets=[translator.get_asset_key(dbt_resource_props)],
                     deadline_cron=freshness_check_config.get("deadline_cron"),
                     lower_bound_delta=datetime.timedelta(seconds=lower_bound_seconds),
                     severity=severity,

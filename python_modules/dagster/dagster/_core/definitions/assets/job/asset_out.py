@@ -1,13 +1,11 @@
 from collections.abc import Mapping, Sequence
-from typing import Any, Optional, Union
+from types import EllipsisType
+from typing import Any
+
+from dagster_shared.utils.warnings import preview_warning
 
 import dagster._check as check
-from dagster._annotations import (
-    deprecated_param,
-    hidden_param,
-    only_allow_hidden_params_in_kwargs,
-    public,
-)
+from dagster._annotations import hidden_param, only_allow_hidden_params_in_kwargs, public
 from dagster._core.definitions.assets.definition.asset_dep import AssetDep
 from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
 from dagster._core.definitions.auto_materialize_policy import AutoMaterializePolicy
@@ -20,7 +18,7 @@ from dagster._core.definitions.events import (
     CoercibleToAssetKey,
     CoercibleToAssetKeyPrefix,
 )
-from dagster._core.definitions.freshness import InternalFreshnessPolicy
+from dagster._core.definitions.freshness import FreshnessPolicy
 from dagster._core.definitions.freshness_policy import LegacyFreshnessPolicy
 from dagster._core.definitions.input import NoValueSentinel
 from dagster._core.definitions.output import Out
@@ -37,12 +35,16 @@ from dagster._utils.warnings import disable_dagster_warnings
 EMPTY_ASSET_KEY_SENTINEL = AssetKey([])
 
 
-@deprecated_param(param="legacy_freshness_policy", breaking_version="1.12.0")
+@hidden_param(
+    param="legacy_freshness_policy",
+    breaking_version="1.13.0",
+)
 @hidden_param(
     param="auto_materialize_policy",
     breaking_version="1.10.0",
     additional_warn_text="use `automation_condition` instead",
 )
+@public
 class AssetOut:
     """Defines one of the assets produced by a :py:func:`@multi_asset <multi_asset>`.
 
@@ -80,30 +82,30 @@ class AssetOut:
     """
 
     _spec: AssetSpec
-    key_prefix: Optional[Sequence[str]]
-    dagster_type: Union[type, DagsterType]
+    key_prefix: Sequence[str] | None
+    dagster_type: type | DagsterType
     is_required: bool
-    io_manager_key: Optional[str]
-    backfill_policy: Optional[BackfillPolicy]
+    io_manager_key: str | None
+    backfill_policy: BackfillPolicy | None
 
     def __init__(
         self,
-        key_prefix: Optional[CoercibleToAssetKeyPrefix] = None,
-        key: Optional[CoercibleToAssetKey] = None,
-        dagster_type: Union[type, DagsterType] = NoValueSentinel,
-        description: Optional[str] = None,
+        key_prefix: CoercibleToAssetKeyPrefix | None = None,
+        key: CoercibleToAssetKey | None = None,
+        dagster_type: type | DagsterType = NoValueSentinel,
+        description: str | None = None,
         is_required: bool = True,
-        io_manager_key: Optional[str] = None,
-        metadata: Optional[Mapping[str, Any]] = None,
-        group_name: Optional[str] = None,
-        code_version: Optional[str] = None,
-        automation_condition: Optional[AutomationCondition] = None,
-        backfill_policy: Optional[BackfillPolicy] = None,
-        owners: Optional[Sequence[str]] = None,
-        tags: Optional[Mapping[str, str]] = None,
-        kinds: Optional[set[str]] = None,
-        legacy_freshness_policy: Optional[LegacyFreshnessPolicy] = None,
-        freshness_policy: Optional[InternalFreshnessPolicy] = None,
+        io_manager_key: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        group_name: str | None = None,
+        code_version: str | None = None,
+        automation_condition: AutomationCondition | None = None,
+        backfill_policy: BackfillPolicy | None = None,
+        owners: Sequence[str] | None = None,
+        tags: Mapping[str, str] | None = None,
+        kinds: set[str] | None = None,
+        freshness_policy: FreshnessPolicy | None = None,
+        is_virtual: bool = False,
         **kwargs,
     ):
         # Accept a hidden "spec" argument to allow for the AssetOut to be constructed from an AssetSpec
@@ -111,6 +113,9 @@ class AssetOut:
         spec = kwargs.get("spec")
         if spec:
             del kwargs["spec"]
+
+        if is_virtual:
+            preview_warning("Virtual assets")
 
         only_allow_hidden_params_in_kwargs(AssetOut, kwargs)
         if isinstance(key_prefix, str):
@@ -121,6 +126,7 @@ class AssetOut:
         )
 
         auto_materialize_policy = kwargs.get("auto_materialize_policy")
+        legacy_freshness_policy = kwargs.get("legacy_freshness_policy")
         has_any_spec_args = any(
             [
                 key,
@@ -166,11 +172,12 @@ class AssetOut:
                 freshness_policy=check.opt_inst_param(
                     freshness_policy,
                     "freshness_policy",
-                    InternalFreshnessPolicy,
+                    FreshnessPolicy,
                 ),
                 owners=check.opt_sequence_param(owners, "owners", of_type=str),
                 tags=normalize_tags(tags or {}, strict=True),
                 kinds=check.opt_set_param(kinds, "kinds", of_type=str),
+                is_virtual=check.bool_param(is_virtual, "is_virtual"),
             )
         self.key_prefix = key_prefix
         self.dagster_type = dagster_type
@@ -179,48 +186,52 @@ class AssetOut:
         self.backfill_policy = backfill_policy
 
     @property
-    def key(self) -> Optional[AssetKey]:
+    def key(self) -> AssetKey | None:
         return self._spec.key if self._spec.key != EMPTY_ASSET_KEY_SENTINEL else None
 
     @property
-    def metadata(self) -> Optional[Mapping[str, Any]]:
+    def metadata(self) -> Mapping[str, Any] | None:
         return self._spec.metadata
 
     @property
-    def description(self) -> Optional[str]:
+    def description(self) -> str | None:
         return self._spec.description
 
     @property
-    def group_name(self) -> Optional[str]:
+    def group_name(self) -> str | None:
         return self._spec.group_name
 
     @property
-    def code_version(self) -> Optional[str]:
+    def code_version(self) -> str | None:
         return self._spec.code_version
 
     @property
-    def legacy_freshness_policy(self) -> Optional[LegacyFreshnessPolicy]:
+    def legacy_freshness_policy(self) -> LegacyFreshnessPolicy | None:
         return self._spec.legacy_freshness_policy
 
     @property
-    def freshness_policy(self) -> Optional[InternalFreshnessPolicy]:
+    def freshness_policy(self) -> FreshnessPolicy | None:
         return self._spec.freshness_policy
 
     @property
-    def automation_condition(self) -> Optional[AutomationCondition]:
+    def automation_condition(self) -> AutomationCondition | None:
         return self._spec.automation_condition
 
     @property
-    def owners(self) -> Optional[Sequence[str]]:
+    def owners(self) -> Sequence[str] | None:
         return self._spec.owners
 
     @property
-    def tags(self) -> Optional[Mapping[str, str]]:
+    def tags(self) -> Mapping[str, str] | None:
         return self._spec.tags
 
     @property
-    def kinds(self) -> Optional[set[str]]:
+    def kinds(self) -> set[str] | None:
         return self._spec.kinds
+
+    @property
+    def is_virtual(self) -> bool:
+        return self._spec.is_virtual
 
     def to_out(self) -> Out:
         return Out(
@@ -237,7 +248,7 @@ class AssetOut:
         key: AssetKey,
         deps: Sequence[AssetDep],
         additional_tags: Mapping[str, str] = {},
-        partitions_def: Optional[PartitionsDefinition] = ...,
+        partitions_def: PartitionsDefinition | EllipsisType | None = ...,
     ) -> AssetSpec:
         return self._spec.replace_attributes(
             key=key,
@@ -251,10 +262,10 @@ class AssetOut:
     @staticmethod
     def from_spec(
         spec: AssetSpec,
-        dagster_type: Union[type, DagsterType] = NoValueSentinel,
+        dagster_type: type | DagsterType = NoValueSentinel,
         is_required: bool = True,
-        io_manager_key: Optional[str] = None,
-        backfill_policy: Optional[BackfillPolicy] = None,
+        io_manager_key: str | None = None,
+        backfill_policy: BackfillPolicy | None = None,
     ) -> "AssetOut":
         """Builds an AssetOut from the passed spec.
 
@@ -285,7 +296,7 @@ class AssetOut:
         )
 
     @property
-    def auto_materialize_policy(self) -> Optional[AutoMaterializePolicy]:
+    def auto_materialize_policy(self) -> AutoMaterializePolicy | None:
         return (
             self.automation_condition.as_auto_materialize_policy()
             if self.automation_condition

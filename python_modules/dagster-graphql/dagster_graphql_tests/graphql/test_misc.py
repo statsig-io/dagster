@@ -139,8 +139,8 @@ def define_circular_dependency_job():
             node_defs=[
                 OpDefinition(
                     name="csolid",
-                    ins={"num": In("num", PoorMansDataFrame)},  # pyright: ignore[reportArgumentType]
-                    outs={"result": OutputDefinition(PoorMansDataFrame)},  # pyright: ignore[reportArgumentType]
+                    ins={"num": In("num", PoorMansDataFrame)},  # ty: ignore[invalid-argument-type]
+                    outs={"result": OutputDefinition(PoorMansDataFrame)},  # ty: ignore[invalid-argument-type]
                     compute_fn=lambda *_args: None,
                 )
             ],
@@ -149,7 +149,7 @@ def define_circular_dependency_job():
     )
 
 
-@repository  # pyright: ignore[reportArgumentType]
+@repository
 def the_test_repository():
     return {"jobs": {"circular_dependency_job": define_circular_dependency_job}}
 
@@ -163,6 +163,7 @@ def test_pipeline_or_error_by_name(graphql_context: WorkspaceRequestContext):
         pipelineOrError(params: $selector) {
             ... on Pipeline {
                 name
+                nodeNames
             }
         }
     }""",
@@ -172,6 +173,7 @@ def test_pipeline_or_error_by_name(graphql_context: WorkspaceRequestContext):
     assert not result.errors
     assert result.data
     assert result.data["pipelineOrError"]["name"] == "csv_hello_world_two"
+    assert result.data["pipelineOrError"]["nodeNames"] == ["sum_op"]
 
 
 def test_pipeline_or_error_by_name_not_found(graphql_context: WorkspaceRequestContext):

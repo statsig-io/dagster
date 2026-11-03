@@ -1,14 +1,15 @@
 import asyncio
 import datetime
 import logging
+import os
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, AbstractSet, Optional  # noqa: UP035
+from typing import TYPE_CHECKING, AbstractSet  # noqa: UP035
 
 from dagster._core.asset_graph_view.asset_graph_view import AssetGraphView, TemporalContext
 from dagster._core.asset_graph_view.entity_subset import EntitySubset
 from dagster._core.definitions.asset_daemon_cursor import AssetDaemonCursor
-from dagster._core.definitions.asset_key import EntityKey
+from dagster._core.definitions.asset_key import AssetKey, EntityKey
 from dagster._core.definitions.assets.graph.base_asset_graph import BaseAssetGraph, BaseAssetNode
 from dagster._core.definitions.data_time import CachingDataTimeResolver
 from dagster._core.definitions.declarative_automation.automation_condition import (
@@ -16,13 +17,23 @@ from dagster._core.definitions.declarative_automation.automation_condition impor
     AutomationResult,
 )
 from dagster._core.definitions.declarative_automation.automation_context import AutomationContext
-from dagster._core.definitions.events import AssetKey
 from dagster._core.definitions.partitions.context import partition_loading_context
 from dagster._core.instance import DagsterInstance
 from dagster._time import get_current_datetime
 
 if TYPE_CHECKING:
     from dagster._utils.caching_instance_queryer import CachingInstanceQueryer
+
+
+# Number of seconds the automation daemon sleeps between capturing `max_record_id` and starting
+# evaluation, to let in-flight transactions and asset_records replication settle. Also gates the
+# AssetGraphView's `enforce_event_id_upper_bound` flag, so the queryer's slow-path fallback is
+# only exercised on deployments that have opted into the fix.
+AUTOMATION_TICK_SETTLE_SECONDS_ENV_VAR = "DAGSTER_AUTOMATION_TICK_SETTLE_SECONDS"
+
+
+def get_automation_tick_settle_delay_seconds() -> float:
+    return float(os.environ.get(AUTOMATION_TICK_SETTLE_SECONDS_ENV_VAR, "0.0"))
 
 
 class AutomationConditionEvaluator:
@@ -34,11 +45,12 @@ class AutomationConditionEvaluator:
         asset_graph: BaseAssetGraph,
         cursor: AssetDaemonCursor,
         emit_backfills: bool,
-        default_condition: Optional[AutomationCondition] = None,
-        evaluation_time: Optional[datetime.datetime] = None,
+        evaluation_id: int,
+        default_condition: AutomationCondition | None = None,
+        evaluation_time: datetime.datetime | None = None,
         logger: logging.Logger = logging.getLogger("dagster.automation"),
     ):
-        self.entity_keys = entity_keys
+        self.entity_keys: AbstractSet[EntityKey] = entity_keys
         self.asset_graph_view = AssetGraphView(
             temporal_context=TemporalContext(
                 effective_dt=evaluation_time or get_current_datetime(),
@@ -46,6 +58,7 @@ class AutomationConditionEvaluator:
             ),
             instance=instance,
             asset_graph=asset_graph,
+            enforce_event_id_upper_bound=get_automation_tick_settle_delay_seconds() > 0,
         )
         self.logger = logger
         self.cursor = cursor
@@ -64,10 +77,11 @@ class AutomationConditionEvaluator:
         )
         self.emit_backfills = emit_backfills or _instance.da_request_backfills()
 
-        self.legacy_expected_data_time_by_key: dict[AssetKey, Optional[datetime.datetime]] = {}
+        self.legacy_expected_data_time_by_key: dict[AssetKey, datetime.datetime | None] = {}
         self.legacy_data_time_resolver = CachingDataTimeResolver(self.instance_queryer)
 
         self.request_subsets_by_key: dict[EntityKey, EntitySubset] = {}
+        self.evaluation_id = evaluation_id
 
     @property
     def instance_queryer(self) -> "CachingInstanceQueryer":
@@ -104,7 +118,9 @@ class AutomationConditionEvaluator:
         self.instance_queryer.prefetch_asset_records(self.asset_records_to_prefetch)
         self.logger.info("Done prefetching asset records.")
 
-    def evaluate(self) -> tuple[Sequence[AutomationResult], Sequence[EntitySubset[EntityKey]]]:
+    def evaluate(
+        self,
+    ) -> tuple[Sequence[AutomationResult], Sequence[EntitySubset[EntityKey]]]:
         return asyncio.run(self.async_evaluate())
 
     async def async_evaluate(

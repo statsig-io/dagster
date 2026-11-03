@@ -2,7 +2,7 @@ import os
 import subprocess
 import uuid
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any, cast
 
 import click
 import dagster._check as check
@@ -25,11 +25,12 @@ def create_worker_cli_group():
     return group
 
 
-def get_config_value_from_yaml(yaml_path: Optional[str]) -> Mapping[str, Any]:
+def get_config_value_from_yaml(yaml_path: str | None) -> Mapping[str, Any]:
     if yaml_path is None:
         return {}
     parsed_yaml = load_yaml_from_path(yaml_path) or {}
     assert isinstance(parsed_yaml, dict)
+    parsed_yaml = cast("dict[str, Any]", parsed_yaml)
     # Would be better not to hardcode this path
     return (
         parsed_yaml.get("execution", {}).get("config", {})
@@ -38,7 +39,7 @@ def get_config_value_from_yaml(yaml_path: Optional[str]) -> Mapping[str, Any]:
     )
 
 
-def get_app(config_yaml: Optional[str] = None) -> CeleryExecutor:
+def get_app(config_yaml: str | None = None) -> CeleryExecutor:
     return make_app(
         CeleryExecutor.for_cli(**get_config_value_from_yaml(config_yaml)).app_args()
         if config_yaml
@@ -46,11 +47,11 @@ def get_app(config_yaml: Optional[str] = None) -> CeleryExecutor:
     )
 
 
-def get_worker_name(name: Optional[str] = None) -> str:
+def get_worker_name(name: str | None = None) -> str:
     return name + "@%h" if name is not None else f"dagster-{str(uuid.uuid4())[-6:]}@%h"
 
 
-def get_validated_config(config_yaml: Optional[str] = None) -> Any:
+def get_validated_config(config_yaml: str | None = None) -> Any:
     config_type = celery_executor.config_schema.config_type
     config_value = get_config_value_from_yaml(config_yaml)
     config = validate_config(config_type, config_value)
@@ -248,7 +249,7 @@ def status_command(
 def worker_list_command(config_yaml=None):
     app = get_app(config_yaml)
 
-    print(app.control.inspect(timeout=1).active())  # noqa: T201  # pyright: ignore[reportAttributeAccessIssue]
+    print(app.control.inspect(timeout=1).active())  # noqa: T201  # ty: ignore[unresolved-attribute]
 
 
 @click.command(
@@ -280,9 +281,9 @@ def worker_terminate_command(name="dagster", config_yaml=None, all_=False):
     app = get_app(config_yaml)
 
     if all_:
-        app.control.broadcast("shutdown")  # pyright: ignore[reportAttributeAccessIssue]
+        app.control.broadcast("shutdown")  # ty: ignore[unresolved-attribute]
     else:
-        app.control.broadcast(  # pyright: ignore[reportAttributeAccessIssue]
+        app.control.broadcast(  # ty: ignore[unresolved-attribute]
             "shutdown", destination=[host_format(default_nodename(get_worker_name(name)))]
         )
 

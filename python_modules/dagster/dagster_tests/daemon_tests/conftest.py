@@ -2,22 +2,22 @@ import os
 import sys
 import tempfile
 from collections.abc import Iterator
-from typing import Optional, cast
+from typing import cast
 
 import dagster as dg
 import pytest
-from dagster._core.remote_representation import (
-    CodeLocation,
+from dagster._core.remote_origin import (
     InProcessCodeLocationOrigin,
-    RemoteRepository,
+    ManagedGrpcPythonEnvCodeLocationOrigin,
 )
-from dagster._core.remote_representation.origin import ManagedGrpcPythonEnvCodeLocationOrigin
+from dagster._core.remote_representation.code_location import CodeLocation
+from dagster._core.remote_representation.external import RemoteRepository
 from dagster._core.test_utils import (
     InProcessTestWorkspaceLoadTarget,
     create_test_daemon_workspace_context,
 )
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
-from dagster._core.workspace.context import WorkspaceProcessContext
+from dagster._core.workspace.context import BaseWorkspaceRequestContext, WorkspaceProcessContext
 
 
 @pytest.fixture(name="instance_module_scoped", scope="module")
@@ -62,15 +62,18 @@ def workspace_fixture(instance_module_scoped) -> Iterator[WorkspaceProcessContex
         yield workspace_context
 
 
+@pytest.fixture(scope="module")
+def workspace_request_context(workspace_context) -> Iterator[BaseWorkspaceRequestContext]:
+    yield workspace_context.create_request_context()
+
+
 @pytest.fixture(name="code_location", scope="module")
 def code_location_fixture(
-    workspace_context: WorkspaceProcessContext,
+    workspace_request_context: BaseWorkspaceRequestContext,
 ) -> CodeLocation:
     return cast(
         "CodeLocation",
-        next(
-            iter(workspace_context.create_request_context().get_code_location_entries().values())
-        ).code_location,
+        next(iter(workspace_request_context.get_code_location_entries().values())).code_location,
     )
 
 
@@ -81,7 +84,7 @@ def remote_repo_fixture(
     yield code_location.get_repository("the_repo")
 
 
-def loadable_target_origin(attribute: Optional[str] = None) -> LoadableTargetOrigin:
+def loadable_target_origin(attribute: str | None = None) -> LoadableTargetOrigin:
     return LoadableTargetOrigin(
         executable_path=sys.executable,
         module_name="dagster_tests.daemon_tests.test_backfill",
@@ -90,7 +93,7 @@ def loadable_target_origin(attribute: Optional[str] = None) -> LoadableTargetOri
     )
 
 
-def unloadable_target_origin(attribute: Optional[str] = None) -> LoadableTargetOrigin:
+def unloadable_target_origin(attribute: str | None = None) -> LoadableTargetOrigin:
     return LoadableTargetOrigin(
         executable_path=sys.executable,
         module_name="dagster_tests.daemon_tests.test_locations.unloadable_location",
@@ -141,6 +144,31 @@ def partitions_defs_changes_location_1_fixture(
         yield workspace_context
 
 
+def run_config_assets_workspace_1_load_target(attribute=None):
+    return InProcessTestWorkspaceLoadTarget(
+        InProcessCodeLocationOrigin(
+            loadable_target_origin=LoadableTargetOrigin(
+                executable_path=sys.executable,
+                module_name="dagster_tests.daemon_tests.test_locations.run_config_assets_workspace",
+                working_directory=os.getcwd(),
+                attribute=attribute,
+            ),
+            location_name="run_config_assets",
+        )
+    )
+
+
+@pytest.fixture(name="run_config_assets_workspace_context", scope="module")
+def run_config_assets_workspace_context(
+    instance_module_scoped,
+) -> Iterator[WorkspaceProcessContext]:
+    with create_test_daemon_workspace_context(
+        workspace_load_target=run_config_assets_workspace_1_load_target(),
+        instance=instance_module_scoped,
+    ) as workspace_context:
+        yield workspace_context
+
+
 def partitions_def_changes_workspace_2_load_target(attribute=None):
     return InProcessTestWorkspaceLoadTarget(
         InProcessCodeLocationOrigin(
@@ -168,7 +196,7 @@ def partitions_defs_changes_location_2_fixture(
 
 def base_job_name_changes_workspace_1_load_target(attribute=None):
     return InProcessTestWorkspaceLoadTarget(
-        ManagedGrpcPythonEnvCodeLocationOrigin(  # pyright: ignore[reportArgumentType]
+        ManagedGrpcPythonEnvCodeLocationOrigin(  # ty: ignore[invalid-argument-type]
             loadable_target_origin=LoadableTargetOrigin(
                 executable_path=sys.executable,
                 module_name="dagster_tests.daemon_tests.test_locations.base_job_name_changes_locations.location_1",
@@ -193,7 +221,7 @@ def base_job_name_changes_location_1_fixture(
 
 def base_job_name_changes_workspace_2_load_target(attribute=None):
     return InProcessTestWorkspaceLoadTarget(
-        ManagedGrpcPythonEnvCodeLocationOrigin(  # pyright: ignore[reportArgumentType]
+        ManagedGrpcPythonEnvCodeLocationOrigin(  # ty: ignore[invalid-argument-type]
             loadable_target_origin=LoadableTargetOrigin(
                 executable_path=sys.executable,
                 module_name="dagster_tests.daemon_tests.test_locations.base_job_name_changes_locations.location_2",

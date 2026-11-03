@@ -16,7 +16,7 @@ from dagster_graphql.implementation.loader import RepositoryScopedBatchLoader
 from dagster_graphql.implementation.utils import (
     UserFacingGraphQLError,
     assert_permission,
-    assert_permission_for_location,
+    assert_permission_for_schedule,
 )
 from dagster_graphql.schema.util import ResolveInfo
 
@@ -68,10 +68,8 @@ def stop_schedule(
     schedule = schedules.get(schedule_origin_id)
 
     if schedule:
-        assert_permission_for_location(
-            graphene_info,
-            Permissions.STOP_RUNNING_SCHEDULE,
-            schedule.selector.location_name,
+        assert_permission_for_schedule(
+            graphene_info, Permissions.STOP_RUNNING_SCHEDULE, schedule.schedule_selector
         )
     else:
         assert_permission(
@@ -88,13 +86,16 @@ def reset_schedule(
 ) -> "GrapheneScheduleStateResult":
     from dagster_graphql.schema.instigation import GrapheneInstigationState
     from dagster_graphql.schema.schedules import GrapheneScheduleStateResult
+    from dagster_graphql.schema.schedules.schedules import GrapheneScheduleNotFoundError
 
     check.inst_param(schedule_selector, "schedule_selector", ScheduleSelector)
 
-    location = graphene_info.context.get_code_location(schedule_selector.location_name)
-    repository = location.get_repository(schedule_selector.repository_name)
+    schedule = graphene_info.context.get_schedule(schedule_selector)
+    if not schedule:
+        raise UserFacingGraphQLError(
+            GrapheneScheduleNotFoundError(schedule_name=schedule_selector.schedule_name)
+        )
 
-    schedule = repository.get_schedule(schedule_selector.schedule_name)
     stored_state = graphene_info.context.instance.reset_schedule(schedule)
     schedule_state = schedule.get_current_instigator_state(stored_state)
 
@@ -116,7 +117,7 @@ def get_scheduler_or_error(graphene_info: ResolveInfo) -> "GrapheneScheduler":
 def get_schedules_or_error(
     graphene_info: ResolveInfo,
     repository_selector: RepositorySelector,
-    instigator_statuses: Optional[set[InstigatorStatus]] = None,
+    instigator_statuses: set[InstigatorStatus] | None = None,
 ) -> "GrapheneSchedules":
     from dagster_graphql.schema.schedules import GrapheneSchedule, GrapheneSchedules
 

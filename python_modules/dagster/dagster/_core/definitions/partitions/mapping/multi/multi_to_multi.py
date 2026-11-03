@@ -1,8 +1,8 @@
 from collections.abc import Mapping, Sequence
-from typing import NamedTuple, Optional, cast
+from typing import NamedTuple, cast
 
 import dagster._check as check
-from dagster._annotations import beta
+from dagster._annotations import beta, public
 from dagster._core.definitions.partitions.definition.multi import MultiPartitionsDefinition
 from dagster._core.definitions.partitions.definition.partitions_definition import (
     PartitionsDefinition,
@@ -18,6 +18,7 @@ from dagster._serdes import whitelist_for_serdes
 
 @beta
 @whitelist_for_serdes
+@public
 class MultiPartitionMapping(
     BaseMultiPartitionMapping,
     PartitionMapping,
@@ -131,7 +132,7 @@ class MultiPartitionMapping(
     def validate_partition_mapping(
         self,
         upstream_partitions_def: PartitionsDefinition,
-        downstream_partitions_def: Optional[PartitionsDefinition],
+        downstream_partitions_def: PartitionsDefinition | None,
     ):
         self._check_all_dimensions_accounted_for(
             upstream_partitions_def,
@@ -160,7 +161,7 @@ class MultiPartitionMapping(
     def _check_all_dimensions_accounted_for(
         self,
         upstream_partitions_def: PartitionsDefinition,
-        downstream_partitions_def: Optional[PartitionsDefinition],
+        downstream_partitions_def: PartitionsDefinition | None,
     ) -> None:
         if any(
             not isinstance(partitions_def, MultiPartitionsDefinition)

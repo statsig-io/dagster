@@ -2,7 +2,7 @@ import typing
 from collections.abc import Iterator, Sequence
 from enum import Enum as PythonEnum
 from functools import cached_property
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 import dagster._check as check
 from dagster._annotations import public
@@ -64,22 +64,22 @@ class ConfigType:
         self,
         key: str,
         kind: ConfigTypeKind,
-        given_name: Optional[str] = None,
-        description: Optional[str] = None,
-        type_params: Optional[Sequence["ConfigType"]] = None,
+        given_name: str | None = None,
+        description: str | None = None,
+        type_params: Sequence["ConfigType"] | None = None,
     ):
         self.key: str = check.str_param(key, "key")
         self.kind: ConfigTypeKind = check.inst_param(kind, "kind", ConfigTypeKind)
-        self.given_name: Optional[str] = check.opt_str_param(given_name, "given_name")
-        self._description: Optional[str] = check.opt_str_param(description, "description")
-        self.type_params: Optional[Sequence[ConfigType]] = (
+        self.given_name: str | None = check.opt_str_param(given_name, "given_name")
+        self._description: str | None = check.opt_str_param(description, "description")
+        self.type_params: Sequence[ConfigType] | None = (
             check.sequence_param(type_params, "type_params", of_type=ConfigType)
             if type_params
             else None
         )
 
     @property
-    def description(self) -> Optional[str]:
+    def description(self) -> str | None:
         return self._description
 
     @staticmethod
@@ -129,7 +129,7 @@ class ConfigScalar(ConfigType):
     def __init__(
         self,
         key: str,
-        given_name: Optional[str],
+        given_name: str | None,
         scalar_kind: ConfigScalarKind,
         **kwargs: typing.Any,
     ):
@@ -179,6 +179,7 @@ class Any(ConfigType):
         )
 
 
+@public
 class Noneable(ConfigType):
     """Defines a configuration type that is the union of ``NoneType`` and the type ``inner_type``.
 
@@ -212,6 +213,7 @@ class Noneable(ConfigType):
         yield from super().type_iterator()
 
 
+@public
 class Array(ConfigType):
     """Defines an array (list) configuration type that contains values of type ``inner_type``.
 
@@ -241,6 +243,7 @@ class Array(ConfigType):
         yield from super().type_iterator()
 
 
+@public
 class EnumValue:
     """Define an entry in a :py:class:`Enum`.
 
@@ -257,14 +260,15 @@ class EnumValue:
     def __init__(
         self,
         config_value: str,
-        python_value: Optional[object] = None,
-        description: Optional[str] = None,
+        python_value: object | None = None,
+        description: str | None = None,
     ):
         self.config_value = check.str_param(config_value, "config_value")
         self.python_value = config_value if python_value is None else python_value
         self.description = check.opt_str_param(description, "description")
 
 
+@public
 class Enum(ConfigType):
     """Defines a enum configuration type that allows one of a defined set of possible values.
 
@@ -277,6 +281,9 @@ class Enum(ConfigType):
     **Examples:**
 
     .. code-block:: python
+
+        from dagster import Field, op
+        from dagster._config.config_type import Enum, EnumValue
 
         @op(
             config_schema=Field(
@@ -291,7 +298,8 @@ class Enum(ConfigType):
             )
         )
         def resolve_standoff(context):
-            # ...
+            # Implementation here
+            pass
     """
 
     def __init__(self, name: str, enum_values: Sequence[EnumValue]):
@@ -379,6 +387,7 @@ class Enum(ConfigType):
         return cls(name, [EnumValue(v.name, python_value=v.value) for v in enum])
 
 
+@public
 class ScalarUnion(ConfigType):
     """Defines a configuration type that accepts a scalar value OR a non-scalar value like a
     :py:class:`~dagster.List`, :py:class:`~dagster.Dict`, or :py:class:`~dagster.Selector`.
@@ -425,7 +434,7 @@ class ScalarUnion(ConfigType):
         self,
         scalar_type: typing.Any,
         non_scalar_schema: UserConfigSchema,
-        _key: Optional[str] = None,
+        _key: str | None = None,
     ):
         from dagster._config.field import resolve_to_config_type
 

@@ -94,7 +94,8 @@ def scope_airbyte_cloud_manual_config():
     # start_airbyte_cloud_manual_config
     import dagster as dg
 
-    from dagster_airbyte import build_airbyte_assets, AirbyteCloudResource
+    from dagster_airbyte import build_airbyte_assets
+    from dagster_airbyte import AirbyteCloudResource
 
     airbyte_instance = AirbyteCloudResource(
         client_id=dg.EnvVar("AIRBYTE_CLIENT_ID"),
@@ -149,7 +150,7 @@ def scope_add_downstream_assets():
         defs = dg.Definitions(
             jobs=[my_upstream_job],
             assets=[airbyte_assets, stargazers_file],
-            resources={"snowflake_io_manager": SnowflakePandasIOManager(...)},
+            resources={"snowflake_io_manager": SnowflakePandasIOManager(...)},  # ty: ignore[too-many-positional-arguments]
         )
 
         # end_add_downstream_assets
@@ -178,7 +179,7 @@ def scope_add_downstream_assets_w_deps():
         @dg.asset(deps=[dg.AssetKey("stargazers")])
         def stargazers_file(snowflake: SnowflakeResource):
             with snowflake.get_connection() as conn:
-                stargazers = conn.cursor.execute(  # pyright: ignore[reportFunctionMemberAccess]
+                stargazers = conn.cursor.execute(  # ty: ignore[unresolved-attribute]
                     "SELECT * FROM STARGAZERS"
                 ).fetch_pandas_all()
             with open("stargazers.json", "w", encoding="utf8") as f:
@@ -195,7 +196,7 @@ def scope_add_downstream_assets_w_deps():
         defs = dg.Definitions(
             jobs=[my_upstream_job],
             assets=[airbyte_assets, stargazers_file],
-            resources={"snowflake": SnowflakeResource(...)},
+            resources={"snowflake": SnowflakeResource(...)},  # ty: ignore[too-many-positional-arguments]
         )
 
         # end_with_deps_add_downstream_assets
@@ -211,8 +212,8 @@ def scope_add_downstream_assets_cloud():
 
         from dagster_airbyte import (
             build_airbyte_assets,
-            AirbyteCloudResource,
         )
+        from dagster_airbyte import AirbyteCloudResource
         from dagster_snowflake_pandas import SnowflakePandasIOManager
         import pandas as pd
 
@@ -240,9 +241,9 @@ def scope_add_downstream_assets_cloud():
 
         defs = dg.Definitions(
             jobs=[my_upstream_job],
-            assets=[airbyte_assets, stargazers_file],
+            assets=[airbyte_assets, stargazers_file],  # ty: ignore[invalid-argument-type]
             resources={
-                "snowflake_io_manager": SnowflakePandasIOManager(...),
+                "snowflake_io_manager": SnowflakePandasIOManager(...),  # ty: ignore[too-many-positional-arguments]
                 "airbyte_instance": airbyte_instance,
             },
         )
@@ -260,8 +261,8 @@ def scope_add_downstream_assets_cloud_with_deps():
 
         from dagster_airbyte import (
             build_airbyte_assets,
-            AirbyteCloudResource,
         )
+        from dagster_airbyte import AirbyteCloudResource
         from dagster_snowflake import SnowflakeResource
 
         airbyte_instance = AirbyteCloudResource(
@@ -276,7 +277,7 @@ def scope_add_downstream_assets_cloud_with_deps():
         @dg.asset(deps=[dg.AssetKey("stargazers")])
         def stargazers_file(snowflake: SnowflakeResource):
             with snowflake.get_connection() as conn:
-                stargazers = conn.cursor.execute(  # pyright: ignore[reportFunctionMemberAccess]
+                stargazers = conn.cursor.execute(  # ty: ignore[unresolved-attribute]
                     "SELECT * FROM STARGAZERS"
                 ).fetch_pandas_all()
             with open("stargazers.json", "w", encoding="utf8") as f:
@@ -292,9 +293,9 @@ def scope_add_downstream_assets_cloud_with_deps():
 
         defs = dg.Definitions(
             jobs=[my_upstream_job],
-            assets=[airbyte_assets, stargazers_file],
+            assets=[airbyte_assets, stargazers_file],  # ty: ignore[invalid-argument-type]
             resources={
-                "snowflake": SnowflakeResource(...),
+                "snowflake": SnowflakeResource(...),  # ty: ignore[too-many-positional-arguments]
                 "airbyte_instance": airbyte_instance,
             },
         )
@@ -341,7 +342,8 @@ def scope_schedule_assets():
 
 def scope_schedule_assets_cloud():
     # start_schedule_assets_cloud
-    from dagster_airbyte import AirbyteCloudResource, build_airbyte_assets
+    from dagster_airbyte import build_airbyte_assets
+    from dagster_airbyte import AirbyteCloudResource
 
     import dagster as dg
 
@@ -358,7 +360,7 @@ def scope_schedule_assets_cloud():
     run_everything_job = dg.define_asset_job("run_everything", selection="*")
 
     defs = dg.Definitions(
-        assets=[airbyte_assets],
+        assets=[airbyte_assets],  # ty: ignore[invalid-argument-type]
         schedules=[
             dg.ScheduleDefinition(
                 job=run_everything_job,

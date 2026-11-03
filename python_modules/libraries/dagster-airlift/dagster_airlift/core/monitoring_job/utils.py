@@ -1,6 +1,6 @@
 import json
 from collections.abc import Iterable, Sequence
-from typing import Optional, TypeVar, Union, cast
+from typing import TypeVar, cast
 
 import dagster._check as check
 from dagster._core.definitions.metadata.external_metadata import (
@@ -25,8 +25,8 @@ def structured_log(context: OpExecutionContext, message: str) -> None:
 
 
 def get_dagster_run_for_airflow_repr(
-    context: OpExecutionContext, airflow_repr: Union[DagRun, TaskInstance]
-) -> Optional[DagsterRun]:
+    context: OpExecutionContext, airflow_repr: DagRun | TaskInstance
+) -> DagsterRun | None:
     return next(
         iter(
             context.instance.get_runs(
@@ -44,7 +44,7 @@ def get_dagster_run_for_airflow_repr(
 
 
 def get_externally_managed_runs_from_handle(
-    context: OpExecutionContext, handle: Union[DagHandle, TaskHandle], run_id: str
+    context: OpExecutionContext, handle: DagHandle | TaskHandle, run_id: str
 ) -> Sequence[DagsterRun]:
     return context.instance.get_runs(
         filters=RunsFilter(
@@ -97,10 +97,13 @@ def extract_metadata_from_logs(context: OpExecutionContext, logs: str) -> dict[s
                 _assert_param_value(value["type"], EXTERNAL_METADATA_TYPES)
                 new_external_metadata_map[key] = cast("ExternalMetadataValue", value)
             else:
-                new_external_metadata_map[key] = {
-                    "raw_value": value,
-                    "type": EXTERNAL_METADATA_TYPE_INFER,
-                }
+                new_external_metadata_map[key] = cast(
+                    "ExternalMetadataValue",
+                    {
+                        "raw_value": value,
+                        "type": EXTERNAL_METADATA_TYPE_INFER,
+                    },
+                )
 
         metadata_map = metadata_map_from_external(new_external_metadata_map)
         metadata.update(metadata_map)

@@ -2,10 +2,11 @@
 import contextlib
 import os
 import shutil
-from collections.abc import Iterator
-from typing import Callable, Optional
+from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import dagster._check as check
+from dagster._utils import discover_oss_root
 
 from automation.docker.dagster_docker import DagsterDockerImage, default_images_path
 from automation.git import git_repo_root
@@ -27,7 +28,7 @@ def copy_directories(
 
         paths_to_copy = []
         for path in paths:
-            src_path = os.path.join(git_repo_root(cwd), path)
+            src_path = os.path.join(discover_oss_root(Path(cwd)), path)
             check.invariant(
                 os.path.exists(src_path), "Path for copying to image build does not exist"
             )
@@ -96,7 +97,7 @@ def k8s_example_editable_cm(cwd: str) -> Iterator[None]:
 @contextlib.contextmanager
 def k8s_webserver_editable_cm(cwd: str) -> Iterator[None]:
     print(
-        "!!!!! WARNING: You must call `make rebuild_ui` after making changes to the Dagster UI"
+        "!!!!! WARNING: You must call `just rebuild_ui` after making changes to the Dagster UI"
         " !!!!\n"
     )
     with copy_directories(
@@ -140,7 +141,7 @@ def k8s_celery_worker_editable_cm(cwd: str) -> Iterator[None]:
 def user_code_example_cm(cwd: str) -> Iterator[None]:
     with copy_directories(
         [
-            "examples/deploy_k8s/iris_analysis",
+            "examples/deploy_k8s/deploy_k8s",
         ],
         cwd,
     ):
@@ -162,7 +163,7 @@ def user_code_example_editable_cm(cwd: str) -> Iterator[None]:
 @contextlib.contextmanager
 def dagster_k8s_editable_cm(cwd: str) -> Iterator[None]:
     print(
-        "!!!!! WARNING: You must call `make rebuild_ui` after making changes to the Dagster"
+        "!!!!! WARNING: You must call `just rebuild_ui` after making changes to the Dagster"
         " UI!!!!\n"
     )
     with copy_directories(
@@ -180,7 +181,7 @@ def dagster_k8s_editable_cm(cwd: str) -> Iterator[None]:
 @contextlib.contextmanager
 def dagster_celery_k8s_editable_cm(cwd: str) -> Iterator[None]:
     print(
-        "!!!!! WARNING: You must call `make rebuild_ui` after making changes to the Dagster"
+        "!!!!! WARNING: You must call `just rebuild_ui` after making changes to the Dagster"
         " UI!!!!\n"
     )
     with copy_directories(
@@ -204,7 +205,7 @@ CUSTOM_BUILD_CONTEXTMANAGERS: dict[str, Callable] = {
 }
 
 
-def list_images(images_path: Optional[str] = None) -> list[DagsterDockerImage]:
+def list_images(images_path: str | None = None) -> list[DagsterDockerImage]:
     """List all images that we manage.
 
     Returns:
@@ -222,7 +223,7 @@ def list_images(images_path: Optional[str] = None) -> list[DagsterDockerImage]:
     return images
 
 
-def get_image(name: str, images_path: Optional[str] = None) -> DagsterDockerImage:
+def get_image(name: str, images_path: str | None = None) -> DagsterDockerImage:
     """Retrieve the image information from the list defined above."""
     image = next((img for img in list_images(images_path=images_path) if img.image == name), None)
     return check.not_none(image, f"could not find image {name}")

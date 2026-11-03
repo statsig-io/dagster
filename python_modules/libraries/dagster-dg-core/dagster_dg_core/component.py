@@ -1,7 +1,7 @@
 import re
 import sys
 from collections.abc import Iterable, Mapping, Sequence, Set
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import dagster_shared.check as check
 from dagster_shared.error import (
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 class EnvRegistry:
     @staticmethod
     def from_dg_context(
-        dg_context: "DgContext", extra_modules: Optional[Sequence[str]] = None
+        dg_context: "DgContext", extra_modules: Sequence[str] | None = None
     ) -> "EnvRegistry":
         """Fetches the set of available registry objects. The default set includes everything
         discovered under the "dagster_dg_cli.registry_modules" entry point group in the target environment. If
@@ -99,8 +99,8 @@ class EnvRegistry:
 
     def get_objects(
         self,
-        package: Optional[str] = None,
-        feature: Optional[EnvRegistryObjectFeature] = None,
+        package: str | None = None,
+        feature: EnvRegistryObjectFeature | None = None,
     ) -> Sequence[EnvRegistryObjectSnap]:
         return [
             entry
@@ -181,7 +181,7 @@ def _fetch_plugin_manifest(entry_points: bool, extra_modules: Sequence[str]) -> 
 
     if isinstance(result, SerializableErrorInfo):
         clean_result = remove_system_frames_from_error(
-            result.cause,
+            result.cause if result.cause else result,
             make_simple_frames_removed_hint(),
         )
         message_match = check.not_none(
@@ -209,10 +209,10 @@ def get_specified_env_var_deps(component_data: Mapping[str, Any]) -> set[str]:
 
 
 env_var_regex = re.compile(r"\{\{\s*env\(\s*['\"]([^'\"]+)['\"]\)\s*\}\}")
-env_var_regex_dot_notation = re.compile(r"\{\{\s*env\.([^'\"]+)\s*\}\}")
+env_var_regex_dot_notation = re.compile(r"\{\{\s*env\.([^'\"\s]+)\s*\}\}")
 
 
-def get_used_env_vars(data_structure: Union[Mapping[str, Any], Sequence[Any], Any]) -> set[str]:
+def get_used_env_vars(data_structure: Mapping[str, Any] | Sequence[Any] | Any) -> set[str]:
     if isinstance(data_structure, Mapping):
         return set.union(set(), *(get_used_env_vars(value) for value in data_structure.values()))
     elif isinstance(data_structure, str):

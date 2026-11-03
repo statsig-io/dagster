@@ -1,7 +1,7 @@
 import operator
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Generic, Optional, Union
+from typing import Any, Generic, Optional, TypeAlias
 
 from dagster_shared.serdes.serdes import DataclassSerializer, whitelist_for_serdes
 from typing_extensions import Self
@@ -11,16 +11,18 @@ from dagster._core.definitions.asset_key import T_EntityKey
 from dagster._core.definitions.events import AssetKeyPartitionKey
 from dagster._core.definitions.partitions.context import partition_loading_context
 from dagster._core.definitions.partitions.definition import PartitionsDefinition
+from dagster._core.definitions.partitions.snap.snap import PartitionsSnap
 from dagster._core.definitions.partitions.subset import (
     AllPartitionsSubset,
     DefaultPartitionsSubset,
     PartitionsSubset,
     TimeWindowPartitionsSubset,
 )
+from dagster._core.definitions.partitions.subset.key_ranges import KeyRangesPartitionsSubset
 
-EntitySubsetValue = Union[bool, PartitionsSubset]
+EntitySubsetValue: TypeAlias = bool | PartitionsSubset
 
-CoercibleToAssetEntitySubsetValue = Union[str, Sequence[str], PartitionsSubset, None]
+CoercibleToAssetEntitySubsetValue: TypeAlias = str | Sequence[str] | PartitionsSubset | None
 
 
 class EntitySubsetSerializer(DataclassSerializer):
@@ -30,7 +32,7 @@ class EntitySubsetSerializer(DataclassSerializer):
         # backcompat
         return "AssetSubset"
 
-    def before_pack(self, value: "SerializableEntitySubset") -> "SerializableEntitySubset":  # pyright: ignore[reportIncompatibleMethodOverride]
+    def before_pack(self, value: "SerializableEntitySubset") -> "SerializableEntitySubset":  # ty: ignore[invalid-method-override]
         if value.is_partitioned:
             return replace(value, value=value.subset_value.to_serializable_subset())
         return value
@@ -49,11 +51,17 @@ class SerializableEntitySubset(Generic[T_EntityKey]):
     value: EntitySubsetValue
 
     @classmethod
+    def empty(
+        cls, key: T_EntityKey, partitions_def: PartitionsDefinition | None
+    ) -> "SerializableEntitySubset[T_EntityKey]":
+        return cls(key=key, value=partitions_def.empty_subset() if partitions_def else False)
+
+    @classmethod
     def from_coercible_value(
         cls,
         key: T_EntityKey,
         value: CoercibleToAssetEntitySubsetValue,
-        partitions_def: Optional[PartitionsDefinition],
+        partitions_def: PartitionsDefinition | None,
     ) -> "SerializableEntitySubset":
         """Creates a new SerializableEntitySubset, handling coercion of a CoercibleToAssetEntitySubsetValue
         to an EntitySubsetValue.
@@ -91,7 +99,7 @@ class SerializableEntitySubset(Generic[T_EntityKey]):
         cls,
         key: T_EntityKey,
         value: CoercibleToAssetEntitySubsetValue,
-        partitions_def: Optional[PartitionsDefinition],
+        partitions_def: PartitionsDefinition | None,
     ) -> Optional["SerializableEntitySubset"]:
         """Attempts to create a new SerializableEntitySubset, handling coercion of a CoercibleToAssetEntitySubsetValue
         and partitions definition to an EntitySubsetValue. Returns None if the coercion fails.
@@ -128,13 +136,35 @@ class SerializableEntitySubset(Generic[T_EntityKey]):
             return not self.bool_value
 
     def is_compatible_with_partitions_def(
-        self, partitions_def: Optional[PartitionsDefinition]
+        self, partitions_def: PartitionsDefinition | None
     ) -> bool:
+        from dagster._core.definitions.partitions.definition.time_window import (
+            TimeWindowPartitionsDefinition,
+        )
+
         if self.is_partitioned:
             # for some PartitionSubset types, we have access to the underlying partitions
             # definitions, so we can ensure those are identical
             if isinstance(self.value, (TimeWindowPartitionsSubset, AllPartitionsSubset)):
                 return self.value.partitions_def == partitions_def
+            # for KeyRangesPartitionsSubset, we have the PartitionsSnap, so we can use that
+            elif isinstance(self.value, KeyRangesPartitionsSubset):
+                if (
+                    partitions_def is None
+                    or PartitionsSnap.from_def(partitions_def) != self.value.partitions_snap
+                ):
+                    return False
+                # all ranges must be valid
+                return all(
+                    partitions_def.has_partition_key(r.start)
+                    and partitions_def.has_partition_key(r.end)
+                    for r in self.value.key_ranges
+                )
+            elif isinstance(self.value, DefaultPartitionsSubset) and isinstance(
+                partitions_def, TimeWindowPartitionsDefinition
+            ):
+                return all(partitions_def.has_partition_key(k) for k in self.value.subset)
+
             else:
                 return partitions_def is not None
         else:

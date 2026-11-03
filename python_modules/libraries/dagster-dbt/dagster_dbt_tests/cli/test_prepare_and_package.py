@@ -90,7 +90,7 @@ def test_prepare_and_package_with_dependencies(
     manifest_path = dbt_project_dir.joinpath("target", "manifest.json")
 
     # Scaffold doesn't include a dependencies.yml file, let's create one
-    with open(dependencies_path, "w") as file:
+    with open(dependencies_path, "w", encoding="utf-8") as file:
         dependencies_yml = {
             "packages": [{"package": "dbt-labs/dbt_utils", "version": [">=1.1.1", "<2.0.0"]}]
         }
@@ -147,7 +147,7 @@ def test_prepare_and_package_with_packages(
     manifest_path = dbt_project_dir.joinpath("target", "manifest.json")
 
     # Scaffold doesn't include a packages.yml file, let's create one
-    with open(packages_path, "w") as file:
+    with open(packages_path, "w", encoding="utf-8") as file:
         packages_yml = {
             "packages": [{"package": "dbt-labs/dbt_utils", "version": [">=1.1.1", "<2.0.0"]}]
         }
@@ -174,6 +174,129 @@ def test_prepare_and_package_with_packages(
     assert result.exit_code == 0
     assert packages_install_path.exists()
     assert manifest_path.exists()
+
+
+def test_prepare_and_package_runs_deps_when_packages_exist(
+    monkeypatch: pytest.MonkeyPatch, dbt_project_dir: Path
+) -> None:
+    """Test that prepare-and-package runs dbt deps even when dbt_packages already exists.
+
+    Regression test for https://github.com/dagster-io/dagster/issues/31885.
+    """
+    monkeypatch.chdir(dbt_project_dir)
+
+    project_name = "jaffle_dagster"
+    dagster_project_dir = dbt_project_dir.joinpath(project_name)
+
+    result = runner.invoke(
+        app,
+        [
+            "project",
+            "scaffold",
+            "--project-name",
+            project_name,
+            "--dbt-project-dir",
+            os.fspath(dbt_project_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+
+    dependencies_path = dbt_project_dir.joinpath("dependencies.yml")
+    packages_install_path = dbt_project_dir.joinpath("dbt_packages")
+    manifest_path = dbt_project_dir.joinpath("target", "manifest.json")
+
+    # Create a dependencies.yml file
+    dependencies_yml = {
+        "packages": [{"package": "dbt-labs/dbt_utils", "version": [">=1.1.1", "<2.0.0"]}]
+    }
+    dependencies_path.write_text(yaml.dump(dependencies_yml), encoding="utf-8")
+
+    # Pre-create the dbt_packages directory to simulate a previous run
+    packages_install_path.mkdir(exist_ok=True)
+
+    assert dependencies_path.exists()
+    assert packages_install_path.exists()
+    assert not manifest_path.exists()
+
+    result = runner.invoke(
+        app,
+        [
+            "project",
+            "prepare-and-package",
+            "--file",
+            os.fspath(dagster_project_dir.joinpath(project_name, "project.py")),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert manifest_path.exists()
+    # Verify that dbt deps actually ran and populated the packages directory
+    # (an empty pre-existing directory would not have package contents)
+    assert any(packages_install_path.iterdir())
+
+
+def test_prepare_and_package_with_file_named_dbt(
+    monkeypatch: pytest.MonkeyPatch, dbt_project_dir: Path
+) -> None:
+    monkeypatch.chdir(dbt_project_dir)
+
+    project_name = "jaffle_dagster"
+    dagster_project_dir = dbt_project_dir.joinpath(project_name)
+    dagster_python_package_dir = dagster_project_dir.joinpath(project_name)
+
+    result = runner.invoke(
+        app,
+        [
+            "project",
+            "scaffold",
+            "--project-name",
+            project_name,
+            "--dbt-project-dir",
+            os.fspath(dbt_project_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+
+    project_file = dagster_python_package_dir.joinpath("project.py")
+    dbt_file = dagster_python_package_dir.joinpath("dbt.py")
+    project_file.rename(dbt_file)
+
+    assets_file = dagster_python_package_dir.joinpath("assets.py")
+    assets_file.write_text(
+        assets_file.read_text().replace(
+            "from .project import dbt_project_project", "from .dbt import dbt_project_project"
+        )
+    )
+
+    definitions_file = dagster_python_package_dir.joinpath("definitions.py")
+    definitions_file.write_text(
+        definitions_file.read_text().replace(
+            "from .project import dbt_project_project", "from .dbt import dbt_project_project"
+        )
+    )
+
+    recorded_projects: list[DbtProject] = []
+
+    def _fake_prepare(project: "DbtProject") -> None:
+        recorded_projects.append(project)
+
+    monkeypatch.setattr("dagster_dbt.cli.app.prepare_and_package", _fake_prepare)
+
+    result = runner.invoke(
+        app,
+        [
+            "project",
+            "prepare-and-package",
+            "--file",
+            os.fspath(dbt_file),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert len(recorded_projects) == 1
+    assert recorded_projects[0].project_dir == dbt_project_dir
 
 
 def test_prepare_and_package_with_state(

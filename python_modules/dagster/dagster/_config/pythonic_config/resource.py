@@ -8,19 +8,20 @@ from typing import (  # noqa: UP035
     Callable,
     Generic,
     NamedTuple,
-    Optional,
+    TypeAlias,
+    TypeGuard,
     TypeVar,
-    Union,
     cast,
+    get_args,
+    get_origin,
 )
 
 from dagster_shared.dagster_model.pydantic_compat_layer import model_fields
 from dagster_shared.error import DagsterError
 from pydantic import BaseModel
-from typing_extensions import TypeAlias, TypeGuard, get_args, get_origin
 
 import dagster._check as check
-from dagster._annotations import deprecated
+from dagster._annotations import deprecated, public
 from dagster._config.field import Field as DagsterField
 from dagster._config.field_utils import config_dictionary_from_values
 from dagster._config.pythonic_config.attach_other_object_to_context import (
@@ -62,7 +63,7 @@ T_Self = TypeVar("T_Self", bound="ConfigurableResourceFactory")
 ResourceId: TypeAlias = int
 
 
-class NestedResourcesResourceDefinition(ResourceDefinition, ABC):
+class NestedResourcesResourceDefinition(ResourceDefinition, ABC):  # ty: ignore[invalid-method-override]
     @property
     @abstractmethod
     def nested_partial_resources(self) -> Mapping[str, "CoercibleToResource"]: ...
@@ -75,7 +76,7 @@ class NestedResourcesResourceDefinition(ResourceDefinition, ABC):
     @abstractmethod
     def configurable_resource_cls(self) -> type: ...
 
-    def get_resource_requirements(self, source_key: str) -> Iterator["ResourceRequirement"]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_resource_requirements(self, source_key: str) -> Iterator["ResourceRequirement"]:  # ty: ignore[invalid-method-override]
         for attr_name, partial_resource in self.nested_partial_resources.items():
             yield PartialResourceDependencyRequirement(
                 class_name=self.configurable_resource_cls.__name__,
@@ -118,7 +119,7 @@ class ConfigurableResourceFactoryResourceDefinition(NestedResourcesResourceDefin
         configurable_resource_cls: type,
         resource_fn: ResourceFunction,
         config_schema: Any,
-        description: Optional[str],
+        description: str | None,
         nested_resources: Mapping[str, Any],
         nested_partial_resources: Mapping[str, Any],
         dagster_maintained: bool = False,
@@ -159,10 +160,10 @@ class ConfigurableResourceFactoryState(NamedTuple):
     config_schema: DefinitionConfigSchema
     schema: DagsterField
     nested_resources: dict[str, Any]
-    resource_context: Optional[InitResourceContext]
+    resource_context: InitResourceContext | None
 
 
-class ConfigurableResourceFactory(
+class ConfigurableResourceFactory(  # ty: ignore[conflicting-metaclass]
     Config,
     TypecheckAllowPartialResourceInitParams,
     Generic[TResValue],
@@ -325,7 +326,7 @@ class ConfigurableResourceFactory(
         return PartialResource(cls, data=kwargs)
 
     def _with_updated_values(
-        self, values: Optional[Mapping[str, Any]]
+        self, values: Mapping[str, Any] | None
     ) -> "ConfigurableResourceFactory[TResValue]":
         """Returns a new instance of the resource with the given values.
         Used when initializing a resource at runtime.
@@ -489,7 +490,7 @@ class ConfigurableResourceFactory(
         from dagster._config.post_process import post_process_config
 
         post_processed_config = post_process_config(
-            self._config_schema.config_type,  # pyright: ignore[reportArgumentType]
+            self._config_schema.config_type,
             self._convert_to_config_dictionary(),
         )
 
@@ -513,7 +514,7 @@ class ConfigurableResourceFactory(
         from dagster._config.post_process import post_process_config
 
         post_processed_config = post_process_config(
-            self._config_schema.config_type,  # pyright: ignore[reportArgumentType]
+            self._config_schema.config_type,
             self._convert_to_config_dictionary(),
         )
 
@@ -524,15 +525,18 @@ class ConfigurableResourceFactory(
                 post_processed_config,
             )
 
-        with self.from_resource_context_cm(
-            build_init_resource_context(config=post_processed_config.value),
-            nested_resources=self.nested_resources,
-        ) as out:
+        with (
+            build_init_resource_context(config=post_processed_config.value) as context,
+            self.from_resource_context_cm(
+                context,
+                nested_resources=self.nested_resources,
+            ) as out,
+        ):
             yield out
 
     @classmethod
     def from_resource_context(
-        cls, context: InitResourceContext, nested_resources: Optional[Mapping[str, Any]] = None
+        cls, context: InitResourceContext, nested_resources: Mapping[str, Any] | None = None
     ) -> TResValue:
         """Creates a new instance of this resource from a populated InitResourceContext.
         Useful when creating a resource from a function-based resource, for backwards
@@ -564,7 +568,7 @@ class ConfigurableResourceFactory(
     @classmethod
     @contextlib.contextmanager
     def from_resource_context_cm(
-        cls, context: InitResourceContext, nested_resources: Optional[Mapping[str, Any]] = None
+        cls, context: InitResourceContext, nested_resources: Mapping[str, Any] | None = None
     ) -> Generator[TResValue, None, None]:
         """Context which generates a new instance of this resource from a populated InitResourceContext.
         Useful when creating a resource from a function-based resource, for backwards
@@ -589,6 +593,7 @@ class ConfigurableResourceFactory(
             yield value
 
 
+@public
 class ConfigurableResource(ConfigurableResourceFactory[TResValue]):
     """Base class for Dagster resources that utilize structured config.
 
@@ -681,7 +686,7 @@ class PartialResourceState(NamedTuple):
     nested_partial_resources: dict[str, Any]
     config_schema: DagsterField
     resource_fn: Callable[[InitResourceContext], Any]
-    description: Optional[str]
+    description: str | None
     nested_resources: dict[str, Any]
 
 
@@ -697,7 +702,7 @@ class PartialResource(
         resource_cls: type[ConfigurableResourceFactory[TResValue]],
         data: dict[str, Any],
     ):
-        resource_pointers, _data_without_resources = separate_resource_params(resource_cls, data)
+        resource_pointers, data_without_resources = separate_resource_params(resource_cls, data)
 
         super().__init__(data=data, resource_cls=resource_cls)  # type: ignore  # extends BaseModel, takes kwargs
 
@@ -717,7 +722,9 @@ class PartialResource(
                 k: v for k, v in resource_pointers.items() if (not _is_fully_configured(v))
             },
             config_schema=infer_schema_from_config_class(
-                resource_cls, fields_to_omit=set(resource_pointers.keys())
+                resource_cls,
+                fields_to_omit=set(resource_pointers.keys()),
+                default=data_without_resources,
             ),
             resource_fn=resource_fn,
             description=resource_cls.__doc__,
@@ -750,15 +757,13 @@ class PartialResource(
         )
 
 
-ResourceOrPartial: TypeAlias = Union[
-    ConfigurableResourceFactory[TResValue], PartialResource[TResValue]
-]
-ResourceOrPartialOrValue: TypeAlias = Union[
-    ConfigurableResourceFactory[TResValue],
-    PartialResource[TResValue],
-    ResourceDefinition,
-    TResValue,
-]
+ResourceOrPartial: TypeAlias = ConfigurableResourceFactory[TResValue] | PartialResource[TResValue]
+ResourceOrPartialOrValue: TypeAlias = (
+    ConfigurableResourceFactory[TResValue]
+    | PartialResource[TResValue]
+    | ResourceDefinition
+    | TResValue
+)
 
 
 V = TypeVar("V")
@@ -771,7 +776,7 @@ class ResourceDependency(Generic[V]):
     def __get__(self, obj: "ConfigurableResourceFactory", owner: Any) -> V:
         return getattr(obj, self._name)
 
-    def __set__(self, obj: Optional[object], value: ResourceOrPartialOrValue[V]) -> None:
+    def __set__(self, obj: object | None, value: ResourceOrPartialOrValue[V]) -> None:
         setattr(obj, self._name, value)
 
 
@@ -924,16 +929,12 @@ def _call_resource_fn_with_default(
             )
         context = context.replace_config(cast("dict", evr.value)["config"])
 
-    if has_at_least_one_parameter(obj.resource_fn):
+    if has_at_least_one_parameter(obj.resource_fn):  # ty: ignore[invalid-argument-type]
         result = cast("ResourceFunctionWithContext", obj.resource_fn)(context)
     else:
         result = cast("ResourceFunctionWithoutContext", obj.resource_fn)()
 
-    is_fn_generator = (
-        inspect.isgenerator(obj.resource_fn)
-        or isinstance(obj.resource_fn, contextlib.ContextDecorator)
-        or isinstance(result, contextlib.AbstractContextManager)
-    )
+    is_fn_generator = inspect.isgenerator(result) or isinstance(result, contextlib.ContextDecorator)
     if is_fn_generator:
         return stack.enter_context(cast("contextlib.AbstractContextManager", result))
     else:
@@ -993,9 +994,7 @@ def validate_resource_annotated_function(fn) -> None:
         )
 
 
-CoercibleToResource: TypeAlias = Union[
-    ResourceDefinition, ConfigurableResourceFactory, PartialResource
-]
+CoercibleToResource: TypeAlias = ResourceDefinition | ConfigurableResourceFactory | PartialResource
 
 
 def is_coercible_to_resource(val: Any) -> TypeGuard[CoercibleToResource]:
@@ -1063,7 +1062,7 @@ def get_resource_type_name(resource: ResourceDefinition) -> str:
             else resource.resource_fn
         )
         module_name = check.not_none(inspect.getmodule(original_resource_fn)).__name__
-        resource_type = f"{module_name}.{original_resource_fn.__name__}"
+        resource_type = f"{module_name}.{getattr(original_resource_fn, '__name__', 'resource_fn')}"
     # if it's a Pythonic resource, get the underlying Pythonic class name
     elif isinstance(
         resource,

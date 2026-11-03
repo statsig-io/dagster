@@ -1,12 +1,15 @@
 import os
 import sys
 from collections.abc import Iterator
-from typing import Optional, cast
+from typing import TYPE_CHECKING, cast
 
 import dagster as dg
 import pytest
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation import CodeLocation, RemoteRepository
+from dagster._core.remote_representation.external import RemoteRepository
+
+if TYPE_CHECKING:
+    from dagster._core.remote_representation.code_location import CodeLocation
 from dagster._core.test_utils import SingleThreadPoolExecutor, create_test_daemon_workspace_context
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._core.workspace.context import WorkspaceProcessContext
@@ -50,7 +53,7 @@ def instance_fixture(instance_session_scoped: DagsterInstance) -> Iterator[dg.Da
 
 
 def workspace_load_target(
-    module: Optional[str] = "test_scheduler_run", attribute: Optional[str] = "the_repo"
+    module: str | None = "test_scheduler_run", attribute: str | None = "the_repo"
 ) -> ModuleTarget:
     return ModuleTarget(
         module_name=f"dagster_tests.scheduler_tests.{module}",

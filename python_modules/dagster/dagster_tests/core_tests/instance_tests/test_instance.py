@@ -1,26 +1,28 @@
+import datetime
 import json
 import os
 import re
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import dagster as dg
 import pytest
 import yaml
-from dagster import (
-    _check as check,
-    seven,
-)
+from dagster import _check as check
 from dagster._check import CheckError
 from dagster._cli.utils import get_instance_for_cli
+from dagster._core.definitions.assets.definition.asset_spec import AssetExecutionType
+from dagster._core.definitions.partitions.partition_key_range import PartitionKeyRange
+from dagster._core.definitions.partitions.subset import KeyRangesPartitionsSubset
 from dagster._core.errors import DagsterHomeNotSetError
 from dagster._core.execution.api import create_execution_plan
 from dagster._core.instance import DagsterInstance, InstanceRef
 from dagster._core.instance.config import DEFAULT_LOCAL_CODE_SERVER_STARTUP_TIMEOUT
 from dagster._core.launcher import LaunchRunContext, RunLauncher
+from dagster._core.remote_representation.external_data import PartitionsSnap
 from dagster._core.secrets.env_file import PerProjectEnvFileLoader
 from dagster._core.snap import create_execution_plan_snapshot_id, snapshot_from_execution_plan
 from dagster._core.storage.asset_check_execution_record import AssetCheckExecutionRecordStatus
@@ -33,12 +35,22 @@ from dagster._core.storage.sqlite_storage import (
 from dagster._core.storage.tags import (
     ASSET_PARTITION_RANGE_END_TAG,
     ASSET_PARTITION_RANGE_START_TAG,
+    CODE_LOCATION_TAG,
+    PARTITION_NAME_TAG,
 )
-from dagster._core.test_utils import TestSecretsLoader, create_run_for_test, environ, new_cwd
+from dagster._core.test_utils import (
+    MockSecretsLoader,
+    create_run_for_test,
+    environ,
+    mock_workspace_from_repos,
+    new_cwd,
+)
 from dagster._daemon.asset_daemon import AssetDaemon
 from dagster._daemon.controller import create_daemons_from_instance
-from dagster._serdes import ConfigurableClass
+from dagster._serdes import ConfigurableClass, deserialize_value
 from dagster._serdes.config_class import ConfigurableClassData
+from dagster._utils import file_relative_path
+from dagster_shared import seven
 from typing_extensions import Self
 
 from dagster_tests.api_tests.utils import get_bar_workspace
@@ -114,12 +126,12 @@ def test_unified_storage_env_var(tmpdir):
                 }
             }
         ) as instance:
-            assert _runs_directory(str(tmpdir)) in instance.run_storage._conn_string  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]
+            assert _runs_directory(str(tmpdir)) in instance.run_storage._conn_string  # noqa: SLF001  # ty: ignore[unresolved-attribute]
             assert (
-                _event_logs_directory(str(tmpdir)) == instance.event_log_storage._base_dir + "/"  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]
+                _event_logs_directory(str(tmpdir)) == instance.event_log_storage._base_dir + "/"  # noqa: SLF001  # ty: ignore[unresolved-attribute]
             )
             assert (
-                _schedule_directory(str(tmpdir)) in instance.schedule_storage._conn_string  # noqa: SLF001  # pyright: ignore[reportOptionalMemberAccess,reportAttributeAccessIssue]
+                _schedule_directory(str(tmpdir)) in instance.schedule_storage._conn_string  # noqa: SLF001  # ty: ignore[unresolved-attribute]
             )
 
 
@@ -166,13 +178,13 @@ def test_custom_secrets_manager():
             "secrets": {
                 "custom": {
                     "module": "dagster._core.test_utils",
-                    "class": "TestSecretsLoader",
+                    "class": "MockSecretsLoader",
                     "config": {"env_vars": {"FOO": "BAR"}},
                 }
             }
         }
     ) as instance:
-        assert isinstance(instance._secrets_loader, TestSecretsLoader)  # noqa: SLF001
+        assert isinstance(instance._secrets_loader, MockSecretsLoader)  # noqa: SLF001
         assert instance._secrets_loader.env_vars == {"FOO": "BAR"}  # noqa: SLF001
 
 
@@ -197,7 +209,7 @@ def test_run_queue_key():
     with dg.instance_for_test(
         overrides={
             "run_coordinator": {
-                "module": "dagster.core.run_coordinator",
+                "module": "dagster._core.run_coordinator",
                 "class": "QueuedRunCoordinator",
                 "config": config,
             }
@@ -213,7 +225,7 @@ def test_run_queue_key():
     with pytest.raises(
         dg.DagsterInvalidConfigError,
         match=(
-            "Found config for `run_queue` which is incompatible with `run_coordinator` config"
+            r"Found config for `run_queue` which is incompatible with `run_coordinator` config"
             " entry."
         ),
     ):
@@ -221,7 +233,7 @@ def test_run_queue_key():
             overrides={
                 "run_queue": config,
                 "run_coordinator": {
-                    "module": "dagster.core.run_coordinator",
+                    "module": "dagster._core.run_coordinator",
                     "class": "QueuedRunCoordinator",
                     "config": config,
                 },
@@ -269,9 +281,32 @@ def noop_asset():
     pass
 
 
-noop_asset_job = dg.Definitions(
-    assets=[noop_asset], jobs=[dg.define_asset_job("noop_asset_job", [noop_asset])]
-).resolve_job_def("noop_asset_job")
+@dg.asset(partitions_def=dg.DailyPartitionsDefinition(start_date=datetime.datetime(2025, 1, 1)))
+def noop_time_window_asset():
+    pass
+
+
+@dg.asset(partitions_def=dg.DynamicPartitionsDefinition(name="my_dynamic"))
+def noop_dynamic_partitions_asset():
+    pass
+
+
+noop_asset_defs = dg.Definitions(
+    assets=[noop_asset, noop_time_window_asset, noop_dynamic_partitions_asset],
+    jobs=[
+        dg.define_asset_job("noop_asset_job", [noop_asset]),
+        dg.define_asset_job("noop_time_window_asset_job", [noop_time_window_asset]),
+        dg.define_asset_job("noop_dynamic_partitions_asset_job", [noop_dynamic_partitions_asset]),
+    ],
+)
+
+noop_asset_job = noop_asset_defs.resolve_job_def("noop_asset_job")
+noop_time_window_asset_job: dg.JobDefinition = noop_asset_defs.resolve_job_def(
+    "noop_time_window_asset_job"
+)
+noop_dynamic_partitions_asset_job = noop_asset_defs.resolve_job_def(
+    "noop_dynamic_partitions_asset_job"
+)
 
 
 def test_create_job_snapshot():
@@ -281,7 +316,7 @@ def test_create_job_snapshot():
 
         run = instance.get_run_by_id(result.run_id)
 
-        assert run.job_snapshot_id == noop_job.get_job_snapshot().snapshot_id  # pyright: ignore[reportOptionalMemberAccess]
+        assert run.job_snapshot_id == noop_job.get_job_snapshot().snapshot_id  # ty: ignore[unresolved-attribute]
 
 
 def test_create_execution_plan_snapshot():
@@ -296,8 +331,8 @@ def test_create_execution_plan_snapshot():
 
         run = instance.get_run_by_id(result.run_id)
 
-        assert run.execution_plan_snapshot_id == ep_snapshot_id  # pyright: ignore[reportOptionalMemberAccess]
-        assert run.execution_plan_snapshot_id == create_execution_plan_snapshot_id(ep_snapshot)  # pyright: ignore[reportOptionalMemberAccess]
+        assert run.execution_plan_snapshot_id == ep_snapshot_id  # ty: ignore[unresolved-attribute]
+        assert run.execution_plan_snapshot_id == create_execution_plan_snapshot_id(ep_snapshot)  # ty: ignore[unresolved-attribute]
 
 
 def test_submit_run():
@@ -325,8 +360,90 @@ def test_submit_run():
 
             instance.submit_run(run.run_id, workspace)
 
-            assert len(instance.run_coordinator.queue()) == 1  # pyright: ignore[reportAttributeAccessIssue]
-            assert instance.run_coordinator.queue()[0].run_id == run.run_id  # pyright: ignore[reportAttributeAccessIssue]
+            assert len(instance.run_coordinator.queue()) == 1  # ty: ignore[unresolved-attribute]
+            assert instance.run_coordinator.queue()[0].run_id == run.run_id  # ty: ignore[unresolved-attribute]
+
+
+def test_create_run_adds_code_location_tag():
+    """Test that CODE_LOCATION_TAG is automatically added when remote_job_origin is provided."""
+    with dg.instance_for_test() as instance:
+        with get_bar_workspace(instance) as workspace:
+            remote_job = (
+                workspace.get_code_location("bar_code_location")
+                .get_repository("bar_repo")
+                .get_full_job("foo")
+            )
+
+            run = create_run_for_test(
+                instance=instance,
+                job_name=remote_job.name,
+                remote_job_origin=remote_job.get_remote_origin(),
+                job_code_origin=remote_job.get_python_origin(),
+            )
+
+            # Verify CODE_LOCATION_TAG is automatically added
+            assert CODE_LOCATION_TAG in run.tags
+            assert run.tags[CODE_LOCATION_TAG] == "bar_code_location"
+
+
+def test_create_run_without_remote_job_origin_has_no_code_location_tag():
+    """Test that CODE_LOCATION_TAG is not added when remote_job_origin is not provided."""
+    with dg.instance_for_test() as instance:
+        run = create_run_for_test(
+            instance=instance,
+            job_name="foo_job",
+        )
+
+        # Verify CODE_LOCATION_TAG is not present
+        assert CODE_LOCATION_TAG not in run.tags
+
+
+def test_create_run_without_asset_execution_type_on_snapshot():
+    # verify that even runs created on older versions of dagster still store the
+    # execution type on the execution plan snapshot
+    with dg.instance_for_test() as instance:
+        with open(
+            file_relative_path(__file__, "./execution_plan_snapshot_without_execution_type.json"),
+            encoding="utf-8",
+        ) as f:
+            ep_snapshot = deserialize_value(f.read())
+
+        workspace = mock_workspace_from_repos([noop_asset_defs.get_repository_def()])
+
+        asset_graph = workspace.asset_graph
+
+        run = create_run_for_test(
+            instance=instance,
+            job_name="foo",
+            execution_plan_snapshot=ep_snapshot,
+            job_snapshot=noop_asset_job.get_job_snapshot(),
+            tags={ASSET_PARTITION_RANGE_START_TAG: "bar", ASSET_PARTITION_RANGE_END_TAG: "foo"},
+            remote_job_origin=(
+                next(
+                    iter(
+                        check.not_none(
+                            next(iter(workspace.code_location_entries.values())).code_location
+                        )
+                        .get_repositories()
+                        .values()
+                    )
+                )
+                .get_full_job(noop_asset_job.name)
+                .get_remote_origin()
+            ),
+            asset_graph=asset_graph,
+        )
+
+        assert run.execution_plan_snapshot_id is not None
+
+        stored_snapshot = instance.get_execution_plan_snapshot(run.execution_plan_snapshot_id)
+
+        assert all(
+            check.not_none(output.properties).asset_execution_type
+            == AssetExecutionType.MATERIALIZATION
+            for step in stored_snapshot.steps
+            for output in step.outputs
+        )
 
 
 def test_create_run_with_asset_partitions():
@@ -379,6 +496,156 @@ def test_create_run_with_asset_partitions():
         )
 
 
+def test_create_run_with_partitioned_asset_stores_partitions_snapshot():
+    with dg.instance_for_test() as instance:
+        execution_plan = create_execution_plan(noop_time_window_asset_job)
+
+        ep_snapshot = snapshot_from_execution_plan(
+            execution_plan, noop_time_window_asset_job.get_job_snapshot_id()
+        )
+
+        # ranged run
+        run = create_run_for_test(
+            instance=instance,
+            job_name="foo",
+            execution_plan_snapshot=ep_snapshot,
+            job_snapshot=noop_time_window_asset_job.get_job_snapshot(),
+            tags={
+                ASSET_PARTITION_RANGE_START_TAG: "2025-1-1",
+                ASSET_PARTITION_RANGE_END_TAG: "2025-1-4",
+            },
+            asset_graph=noop_time_window_asset_job.asset_layer.asset_graph,
+        )
+        partitions_def = noop_time_window_asset_job.asset_layer.asset_graph.get(
+            dg.AssetKey("noop_time_window_asset")
+        ).partitions_def
+        assert partitions_def is not None
+
+        assert run.partitions_subset is not None
+        assert run.partitions_subset == partitions_def.subset_with_partition_keys(
+            partitions_def.get_partition_keys_in_range(
+                PartitionKeyRange(
+                    "2025-1-1",
+                    "2025-1-4",
+                )
+            )
+        )
+
+        # single partition
+        run = create_run_for_test(
+            instance=instance,
+            job_name="foo",
+            execution_plan_snapshot=ep_snapshot,
+            job_snapshot=noop_time_window_asset_job.get_job_snapshot(),
+            tags={
+                PARTITION_NAME_TAG: "2025-1-1",
+            },
+            asset_graph=noop_time_window_asset_job.asset_layer.asset_graph,
+        )
+        partitions_def = noop_time_window_asset_job.asset_layer.asset_graph.get(
+            dg.AssetKey("noop_time_window_asset")
+        ).partitions_def
+        assert partitions_def is not None
+
+        assert run.partitions_subset is not None
+        assert run.partitions_subset == partitions_def.subset_with_partition_keys(
+            partitions_def.get_partition_keys_in_range(
+                PartitionKeyRange(
+                    "2025-1-1",
+                    "2025-1-1",
+                )
+            )
+        )
+
+        # a run created with no partition key but targeting a partitioned asset should not store a
+        # partitions subset
+        run = create_run_for_test(
+            instance=instance,
+            job_name="foo",
+            execution_plan_snapshot=ep_snapshot,
+            job_snapshot=noop_time_window_asset_job.get_job_snapshot(),
+            tags={},
+            asset_graph=noop_time_window_asset_job.asset_layer.asset_graph,
+        )
+        assert run.partitions_subset is None
+
+        # assets with non-time window partitions do not store the partitions definition on the run
+        execution_plan = create_execution_plan(noop_asset_job)
+
+        ep_snapshot = snapshot_from_execution_plan(
+            execution_plan, noop_asset_job.get_job_snapshot_id()
+        )
+
+        run = create_run_for_test(
+            instance=instance,
+            job_name="foo",
+            execution_plan_snapshot=ep_snapshot,
+            job_snapshot=noop_asset_job.get_job_snapshot(),
+            tags={
+                ASSET_PARTITION_RANGE_START_TAG: "foo",
+                ASSET_PARTITION_RANGE_END_TAG: "bar",
+            },
+            asset_graph=noop_asset_job.asset_layer.asset_graph,
+        )
+        assert run.partitions_subset is None
+
+
+def test_create_run_with_dynamic_partitioned_asset_stores_partitions_snapshot():
+    with dg.instance_for_test() as instance:
+        instance.add_dynamic_partitions("my_dynamic", ["a", "b", "c", "d"])
+
+        execution_plan = create_execution_plan(noop_dynamic_partitions_asset_job)
+
+        ep_snapshot = snapshot_from_execution_plan(
+            execution_plan, noop_dynamic_partitions_asset_job.get_job_snapshot_id()
+        )
+
+        # ranged run
+        run = create_run_for_test(
+            instance=instance,
+            job_name="noop_dynamic_partitions_asset_job",
+            execution_plan_snapshot=ep_snapshot,
+            job_snapshot=noop_dynamic_partitions_asset_job.get_job_snapshot(),
+            tags={
+                ASSET_PARTITION_RANGE_START_TAG: "a",
+                ASSET_PARTITION_RANGE_END_TAG: "c",
+            },
+            asset_graph=noop_dynamic_partitions_asset_job.asset_layer.asset_graph,
+        )
+        partitions_def = noop_dynamic_partitions_asset_job.asset_layer.asset_graph.get(
+            dg.AssetKey("noop_dynamic_partitions_asset")
+        ).partitions_def
+        assert isinstance(partitions_def, dg.DynamicPartitionsDefinition)
+
+        assert run.partitions_subset is not None
+        assert run.partitions_subset == KeyRangesPartitionsSubset(
+            key_ranges=[PartitionKeyRange("a", "c")],
+            partitions_snap=PartitionsSnap.from_def(partitions_def),
+        )
+
+        # single partition
+        run = create_run_for_test(
+            instance=instance,
+            job_name="noop_dynamic_partitions_asset_job",
+            execution_plan_snapshot=ep_snapshot,
+            job_snapshot=noop_dynamic_partitions_asset_job.get_job_snapshot(),
+            tags={
+                PARTITION_NAME_TAG: "b",
+            },
+            asset_graph=noop_dynamic_partitions_asset_job.asset_layer.asset_graph,
+        )
+        partitions_def = noop_dynamic_partitions_asset_job.asset_layer.asset_graph.get(
+            dg.AssetKey("noop_dynamic_partitions_asset")
+        ).partitions_def
+        assert partitions_def is not None
+
+        assert run.partitions_subset is not None
+        assert run.partitions_subset == KeyRangesPartitionsSubset(
+            key_ranges=[PartitionKeyRange("b", "b")],
+            partitions_snap=PartitionsSnap.from_def(partitions_def),
+        )
+
+
 def test_get_required_daemon_types():
     from dagster._daemon.daemon import (
         BackfillDaemon,
@@ -396,16 +663,16 @@ def test_get_required_daemon_types():
             SchedulerDaemon.daemon_type(),
             QueuedRunCoordinatorDaemon.daemon_type(),
             AssetDaemon.daemon_type(),
+            FreshnessDaemon.daemon_type(),
         ]
 
     with dg.instance_for_test(
         overrides={
             "run_launcher": {
                 "module": "dagster_tests.daemon_tests.test_monitoring_daemon",
-                "class": "TestRunLauncher",
+                "class": "MockRunLauncher",
             },
             "run_monitoring": {"enabled": True},
-            "freshness": {"enabled": True},
         }
     ) as instance:
         assert instance.get_required_daemon_types() == [
@@ -429,11 +696,12 @@ def test_get_required_daemon_types():
             BackfillDaemon.daemon_type(),
             SchedulerDaemon.daemon_type(),
             QueuedRunCoordinatorDaemon.daemon_type(),
+            FreshnessDaemon.daemon_type(),
         ]
 
 
-class TestNonResumeRunLauncher(RunLauncher, ConfigurableClass):
-    def __init__(self, inst_data: Optional[ConfigurableClassData] = None):
+class MockNonResumeRunLauncher(RunLauncher, ConfigurableClass):
+    def __init__(self, inst_data: ConfigurableClassData | None = None):
         self._inst_data = inst_data
         super().__init__()
 
@@ -493,7 +761,7 @@ def test_run_monitoring(capsys):
         overrides={
             "run_launcher": {
                 "module": "dagster_tests.daemon_tests.test_monitoring_daemon",
-                "class": "TestRunLauncher",
+                "class": "MockRunLauncher",
             },
             "run_monitoring": settings,
         }
@@ -507,7 +775,7 @@ def test_run_monitoring(capsys):
         overrides={
             "run_launcher": {
                 "module": "dagster_tests.daemon_tests.test_monitoring_daemon",
-                "class": "TestRunLauncher",
+                "class": "MockRunLauncher",
             },
             "run_monitoring": settings,
         }
@@ -626,7 +894,7 @@ def test_dagster_env_vars_from_dotenv_file():
             )
 
         with new_cwd(working_dir):
-            with environ({"DAGSTER_HOME": None}):  # pyright: ignore[reportArgumentType]
+            with environ({"DAGSTER_HOME": None}):  # ty: ignore[invalid-argument-type]
                 # without .env file with a DAGSTER_HOME, loading fails
                 with pytest.raises(DagsterHomeNotSetError):
                     with get_instance_for_cli():
@@ -640,11 +908,11 @@ def test_dagster_env_vars_from_dotenv_file():
 
                 with get_instance_for_cli() as instance:
                     assert (
-                        _runs_directory(str(storage_dir)) in instance.run_storage._conn_string  # noqa: SLF001  # pyright: ignore[reportAttributeAccessIssue]
+                        _runs_directory(str(storage_dir)) in instance.run_storage._conn_string  # noqa: SLF001  # ty: ignore[unresolved-attribute]
                     )
 
 
-class TestInstanceSubclass(dg.DagsterInstance):
+class MockInstanceSubclass(dg.DagsterInstance):
     def __init__(self, *args, foo=None, baz=None, **kwargs):
         self._foo = foo
         self._baz = baz
@@ -667,7 +935,7 @@ class TestInstanceSubclass(dg.DagsterInstance):
     @staticmethod
     def config_defaults(base_dir):
         defaults = InstanceRef.config_defaults(base_dir)
-        defaults["run_coordinator"] = ConfigurableClassData(  # pyright: ignore[reportIndexIssue]
+        defaults["run_coordinator"] = ConfigurableClassData(  # ty: ignore[invalid-assignment]
             "dagster._core.run_coordinator.queued_run_coordinator",
             "QueuedRunCoordinator",
             yaml.dump({}),
@@ -680,19 +948,19 @@ def test_instance_subclass():
         overrides={
             "instance_class": {
                 "module": "dagster_tests.core_tests.instance_tests.test_instance",
-                "class": "TestInstanceSubclass",
+                "class": "MockInstanceSubclass",
             },
             "foo": "bar",
         }
     ) as subclass_instance:
         assert isinstance(subclass_instance, dg.DagsterInstance)
 
-        # isinstance(subclass_instance, TestInstanceSubclass) does not pass
+        # isinstance(subclass_instance, MockInstanceSubclass) does not pass
         # Likely because the imported/dynamically loaded class is different from the local one
 
-        assert subclass_instance.__class__.__name__ == "TestInstanceSubclass"
-        assert subclass_instance.foo() == "bar"  # pyright: ignore[reportAttributeAccessIssue]
-        assert subclass_instance.baz is None  # pyright: ignore[reportAttributeAccessIssue]
+        assert subclass_instance.__class__.__name__ == "MockInstanceSubclass"
+        assert subclass_instance.foo() == "bar"  # ty: ignore[unresolved-attribute]
+        assert subclass_instance.baz is None  # ty: ignore[unresolved-attribute]
 
         assert isinstance(subclass_instance.run_coordinator, dg.QueuedRunCoordinator)
 
@@ -700,7 +968,7 @@ def test_instance_subclass():
         overrides={
             "instance_class": {
                 "module": "dagster_tests.core_tests.instance_tests.test_instance",
-                "class": "TestInstanceSubclass",
+                "class": "MockInstanceSubclass",
             },
             "foo": "bar",
             "baz": "quux",
@@ -708,9 +976,9 @@ def test_instance_subclass():
     ) as subclass_instance:
         assert isinstance(subclass_instance, dg.DagsterInstance)
 
-        assert subclass_instance.__class__.__name__ == "TestInstanceSubclass"
-        assert subclass_instance.foo() == "bar"  # pyright: ignore[reportAttributeAccessIssue]
-        assert subclass_instance.baz == "quux"  # pyright: ignore[reportAttributeAccessIssue]
+        assert subclass_instance.__class__.__name__ == "MockInstanceSubclass"
+        assert subclass_instance.foo() == "bar"  # ty: ignore[unresolved-attribute]
+        assert subclass_instance.baz == "quux"  # ty: ignore[unresolved-attribute]
 
     # omitting foo leads to a config schema validation error
 
@@ -719,7 +987,7 @@ def test_instance_subclass():
             overrides={
                 "instance_class": {
                     "module": "dagster_tests.core_tests.instance_tests.test_instance",
-                    "class": "TestInstanceSubclass",
+                    "class": "MockInstanceSubclass",
                 },
                 "baz": "quux",
             }
@@ -732,7 +1000,7 @@ class InvalidRunLauncher(RunLauncher, ConfigurableClass):
     def launch_run(self, context: LaunchRunContext) -> None:
         pass
 
-    def terminate(self, run_id):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def terminate(self, run_id):
         pass
 
 
@@ -815,10 +1083,28 @@ def test_report_runless_asset_event() -> None:
         assert records[0].status == AssetCheckExecutionRecordStatus.FAILED
 
 
+def test_report_runless_asset_event_freshness_state_change() -> None:
+    """Test that report_runless_asset_event accepts FreshnessStateChange events."""
+    from dagster._core.definitions.freshness import FreshnessState, FreshnessStateChange
+
+    with dg.instance_for_test() as instance:
+        my_asset_key = dg.AssetKey("my_asset")
+        freshness_change = FreshnessStateChange(
+            key=my_asset_key,
+            new_state=FreshnessState.FAIL,
+            previous_state=FreshnessState.UNKNOWN,
+            state_change_timestamp=1234567890.0,
+        )
+
+        # This should not raise an exception - this is the main test
+        # Previously this would have raised DagsterInvariantViolationError
+        instance.report_runless_asset_event(freshness_change)
+
+
 def test_invalid_run_id():
     with dg.instance_for_test() as instance:
         with pytest.raises(
             CheckError,
-            match="run_id must be a valid UUID. Got invalid_run_id",
+            match=r"run_id must be a valid UUID. Got invalid_run_id",
         ):
             create_run_for_test(instance, job_name="foo_job", run_id="invalid_run_id")

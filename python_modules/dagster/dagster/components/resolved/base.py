@@ -1,35 +1,46 @@
 import inspect
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import MISSING, fields, is_dataclass
 from enum import Enum, auto
 from functools import partial
-from types import GenericAlias
-from typing import Annotated, Any, Final, Literal, Optional, TypeVar, Union, get_args, get_origin
+from types import UnionType
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Final,
+    Literal,
+    Optional,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
 
 import yaml
 from dagster_shared.record import get_record_annotations, get_record_defaults, is_record, record
+from dagster_shared.utils import safe_is_subclass
 from dagster_shared.yaml_utils import try_parse_yaml_with_source_position
 from pydantic import BaseModel, PydanticSchemaGenerationError, create_model
 from pydantic.fields import Field, FieldInfo
-from typing_extensions import TypeGuard
 
 from dagster import _check as check
 from dagster._annotations import public
 from dagster._utils.pydantic_yaml import _parse_and_populate_model_with_annotated_errors
 from dagster.components.resolved.context import ResolutionContext
 from dagster.components.resolved.errors import ResolutionException
+from dagster.components.resolved.form_config import UNSET_DEFAULT_SENTINEL
 from dagster.components.resolved.model import Model, Resolver
 
-try:
-    # this type only exists in python 3.10+
-    from types import UnionType  # type: ignore
-except ImportError:
-    UnionType = Union
+if TYPE_CHECKING:
+    from dagster.components.resolved.form_config import ComponentFormConfig
 
 
 class _TypeContainer(Enum):
     SEQUENCE = auto()
     OPTIONAL = auto()
+    DICT = auto()
 
 
 _DERIVED_MODEL_REGISTRY = {}
@@ -118,6 +129,21 @@ class Resolvable:
         return derive_model_type(cls)
 
     @classmethod
+    def get_form_config(cls) -> "ComponentFormConfig | None":
+        """Return form metadata for this class to drive the app-managed components editor.
+
+        Override on a :class:`Resolvable` subclass to mark it app-managed
+        and set its display label::
+
+            @classmethod
+            def get_form_config(cls) -> ComponentFormConfig:
+                return ComponentFormConfig(label="My Component", editable=True)
+
+        Returns ``None`` (the default) to opt out of the UI editor entirely.
+        """
+        return None
+
+    @classmethod
     def resolve_from_model(cls, context: "ResolutionContext", model: BaseModel):
         return cls(**resolve_fields(model, cls, context))
 
@@ -126,7 +152,7 @@ class Resolvable:
         cls,
         yaml: str,
         *,
-        scope: Optional[Mapping[str, Any]] = None,
+        scope: Mapping[str, Any] | None = None,
     ):
         parsed_and_src_tree = try_parse_yaml_with_source_position(yaml)
         model_cls = cls.model()
@@ -163,27 +189,56 @@ class Resolvable:
 
 # marker type for skipping kwargs and triggering defaults
 # must be a string to make sure it is json serializable
-_Unset: Final[str] = "__DAGSTER_UNSET_DEFAULT__"
+_Unset: Final[str] = UNSET_DEFAULT_SENTINEL
+
+
+def _humanize_class_name(name: str) -> str:
+    """``SnowflakeDestination`` -> ``Snowflake Destination``; keeps acronym runs
+    (``CSVAsset`` -> ``CSV Asset``).
+    """
+    words = re.findall(r"[A-Z]+(?=[A-Z][a-z0-9])|[A-Z][a-z0-9]*|[a-z0-9]+", name)
+    return " ".join(words) if words else name
 
 
 def derive_model_type(
     target_type: type[Resolvable],
 ) -> type[BaseModel]:
+    from dagster.components.resolved.form_config import APP_ID_SOURCE
+
     if target_type not in _DERIVED_MODEL_REGISTRY:
+        form_config = target_type.get_form_config()
+        schema_extra = form_config.to_component_json_schema_extra() if form_config else {}
         model_name = f"{target_type.__name__}Model"
 
         model_fields: dict[
             str, Any
         ] = {}  # use Any to appease type checker when **-ing in to create_model
+        id_source_field: str | None = None
 
         for name, annotation_info in _get_annotations(target_type).items():
             field_resolver = _get_resolver(annotation_info.type, name)
             field_name = field_resolver.model_field_name or name
             field_type = field_resolver.model_field_type or annotation_info.type
+            if (field_resolver.json_schema_extra or {}).get(APP_ID_SOURCE) is True:
+                if annotation_info.has_default:
+                    raise ResolutionException(
+                        f"{target_type.__name__}.{name}: ComponentFormConfig(id_source=True) is "
+                        "only valid on required fields, but this field has a default value."
+                    )
+                if id_source_field is not None:
+                    raise ResolutionException(
+                        f"{target_type.__name__} marks both {id_source_field!r} and {name!r} as "
+                        "id_source; at most one field per component may set id_source=True."
+                    )
+                id_source_field = name
 
             field_infos = []
             if annotation_info.field_info:
-                field_infos.append(annotation_info.field_info)
+                # remove the default_factory as we set a `default` marker field on the Model type
+                # for unserializable defaults (and functions are not serializable)
+                field_infos.append(
+                    FieldInfo.merge_field_infos(annotation_info.field_info, default_factory=None)
+                )
 
             if annotation_info.has_default:
                 # if the annotation has a serializable default
@@ -201,31 +256,50 @@ def derive_model_type(
                         default=default_value,
                         description=field_resolver.description,
                         examples=field_resolver.examples,
+                        json_schema_extra=field_resolver.json_schema_extra,
                     ),
                 )
-            elif field_resolver.description or field_resolver.examples:
+            elif (
+                field_resolver.description
+                or field_resolver.examples
+                or field_resolver.json_schema_extra
+            ):
                 field_infos.append(
                     Field(
                         description=field_resolver.description,
                         examples=field_resolver.examples,
+                        json_schema_extra=field_resolver.json_schema_extra,
                     )
                 )
 
             # make all fields injectable
             if field_type != str:
-                field_type = Union[field_type, str]
+                field_type = field_type | str  # ty: ignore[unsupported-operator]
 
             model_fields[field_name] = (
                 field_type,
-                FieldInfo.merge_field_infos(*field_infos),
+                FieldInfo.merge_field_infos(*field_infos),  # ty: ignore[invalid-argument-type]
             )
 
         try:
-            _DERIVED_MODEL_REGISTRY[target_type] = create_model(
+            derived = create_model(
                 model_name,
                 __base__=Model,
                 **model_fields,
             )
+            # The component-type JSON is serialized with sort_keys=True on its
+            # way to the UI, so field declaration order must be carried
+            # explicitly. ``ui:order`` is lifted into the RJSF uiSchema by
+            # ``split_form_schema`` and honored natively by the form renderer.
+            # The humanized title replaces the derived class name (e.g.
+            # "SnowflakeDestinationModel") anywhere the schema is shown as a
+            # label — most visibly in union variant pickers.
+            derived.model_config["json_schema_extra"] = {
+                "title": _humanize_class_name(target_type.__name__),
+                "ui:order": list(model_fields.keys()),
+                **schema_extra,
+            }
+            _DERIVED_MODEL_REGISTRY[target_type] = derived
         except PydanticSchemaGenerationError as e:
             raise ResolutionException(f"Unable to derive Model for {target_type}") from e
 
@@ -236,15 +310,15 @@ def _is_implicitly_resolved_type(annotation):
     if annotation in (int, float, str, bool, Any, type(None), list, dict):
         return True
 
-    if _safe_is_subclass(annotation, Enum):
+    if safe_is_subclass(annotation, Enum):
         return True
 
-    if _safe_is_subclass(annotation, Resolvable):
+    if safe_is_subclass(annotation, Resolvable):
         # ensure valid Resolvable subclass
         annotation.model()
         return False
 
-    if _safe_is_subclass(annotation, BaseModel):
+    if safe_is_subclass(annotation, BaseModel):
         _ensure_non_resolvable_model_compliance(annotation)
         return True
 
@@ -263,7 +337,7 @@ def _is_implicitly_resolved_type(annotation):
 
 
 def _is_resolvable_type(annotation):
-    return _is_implicitly_resolved_type(annotation) or _safe_is_subclass(annotation, Resolvable)
+    return _is_implicitly_resolved_type(annotation) or safe_is_subclass(annotation, Resolvable)
 
 
 @record
@@ -271,7 +345,7 @@ class AnnotationInfo:
     type: Any
     default: Any
     has_default: bool
-    field_info: Optional[FieldInfo]
+    field_info: FieldInfo | None
 
 
 def _get_annotations(
@@ -289,7 +363,7 @@ def _get_annotations(
                 field_info=None,
             )
         return annotations
-    elif _safe_is_subclass(resolved_type, BaseModel):
+    elif safe_is_subclass(resolved_type, BaseModel):
         for name, field_info in resolved_type.model_fields.items():
             has_default = not field_info.is_required()
             annotations[name] = AnnotationInfo(
@@ -323,7 +397,7 @@ def _get_annotations(
 
 def _get_init_kwargs(
     target_type: type[Resolvable],
-) -> Optional[dict[str, AnnotationInfo]]:
+) -> dict[str, AnnotationInfo] | None:
     if target_type.__init__ is object.__init__:
         return None
 
@@ -362,29 +436,30 @@ def resolve_fields(
     context: "ResolutionContext",
 ) -> Mapping[str, Any]:
     """Returns a mapping of field names to resolved values for those fields."""
+    alias_name_by_field_name = {
+        field_name: (
+            annotation_info.field_info.alias
+            if annotation_info.field_info and annotation_info.field_info.alias
+            else field_name
+        )
+        for field_name, annotation_info in _get_annotations(resolved_cls).items()
+    }
     field_resolvers = {
-        field_name: _get_resolver(annotation_info.type, field_name)
+        (field_name): _get_resolver(annotation_info.type, field_name)
         for field_name, annotation_info in _get_annotations(resolved_cls).items()
     }
 
-    return {
+    out = {
         field_name: resolver.execute(context=context, model=model, field_name=field_name)
         for field_name, resolver in field_resolvers.items()
         # filter out unset fields to trigger defaults
         if (resolver.model_field_name or field_name) in model.model_dump(exclude_unset=True)
         and getattr(model, resolver.model_field_name or field_name) != _Unset
     }
+    return {alias_name_by_field_name[k]: v for k, v in out.items()}
 
 
 T = TypeVar("T")
-
-
-def _safe_is_subclass(obj, cls: type[T]) -> TypeGuard[type[T]]:
-    return (
-        isinstance(obj, type)
-        and not isinstance(obj, GenericAlias)  # prevent exceptions on 3.9
-        and issubclass(obj, cls)
-    )
 
 
 def _get_resolver(annotation: Any, field_name: str) -> "Resolver":
@@ -431,13 +506,13 @@ def _get_resolver(annotation: Any, field_name: str) -> "Resolver":
     )
 
 
-def _dig_for_resolver(annotation, path: Sequence[_TypeContainer]) -> Optional[Resolver]:
+def _dig_for_resolver(annotation, path: Sequence[_TypeContainer]) -> Resolver | None:
     if _is_implicitly_resolved_type(annotation):
         return Resolver.default()
 
     origin = get_origin(annotation)
     args = get_args(annotation)
-    if _safe_is_subclass(annotation, Resolvable):
+    if safe_is_subclass(annotation, Resolvable):
         return Resolver(
             partial(
                 _resolve_at_path,
@@ -499,15 +574,25 @@ def _dig_for_resolver(annotation, path: Sequence[_TypeContainer]) -> Optional[Re
         if res:
             return res
 
+    elif origin is dict:
+        key_type, value_type = args
+        if key_type != str:
+            raise ResolutionException(f"dict key type must be str, got {key_type}")
+        value_res = _dig_for_resolver(value_type, [*path, _TypeContainer.DICT])
+        if value_res:
+            return value_res
+
 
 def _wrap(ttype, path: Sequence[_TypeContainer]):
     result_type = ttype
     for container in reversed(path):
         if container is _TypeContainer.OPTIONAL:
-            result_type = Optional[result_type]
+            result_type = Optional[result_type]  # noqa: UP045
         elif container is _TypeContainer.SEQUENCE:
             # use tuple instead of Sequence for perf
             result_type = tuple[result_type, ...]
+        elif container is _TypeContainer.DICT:
+            result_type = dict[str, result_type]
         else:
             check.assert_never(container)
     return result_type
@@ -531,6 +616,11 @@ def _resolve_at_path(
             _resolve_at_path(context.at_path(idx), i, inner_path, resolver)
             for idx, i in enumerate(value)
         ]
+    elif container is _TypeContainer.DICT:
+        return {
+            k: _resolve_at_path(context.at_path(k), v, inner_path, resolver)
+            for k, v in value.items()
+        }
 
     check.assert_never(container)
 

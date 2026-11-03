@@ -1,18 +1,28 @@
 from collections.abc import Mapping
-from typing import Any, Optional, Union
+from typing import Any
 
 import pytest
 import responses
 from dagster import AssetExecutionContext, AssetKey, AssetSpec, OpExecutionContext
 from dagster._core.errors import DagsterInvariantViolationError
 from dagster_dbt import DbtProject
-from dagster_dbt.asset_utils import build_dbt_specs
+from dagster_dbt.asset_utils import (
+    DAGSTER_DBT_CLOUD_ACCOUNT_ID_METADATA_KEY,
+    DAGSTER_DBT_CLOUD_ENVIRONMENT_ID_METADATA_KEY,
+    DAGSTER_DBT_CLOUD_PROJECT_ID_METADATA_KEY,
+    build_dbt_specs,
+)
 from dagster_dbt.cloud_v2.asset_decorator import dbt_cloud_assets
 from dagster_dbt.cloud_v2.resources import DbtCloudWorkspace
 from dagster_dbt.dagster_dbt_translator import DagsterDbtTranslator
 from dagster_shared.check.functions import ParameterCheckError
 
-from dagster_dbt_tests.cloud_v2.conftest import get_sample_manifest_json
+from dagster_dbt_tests.cloud_v2.conftest import (
+    TEST_ACCOUNT_ID,
+    TEST_ENVIRONMENT_ID,
+    TEST_PROJECT_ID,
+    get_sample_manifest_json,
+)
 
 
 def test_asset_defs(
@@ -22,7 +32,7 @@ def test_asset_defs(
     @dbt_cloud_assets(workspace=workspace)
     def my_dbt_cloud_assets(): ...
 
-    assert len(fetch_workspace_data_api_mocks.calls) == 8
+    assert len(fetch_workspace_data_api_mocks.calls) == 6
 
     assets_def_specs = list(my_dbt_cloud_assets.specs)
     all_assets_keys = [asset.key for asset in assets_def_specs]
@@ -34,9 +44,12 @@ def test_asset_defs(
     # Sanity check outputs
     first_asset_key = next(key for key in sorted(all_assets_keys))
     assert first_asset_key.path == ["customers"]
-    first_asset_kinds = next(spec.kinds for spec in sorted(assets_def_specs))
-    assert "dbtcloud" in first_asset_kinds
-    assert "dbt" not in first_asset_kinds
+    first_spec = next(spec for spec in sorted(assets_def_specs))
+    assert "dbtcloud" in first_spec.kinds
+    assert "dbt" not in first_spec.kinds
+    assert first_spec.metadata[DAGSTER_DBT_CLOUD_ACCOUNT_ID_METADATA_KEY] == TEST_ACCOUNT_ID
+    assert first_spec.metadata[DAGSTER_DBT_CLOUD_PROJECT_ID_METADATA_KEY] == TEST_PROJECT_ID
+    assert first_spec.metadata[DAGSTER_DBT_CLOUD_ENVIRONMENT_ID_METADATA_KEY] == TEST_ENVIRONMENT_ID
 
 
 class MyCustomTranslator(DagsterDbtTranslator):
@@ -64,7 +77,7 @@ class MyCustomTranslatorWithGroupName(DagsterDbtTranslator):
         self,
         manifest: Mapping[str, Any],
         unique_id: str,
-        project: Optional[DbtProject],
+        project: DbtProject | None,
     ) -> AssetSpec:
         default_spec = super().get_asset_spec(
             manifest=manifest, unique_id=unique_id, project=project
@@ -74,7 +87,7 @@ class MyCustomTranslatorWithGroupName(DagsterDbtTranslator):
 
 def test_translator_invariant_group_name_with_asset_decorator(
     workspace: DbtCloudWorkspace,
-    asset_decorator_group_name_api_mocks: responses.RequestsMock,
+    fetch_workspace_data_api_mocks: responses.RequestsMock,
 ) -> None:
     with pytest.raises(
         DagsterInvariantViolationError,
@@ -249,10 +262,10 @@ def test_translator_invariant_group_name_with_asset_decorator(
 def test_selections(
     workspace: DbtCloudWorkspace,
     fetch_workspace_data_api_mocks: responses.RequestsMock,
-    context_type: Union[type[AssetExecutionContext], type[OpExecutionContext]],
-    select: Optional[str],
-    exclude: Optional[str],
-    selector: Optional[str],
+    context_type: type[AssetExecutionContext] | type[OpExecutionContext],
+    select: str | None,
+    exclude: str | None,
+    selector: str | None,
     expected_dbt_resource_names: set[str],
 ) -> None:
     select = select or "fqn:*"
@@ -276,7 +289,7 @@ def test_selections(
         exclude=exclude,
         selector=selector,
     )
-    def my_dbt_assets(context: context_type): ...  # pyright: ignore
+    def my_dbt_assets(context: context_type): ...  # ty: ignore
 
     assert len(my_dbt_assets.keys) == len(expected_specs)
     assert my_dbt_assets.keys == {spec.key for spec in expected_specs}
@@ -284,6 +297,41 @@ def test_selections(
     assert my_dbt_assets.op.tags.get("dagster_dbt/select") == select
     assert my_dbt_assets.op.tags.get("dagster_dbt/exclude") == exclude
     assert my_dbt_assets.op.tags.get("dagster_dbt/selector") == selector
+
+
+def test_asset_checks_excluded_by_tag_unit_test() -> None:
+    """Verifies that dbt tests tagged with 'unit-test' are excluded from the resulting
+    AssetCheckSpecs when calling build_dbt_specs with exclude='tag:unit-test'.
+
+    This allows @dbt_assets to exclude EqualExperts/dbt_unit_testing tests.
+    """
+    select = "fqn:*"
+    exclude = "tag:unit-test"
+    manifest = get_sample_manifest_json()
+
+    # Manually edited a node here because it is complicated to cleanly edit
+    # the existing manifest.json to add a real dbt_unit_testing test
+    test_node_uid = "test.jaffle_shop.unique_customers_customer_id.c5af1ff4b1"
+    test_nodes = [
+        (uid, node) for uid, node in manifest["nodes"].items() if node["resource_type"] == "test"
+    ]
+    for uid, node in test_nodes:
+        if uid == test_node_uid:
+            node["tags"] = ["unit-test"]
+            break
+
+    _, checks = build_dbt_specs(
+        manifest=manifest,
+        translator=DagsterDbtTranslator(),
+        select=select,
+        exclude=exclude,
+        selector="",
+        io_manager_key=None,
+        project=None,
+    )
+
+    found_ids = {c.metadata["dagster_dbt/unique_id"] for c in checks}
+    assert test_node_uid not in found_ids, f"{test_node_uid} should have been excluded"
 
 
 def test_dbt_cloud_asset_selection_selector_invalid(

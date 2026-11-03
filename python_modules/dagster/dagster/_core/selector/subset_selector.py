@@ -7,12 +7,11 @@ from typing import (  # noqa: UP035
     AbstractSet,
     Callable,
     Generic,
+    Literal,
     NamedTuple,
-    Optional,
+    TypeAlias,
     TypeVar,
 )
-
-from typing_extensions import Literal, TypeAlias
 
 from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckKey
 from dagster._core.definitions.dependency import DependencyStructure
@@ -83,7 +82,7 @@ class AssetSelectionData:
     """
 
     asset_selection: AbstractSet[AssetKey]
-    asset_check_selection: Optional[AbstractSet[AssetCheckKey]]
+    asset_check_selection: AbstractSet[AssetCheckKey] | None
     parent_job_def: "JobDefinition"
 
 
@@ -107,7 +106,7 @@ def generate_dep_graph(job_def: "GraphDefinition") -> DependencyGraph[str]:
     """Pipeline to dependency graph. It currently only supports top-level solids.
 
     Args:
-        pipeline (JobDefinition): The pipeline to execute.
+        job_def (GraphDefinition): The pipeline to execute.
 
     Returns:
         graph (Dict[str, Dict[str, Set[str]]]): the input and output dependency graph. e.g.
@@ -201,7 +200,7 @@ def fetch_connected(
     graph: DependencyGraph[T_Hashable],
     *,
     direction: Direction,
-    depth: Optional[int] = None,
+    depth: int | None = None,
 ) -> AbstractSet[T_Hashable]:
     if depth is None:
         depth = MAX_NUM
@@ -237,12 +236,12 @@ def fetch_sources(
     def has_upstream_within_selection(key: AssetKey) -> bool:
         if key not in dp:
             dp[key] = any(
-                parent_node in within_selection or has_upstream_within_selection(parent_node)
-                for parent_node in graph.get(key).parent_keys - {key}
+                parent_key in within_selection or has_upstream_within_selection(parent_key)
+                for parent_key in (graph.asset_dep_graph["upstream"][key] - {key})
             )
         return dp[key]
 
-    return {node for node in within_selection if not has_upstream_within_selection(node)}
+    return {key for key in within_selection if not has_upstream_within_selection(key)}
 
 
 def fetch_connected_assets_definitions(
@@ -251,7 +250,7 @@ def fetch_connected_assets_definitions(
     name_to_definition_map: Mapping[str, "AssetsDefinition"],
     *,
     direction: Direction,
-    depth: Optional[int] = MAX_NUM,
+    depth: int | None = MAX_NUM,
 ) -> frozenset["AssetsDefinition"]:
     depth = MAX_NUM if depth is None else depth
     names = [asset_key.to_user_string() for asset_key in asset.keys]
@@ -265,7 +264,7 @@ class GraphSelectionClause(NamedTuple):
     down_depth: int
 
 
-def parse_clause(clause: str) -> Optional[GraphSelectionClause]:
+def parse_clause(clause: str) -> GraphSelectionClause | None:
     def _get_depth(part: str) -> int:
         if part == "":
             return 0
@@ -359,7 +358,7 @@ def parse_op_queries(
         ones.
 
     Args:
-        pipeline_def (JobDefinition): the pipeline to execute.
+        graph_def (GraphDefinition): the pipeline to execute.
         op_queries (List[str]): a list of the solid selection queries (including single solid
             names) to execute.
 

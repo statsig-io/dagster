@@ -17,7 +17,15 @@ else
     export USER_CODE_DOCKERFILE="./Dockerfile_user_code_release"
 fi
 
-ROOT=$(git rev-parse --show-toplevel)
+GIT_ROOT=$(git rev-parse --show-toplevel)
+
+# Support both standalone OSS repo and monorepo
+if [ -d "${GIT_ROOT}/dagster-oss" ]; then
+    ROOT="${GIT_ROOT}/dagster-oss"
+else
+    ROOT="${GIT_ROOT}"
+fi
+
 BASE_DIR="${ROOT}/integration_tests/test_suites/backcompat-test-suite/webserver_service"
 
 function cleanup {
@@ -62,7 +70,7 @@ copy_py $ROOT/python_modules/libraries/dagster-postgres \
         python_modules/libraries/
 
 echo -e "--- \033[32m:docker: Building Docker images\033[0m"
-docker-compose build \
+docker compose build \
     --build-arg WEBSERVER_VERSION="${WEBSERVER_VERSION}" \
     --build-arg WEBSERVER_LIBRARY_VERSION="${WEBSERVER_LIBRARY_VERSION}" \
     --build-arg USER_CODE_VERSION="${USER_CODE_VERSION}" \

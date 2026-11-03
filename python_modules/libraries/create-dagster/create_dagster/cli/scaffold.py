@@ -1,6 +1,5 @@
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import click
 from dagster_dg_core.config import discover_workspace_root, normalize_cli_config
@@ -71,7 +70,7 @@ def _get_workspace_environment_uv_sync_prompt_msg(local_environment_path: Path) 
 
 def _should_run_uv_sync(
     venv_path: Path,
-    uv_sync_flag: Optional[bool],
+    uv_sync_flag: bool | None,
     uv_sync_prompt_msg: str,
     install_warning_msg: str,
 ) -> bool:
@@ -118,8 +117,8 @@ def _should_run_uv_sync(
 @cli_telemetry_wrapper
 def scaffold_project_command(
     path: Path,
-    use_editable_dagster: Optional[str],
-    uv_sync: Optional[bool],
+    use_editable_dagster: bool,
+    uv_sync: bool | None,
     **global_options: object,
 ) -> None:
     """Scaffold a new Dagster project at PATH. The name of the project will be the final component of PATH.
@@ -224,8 +223,8 @@ def scaffold_project_command(
 @cli_telemetry_wrapper
 def scaffold_workspace_command(
     path: Path,
-    use_editable_dagster: Optional[str],
-    uv_sync: Optional[bool],
+    use_editable_dagster: bool,
+    uv_sync: bool | None,
     **global_options: object,
 ):
     """Initialize a new Dagster workspace.

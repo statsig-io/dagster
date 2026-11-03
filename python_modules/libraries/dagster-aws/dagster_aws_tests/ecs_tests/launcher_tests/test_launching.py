@@ -13,9 +13,9 @@ from dagster._core.launcher import LaunchRunContext
 from dagster._core.launcher.base import WorkerStatus
 from dagster._core.origin import JobPythonOrigin, RepositoryPythonOrigin
 from dagster._core.storage.dagster_run import DagsterRunStatus
-from dagster._core.storage.tags import RUN_WORKER_ID_TAG
+from dagster._core.storage.tags import HIDDEN_TAG_PREFIX, RUN_WORKER_ID_TAG
 
-import dagster_aws
+import dagster_aws.ecs.tasks
 from dagster_aws.ecs import EcsEventualConsistencyTimeout
 from dagster_aws.ecs.launcher import (
     DEFAULT_LINUX_RESOURCES,
@@ -39,7 +39,8 @@ def test_default_launcher(
     task_long_arn_format,
 ):
     ecs.put_account_setting(name="taskLongArnFormat", value=task_long_arn_format)
-    assert not run.tags
+    assert "ecs/task_arn" not in run.tags
+    assert "ecs/cluster" not in run.tags
 
     initial_task_definitions = ecs.list_task_definitions()["taskDefinitionArns"]
     initial_tasks = ecs.list_tasks()["taskArns"]
@@ -115,6 +116,42 @@ def test_default_launcher(
     # check status and stop task
     assert instance.run_launcher.check_run_worker_health(run).status == WorkerStatus.RUNNING
     ecs.stop_task(task=task_arn)
+
+
+def test_resume_run(ecs, instance, workspace, run):
+    assert instance.run_launcher.supports_resume_run
+
+    instance.launch_run(run.run_id, workspace)
+
+    launched_run = instance.get_run_by_id(run.run_id)
+    launch_task_arn = launched_run.tags["ecs/task_arn"]
+    launch_worker_id = launched_run.tags[RUN_WORKER_ID_TAG]
+    tasks_after_launch = ecs.list_tasks()["taskArns"]
+
+    instance.resume_run(run.run_id, workspace, 1)
+
+    tasks = ecs.list_tasks()["taskArns"]
+    assert len(tasks) == len(tasks_after_launch) + 1
+    resume_task_arn = next(iter(set(tasks).difference(tasks_after_launch)))
+    resume_task = ecs.describe_tasks(tasks=[resume_task_arn])["tasks"][0]
+
+    # The replacement task resumes the run rather than starting it over
+    overrides = resume_task["overrides"]["containerOverrides"]
+    assert len(overrides) == 1
+    assert "resume_run" in overrides[0]["command"]
+    assert "execute_run" not in overrides[0]["command"]
+    assert run.run_id in str(overrides[0]["command"])
+
+    # The identity tags now point at the replacement task, so health checks and termination
+    # follow it rather than the worker it replaced
+    resumed_run = instance.get_run_by_id(run.run_id)
+    assert resumed_run.tags["ecs/task_arn"] == resume_task_arn != launch_task_arn
+    assert resumed_run.tags[RUN_WORKER_ID_TAG] != launch_worker_id
+    assert instance.run_launcher.check_run_worker_health(resumed_run).status == WorkerStatus.RUNNING
+
+    # Once the replacement task stops, health is reported against it and not the original
+    ecs.stop_task(task=resume_task_arn)
+    assert instance.run_launcher.check_run_worker_health(resumed_run).status != WorkerStatus.RUNNING
 
 
 def test_launcher_fargate_spot(
@@ -213,7 +250,8 @@ def test_launcher_dont_use_current_task(
     cluster = instance.run_launcher.run_task_kwargs["cluster"]
     assert cluster == "my_cluster"
 
-    assert not run.tags
+    assert "ecs/task_arn" not in run.tags
+    assert "ecs/cluster" not in run.tags
 
     initial_task_definitions = ecs.list_task_definitions()["taskDefinitionArns"]
     initial_tasks = ecs.list_tasks(cluster=cluster)["taskArns"]
@@ -365,7 +403,7 @@ def test_reuse_task_definition(instance, ecs):
 
     container_name = instance.run_launcher.container_name
 
-    original_task_definition = {
+    original_task_definition: dict[str, Any] = {
         "family": "hello",
         "containerDefinitions": [
             {
@@ -954,7 +992,7 @@ def test_eventual_consistency(ecs, instance, workspace, run, monkeypatch):
 
     retries = 0
     original_describe_tasks = instance.run_launcher.ecs.describe_tasks
-    original_backoff_retries = dagster_aws.ecs.tasks.BACKOFF_RETRIES  # pyright: ignore[reportAttributeAccessIssue]
+    original_backoff_retries = dagster_aws.ecs.tasks.BACKOFF_RETRIES
 
     def describe_tasks(*_args, **_kwargs):
         nonlocal retries
@@ -967,12 +1005,12 @@ def test_eventual_consistency(ecs, instance, workspace, run, monkeypatch):
 
     with pytest.raises(EcsEventualConsistencyTimeout):
         monkeypatch.setattr(instance.run_launcher.ecs, "describe_tasks", describe_tasks)
-        monkeypatch.setattr(dagster_aws.ecs.tasks, "BACKOFF_RETRIES", 0)  # pyright: ignore[reportAttributeAccessIssue]
+        monkeypatch.setattr(dagster_aws.ecs.tasks, "BACKOFF_RETRIES", 0)
         instance.launch_run(run.run_id, workspace)
 
     # Reset the mock
     retries = 0
-    monkeypatch.setattr(dagster_aws.ecs.tasks, "BACKOFF_RETRIES", original_backoff_retries)  # pyright: ignore[reportAttributeAccessIssue]
+    monkeypatch.setattr(dagster_aws.ecs.tasks, "BACKOFF_RETRIES", original_backoff_retries)
     instance.launch_run(run.run_id, workspace)
 
     tasks = ecs.list_tasks()["taskArns"]
@@ -1003,6 +1041,32 @@ def test_public_ip_assignment(ecs, ec2, instance, workspace, run, assign_public_
     attributes = eni.association_attribute or {}
 
     assert bool(attributes.get("PublicIp")) == assign_public_ip
+
+
+def test_check_run_worker_health_adds_eni_tag(ecs, instance, workspace, run, monkeypatch):
+    monkeypatch.setenv("DAGSTER_AWS_ENI_TAGGING_ENABLED", "true")
+
+    initial_tasks = ecs.list_tasks()["taskArns"]
+
+    instance.launch_run(run.run_id, workspace)
+
+    tasks = ecs.list_tasks()["taskArns"]
+    task_arn = next(iter(set(tasks).difference(initial_tasks)))
+    task = ecs.describe_tasks(tasks=[task_arn])["tasks"][0]
+
+    assert not any(
+        k.startswith(f"{HIDDEN_TAG_PREFIX}eni_id") for k in instance.get_run_by_id(run.run_id).tags
+    )
+
+    health = instance.run_launcher.check_run_worker_health(run)
+    assert health.status == WorkerStatus.RUNNING
+
+    attachment = task.get("attachments")[0]
+    details = dict((detail.get("name"), detail.get("value")) for detail in attachment["details"])
+    eni_id = details["networkInterfaceId"]
+
+    run_tags = instance.get_run_by_id(run.run_id).tags
+    assert run_tags.get(f"{HIDDEN_TAG_PREFIX}eni_id") == eni_id
 
 
 def test_launcher_run_resources(
@@ -1399,7 +1463,7 @@ def test_overrides_too_long(
                 fn_name="foo",
             ),
             container_image="test:latest",
-            container_context=large_container_context,  # pyright: ignore[reportArgumentType]
+            container_context=large_container_context,  # ty: ignore[invalid-argument-type]
         ),
     )
 
@@ -1418,7 +1482,8 @@ def test_custom_launcher(
     custom_workspace,
     custom_run,
 ):
-    assert not custom_run.tags
+    assert "ecs/task_arn" not in custom_run.tags
+    assert "ecs/cluster" not in custom_run.tags
 
     initial_tasks = ecs.list_tasks()["taskArns"]
 
@@ -1549,3 +1614,56 @@ def test_removing_network_configuration(
 
         assert task["taskDefinitionArn"] == task_definition["taskDefinitionArn"]
         assert "networkConfiguration" not in task
+
+
+def test_container_overrides(ecs, instance, workspace, run, task_definition):
+    # By default, no resource requirements
+    initial_tasks = ecs.list_tasks()["taskArns"]
+
+    instance.launch_run(run.run_id, workspace)
+
+    tasks = ecs.list_tasks()["taskArns"]
+    task_arn = next(iter(set(tasks).difference(initial_tasks)))
+    task = ecs.describe_tasks(tasks=[task_arn])["tasks"][0]
+
+    container_override = task.get("overrides").get("containerOverrides")[0]
+    assert container_override.get("name") == "run"
+    assert not container_override.get("resourceRequirements")
+
+    # Override with resource requirements (e.g., GPU)
+    existing_tasks = ecs.list_tasks()["taskArns"]
+
+    container_overrides = {
+        "resourceRequirements": [{"type": "GPU", "value": "1"}],
+    }
+    instance.add_run_tags(run.run_id, {"ecs/container_overrides": json.dumps(container_overrides)})
+    instance.launch_run(run.run_id, workspace)
+
+    tasks = ecs.list_tasks()["taskArns"]
+    task_arn = next(iter(set(tasks).difference(existing_tasks)))
+    task = ecs.describe_tasks(tasks=[task_arn])["tasks"][0]
+
+    container_override = task.get("overrides").get("containerOverrides")[0]
+    assert container_override.get("name") == "run"
+    assert container_override.get("resourceRequirements") == [{"type": "GPU", "value": "1"}]
+
+    # Override with multiple fields
+    existing_tasks = ecs.list_tasks()["taskArns"]
+
+    container_overrides = {
+        "resourceRequirements": [{"type": "GPU", "value": "2"}],
+        "environment": [{"name": "CUSTOM_VAR", "value": "custom_value"}],
+    }
+    instance.add_run_tags(run.run_id, {"ecs/container_overrides": json.dumps(container_overrides)})
+    instance.launch_run(run.run_id, workspace)
+
+    tasks = ecs.list_tasks()["taskArns"]
+    task_arn = next(iter(set(tasks).difference(existing_tasks)))
+    task = ecs.describe_tasks(tasks=[task_arn])["tasks"][0]
+
+    container_override = task.get("overrides").get("containerOverrides")[0]
+    assert container_override.get("name") == "run"
+    assert container_override.get("resourceRequirements") == [{"type": "GPU", "value": "2"}]
+    assert container_override.get("environment") == [
+        {"name": "CUSTOM_VAR", "value": "custom_value"}
+    ]

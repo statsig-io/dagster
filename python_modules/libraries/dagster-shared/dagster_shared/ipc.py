@@ -5,10 +5,10 @@ import subprocess
 import sys
 import tempfile
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from subprocess import Popen
-from typing import Any, Callable, Optional
+from typing import Any
 
 import dagster_shared.check as check
 from dagster_shared.seven import IS_WINDOWS
@@ -39,7 +39,7 @@ def open_ipc_subprocess(parts: Sequence[str], **kwargs: Any) -> "Popen[Any]":
     )
 
 
-def interrupt_ipc_subprocess(proc: "Popen[Any]", sig: Optional[int] = None) -> None:
+def interrupt_ipc_subprocess(proc: "Popen[Any]", sig: int | None = None) -> None:
     """Send CTRL_BREAK on Windows, SIGINT on other platforms."""
     proc.send_signal(sig or get_default_interrupt_signal())
 
@@ -52,7 +52,7 @@ def interrupt_then_kill_ipc_subprocess(proc: "Popen[Any]", wait_time: int = 10) 
         proc.kill()
 
 
-def interrupt_ipc_subprocess_pid(pid: int, sig: Optional[int] = None) -> None:
+def interrupt_ipc_subprocess_pid(pid: int, sig: int | None = None) -> None:
     """Send CTRL_BREAK_EVENT on Windows, SIGINT on other platforms."""
     os.kill(pid, sig or get_default_interrupt_signal())
 
@@ -111,7 +111,7 @@ def monitor_ipc_shutdown_pipe(pipe_fd: int, handler: Callable[[], None]) -> Iter
     break_event = threading.Event()
 
     def _watch_pipe_for_shutdown():
-        with open(pipe_fd) as pipe:
+        with open(pipe_fd, encoding="utf-8") as pipe:
             while not break_event.is_set():
                 line = pipe.readline()
                 if not line:  # EOF or pipe closed
@@ -144,7 +144,7 @@ def interrupt_on_ipc_shutdown_message(pipe_fd: int) -> Iterator[None]:
     """
     # Important to use `send_interrupt` here rather than unconditionally sending a signal. Sending a
     # signal, even to the process itself, often has strange behavior on windows.
-    with monitor_ipc_shutdown_pipe(pipe_fd, handler=lambda: send_interrupt()):
+    with monitor_ipc_shutdown_pipe(pipe_fd, handler=send_interrupt):
         yield
 
 

@@ -37,16 +37,7 @@ SPECIAL_KIND_ORDERS = [
 ALL_SPECIAL_KINDS = [kind for order in SPECIAL_KIND_ORDERS for kind in order]
 
 REPO_ROOT = Path(__file__).parent.parent.parent
-OP_TAGS_FILE = (
-    REPO_ROOT
-    / "js_modules"
-    / "dagster-ui"
-    / "packages"
-    / "ui-core"
-    / "src"
-    / "graph"
-    / "OpTags.tsx"
-)
+OP_TAGS_FILE = REPO_ROOT / "js_modules" / "ui-core" / "src" / "graph" / "OpTags.tsx"
 KIND_TAGS_DOCS_PARTIAL = REPO_ROOT / "docs" / "docs" / "partials" / "_KindsTags.md"
 DOCS_KIND_IMAGES_DEST = (
     REPO_ROOT
@@ -144,15 +135,15 @@ def main() -> None:
     docs_file_new_contents.append("|-----|-------|")
 
     # Table content
-    for kind in output:
-        docs_file_new_contents.append(
-            KIND_LINE.format(
-                kind=kind,
-                kind_spacing=" " * (20 - len(kind)),
-                image=kind_docs_images.get(kind, ""),
-                image_spacing=" " * (100 - len(kind_docs_images.get(kind, ""))),
-            )
+    docs_file_new_contents.extend(
+        KIND_LINE.format(
+            kind=kind,
+            kind_spacing=" " * (20 - len(kind)),
+            image=kind_docs_images.get(kind, ""),
+            image_spacing=" " * (100 - len(kind_docs_images.get(kind, ""))),
         )
+        for kind in output
+    )
 
     KIND_TAGS_DOCS_PARTIAL.write_text("\n".join(docs_file_new_contents))
 

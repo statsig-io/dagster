@@ -3,7 +3,9 @@ from asyncio import AbstractEventLoop
 from collections import deque
 from collections.abc import Generator, Mapping
 from contextlib import ContextDecorator
-from typing import AbstractSet, Any, Callable, Optional, Union, cast  # noqa: UP035
+from typing import AbstractSet, Any, Callable, cast  # noqa: UP035
+
+from dagster_shared.utils.timing import format_duration
 
 import dagster._check as check
 from dagster._core.definitions.job_definition import JobDefinition
@@ -34,19 +36,19 @@ from dagster._core.system_config.objects import ResourceConfig
 from dagster._core.utils import toposort
 from dagster._utils import EventGenerationManager, ensure_gen
 from dagster._utils.error import serializable_error_info_from_exc_info
-from dagster._utils.timing import format_duration, time_execution_scope
+from dagster._utils.timing import time_execution_scope
 
 
 def resource_initialization_manager(
     resource_defs: Mapping[str, ResourceDefinition],
     resource_configs: Mapping[str, ResourceConfig],
     log_manager: DagsterLogManager,
-    execution_plan: Optional[ExecutionPlan],
-    dagster_run: Optional[DagsterRun],
-    resource_keys_to_init: Optional[AbstractSet[str]],
-    instance: Optional[DagsterInstance],
-    emit_persistent_events: Optional[bool],
-    event_loop: Optional[AbstractEventLoop],
+    execution_plan: ExecutionPlan | None,
+    dagster_run: DagsterRun | None,
+    resource_keys_to_init: AbstractSet[str] | None,
+    instance: DagsterInstance | None,
+    emit_persistent_events: bool | None,
+    event_loop: AbstractEventLoop | None,
 ):
     generator = resource_initialization_event_generator(
         resource_defs=resource_defs,
@@ -119,11 +121,11 @@ def _core_resource_initialization_event_generator(
     resource_configs: Mapping[str, ResourceConfig],
     resource_log_manager: DagsterLogManager,
     resource_managers: deque[EventGenerationManager],
-    execution_plan: Optional[ExecutionPlan],
-    dagster_run: Optional[DagsterRun],
-    resource_keys_to_init: Optional[AbstractSet[str]],
-    instance: Optional[DagsterInstance],
-    emit_persistent_events: Optional[bool],
+    execution_plan: ExecutionPlan | None,
+    dagster_run: DagsterRun | None,
+    resource_keys_to_init: AbstractSet[str] | None,
+    instance: DagsterInstance | None,
+    emit_persistent_events: bool | None,
     event_loop,
 ):
     job_name = ""  # Must be initialized to a string to satisfy typechecker
@@ -165,7 +167,7 @@ def _core_resource_initialization_event_generator(
                     # Add tags with information about the resource
                     log_manager=resource_log_manager.with_tags(
                         resource_name=resource_name,
-                        resource_fn_name=str(resource_fn.__name__),
+                        resource_fn_name=str(resource_fn.__name__),  # ty: ignore[unresolved-attribute]
                     ),
                     resources=resources,
                     instance=instance,
@@ -217,12 +219,12 @@ def resource_initialization_event_generator(
     resource_defs: Mapping[str, ResourceDefinition],
     resource_configs: Mapping[str, ResourceConfig],
     log_manager: DagsterLogManager,
-    execution_plan: Optional[ExecutionPlan],
-    dagster_run: Optional[DagsterRun],
-    resource_keys_to_init: Optional[AbstractSet[str]],
-    instance: Optional[DagsterInstance],
-    emit_persistent_events: Optional[bool],
-    event_loop: Optional[AbstractEventLoop],
+    execution_plan: ExecutionPlan | None,
+    dagster_run: DagsterRun | None,
+    resource_keys_to_init: AbstractSet[str] | None,
+    instance: DagsterInstance | None,
+    emit_persistent_events: bool | None,
+    event_loop: AbstractEventLoop | None,
 ):
     check.inst_param(log_manager, "log_manager", DagsterLogManager)
     resource_keys_to_init = check.opt_set_param(
@@ -236,7 +238,7 @@ def resource_initialization_event_generator(
         step = execution_plan.get_step(
             cast(
                 "StepHandleUnion",
-                cast("ExecutionPlan", execution_plan).step_handle_for_single_step_plans(),
+                execution_plan.step_handle_for_single_step_plans(),
             )
         )
         resource_log_manager = log_manager.with_tags(**cast("ExecutionStep", step).logging_tags)
@@ -314,9 +316,9 @@ def single_resource_event_generator(
             try:
                 with time_execution_scope() as timer_result:
                     resource_or_gen = (
-                        resource_def.resource_fn(context)
-                        if has_at_least_one_parameter(resource_def.resource_fn)
-                        else resource_def.resource_fn()  # type: ignore[call-arg]
+                        resource_def.resource_fn(context)  # ty: ignore[too-many-positional-arguments]
+                        if has_at_least_one_parameter(resource_def.resource_fn)  # ty: ignore[invalid-argument-type]
+                        else resource_def.resource_fn()  # type: ignore[call-arg]  # ty: ignore[missing-argument]
                     )
 
                     # Flag for whether resource is generator. This is used to ensure that teardown
@@ -435,7 +437,7 @@ def get_required_resource_keys_for_step(
 
 
 def _wrapped_resource_iterator(
-    resource_or_gen: Union[Any, Generator[Any, None, None]],
+    resource_or_gen: Any | Generator[Any, None, None],
 ) -> Generator[Any, None, None]:
     """Returns an iterator which yields a single item, which is the resource.
 
@@ -449,7 +451,7 @@ def _wrapped_resource_iterator(
     if isinstance(resource_or_gen, ContextDecorator):
 
         def _gen_resource():
-            with resource_or_gen as resource:  # pyright: ignore[reportGeneralTypeIssues]
+            with resource_or_gen as resource:  # ty: ignore[invalid-context-manager]
                 yield resource
 
         return _gen_resource()

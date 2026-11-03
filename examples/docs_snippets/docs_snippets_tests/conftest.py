@@ -3,7 +3,8 @@ import os
 import boto3
 import pytest
 from dagster_dg_core.context import DG_UPDATE_CHECK_ENABLED_ENV_VAR
-from moto import mock_s3
+from dagster_test.dg_utils.utils import scrub_tox_uv_project_environment
+from moto import mock_aws
 
 from dagster import file_relative_path
 
@@ -15,7 +16,7 @@ def docs_snippets_folder():
 
 @pytest.fixture
 def mock_s3_resource():
-    with mock_s3():
+    with mock_aws():
         yield boto3.resource("s3", region_name="us-east-1")
 
 
@@ -34,9 +35,10 @@ def pytest_configure():
     # Disable the dg update check for all tests because we don't want to bomb the PyPI API.
     # Tests that specifically want to test the update check should set this env var to "1".
     os.environ[DG_UPDATE_CHECK_ENABLED_ENV_VAR] = "0"
+    scrub_tox_uv_project_environment()
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
+def pytest_addoption(parser: pytest.Parser):
     parser.addoption(
         "--update-snippets",
         action="store_true",
@@ -59,7 +61,7 @@ def update_screenshots(request: pytest.FixtureRequest) -> bool:
 
 @pytest.fixture(scope="session")
 def get_selenium_driver():
-    from selenium import webdriver
+    from selenium import webdriver  # ty: ignore[unresolved-import]
 
     driver = None
 

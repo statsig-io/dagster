@@ -1,3 +1,4 @@
+import codecs
 import logging
 import os
 import random
@@ -8,7 +9,7 @@ import time
 from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any
 
 import kubernetes
 from dagster import (
@@ -45,11 +46,16 @@ from urllib3.exceptions import ReadTimeoutError
 
 from dagster_k8s.client import (
     DEFAULT_WAIT_BETWEEN_ATTEMPTS,
+    DEFAULT_WAIT_TIMEOUT,
     DagsterKubernetesClient,
     WaitForPodState,
 )
 from dagster_k8s.models import k8s_model_from_dict, k8s_snake_case_dict
-from dagster_k8s.utils import detect_current_namespace, get_common_labels
+from dagster_k8s.utils import (
+    apply_no_proxy_env_workaround,
+    detect_current_namespace,
+    get_common_labels,
+)
 
 INIT_WAIT_TIMEOUT_FOR_READY = 1800.0  # 30mins
 INIT_WAIT_TIMEOUT_FOR_TERMINATE = 10.0  # 10s
@@ -85,7 +91,7 @@ class PipesK8sPodLogsMessageReader(PipesMessageReader):
         finally:
             self._handler = None
 
-    def _get_consume_logs_request_timeout(self) -> Optional[int]:
+    def _get_consume_logs_request_timeout(self) -> int | None:
         request_timeout_env_var = os.getenv("DAGSTER_PIPES_K8S_CONSUME_POD_LOGS_REQUEST_TIMEOUT")
         if request_timeout_env_var:
             return int(request_timeout_env_var)
@@ -94,7 +100,7 @@ class PipesK8sPodLogsMessageReader(PipesMessageReader):
 
     def consume_pod_logs(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         core_api: kubernetes.client.CoreV1Api,
         pod_name: str,
         namespace: str,
@@ -180,7 +186,7 @@ class PipesK8sPodLogsMessageReader(PipesMessageReader):
     @contextmanager
     def async_consume_pod_logs(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         core_api: kubernetes.client.CoreV1Api,
         pod_name: str,
         namespace: str,
@@ -374,13 +380,13 @@ class PipesK8sClient(PipesClient, TreatAsResourceParam):
 
     def __init__(
         self,
-        env: Optional[Mapping[str, str]] = None,
-        context_injector: Optional[PipesContextInjector] = None,
-        message_reader: Optional[PipesMessageReader] = None,
-        load_incluster_config: Optional[bool] = None,
-        kubeconfig_file: Optional[str] = None,
-        kube_context: Optional[str] = None,
-        poll_interval: Optional[float] = DEFAULT_WAIT_BETWEEN_ATTEMPTS,
+        env: Mapping[str, str] | None = None,
+        context_injector: PipesContextInjector | None = None,
+        message_reader: PipesMessageReader | None = None,
+        load_incluster_config: bool | None = None,
+        kubeconfig_file: str | None = None,
+        kube_context: str | None = None,
+        poll_interval: float | None = DEFAULT_WAIT_BETWEEN_ATTEMPTS,
     ):
         self.env = check.opt_mapping_param(env, "env", key_type=str, value_type=str)
         self.context_injector = (
@@ -436,20 +442,24 @@ class PipesK8sClient(PipesClient, TreatAsResourceParam):
                 context=self.kube_context,
             )
 
+        apply_no_proxy_env_workaround()
+
     @public
-    def run(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def run(  # ty: ignore[invalid-method-override]
         self,
         *,
-        context: Union[OpExecutionContext, AssetExecutionContext],
-        extras: Optional[PipesExtras] = None,
-        image: Optional[str] = None,
-        command: Optional[Union[str, Sequence[str]]] = None,
-        namespace: Optional[str] = None,
-        env: Optional[Mapping[str, str]] = None,
-        base_pod_meta: Optional[Mapping[str, Any]] = None,
-        base_pod_spec: Optional[Mapping[str, Any]] = None,
-        ignore_containers: Optional[set] = None,
+        context: OpExecutionContext | AssetExecutionContext,
+        extras: PipesExtras | None = None,
+        image: str | None = None,
+        command: str | Sequence[str] | None = None,
+        namespace: str | None = None,
+        env: Mapping[str, str] | None = None,
+        base_pod_meta: Mapping[str, Any] | None = None,
+        base_pod_spec: Mapping[str, Any] | None = None,
+        ignore_containers: set | None = None,
         enable_multi_container_logs: bool = False,
+        pod_wait_timeout: float = DEFAULT_WAIT_TIMEOUT,
+        delete_pod_on_completion: bool = True,
     ) -> PipesClientCompletedInvocation:
         """Publish a kubernetes pod and wait for it to complete, enriched with the pipes protocol.
 
@@ -478,13 +488,14 @@ class PipesK8sClient(PipesClient, TreatAsResourceParam):
                 `pod.spec.containers` will be able to communicate back to Dagster.
             extras (Optional[PipesExtras]):
                 Extra values to pass along as part of the ext protocol.
-            context_injector (Optional[PipesContextInjector]):
-                Override the default ext protocol context injection.
-            message_reader (Optional[PipesMessageReader]):
-                Override the default ext protocol message reader.
             ignore_containers (Optional[Set]): Ignore certain containers from waiting for termination. Defaults to
                 None.
             enable_multi_container_logs (bool): Whether or not to enable multi-container log consumption.
+            pod_wait_timeout (float): How long to wait for the pod to terminate before raising an exception.
+                Defaults to 24h. Set to 0 to disable.
+            delete_pod_on_completion (bool): Whether to delete the pod after the run completes.
+                Set to False to leave the pod in the cluster for debugging or to let the cluster
+                handle pod deletion (e.g. via TTL or owner references). Defaults to True.
 
         Returns:
             PipesClientCompletedInvocation: Wrapper containing results reported by the external
@@ -523,6 +534,7 @@ class PipesK8sClient(PipesClient, TreatAsResourceParam):
                     namespace=namespace,
                     pod_name=pod_name,
                     enable_multi_container_logs=enable_multi_container_logs,
+                    ignore_containers=ignore_containers,
                 ):
                     # wait until the pod is fully terminated (or raise an exception if it failed)
                     client.wait_for_pod(
@@ -531,20 +543,23 @@ class PipesK8sClient(PipesClient, TreatAsResourceParam):
                         wait_for_state=WaitForPodState.Terminated,
                         ignore_containers=ignore_containers,
                         wait_time_between_attempts=self.poll_interval,
+                        wait_timeout=pod_wait_timeout,
                     )
             finally:
-                client.core_api.delete_namespaced_pod(pod_name, namespace)
+                if delete_pod_on_completion:
+                    client.core_api.delete_namespaced_pod(pod_name, namespace)
 
         return PipesClientCompletedInvocation(pipes_session)
 
     @contextmanager
     def consume_pod_logs(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         client: DagsterKubernetesClient,
         namespace: str,
         pod_name: str,
         enable_multi_container_logs: bool = False,
+        ignore_containers: set | None = None,
     ) -> Iterator:
         """Consume pod logs in the background if possible simple context manager to setup pod log consumption.
 
@@ -569,6 +584,7 @@ class PipesK8sClient(PipesClient, TreatAsResourceParam):
                 # the ready state in the second while loop, which respects the below timeout only.
                 # Very rarely, the pod will be Evicted there and we have to wait the default, unless set.
                 wait_timeout=WAIT_TIMEOUT_FOR_READY,
+                ignore_containers=ignore_containers,
             )
 
             if enable_multi_container_logs:
@@ -593,13 +609,13 @@ class PipesK8sClient(PipesClient, TreatAsResourceParam):
 
 def build_pod_body(
     pod_name: str,
-    image: Optional[str],
-    command: Optional[Union[str, Sequence[str]]],
+    image: str | None,
+    command: str | Sequence[str] | None,
     env_vars: Mapping[str, str],
-    base_pod_meta: Optional[Mapping[str, Any]],
-    base_pod_spec: Optional[Mapping[str, Any]],
+    base_pod_meta: Mapping[str, Any] | None,
+    base_pod_spec: Mapping[str, Any] | None,
 ):
-    meta = {
+    meta: dict[str, Any] = {
         **(k8s_snake_case_dict(kubernetes.client.V1ObjectMeta, base_pod_meta or {})),
         "name": pod_name,
     }
@@ -608,7 +624,7 @@ def build_pod_body(
     else:
         meta["labels"] = get_common_labels()
 
-    spec = {**k8s_snake_case_dict(kubernetes.client.V1PodSpec, base_pod_spec or {})}
+    spec: dict[str, Any] = {**k8s_snake_case_dict(kubernetes.client.V1PodSpec, base_pod_spec or {})}
     if "containers" not in spec:
         spec["containers"] = [{}]
 
@@ -726,34 +742,48 @@ def _process_log_stream(stream: Iterator[bytes]) -> Iterator[LogItem]:
     timestamp = ""
     log = ""
 
-    for log_chunk in stream:
-        for line in log_chunk.decode("utf-8").split("\n"):
-            maybe_timestamp, _, tail = line.partition(" ")
-            if not timestamp:
-                # The first item in the stream will always have a timestamp.
-                timestamp = maybe_timestamp
-                log = tail
-            elif maybe_timestamp == timestamp:
-                # We have multiple messages with the same timestamp in this chunk, add them separated
-                # with a new line
-                log += f"\n{tail}"
-            elif not (
-                len(maybe_timestamp) == len(timestamp) and _is_kube_timestamp(maybe_timestamp)
-            ):
-                # The line is continuation of a long line that got truncated and thus doesn't
-                # have a timestamp in the beginning of the line.
-                # Since all timestamps in the RFC format returned by Kubernetes have the same
-                # length (when represented as strings) we know that the value won't be a timestamp
-                # if the string lengths differ, however if they do not differ, we need to parse the
-                # timestamp.
-                log += line
-            else:
-                # New log line has been observed, send in the next cycle
-                yield LogItem(timestamp=timestamp, log=log)
-                timestamp = maybe_timestamp
-                log = tail
+    # Incremental decoder: supports UTF-8 sequences split across chunks.
+    # errors="replace" prevents crashing if a container emits invalid bytes.
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
-    # Send the last message that we were building
+    def handle_line(line: str) -> Iterator[LogItem]:
+        nonlocal timestamp, log
+
+        if not line:
+            return
+
+        maybe_timestamp, _, tail = line.partition(" ")
+
+        if not timestamp:
+            # First item must begin with a timestamp.
+            timestamp = maybe_timestamp
+            log = tail
+        elif maybe_timestamp == timestamp:
+            # Some runtimes can emit multiple lines sharing the same timestamp.
+            log += f"\n{tail}"
+        elif not (len(maybe_timestamp) == len(timestamp) and _is_kube_timestamp(maybe_timestamp)):
+            # Continuation of a long line that got split across chunks (no timestamp prefix).
+            log += line
+        else:
+            # New timestamp => finalize previous log item.
+            yield LogItem(timestamp=timestamp, log=log)
+            timestamp = maybe_timestamp
+            log = tail
+
+    for log_chunk in stream:
+        text = decoder.decode(log_chunk, final=False)
+
+        # Keep original behavior: split *within the chunk*, but if there is no "\n"
+        # we still treat it as a single "line" candidate.
+        for line in text.split("\n"):
+            yield from handle_line(line)
+
+    # Flush any buffered bytes from the decoder (e.g. when stream ends cleanly).
+    tail = decoder.decode(b"", final=True)
+    for line in tail.split("\n"):
+        yield from handle_line(line)
+
+    # Emit the last in-progress log item (if any).
     if log or timestamp:
         yield LogItem(timestamp=timestamp, log=log)
 

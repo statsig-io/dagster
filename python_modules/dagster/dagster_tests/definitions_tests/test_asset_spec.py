@@ -14,7 +14,7 @@ def test_validate_asset_owner() -> None:
 
 
 def test_validate_group_name() -> None:
-    with pytest.raises(dg.DagsterInvalidDefinitionError, match="is not a valid name"):
+    with pytest.raises(dg.DagsterInvalidDefinitionError, match="is not a valid asset group name"):
         dg.AssetSpec(key="asset1", group_name="group@$#&*1")
 
     with pytest.raises(
@@ -22,6 +22,21 @@ def test_validate_group_name() -> None:
         match="Empty asset group name was provided, which is not permitted",
     ):
         dg.AssetSpec(key="asset1", group_name="")
+
+
+def test_validate_hierarchical_group_name() -> None:
+    # Valid hierarchical names
+    dg.AssetSpec(key="asset1", group_name="marketing")
+    dg.AssetSpec(key="asset2", group_name="marketing/foo")
+    dg.AssetSpec(key="asset3", group_name="marketing/foo/bar")
+    dg.AssetSpec(key="asset4", group_name="a_1/b_2/c_3")
+
+    # Invalid: leading/trailing/empty segments
+    for invalid in ("/leading", "trailing/", "double//slash", "/", "with space/x"):
+        with pytest.raises(
+            dg.DagsterInvalidDefinitionError, match="is not a valid asset group name"
+        ):
+            dg.AssetSpec(key="asset1", group_name=invalid)
 
 
 def test_resolve_automation_condition() -> None:
@@ -68,7 +83,8 @@ def test_replace_attributes_kinds() -> None:
     assert new_spec.tags == {"c": "d", "dagster/kind/bar": ""}
 
     with pytest.raises(dg.DagsterInvalidDefinitionError):
-        spec.replace_attributes(kinds={"a", "b", "c", "d", "e"})
+        kinds = {f"kind_{i}" for i in range(11)}
+        spec.replace_attributes(kinds=kinds)
 
 
 def test_replace_attributes_deps_coercion() -> None:
@@ -248,7 +264,32 @@ def test_map_asset_specs_additional_deps() -> None:
     )
 
     c_asset = next(iter(asset for asset in mapped_assets if asset.key == my_other_asset.key))
-    assert set(next(iter(c_asset.specs)).deps) == {dg.AssetDep("a"), dg.AssetDep("b")}
+    assert next(iter(c_asset.specs)).deps == [dg.AssetDep("a"), dg.AssetDep("b")]
+
+
+def test_map_asset_specs_asset_with_ins_regression() -> None:
+    """This regression test prevents the recurrence of the AttributeError from OpDefinition.__init__."""
+
+    @dg.asset(ins={"my_input": dg.AssetIn(key="upstream")})
+    def my_asset(my_input):
+        pass
+
+    assets = [my_asset]
+    spec = next(iter(my_asset.specs))
+
+    new_spec = spec.replace_attributes(
+        deps=[*spec.deps, dg.AssetDep("another_upstream")],
+    )
+
+    mapped_assets = dg.map_asset_specs(lambda s: new_spec, assets)
+
+    mapped_asset = mapped_assets[0]
+    mapped_spec = next(iter(mapped_asset.specs))
+    dep_keys = {dep.asset_key for dep in mapped_spec.deps}
+
+    assert dg.AssetKey("upstream") in dep_keys
+    assert dg.AssetKey("another_upstream") in dep_keys
+    assert mapped_asset.keys_by_input_name["my_input"] == dg.AssetKey("upstream")
 
 
 def test_map_asset_specs_multiple_deps_same_key() -> None:

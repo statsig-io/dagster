@@ -1,6 +1,6 @@
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import update_wrapper
-from typing import TYPE_CHECKING, Callable, Optional, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Optional, TypeVar, overload
 
 import dagster._check as check
 from dagster._core.decorator_utils import get_function_params
@@ -33,12 +33,12 @@ if TYPE_CHECKING:
         CacheableAssetsDefinition,
     )
     from dagster._core.definitions.definitions_load_context import DefinitionsLoadContext
-    from dagster.components.core.tree import ComponentTree
+    from dagster.components.core.component_tree import ComponentTree
 
 T = TypeVar("T")
 
 
-def _flatten(items: Iterable[Union[T, list[T]]]) -> Iterator[T]:
+def _flatten(items: Iterable[T | list[T]]) -> Iterator[T]:
     for x in items:
         if isinstance(x, list):
             # switch to `yield from _flatten(x)` to support multiple layers of nesting
@@ -50,13 +50,13 @@ def _flatten(items: Iterable[Union[T, list[T]]]) -> Iterator[T]:
 class _Repository:
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-        default_executor_def: Optional[ExecutorDefinition] = None,
-        default_logger_defs: Optional[Mapping[str, LoggerDefinition]] = None,
-        top_level_resources: Optional[Mapping[str, ResourceDefinition]] = None,
-        resource_key_mapping: Optional[Mapping[int, str]] = None,
+        name: str | None = None,
+        description: str | None = None,
+        metadata: Mapping[str, RawMetadataValue] | None = None,
+        default_executor_def: ExecutorDefinition | None = None,
+        default_logger_defs: Mapping[str, LoggerDefinition] | None = None,
+        top_level_resources: Mapping[str, ResourceDefinition] | None = None,
+        resource_key_mapping: Mapping[int, str] | None = None,
         component_tree: Optional["ComponentTree"] = None,
     ):
         self.name = check.opt_str_param(name, "name")
@@ -80,10 +80,7 @@ class _Repository:
 
     def __call__(
         self,
-        fn: Union[
-            Callable[[], RepositoryListSpec],
-            Callable[[], RepositoryDictSpec],
-        ],
+        fn: Callable[[], RepositoryListSpec] | Callable[[], RepositoryDictSpec],
     ) -> RepositoryDefinition:
         from dagster._core.definitions import AssetsDefinition, SourceAsset
         from dagster._core.definitions.assets.definition.cacheable_assets_definition import (
@@ -97,12 +94,14 @@ class _Repository:
         check.callable_param(fn, "fn")
 
         if not self.name:
-            self.name = fn.__name__
+            self.name = fn.__name__  # ty: ignore[unresolved-attribute]
 
         cacheable_asset_data: dict[str, Sequence[AssetsDefinitionCacheableData]] = {}
 
         repository_definitions = fn()
         context = DefinitionsLoadContext.get()
+        defs_state_info = context.accessed_defs_state_info
+        code_location_name = context.code_location_name
 
         if context.load_type == DefinitionsLoadType.INITIALIZATION:
             reconstruction_metadata = context.get_pending_reconstruction_metadata()
@@ -159,8 +158,13 @@ class _Repository:
                 RepositoryLoadData(
                     cacheable_asset_data=cacheable_asset_data,
                     reconstruction_metadata=reconstruction_metadata,
+                    defs_state_info=defs_state_info,
+                    code_location_name=code_location_name,
                 )
-                if cacheable_asset_data or reconstruction_metadata
+                if cacheable_asset_data
+                or reconstruction_metadata
+                or defs_state_info
+                or code_location_name
                 else None
             )
 
@@ -179,7 +183,7 @@ class _Repository:
                         )
                     )
                 )
-            repository_data = CachingRepositoryData.from_dict(repository_definitions)
+            repository_data = CachingRepositoryData.from_dict(repository_definitions)  # ty: ignore[invalid-argument-type]
             repository_load_data = None
         elif isinstance(repository_definitions, RepositoryData):
             repository_data = repository_definitions
@@ -226,39 +230,36 @@ def _resolve_cacheable_asset_data(
 
 @overload
 def repository(
-    definitions_fn: Union[Callable[[], RepositoryListSpec], Callable[[], RepositoryDictSpec]],
+    definitions_fn: Callable[[], RepositoryListSpec] | Callable[[], RepositoryDictSpec],
 ) -> RepositoryDefinition: ...
 
 
 @overload
 def repository(
     *,
-    name: Optional[str] = ...,
-    description: Optional[str] = ...,
-    metadata: Optional[Mapping[str, RawMetadataValue]] = ...,
-    default_executor_def: Optional[ExecutorDefinition] = ...,
-    default_logger_defs: Optional[Mapping[str, LoggerDefinition]] = ...,
-    _top_level_resources: Optional[Mapping[str, ResourceDefinition]] = ...,
+    name: str | None = ...,
+    description: str | None = ...,
+    metadata: Mapping[str, RawMetadataValue] | None = ...,
+    default_executor_def: ExecutorDefinition | None = ...,
+    default_logger_defs: Mapping[str, LoggerDefinition] | None = ...,
+    _top_level_resources: Mapping[str, ResourceDefinition] | None = ...,
     _component_tree: Optional["ComponentTree"] = ...,
 ) -> _Repository: ...
 
 
 def repository(
-    definitions_fn: Optional[
-        Union[
-            Callable[[], RepositoryListSpec],
-            Callable[[], RepositoryDictSpec],
-        ]
-    ] = None,
+    definitions_fn: Callable[[], RepositoryListSpec]
+    | Callable[[], RepositoryDictSpec]
+    | None = None,
     *,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    metadata: Optional[Mapping[str, RawMetadataValue]] = None,
-    default_executor_def: Optional[ExecutorDefinition] = None,
-    default_logger_defs: Optional[Mapping[str, LoggerDefinition]] = None,
-    _top_level_resources: Optional[Mapping[str, ResourceDefinition]] = None,
+    name: str | None = None,
+    description: str | None = None,
+    metadata: Mapping[str, RawMetadataValue] | None = None,
+    default_executor_def: ExecutorDefinition | None = None,
+    default_logger_defs: Mapping[str, LoggerDefinition] | None = None,
+    _top_level_resources: Mapping[str, ResourceDefinition] | None = None,
     _component_tree: Optional["ComponentTree"] = None,
-) -> Union[RepositoryDefinition, _Repository]:
+) -> RepositoryDefinition | _Repository:
     """Create a repository from the decorated function.
 
     In most cases, :py:class:`Definitions` should be used instead.
@@ -275,7 +276,7 @@ def repository(
 
         {
             'jobs': Dict[str, Callable[[], JobDefinition]],
-            'schedules': Dict[str, Callable[[], ScheduleDefinition]]
+            'schedules': Dict[str, Callable[[], ScheduleDefinition]],
             'sensors': Dict[str, Callable[[], SensorDefinition]]
         }
 
@@ -293,8 +294,6 @@ def repository(
         description (Optional[str]): A string description of the repository.
         metadata (Optional[Dict[str, RawMetadataValue]]): Arbitrary metadata for the repository. Not
             displayed in the UI but accessible on RepositoryDefinition at runtime.
-        top_level_resources (Optional[Mapping[str, ResourceDefinition]]): A dict of top-level
-            resource keys to defintions, for resources which should be displayed in the UI.
 
     Example:
         .. code-block:: python
@@ -319,7 +318,7 @@ def repository(
             def some_sensor():
                 if foo():
                     yield RunRequest(
-                        run_key= ...,
+                        run_key=...,
                         run_config={
                             'ops': {'return_n': {'config': {'n': bar()}}}
                         }
@@ -348,7 +347,7 @@ def repository(
                     'team': 'Team A',
                     'repository_version': '1.2.3',
                     'environment': 'production',
-             })
+                })
             def simple_repository():
                 return [simple_job, some_sensor, my_schedule]
 

@@ -1,10 +1,10 @@
 from abc import abstractmethod
-from collections.abc import Generator, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from typing import Optional, cast
+from enum import Enum
+from typing import cast
 
 from dagster import IOManagerDefinition, OutputContext, io_manager
-from dagster._annotations import beta
 from dagster._config.pythonic_config import ConfigurableIOManagerFactory
 from dagster._core.definitions.partitions.utils import TimeWindow
 from dagster._core.storage.db_io_manager import (
@@ -13,6 +13,7 @@ from dagster._core.storage.db_io_manager import (
     DbTypeHandler,
     TablePartitionDimension,
     TableSlice,
+    static_where_clause,
 )
 from dagster._core.storage.io_manager import dagster_maintained_io_manager
 from google.api_core.exceptions import NotFound
@@ -24,9 +25,14 @@ from dagster_gcp.bigquery.utils import setup_gcp_creds
 BIGQUERY_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-@beta
+class BigQueryWriteMode(str, Enum):
+    TRUNCATE = "truncate"
+    APPEND = "append"
+    REPLACE = "replace"
+
+
 def build_bigquery_io_manager(
-    type_handlers: Sequence[DbTypeHandler], default_load_type: Optional[type] = None
+    type_handlers: Sequence[DbTypeHandler], default_load_type: type | None = None
 ) -> IOManagerDefinition:
     """Builds an I/O manager definition that reads inputs from and writes outputs to BigQuery.
 
@@ -138,7 +144,7 @@ def build_bigquery_io_manager(
     """
 
     @dagster_maintained_io_manager
-    @io_manager(config_schema=BigQueryIOManager.to_config_schema())  # pyright: ignore[reportArgumentType]
+    @io_manager(config_schema=BigQueryIOManager.to_config_schema())
     def bigquery_io_manager(init_context):
         """I/O Manager for storing outputs in a BigQuery database.
 
@@ -153,16 +159,26 @@ def build_bigquery_io_manager(
         * dataset -> schema
         * table -> table
         """
+        resource_config = init_context.resource_config or {}
+        write_mode = resource_config.get("write_mode") or "truncate"
+        project = resource_config.get("project")
+        dataset = resource_config.get("dataset")
+
+        if project is None:
+            raise ValueError("Missing 'project' in configuration")
+
         mgr = DbIOManager(
             type_handlers=type_handlers,
-            db_client=BigQueryClient(),
+            db_client=BigQueryClient(write_mode=write_mode),
             io_manager_name="BigQueryIOManager",
-            database=init_context.resource_config["project"],
-            schema=init_context.resource_config.get("dataset"),
+            database=str(project),
+            schema=str(dataset) if dataset else None,
             default_load_type=default_load_type,
         )
-        if init_context.resource_config.get("gcp_credentials"):
-            with setup_gcp_creds(init_context.resource_config.get("gcp_credentials")):
+
+        gcp_creds = resource_config.get("gcp_credentials")
+        if gcp_creds:
+            with setup_gcp_creds(gcp_creds):
                 yield mgr
         else:
             yield mgr
@@ -260,17 +276,31 @@ class BigQueryIOManager(ConfigurableIOManagerFactory):
         After the run completes, the file will be deleted, and ``GOOGLE_APPLICATION_CREDENTIALS`` will be
         unset. The key must be base64 encoded to avoid issues with newlines in the keys. You can retrieve
         the base64 encoded with this shell command: ``cat $GOOGLE_APPLICATION_CREDENTIALS | base64``
+    To change the write mode (default is "truncate"), you can set the ``write_mode`` configuration.
+        Supported modes: "truncate", "replace", "append".
+
+        .. code-block:: python
+
+            defs = Definitions(
+                assets=[my_table],
+                resources={
+                    "io_manager": BigQueryIOManager(
+                        project=EnvVar("GCP_PROJECT"),
+                        write_mode="replace"
+                    )
+                }
+            )
     """
 
     project: str = Field(description="The GCP project to use.")
-    dataset: Optional[str] = Field(
+    dataset: str | None = Field(
         default=None,
         description=(
             "Name of the BigQuery dataset to use. If not provided, the last prefix before"
             " the asset name will be used."
         ),
     )
-    location: Optional[str] = Field(
+    location: str | None = Field(
         default=None,
         description=(
             "The GCP location. Note: When using PySpark DataFrames, the default"
@@ -278,7 +308,7 @@ class BigQueryIOManager(ConfigurableIOManagerFactory):
             " your SparkSession configuration."
         ),
     )
-    gcp_credentials: Optional[str] = Field(
+    gcp_credentials: str | None = Field(
         default=None,
         description=(
             "GCP authentication credentials. If provided, a temporary file will be created"
@@ -288,19 +318,23 @@ class BigQueryIOManager(ConfigurableIOManagerFactory):
             " command: ``cat $GOOGLE_AUTH_CREDENTIALS | base64``"
         ),
     )
-    temporary_gcs_bucket: Optional[str] = Field(
+    temporary_gcs_bucket: str | None = Field(
         default=None,
         description=(
             "When using PySpark DataFrames, optionally specify a temporary GCS bucket to"
             " store data. If not provided, data will be directly written to BigQuery."
         ),
     )
-    timeout: Optional[float] = Field(
+    timeout: float | None = Field(
         default=None,
         description=(
             "When using Pandas DataFrames, optionally specify a timeout for the BigQuery"
             " queries (loading and reading from tables)."
         ),
+    )
+    write_mode: BigQueryWriteMode = Field(
+        default=BigQueryWriteMode.TRUNCATE,
+        description="Write mode to use for non-partitioned table cleanup: truncate, append, or replace.",
     )
 
     @staticmethod
@@ -308,18 +342,24 @@ class BigQueryIOManager(ConfigurableIOManagerFactory):
     def type_handlers() -> Sequence[DbTypeHandler]: ...
 
     @staticmethod
-    def default_load_type() -> Optional[type]:
+    def default_load_type() -> type | None:
         return None
 
-    def create_io_manager(self, context) -> Generator:
-        mgr = DbIOManager(
-            db_client=BigQueryClient(),
+    def create_io_manager(self, context) -> DbIOManager:
+        return DbIOManager(
+            db_client=BigQueryClient(
+                write_mode=self.write_mode, gcp_credentials=self.gcp_credentials
+            ),
             io_manager_name="BigQueryIOManager",
             database=self.project,
             schema=self.dataset,
             type_handlers=self.type_handlers(),
             default_load_type=self.default_load_type(),
         )
+
+    @contextmanager
+    def yield_for_execution(self, context) -> Iterator[DbIOManager]:
+        mgr = self.create_io_manager(context)
         if self.gcp_credentials:
             with setup_gcp_creds(self.gcp_credentials):
                 yield mgr
@@ -328,10 +368,39 @@ class BigQueryIOManager(ConfigurableIOManagerFactory):
 
 
 class BigQueryClient(DbClient):
+    def __init__(
+        self,
+        write_mode: BigQueryWriteMode | str = BigQueryWriteMode.TRUNCATE,
+        gcp_credentials: str | None = None,
+    ):
+        if isinstance(write_mode, str):
+            write_mode = BigQueryWriteMode(write_mode)
+
+        self.write_mode = write_mode
+        self.gcp_credentials = gcp_credentials
+
     @staticmethod
     def delete_table_slice(context: OutputContext, table_slice: TableSlice, connection) -> None:
         try:
-            connection.query(_get_cleanup_statement(table_slice)).result()
+            # If partitioned, keep existing behavior (delete matching partitions)
+            if table_slice.partition_dimensions:
+                connection.query(_get_cleanup_statement(table_slice)).result()
+                return
+
+            # Non-partitioned tables: behavior depends on configured write_mode
+            resource_config = getattr(context, "resource_config", {}) or {}
+            write_mode = resource_config.get("write_mode")
+            if write_mode == BigQueryWriteMode.TRUNCATE.value or write_mode is None:
+                connection.query(
+                    f"TRUNCATE TABLE `{table_slice.database}.{table_slice.schema}.{table_slice.table}`"
+                ).result()
+            elif write_mode == BigQueryWriteMode.APPEND.value:
+                # Do nothing; preserve existing data and append
+                return
+            elif write_mode == BigQueryWriteMode.REPLACE.value:
+                connection.query(
+                    f"DROP TABLE IF EXISTS `{table_slice.database}.{table_slice.schema}.{table_slice.table}`"
+                ).result()
         except NotFound:
             # table doesn't exist yet, so ignore the error
             pass
@@ -355,10 +424,15 @@ class BigQueryClient(DbClient):
 
     @staticmethod
     @contextmanager
-    def connect(context, _):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def connect(context, table_slice):
+        config = context.resource_config or {}
+
+        project_val = config.get("project")
+        location_val = config.get("location")
+
         conn = bigquery.Client(
-            project=context.resource_config.get("project"),
-            location=context.resource_config.get("location"),
+            project=str(project_val) if project_val else None,
+            location=str(location_val) if location_val else None,
         )
 
         yield conn
@@ -382,7 +456,7 @@ def _partition_where_clause(partition_dimensions: Sequence[TablePartitionDimensi
         (
             _time_window_where_clause(partition_dimension)
             if isinstance(partition_dimension.partitions, TimeWindow)
-            else _static_where_clause(partition_dimension)
+            else static_where_clause(partition_dimension)
         )
         for partition_dimension in partition_dimensions
     )
@@ -394,8 +468,3 @@ def _time_window_where_clause(table_partition: TablePartitionDimension) -> str:
     start_dt_str = start_dt.strftime(BIGQUERY_DATETIME_FORMAT)
     end_dt_str = end_dt.strftime(BIGQUERY_DATETIME_FORMAT)
     return f"""{table_partition.partition_expr} >= '{start_dt_str}' AND {table_partition.partition_expr} < '{end_dt_str}'"""
-
-
-def _static_where_clause(table_partition: TablePartitionDimension) -> str:
-    partitions = ", ".join(f"'{partition}'" for partition in table_partition.partitions)
-    return f"""{table_partition.partition_expr} in ({partitions})"""

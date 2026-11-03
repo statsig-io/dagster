@@ -1,8 +1,8 @@
 import functools
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from enum import Enum
 from hashlib import sha256
-from typing import TYPE_CHECKING, Callable, Final, NamedTuple, Optional, Union
+from typing import TYPE_CHECKING, Final, NamedTuple, Optional, Union
 
 from dagster import _check as check
 from dagster._annotations import beta, deprecated
@@ -66,7 +66,7 @@ class DataVersionsByPartition(
 ):
     def __new__(
         cls,
-        data_versions_by_partition: Mapping[str, Union[str, DataVersion]],
+        data_versions_by_partition: Mapping[str, str | DataVersion],
     ):
         check.dict_param(
             data_versions_by_partition,
@@ -95,7 +95,7 @@ class DataProvenance(
         [
             ("code_version", str),
             ("input_data_versions", Mapping["AssetKey", DataVersion]),
-            ("input_storage_ids", Mapping["AssetKey", Optional[int]]),
+            ("input_storage_ids", Mapping["AssetKey", int | None]),
             ("is_user_provided", bool),
         ],
     )
@@ -114,7 +114,7 @@ class DataProvenance(
         cls,
         code_version: str,
         input_data_versions: Mapping["AssetKey", DataVersion],
-        input_storage_ids: Mapping["AssetKey", Optional[int]],
+        input_storage_ids: Mapping["AssetKey", int | None],
         is_user_provided: bool,
     ):
         from dagster._core.definitions.events import AssetKey
@@ -192,7 +192,7 @@ DATA_VERSION_IS_USER_PROVIDED_TAG = "dagster/data_version_is_user_provided"
 
 def read_input_data_version_from_tags(
     tags: Mapping[str, str], input_key: "AssetKey"
-) -> Optional[DataVersion]:
+) -> DataVersion | None:
     value = tags.get(
         get_input_data_version_tag(input_key, prefix=INPUT_DATA_VERSION_TAG_PREFIX)
     ) or tags.get(get_input_data_version_tag(input_key, prefix=_OLD_INPUT_DATA_VERSION_TAG_PREFIX))
@@ -215,7 +215,7 @@ def get_input_event_pointer_tag(input_key: "AssetKey") -> str:
 
 
 def compute_logical_data_version(
-    code_version: Union[str, UnknownValue],
+    code_version: str | UnknownValue,
     input_data_versions: Mapping["AssetKey", DataVersion],
 ) -> DataVersion:
     """Compute a data version for a value as a hash of input data versions and code version.
@@ -240,9 +240,8 @@ def compute_logical_data_version(
     ):
         return UNKNOWN_DATA_VERSION
 
-    ordered_input_versions = [
-        input_data_versions[k] for k in sorted(input_data_versions.keys(), key=str)
-    ]
+    sorted_keys = sorted(input_data_versions.keys(), key=str)
+    ordered_input_versions = [input_data_versions[k] for k in sorted_keys]  # ty: ignore[invalid-argument-type]
     all_inputs = (code_version, *(v.value for v in ordered_input_versions))
 
     hash_sig = sha256()
@@ -252,7 +251,7 @@ def compute_logical_data_version(
 
 def extract_data_version_from_entry(
     entry: "EventLogEntry",
-) -> Optional[DataVersion]:
+) -> DataVersion | None:
     tags = entry.tags or {}
     value = tags.get(DATA_VERSION_TAG) or tags.get(_OLD_DATA_VERSION_TAG)
     return None if value is None else DataVersion(value)
@@ -260,7 +259,7 @@ def extract_data_version_from_entry(
 
 def extract_data_provenance_from_entry(
     entry: "EventLogEntry",
-) -> Optional[DataProvenance]:
+) -> DataProvenance | None:
     tags = entry.tags or {}
     return DataProvenance.from_tags(tags)
 
@@ -296,7 +295,7 @@ class StaleCause(
             ("category", StaleCauseCategory),
             ("reason", str),
             ("dependency", Optional["AssetKeyPartitionKey"]),
-            ("children", Optional[Sequence["StaleCause"]]),
+            ("children", Sequence["StaleCause"] | None),
         ],
     )
 ):
@@ -305,8 +304,8 @@ class StaleCause(
         key: Union["AssetKey", "AssetKeyPartitionKey"],
         category: StaleCauseCategory,
         reason: str,
-        dependency: Optional[Union["AssetKey", "AssetKeyPartitionKey"]] = None,
-        children: Optional[Sequence["StaleCause"]] = None,
+        dependency: Union["AssetKey", "AssetKeyPartitionKey"] | None = None,
+        children: Sequence["StaleCause"] | None = None,
     ):
         from dagster._core.definitions.events import AssetKey, AssetKeyPartitionKey
 
@@ -324,7 +323,7 @@ class StaleCause(
         return self.key.asset_key
 
     @property
-    def partition_key(self) -> Optional[str]:
+    def partition_key(self) -> str | None:
         return self.key.partition_key
 
     @property
@@ -332,7 +331,7 @@ class StaleCause(
         return self.dependency.asset_key if self.dependency else None
 
     @property
-    def dependency_partition_key(self) -> Optional[str]:
+    def dependency_partition_key(self) -> str | None:
         return self.dependency.partition_key if self.dependency else None
 
     @property
@@ -371,7 +370,7 @@ class CachingStaleStatusResolver:
     _instance: "DagsterInstance"
     _instance_queryer: Optional["CachingInstanceQueryer"]
     _asset_graph: Optional["BaseAssetGraph"]
-    _asset_graph_load_fn: Optional[Callable[[], "BaseAssetGraph"]]
+    _asset_graph_load_fn: Callable[[], "BaseAssetGraph"] | None
 
     def __init__(
         self,
@@ -402,14 +401,14 @@ class CachingStaleStatusResolver:
             self._asset_graph_load_fn = asset_graph
 
     @use_partition_loading_context
-    def get_status(self, key: "AssetKey", partition_key: Optional[str] = None) -> StaleStatus:
+    def get_status(self, key: "AssetKey", partition_key: str | None = None) -> StaleStatus:
         from dagster._core.definitions.events import AssetKeyPartitionKey
 
         return self._get_status(key=AssetKeyPartitionKey(key, partition_key))
 
     @use_partition_loading_context
     def get_stale_causes(
-        self, key: "AssetKey", partition_key: Optional[str] = None
+        self, key: "AssetKey", partition_key: str | None = None
     ) -> Sequence[StaleCause]:
         from dagster._core.definitions.events import AssetKeyPartitionKey
 
@@ -417,7 +416,7 @@ class CachingStaleStatusResolver:
 
     @use_partition_loading_context
     def get_stale_root_causes(
-        self, key: "AssetKey", partition_key: Optional[str] = None
+        self, key: "AssetKey", partition_key: str | None = None
     ) -> Sequence[StaleCause]:
         from dagster._core.definitions.events import AssetKeyPartitionKey
 
@@ -425,7 +424,7 @@ class CachingStaleStatusResolver:
 
     @use_partition_loading_context
     def get_current_data_version(
-        self, key: "AssetKey", partition_key: Optional[str] = None
+        self, key: "AssetKey", partition_key: str | None = None
     ) -> DataVersion:
         from dagster._core.definitions.events import AssetKeyPartitionKey
 
@@ -433,6 +432,8 @@ class CachingStaleStatusResolver:
 
     @cached_method
     def _get_status(self, key: "AssetKeyPartitionKey") -> StaleStatus:
+        from dagster._core.definitions.events import AssetKeyPartitionKey
+
         # The status loader does not support querying for the stale status of a
         # partitioned asset without specifying a partition, so we return here.
         asset = self.asset_graph.get(key.asset_key)
@@ -441,6 +442,21 @@ class CachingStaleStatusResolver:
         else:
             current_version = self._get_current_data_version(key=key)
             if current_version == NULL_DATA_VERSION:
+                if asset.is_virtual:
+                    # A view is MISSING only when none of its non-view ancestors
+                    # have been materialized yet. Otherwise it is
+                    # FRESH/STALE based on its stale causes (e.g. code version).
+                    non_virtual_ancestors = self.asset_graph.get_non_virtual_ancestor_keys(
+                        key.asset_key
+                    )
+                    any_ancestor_materialized = any(
+                        self._get_current_data_version(key=AssetKeyPartitionKey(ak, None))
+                        != NULL_DATA_VERSION
+                        for ak in non_virtual_ancestors
+                    )
+                    if any_ancestor_materialized:
+                        causes = self._get_stale_causes(key=key)
+                        return StaleStatus.FRESH if len(causes) == 0 else StaleStatus.STALE
                 return StaleStatus.MISSING
             elif asset.is_external:
                 return StaleStatus.FRESH
@@ -458,6 +474,12 @@ class CachingStaleStatusResolver:
             return []
         elif asset.is_external:
             return []
+        elif asset.is_virtual:
+            current_version = self._get_current_data_version(key=key)
+            if current_version == NULL_DATA_VERSION:
+                return []
+            code_cause = self._get_code_version_stale_cause(key=key)
+            return [code_cause] if code_cause else []
         else:
             current_version = self._get_current_data_version(key=key)
             if current_version == NULL_DATA_VERSION:
@@ -466,6 +488,14 @@ class CachingStaleStatusResolver:
                 return sorted(
                     self._get_stale_causes_materialized(key=key), key=lambda cause: cause.sort_key
                 )
+
+    def _get_code_version_stale_cause(self, key: "AssetKeyPartitionKey") -> StaleCause | None:
+        code_version = self.asset_graph.get(key.asset_key).code_version
+        if code_version:
+            provenance = self._get_current_data_provenance(key=key)
+            if provenance and code_version != provenance.code_version:
+                return StaleCause(key, StaleCauseCategory.CODE, "has a new code version")
+        return None
 
     def _is_dep_updated(self, provenance: DataProvenance, dep_key: "AssetKeyPartitionKey") -> bool:
         dep_asset = self.asset_graph.get(dep_key.asset_key)
@@ -500,7 +530,7 @@ class CachingStaleStatusResolver:
                 return False
 
     def _data_versions_differ(
-        self, prev_data_version: Optional[DataVersion], curr_data_version: Optional[DataVersion]
+        self, prev_data_version: DataVersion | None, curr_data_version: DataVersion | None
     ) -> bool:
         # We special case this to handle a complex niche scenario:
         #
@@ -530,7 +560,6 @@ class CachingStaleStatusResolver:
     def _get_stale_causes_materialized(self, key: "AssetKeyPartitionKey") -> Iterator[StaleCause]:
         from dagster._core.definitions.events import AssetKeyPartitionKey
 
-        code_version = self.asset_graph.get(key.asset_key).code_version
         provenance = self._get_current_data_provenance(key=key)
 
         asset_deps = self.asset_graph.get(key.asset_key).parent_keys
@@ -540,8 +569,9 @@ class CachingStaleStatusResolver:
         materialization_time = materialization.timestamp
 
         if provenance:
-            if code_version and code_version != provenance.code_version:
-                yield StaleCause(key, StaleCauseCategory.CODE, "has a new code version")
+            code_cause = self._get_code_version_stale_cause(key=key)
+            if code_cause:
+                yield code_cause
 
             removed_deps = set(provenance.input_data_versions.keys()) - set(asset_deps)
             for dep_key in removed_deps:
@@ -620,6 +650,32 @@ class CachingStaleStatusResolver:
                         ],
                     )
 
+        # Propagate staleness through virtual dependencies. Virtual assets are
+        # transparent for staleness: if a non-virtual ancestor behind a virtual
+        # asset has been updated since this asset's last materialization, we treat
+        # this asset as stale.
+        for dep_asset_key in self.asset_graph.get(key.asset_key).parent_keys:
+            if not self.asset_graph.get(dep_asset_key).is_virtual:
+                continue
+            non_virtual_ancestors = self.asset_graph.get_non_virtual_ancestor_keys(dep_asset_key)
+            for ancestor_key in sorted(non_virtual_ancestors):
+                ancestor_dep = AssetKeyPartitionKey(ancestor_key, None)
+                ancestor_record = self._get_latest_data_version_record(key=ancestor_dep)
+                if ancestor_record is not None and ancestor_record.timestamp > materialization_time:
+                    yield StaleCause(
+                        key,
+                        StaleCauseCategory.DATA,
+                        "has a new dependency materialization",
+                        ancestor_dep,
+                        [
+                            StaleCause(
+                                ancestor_dep,
+                                StaleCauseCategory.DATA,
+                                "has a new materialization",
+                            )
+                        ],
+                    )
+
     @cached_method
     def _get_stale_root_causes(self, key: "AssetKeyPartitionKey") -> Sequence[StaleCause]:
         candidates = self._get_stale_causes(key=key)
@@ -678,9 +734,7 @@ class CachingStaleStatusResolver:
             return provenance is not None and provenance.is_user_provided
 
     @cached_method
-    def _get_current_data_provenance(
-        self, *, key: "AssetKeyPartitionKey"
-    ) -> Optional[DataProvenance]:
+    def _get_current_data_provenance(self, *, key: "AssetKeyPartitionKey") -> DataProvenance | None:
         record = self._get_latest_data_version_record(key=key)
         if record is None:
             return None
@@ -703,7 +757,7 @@ class CachingStaleStatusResolver:
     @cached_method
     def _get_latest_data_version_event(
         self, *, key: "AssetKeyPartitionKey"
-    ) -> Optional[Union["AssetMaterialization", "AssetObservation"]]:
+    ) -> Union["AssetMaterialization", "AssetObservation"] | None:
         record = self._get_latest_data_version_record(key=key)
         if record:
             entry = record.event_log_entry

@@ -9,7 +9,7 @@ from dagster._core.remote_representation.external_data import (
     ResourceValueSnap,
 )
 
-from dagster_graphql.schema.config_types import GrapheneConfigTypeField
+from dagster_graphql.schema.config_types import SECRET_MASK_VALUE, GrapheneConfigTypeField
 from dagster_graphql.schema.entity_key import GrapheneAssetKey
 from dagster_graphql.schema.errors import (
     GraphenePythonError,
@@ -22,6 +22,7 @@ from dagster_graphql.schema.util import ResolveInfo, non_null_list
 class GrapheneConfiguredValueType(graphene.Enum):
     VALUE = "VALUE"
     ENV_VAR = "ENV_VAR"
+    SECRET = "SECRET"
 
     class Meta:
         name = "ConfiguredValueType"
@@ -35,16 +36,19 @@ class GrapheneConfiguredValue(graphene.ObjectType):
     class Meta:
         name = "ConfiguredValue"
 
-    def __init__(self, key: str, resource_value_snap: ResourceValueSnap):
+    def __init__(self, key: str, resource_value_snap: ResourceValueSnap, is_secret: bool):
         super().__init__()
 
-        self.key = key
+        self.key = key  # ty: ignore[invalid-assignment]
         if isinstance(resource_value_snap, ResourceConfigEnvVarSnap):
-            self.type = GrapheneConfiguredValueType.ENV_VAR
-            self.value = resource_value_snap.name
+            self.type = GrapheneConfiguredValueType.ENV_VAR  # ty: ignore[invalid-assignment]
+            self.value = resource_value_snap.name  # ty: ignore[invalid-assignment]
+        elif is_secret:
+            self.type = GrapheneConfiguredValueType.SECRET  # ty: ignore[invalid-assignment]
+            self.value = SECRET_MASK_VALUE  # ty: ignore[invalid-assignment]
         else:
-            self.type = GrapheneConfiguredValueType.VALUE
-            self.value = resource_value_snap
+            self.type = GrapheneConfiguredValueType.VALUE  # ty: ignore[invalid-assignment]
+            self.value = resource_value_snap  # ty: ignore[invalid-assignment]
 
 
 GrapheneNestedResourceType = graphene.Enum.from_enum(NestedResourceType)
@@ -126,22 +130,22 @@ class GrapheneResourceDetails(graphene.ObjectType):
     ):
         super().__init__()
 
-        self.id = f"{location_name}-{repository_name}-{remote_resource.name}"
+        self.id = f"{location_name}-{repository_name}-{remote_resource.name}"  # ty: ignore[invalid-assignment]
 
         self._location_name = check.str_param(location_name, "location_name")
         self._repository_name = check.str_param(repository_name, "repository_name")
 
         self._remote_resource = check.inst_param(remote_resource, "remote_resource", RemoteResource)
-        self.name = remote_resource.name
-        self.description = remote_resource.description
+        self.name = remote_resource.name  # ty: ignore[invalid-assignment]
+        self.description = remote_resource.description  # ty: ignore[invalid-assignment]
         self._config_field_snaps = remote_resource.config_field_snaps
         self._configured_values = remote_resource.configured_values
 
         self._config_schema_snap = remote_resource.config_schema_snap
-        self.isTopLevel = remote_resource.is_top_level
+        self.isTopLevel = remote_resource.is_top_level  # ty: ignore[invalid-assignment]
         self._nested_resources = remote_resource.nested_resources
         self._parent_resources = remote_resource.parent_resources
-        self.resourceType = remote_resource.resource_type
+        self.resourceType = remote_resource.resource_type  # ty: ignore[invalid-assignment]
         self._asset_keys_using = remote_resource.asset_keys_using
         self._job_ops_using = remote_resource.job_ops_using
         self._schedules_using = remote_resource.schedules_using
@@ -157,8 +161,19 @@ class GrapheneResourceDetails(graphene.ObjectType):
         ]
 
     def resolve_configuredValues(self, _graphene_info):
+        # Build a map of field names to their is_secret flag
+        secret_fields = {
+            field_snap.name: field_snap.is_secret or False
+            for field_snap in self._config_field_snaps
+            if field_snap.name is not None
+        }
+
         return [
-            GrapheneConfiguredValue(key=key, resource_value_snap=value)
+            GrapheneConfiguredValue(
+                key=key,
+                resource_value_snap=value,
+                is_secret=secret_fields.get(key, False),
+            )
             for key, value in self._configured_values.items()
         ]
 

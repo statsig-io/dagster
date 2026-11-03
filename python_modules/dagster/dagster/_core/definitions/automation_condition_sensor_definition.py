@@ -1,14 +1,20 @@
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from functools import partial
-from typing import Any, Optional, cast
+from typing import TYPE_CHECKING, AbstractSet, Any, Union, cast  # noqa: UP035
 
 import dagster._check as check
-from dagster._annotations import beta_param
+from dagster._annotations import (
+    beta_param,
+    hidden_param,
+    only_allow_hidden_params_in_kwargs,
+    public,
+)
+from dagster._core.definitions.asset_key import AssetJobKey
 from dagster._core.definitions.asset_selection import AssetSelection, CoercibleToAssetSelection
 from dagster._core.definitions.declarative_automation.automation_condition import (
     AutomationCondition,
 )
-from dagster._core.definitions.metadata import RawMetadataMapping
+from dagster._core.definitions.metadata import JsonMetadataValue, RawMetadataMapping
 from dagster._core.definitions.run_request import SensorResult
 from dagster._core.definitions.sensor_definition import (
     DefaultSensorStatus,
@@ -16,13 +22,50 @@ from dagster._core.definitions.sensor_definition import (
     SensorEvaluationContext,
     SensorType,
 )
+from dagster._core.definitions.target import ExecutableDefinition
 from dagster._core.definitions.utils import check_valid_name
 from dagster._core.errors import DagsterInvalidInvocationError
+from dagster._utils import IHasInternalInit
 from dagster._utils.tags import normalize_tags
+
+if TYPE_CHECKING:
+    from dagster._core.remote_representation.external_data import SensorMetadataSnap
 
 MAX_ENTITIES = 500
 EMIT_BACKFILLS_METADATA_KEY = "dagster/emit_backfills"
+ASSET_JOB_KEYS_METADATA_KEY = "dagster/asset_job_keys"
 DEFAULT_AUTOMATION_CONDITION_SENSOR_NAME = "default_automation_condition_sensor"
+
+
+def asset_job_keys_from_sensor_metadata(
+    metadata: Union[Mapping[str, Any], "SensorMetadataSnap", None],
+) -> AbstractSet[AssetJobKey]:
+    """Parses the asset-job keys a sensor is responsible for evaluating out of its metadata.
+
+    Accepts two shapes because get_default_automation_condition_sensor_target iterates a
+    mixed list of sensors: a SensorDefinition's metadata (a normalized
+    Mapping[str, MetadataValue]) or a RemoteSensor's SensorMetadataSnap. Missing metadata
+    or a missing key means the sensor claims no job keys; a present key with unexpected
+    contents is an error.
+    """
+    # local import: external_data imports from this module
+    from dagster._core.remote_representation.external_data import SensorMetadataSnap
+
+    mapping: Mapping[str, Any] | None = (
+        metadata.standard_metadata if isinstance(metadata, SensorMetadataSnap) else metadata
+    )
+    if not mapping or ASSET_JOB_KEYS_METADATA_KEY not in mapping:
+        return set()
+    # the sorted list of job names written in __init__ normalizes to a JsonMetadataValue,
+    # on the definition side and (after the serdes round-trip) on the snapshot side alike
+    job_names = check.inst(
+        mapping[ASSET_JOB_KEYS_METADATA_KEY],
+        JsonMetadataValue,
+        f"unexpected value for sensor metadata key {ASSET_JOB_KEYS_METADATA_KEY}",
+    ).value
+    return {
+        AssetJobKey(job_name=check.str_param(job_name, "job_name")) for job_name in job_names or []
+    }
 
 
 def _evaluate(sensor_def: "AutomationConditionSensorDefinition", context: SensorEvaluationContext):
@@ -49,6 +92,7 @@ def _evaluate(sensor_def: "AutomationConditionSensorDefinition", context: Sensor
         observe_run_tags={},
         auto_observe_asset_keys=set(),
         asset_selection=sensor_def.asset_selection,
+        asset_job_keys=sensor_def.asset_job_keys,
         emit_backfills=sensor_def.emit_backfills,
         default_condition=sensor_def.default_condition,
         logger=context.log,
@@ -76,9 +120,17 @@ def not_supported(context) -> None:
     )
 
 
+@public
 @beta_param(param="use_user_code_server")
 @beta_param(param="default_condition")
-class AutomationConditionSensorDefinition(SensorDefinition):
+@hidden_param(
+    param="asset_job_keys",
+    breaking_version="",
+    additional_warn_text="This parameter is internal: it is populated automatically on the "
+    "default automation condition sensor and will be replaced by a job-selection API.",
+    emit_runtime_warning=False,
+)
+class AutomationConditionSensorDefinition(SensorDefinition, IHasInternalInit):
     """Targets a set of assets and repeatedly evaluates all the AutomationConditions on all of
     those assets to determine which to request runs for.
 
@@ -147,16 +199,18 @@ class AutomationConditionSensorDefinition(SensorDefinition):
         name: str,
         *,
         target: CoercibleToAssetSelection,
-        tags: Optional[Mapping[str, str]] = None,
-        run_tags: Optional[Mapping[str, Any]] = None,
+        tags: Mapping[str, str] | None = None,
+        run_tags: Mapping[str, Any] | None = None,
         default_status: DefaultSensorStatus = DefaultSensorStatus.STOPPED,
-        minimum_interval_seconds: Optional[int] = None,
-        description: Optional[str] = None,
-        metadata: Optional[RawMetadataMapping] = None,
+        minimum_interval_seconds: int | None = None,
+        description: str | None = None,
+        metadata: RawMetadataMapping | None = None,
         emit_backfills: bool = True,
         use_user_code_server: bool = False,
-        default_condition: Optional[AutomationCondition] = None,
+        default_condition: AutomationCondition | None = None,
+        **kwargs: Any,
     ):
+        only_allow_hidden_params_in_kwargs(AutomationConditionSensorDefinition, kwargs)
         self._use_user_code_server = use_user_code_server
         check.bool_param(emit_backfills, "allow_backfills")
 
@@ -170,10 +224,35 @@ class AutomationConditionSensorDefinition(SensorDefinition):
         )
 
         self._run_tags = normalize_tags(run_tags)
+        self._sensor_target = target
+        self._emit_backfills = emit_backfills
 
         # only store this value in the metadata if it's True
         if emit_backfills:
             metadata = {**(metadata or {}), EMIT_BACKFILLS_METADATA_KEY: True}
+
+        # asset-job keys are carried in metadata so they cross the snapshot boundary to
+        # the daemon (the same channel emit_backfills uses)
+        asset_job_keys = kwargs.get("asset_job_keys")
+        # user-code sensors do not yet support job automation conditions
+        check.param_invariant(
+            not (asset_job_keys and self._use_user_code_server),
+            "asset_job_keys",
+            "Setting `asset_job_keys` on a user-code AutomationConditionSensorDefinition is not"
+            " supported: job automation conditions can currently only be evaluated by"
+            " non-user-code sensors. Set `use_user_code_server=False` or move the job keys to a"
+            " sensor that does not use the user code server.",
+        )
+        if asset_job_keys:
+            metadata = {
+                **(metadata or {}),
+                ASSET_JOB_KEYS_METADATA_KEY: sorted(
+                    key.job_name
+                    for key in check.set_param(
+                        asset_job_keys, "asset_job_keys", of_type=AssetJobKey
+                    )
+                ),
+            }
 
         super().__init__(
             name=check_valid_name(name),
@@ -203,9 +282,69 @@ class AutomationConditionSensorDefinition(SensorDefinition):
         return EMIT_BACKFILLS_METADATA_KEY in self.metadata
 
     @property
-    def default_condition(self) -> Optional[AutomationCondition]:
+    def default_condition(self) -> AutomationCondition | None:
         return self._default_condition
+
+    @property
+    def asset_job_keys(self) -> AbstractSet[AssetJobKey]:
+        """The asset-job entity keys this sensor is responsible for evaluating."""
+        return asset_job_keys_from_sensor_metadata(self.metadata)
 
     @property
     def sensor_type(self) -> SensorType:
         return SensorType.AUTOMATION if self._use_user_code_server else SensorType.AUTO_MATERIALIZE
+
+    @staticmethod
+    def dagster_internal_init(  # type: ignore
+        *,
+        name: str,
+        target: CoercibleToAssetSelection,
+        tags: Mapping[str, str] | None,
+        run_tags: Mapping[str, Any] | None,
+        default_status: DefaultSensorStatus,
+        minimum_interval_seconds: int | None,
+        description: str | None,
+        metadata: RawMetadataMapping | None,
+        emit_backfills: bool,
+        use_user_code_server: bool,
+        default_condition: AutomationCondition | None,
+        **kwargs: Any,
+    ) -> "AutomationConditionSensorDefinition":
+        return AutomationConditionSensorDefinition(
+            name=name,
+            target=target,
+            tags=tags,
+            run_tags=run_tags,
+            default_status=default_status,
+            minimum_interval_seconds=minimum_interval_seconds,
+            description=description,
+            metadata=metadata,
+            emit_backfills=emit_backfills,
+            use_user_code_server=use_user_code_server,
+            default_condition=default_condition,
+            **kwargs,
+        )
+
+    def with_attributes(
+        self,
+        *,
+        jobs: Sequence[ExecutableDefinition] | None = None,
+        metadata: RawMetadataMapping | None = None,
+    ) -> "AutomationConditionSensorDefinition":
+        """Returns a copy of this sensor with the attributes replaced.
+
+        Note: jobs parameter is ignored for AutomationConditionSensorDefinition as it doesn't use jobs.
+        """
+        return AutomationConditionSensorDefinition.dagster_internal_init(
+            name=self.name,
+            target=self._sensor_target,
+            tags=self._tags,
+            run_tags=self._run_tags,
+            default_status=self.default_status,
+            minimum_interval_seconds=self.minimum_interval_seconds,
+            description=self.description,
+            metadata=metadata if metadata is not None else self._metadata,
+            emit_backfills=self._emit_backfills,
+            use_user_code_server=self._use_user_code_server,
+            default_condition=self._default_condition,
+        )

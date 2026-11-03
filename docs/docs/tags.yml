@@ -38,15 +38,31 @@ metadata:
   label: 'metadata'
   permalink: '/integrations/metadata'
   description: 'Metadata integrations.'
+migration:
+  label: 'migration'
+  permalink: '/integrations/migration'
+  description: 'Migration integrations.'
 other:
   label: 'other'
   permalink: '/integrations/other'
   description: 'Other integrations'
-reference-architecture:
-  label: 'reference-architecture'
-  permalink: '/examples/reference-architecture'
-  description: 'Reference architecture.'
+reverse-etl:
+  label: 'reverse-etl'
+  permalink: '/integrations/reverse-etl'
+  description: 'Reverse ETL integrations'
+testing:
+  label: 'testing'
+  permalink: '/integrations/testing'
+  description: 'Testing integrations'
 code-example:
   label: 'code-example'
   permalink: '/examples/code-example'
   description: 'Code example.'
+dagster-plus-feature:
+  label: 'dagster-plus-feature'
+  permalink: '/features/dagster-plus-feature'
+  description: 'Dagster+ features.'
+component:
+  label: 'Dagster Component integration'
+  permalink: '/integrations/component'
+  description: 'Dagster Component version of integration.'

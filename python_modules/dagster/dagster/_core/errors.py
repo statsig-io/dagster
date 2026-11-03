@@ -16,9 +16,9 @@ Dagster runtime.
 """
 
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from dagster_shared.error import DagsterError
 
@@ -75,8 +75,8 @@ If this config type represents a resource dependency, its annotation must either
 
 
 def _generate_pythonic_config_error_message(
-    config_class: Optional[type],
-    field_name: Optional[str],
+    config_class: type | None,
+    field_name: str | None,
     invalid_type: Any,
     is_resource: bool = False,
 ) -> str:
@@ -104,8 +104,8 @@ class DagsterInvalidPythonicConfigDefinitionError(DagsterError):
 
     def __init__(
         self,
-        config_class: Optional[type],
-        field_name: Optional[str],
+        config_class: type | None,
+        field_name: str | None,
         invalid_type: Any,
         is_resource: bool = False,
         **kwargs,
@@ -132,7 +132,7 @@ class DagsterInvalidDagsterTypeInPythonicConfigDefinitionError(DagsterError):
     def __init__(
         self,
         config_class_name: str,
-        field_name: Optional[str],
+        field_name: str | None,
         **kwargs,
     ):
         self.field_name = field_name
@@ -318,7 +318,7 @@ class DagsterUserCodeExecutionError(DagsterError):
         self.original_exc_info = original_exc_info
 
     @property
-    def is_user_code_error(self) -> bool:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def is_user_code_error(self) -> bool:
         return True
 
 
@@ -445,6 +445,16 @@ class DagsterSubprocessError(DagsterError):
 
 class DagsterUserCodeUnreachableError(DagsterError):
     """Dagster was unable to reach a user code server to fetch information about user code."""
+
+
+class DagsterUserCodeUnreachableTimeoutError(DagsterUserCodeUnreachableError):
+    """Raised when a call to user code was successfully dispatched but did not produce a response
+    within the caller's poll window. The work may still be running server-side; the caller has
+    simply given up waiting.
+
+    Distinct from the parent so callers can branch on "still running, just slow" vs. "agent /
+    transport actually unreachable".
+    """
 
 
 class DagsterUserCodeProcessError(DagsterError):

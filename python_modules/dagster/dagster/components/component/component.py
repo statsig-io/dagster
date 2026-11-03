@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from dagster_shared.record import IHaveNew, record_custom
+from dagster_shared.serdes.objects.package_entry import ComponentProducesKind
 from dagster_shared.yaml_utils.source_position import SourcePosition
 from pydantic import BaseModel, TypeAdapter
 from typing_extensions import Self
@@ -15,13 +16,20 @@ from dagster._core.definitions.definitions_class import Definitions
 from dagster._core.definitions.metadata.source_code import CodeReference, LocalFileCodeReference
 from dagster._core.definitions.utils import validate_component_owner
 from dagster.components.component.component_scaffolder import DefaultComponentScaffolder
-from dagster.components.component.template_vars import get_static_template_vars
+from dagster.components.component.template_vars import get_context_free_static_template_vars
 from dagster.components.resolved.base import Resolvable
+from dagster.components.resolved.model import Model
 from dagster.components.scaffold.scaffold import scaffold_with
 
 if TYPE_CHECKING:
     from dagster.components.core.context import ComponentLoadContext
     from dagster.components.core.decl import ComponentDecl
+
+
+class EmptyAttributesModel(Model):
+    """Represents a model that should explicitly have no fields set."""
+
+    pass
 
 
 @public
@@ -38,24 +46,41 @@ class ComponentTypeSpec(IHaveNew):
             string can be a user's email address, or a team name prefixed with `team:`,
             e.g. `team:finops`.
         tags (Optional[Sequence[str]]): Tags for filtering and organizing.
+        produces (Optional[Sequence[str]]): The kinds of Dagster primitives this component
+            creates. Must be values from ``ComponentProducesKind``: ``asset``,
+            ``asset_check``, ``schedule``, ``sensor``, ``job``, ``resource``.
+            Declared (not derived) because a component's definitions are only known once it
+            is instantiated with config; the type-level listing has neither. Surfaced on
+            ``ComponentTypeInfo`` for UI picker filtering and contextual entry points.
 
     """
 
-    description: PublicAttr[Optional[str]]
+    description: PublicAttr[str | None]
     tags: PublicAttr[Sequence[str]]
     owners: PublicAttr[Sequence[str]]
     metadata: PublicAttr[Mapping[str, Any]]
+    produces: PublicAttr[Sequence[str]]
 
     def __new__(
         cls,
-        description: Optional[str] = None,
-        tags: Optional[Sequence[str]] = None,
-        owners: Optional[Sequence[str]] = None,
-        metadata: Optional[Mapping[str, Any]] = None,
+        description: str | None = None,
+        tags: Sequence[str] | None = None,
+        owners: Sequence[str] | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        produces: Sequence[str] | None = None,
     ):
         owners = check.opt_sequence_param(owners, "owners", of_type=str)
         for owner in owners:
             validate_component_owner(owner)
+
+        produces = check.opt_sequence_param(produces, "produces", of_type=str)
+        allowed_produces = {kind.value for kind in ComponentProducesKind}
+        invalid_produces = sorted({p for p in produces if p not in allowed_produces})
+        check.param_invariant(
+            not invalid_produces,
+            "produces",
+            f"Invalid produces kind(s): {invalid_produces}. Allowed kinds: {sorted(allowed_produces)}.",
+        )
 
         return super().__new__(
             cls,
@@ -63,6 +88,7 @@ class ComponentTypeSpec(IHaveNew):
             tags=check.opt_sequence_param(tags, "tags", of_type=str),
             owners=owners,
             metadata=check.opt_mapping_param(metadata, "metadata", key_type=str),
+            produces=[p.value if isinstance(p, ComponentProducesKind) else p for p in produces],
         )
 
 
@@ -220,11 +246,16 @@ class Component(ABC):
                 pass
 
     See Also:
-        - :py:class:`dagster.Definitions`: The object returned by ``build_defs()``
-        - :py:class:`dagster.ComponentLoadContext`: Context provided to ``build_defs()``
-        - :py:class:`dagster.components.resolved.base.Resolvable`: Base for configurable components
-        - :py:class:`dagster.Model`: Recommended base class for component schemas
-        - :py:func:`dagster.scaffold_with`: Decorator for custom scaffolding
+        * :py:class:`dagster.Definitions`
+            The object returned by ``build_defs()``
+        * :py:class:`dagster.ComponentLoadContext`
+            Context provided to ``build_defs()``
+        * :py:class:`dagster.components.resolved.base.Resolvable`
+            Base for configurable components
+        * :py:class:`dagster.Model`
+            Recommended base class for component schemas
+        * :py:func:`dagster.scaffold_with`
+            Decorator for custom scaffolding
 
     """
 
@@ -238,7 +269,7 @@ class Component(ABC):
     def __dg_package_entry__(cls) -> None: ...
 
     @classmethod
-    def get_schema(cls) -> Optional[type[BaseModel]]:
+    def get_schema(cls) -> type[BaseModel] | None:
         return None
 
     @classmethod
@@ -246,7 +277,7 @@ class Component(ABC):
         return ComponentTypeSpec()
 
     @classmethod
-    def get_model_cls(cls) -> Optional[type[BaseModel]]:
+    def get_model_cls(cls) -> type[BaseModel] | None:
         if issubclass(cls, Resolvable):
             return cls.model()
 
@@ -255,22 +286,42 @@ class Component(ABC):
         if cls_from_get_schema:
             return cls_from_get_schema
 
-        return None
+        # explicitly mark that the component has no attributes
+        return EmptyAttributesModel
 
     @classmethod
     def get_additional_scope(cls) -> Mapping[str, Any]:
-        return get_static_template_vars(cls)
+        return get_context_free_static_template_vars(cls)
 
     @abstractmethod
     def build_defs(self, context: "ComponentLoadContext") -> Definitions: ...
 
     @classmethod
-    def load(cls, attributes: Optional[BaseModel], context: "ComponentLoadContext") -> Self:
+    def load(cls, attributes: BaseModel | None, context: "ComponentLoadContext") -> Self:
         if issubclass(cls, Resolvable):
+            from dagster.components.resolved.scopes import DeprecatedScope, LoadContextScope
+
+            # Wrap the context to expose it in templates
+            template_ctx = LoadContextScope(context)
+
             context_with_injected_scope = context.with_rendering_scope(
                 {
-                    "load_component_at_path": context.component_tree.load_component_at_path,
-                    "build_defs_at_path": context.component_tree.build_defs_at_path,
+                    # New namespaced access
+                    "context": template_ctx,
+                    # Backward compatibility - deprecated, will be removed in 1.13.0
+                    "project_root": DeprecatedScope(
+                        "project_root", "context.project_root", template_ctx.project_root
+                    ),
+                    "load_component_at_path": DeprecatedScope(
+                        "load_component_at_path",
+                        "context.load_component",
+                        context.load_component,
+                    ),
+                    "build_defs_at_path": DeprecatedScope(
+                        "build_defs_at_path",
+                        "context.build_defs",
+                        context.build_defs,
+                    ),
                 }
             )
             return (
@@ -302,7 +353,7 @@ class Component(ABC):
         ]
 
     @classmethod
-    def get_description(cls) -> Optional[str]:
+    def get_description(cls) -> str | None:
         return cls.get_spec().description or inspect.getdoc(cls)
 
     @classmethod
@@ -335,7 +386,7 @@ class Component(ABC):
         Returns:
             A Component instance.
         """
-        from dagster.components.core.tree import ComponentTree
+        from dagster.components.core.component_tree import ComponentTree
 
         model_cls = cls.get_model_cls()
         assert model_cls
@@ -355,8 +406,8 @@ class Component(ABC):
         Returns:
             A Component instance.
         """
+        from dagster.components.core.component_tree import ComponentTree
         from dagster.components.core.defs_module import load_yaml_component_from_path
-        from dagster.components.core.tree import ComponentTree
 
         return load_yaml_component_from_path(
             context=context or ComponentTree.for_test().load_context,

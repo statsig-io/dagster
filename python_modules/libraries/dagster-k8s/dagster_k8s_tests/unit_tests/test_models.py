@@ -40,7 +40,7 @@ def test_extra_key():
         },
         "extra_key": "extra_val",
     }
-    with pytest.raises(Exception, match="Unexpected keys in model class V1Volume: {'extra_key'}"):
+    with pytest.raises(Exception, match=r"Unexpected keys in model class V1Volume: {'extra_key'}"):
         k8s_model_from_dict(kubernetes.client.V1Volume, volume_dict)
 
 
@@ -133,7 +133,7 @@ def test_snake_case_extra_key():
         },
         "extraKey": "extra_val",
     }
-    with pytest.raises(Exception, match="Unexpected keys in model class V1Volume: {'extraKey'}"):
+    with pytest.raises(Exception, match=r"Unexpected keys in model class V1Volume: {'extraKey'}"):
         k8s_snake_case_dict(kubernetes.client.V1Volume, volume_dict)
 
 
@@ -150,3 +150,34 @@ def test_logger_calls_bounded():
 
     # Creating a model should not use the logger lock
     assert mock_set_level.call_count == 0
+
+
+def test_snake_case_dict_type_pep585_format():
+    with mock.patch.object(
+        kubernetes.client.V1CSIVolumeSource,
+        "openapi_types",
+        {
+            **kubernetes.client.V1CSIVolumeSource.openapi_types,
+            "volume_attributes": "dict[str, str]",
+        },
+    ):
+        volume_dict = {
+            "name": "my_volume",
+            "csi": {
+                "driver": "my_driver",
+                "volumeAttributes": {"fooKey": "fooVal"},
+            },
+        }
+
+        assert k8s_snake_case_dict(
+            kubernetes.client.V1Volume,
+            volume_dict,
+        ) == {
+            "name": "my_volume",
+            "csi": {
+                "driver": "my_driver",
+                "volume_attributes": {
+                    "fooKey": "fooVal",
+                },
+            },
+        }

@@ -1,9 +1,8 @@
-from collections.abc import Mapping
-from typing import Any, Callable, NamedTuple, Optional, Union, cast
-
-from typing_extensions import TypeAlias
+from collections.abc import Callable, Mapping
+from typing import Any, NamedTuple, TypeAlias, cast
 
 import dagster._check as check
+from dagster._annotations import public
 from dagster._builtins import BuiltinEnum
 from dagster._config import (
     ConfigType,
@@ -21,17 +20,18 @@ from dagster._core.errors import DagsterInvalidConfigError
 ConfigMappingFn: TypeAlias = Callable[[Any], Any]
 
 
-def is_callable_valid_config_arg(config: Union[Callable[..., Any], Mapping[str, object]]) -> bool:
+def is_callable_valid_config_arg(config: Callable[..., Any] | Mapping[str, object]) -> bool:
     return BuiltinEnum.contains(config) or is_supported_config_python_builtin(config)
 
 
+@public
 class ConfigMapping(
     NamedTuple(
         "_ConfigMapping",
         [
             ("config_fn", Callable[[Any], Any]),
             ("config_schema", IDefinitionConfigSchema),
-            ("receive_processed_config_values", Optional[bool]),
+            ("receive_processed_config_values", bool | None),
         ],
     )
 ):
@@ -58,8 +58,8 @@ class ConfigMapping(
     def __new__(
         cls,
         config_fn: ConfigMappingFn,
-        config_schema: Optional[Any] = None,
-        receive_processed_config_values: Optional[bool] = None,
+        config_schema: Any | None = None,
+        receive_processed_config_values: bool | None = None,
     ):
         return super().__new__(
             cls,

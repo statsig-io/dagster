@@ -1,11 +1,11 @@
 import importlib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from functools import cached_property
-from typing import Annotated, Any, Callable, Literal, Optional, Union
+from typing import Annotated, Any, Literal, TypeAlias
 
 from dagster_shared import check
-from typing_extensions import TypeAlias
 
+from dagster._annotations import public
 from dagster._config.field import Field
 from dagster._config.pythonic_config.config import Config
 from dagster._config.pythonic_config.type_check_utils import safe_is_subclass
@@ -44,7 +44,7 @@ class FunctionSpec(OpSpec):
     fn: ResolvableCallable
 
 
-def get_config_param_type(fn: Callable) -> Union[type[Config], None]:
+def get_config_param_type(fn: Callable) -> type[Config] | None:
     """Get the type annotation of the 'config' parameter if it exists.
 
     Args:
@@ -84,55 +84,57 @@ class ExecuteFnMetadata:
         return {arg.name for arg in get_function_params(self.execute_fn)}
 
     @cached_property
-    def config_cls(self) -> Union[type, None]:
+    def config_cls(self) -> type[Config] | None:
         return get_config_param_type(self.execute_fn)
 
     @cached_property
-    def config_fields(self) -> Optional[dict[str, Field]]:
+    def config_fields(self) -> dict[str, Field] | None:
         return self.config_cls.to_fields_dict() if self.config_cls else None
 
 
+@public
 class FunctionComponent(ExecutableComponent):
     """Represents a Python function, alongside the set of assets or asset checks that it is responsible for executing.
 
     The provided function should return either a `MaterializeResult` or an `AssetCheckResult`.
 
     Examples:
-    ```yaml
-    type: dagster.FunctionComponent
-    attributes:
-      execution:
-        fn: .my_module.update_table
-      assets:
-        - key: my_table
-    ```
 
-    ```python
-    from dagster import MaterializeResult
+    .. code-block:: yaml
 
-    def update_table(context: AssetExecutionContext) -> MaterializeResult:
-        # ...
-        return MaterializeResult(metadata={"rows_updated": 100})
+        type: dagster.FunctionComponent
+        attributes:
+          execution:
+            fn: .my_module.update_table
+          assets:
+            - key: my_table
 
-    @component
-    def my_component():
-        return FunctionComponent(
-            execution=update_table,
-            assets=[AssetSpec(key="my_table")],
-        )
-    ```
+    .. code-block:: python
+
+        from dagster import MaterializeResult
+
+        def update_table(context: AssetExecutionContext) -> MaterializeResult:
+            # ...
+            return MaterializeResult(metadata={"rows_updated": 100})
+
+        @component
+        def my_component():
+            return FunctionComponent(
+                execution=update_table,
+                assets=[AssetSpec(key="my_table")],
+            )
 
     """
 
     ## Begin overloads
-    execution: Union[FunctionSpec, ResolvableCallable]
+    execution: FunctionSpec | ResolvableCallable
 
     @property
     def op_spec(self) -> OpSpec:
         return (
             self.execution
             if isinstance(self.execution, FunctionSpec)
-            else FunctionSpec(name=self.execution.__name__, fn=self.execution)
+            else FunctionSpec(name=self.execution.__name__, fn=self.execution)  # ty: ignore[unresolved-attribute]
         )
 
     @property
@@ -140,18 +142,18 @@ class FunctionComponent(ExecutableComponent):
         return self.execute_fn_metadata.resource_keys
 
     @cached_property
-    def config_fields(self) -> Optional[dict[str, Field]]:
+    def config_fields(self) -> dict[str, Field] | None:
         return self.execute_fn_metadata.config_fields
 
     @property
-    def config_cls(self) -> Optional[type]:
+    def config_cls(self) -> type[Config] | None:
         return self.execute_fn_metadata.config_cls
 
     def invoke_execute_fn(
         self,
-        context: Union[AssetExecutionContext, AssetCheckExecutionContext],
+        context: AssetExecutionContext | AssetCheckExecutionContext,
         component_load_context: ComponentLoadContext,
-    ) -> Iterable[Union[MaterializeResult, AssetCheckResult]]:
+    ) -> Iterable[MaterializeResult | AssetCheckResult]:
         rd = context.resources.original_resource_dict
         expected_fn_kwargs = self.resource_keys | ({"config"} if self.config_cls else set())
 
@@ -166,7 +168,7 @@ class FunctionComponent(ExecutableComponent):
         return self.execute_fn_metadata.execute_fn(context, **fn_kwargs)
 
     def get_config_param_dict(
-        self, context: Union[AssetExecutionContext, AssetCheckExecutionContext]
+        self, context: AssetExecutionContext | AssetCheckExecutionContext
     ) -> dict[str, Any]:
         if not self.config_cls:
             return {}

@@ -1,6 +1,6 @@
 # pylint disable is for bug: https://github.com/PyCQA/pylint/issues/3299
 from collections.abc import Generator, Sequence
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 import dagster._check as check
 from dagster._config.errors import EvaluationError
@@ -12,8 +12,8 @@ T = TypeVar("T")
 @record
 class EvaluateValueResult(Generic[T]):
     success: bool
-    value: Optional[T]
-    errors: Optional[Sequence[EvaluationError]]
+    value: T | None
+    errors: Sequence[EvaluationError] | None
 
     @staticmethod
     def for_error(error: EvaluationError) -> "EvaluateValueResult[Any]":
@@ -25,7 +25,7 @@ class EvaluateValueResult(Generic[T]):
 
     @staticmethod
     def for_value(value: T) -> "EvaluateValueResult[T]":
-        return EvaluateValueResult(success=True, value=value, errors=None)
+        return EvaluateValueResult(success=True, value=value, errors=None)  # ty: ignore[invalid-return-type]
 
     def errors_at_level(self, *levels: str) -> Sequence[EvaluationError]:
         return list(self._iterate_errors_at_level(list(levels)))

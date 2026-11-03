@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from functools import cached_property
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Literal, Optional, TypedDict, Union, cast
+from typing import TYPE_CHECKING, Any, Literal, Optional, TypeAlias, TypedDict, cast
 
 from dagster_pipes import (
     DAGSTER_PIPES_CONTEXT_ENV_VAR,
@@ -22,11 +22,10 @@ from dagster_pipes import (
     _env_var_to_cli_argument,
     encode_param,
 )
-from typing_extensions import TypeAlias
 
 import dagster._check as check
 from dagster import DagsterEvent
-from dagster._annotations import public
+from dagster._annotations import preview, public
 from dagster._core.definitions.asset_checks.asset_check_result import AssetCheckResult
 from dagster._core.definitions.asset_checks.asset_check_spec import AssetCheckSeverity
 from dagster._core.definitions.data_version import DataProvenance, DataVersion
@@ -57,9 +56,17 @@ if TYPE_CHECKING:
     from dagster._core.pipes.client import PipesMessageReader
 
 
-PipesExecutionResult: TypeAlias = Union[MaterializeResult, AssetCheckResult]
+PipesExecutionResult: TypeAlias = MaterializeResult | AssetCheckResult
 
 
+# Reserved key used by `PipesCompositeMessageReader` to encode a list of per-writer params
+# inside the opaque `message_reader_params` dict. When present, session helpers like
+# `get_per_writer_bootstrap_env_vars` unpack the list; otherwise the session behaves as
+# single-writer.
+PIPES_COMPOSITE_WRITERS_KEY = "dagster_pipes_composite_writers"
+
+
+@public
 class PipesLaunchedData(TypedDict):
     """Payload generated in the orchestration process after external process startup
     containing arbitrary information about the external process.
@@ -68,6 +75,7 @@ class PipesLaunchedData(TypedDict):
     extras: Mapping[str, Any]
 
 
+@public
 class PipesMessageHandler:
     """Class to process :py:obj:`PipesMessage` objects received from a pipes process.
 
@@ -82,7 +90,7 @@ class PipesMessageHandler:
     # but it would also be awkward to have a monolith that users extend.
     def __init__(
         self,
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         message_reader: "PipesMessageReader",
     ) -> None:
         self._context = context
@@ -90,11 +98,14 @@ class PipesMessageHandler:
         # Queue is thread-safe
         self._result_queue: Queue[PipesExecutionResult] = Queue()
         self._extra_msg_queue: Queue[Any] = Queue()
-        # Only read by the main thread after all messages are handled, so no need for a lock
-        self._received_opened_msg = False
+        # `opened`/`closed` are tracked as counts to support readers that demultiplex multiple
+        # writers into a single handler (e.g. PipesCompositeMessageReader). The expected count is
+        # read from the reader; single-writer readers default to 1 and behavior is unchanged.
+        self._expected_writers = message_reader.expected_writer_count
+        self._opened_count = 0
+        self._closed_count = 0
         self._messages_include_stdio_logs = False
-        self._received_closed_msg = False
-        self._opened_payload: Optional[PipesOpenedData] = None
+        self._opened_payload: PipesOpenedData | None = None
 
     @contextmanager
     def handle_messages(self) -> Iterator[PipesParams]:
@@ -109,11 +120,15 @@ class PipesMessageHandler:
 
     @property
     def received_opened_message(self) -> bool:
-        return self._received_opened_msg
+        # True once at least one writer has opened. Used to distinguish "no messages at all"
+        # from "some writers didn't close cleanly".
+        return self._opened_count >= 1
 
     @property
     def received_closed_message(self) -> bool:
-        return self._received_closed_msg
+        # True once all expected writers have closed. For single-writer (the default) this is
+        # identical to the original boolean semantics.
+        return self._closed_count >= self._expected_writers
 
     def _resolve_metadata(
         self, metadata: Mapping[str, ExternalMetadataValue]
@@ -122,7 +137,7 @@ class PipesMessageHandler:
 
     # Type ignores because we currently validate in individual handlers
     def handle_message(self, message: PipesMessage) -> None:
-        if self._received_closed_msg:
+        if self.received_closed_message:
             self._context.log.warning(
                 f"[pipes] unexpected message received after closed: `{message}`"
             )
@@ -146,12 +161,15 @@ class PipesMessageHandler:
             raise DagsterPipesExecutionError(f"Unknown message method: {message['method']}")
 
     def _handle_opened(self, opened_payload: PipesOpenedData) -> None:
-        self._received_opened_msg = True
-        self._context.log.info("[pipes] external process successfully opened dagster pipes.")
+        self._opened_count += 1
+        # Only log once on the first `opened` from any writer; subsequent composite writers are
+        # noisy and not useful to surface individually.
+        if self._opened_count == 1:
+            self._context.log.info("[pipes] external process successfully opened dagster pipes.")
         self._message_reader.on_opened(opened_payload)
 
-    def _handle_closed(self, params: Optional[Mapping[str, Any]]) -> None:
-        self._received_closed_msg = True
+    def _handle_closed(self, params: Mapping[str, Any] | None) -> None:
+        self._closed_count += 1
         if params and "exception" in params:
             err_info = _ser_err_from_pipes_exc(params["exception"])
             # report as an engine event to provide structured exception data
@@ -164,8 +182,8 @@ class PipesMessageHandler:
     def _handle_report_asset_materialization(
         self,
         asset_key: str,
-        metadata: Optional[Mapping[str, ExternalMetadataValue]],
-        data_version: Optional[str],
+        metadata: Mapping[str, ExternalMetadataValue] | None,
+        data_version: str | None,
     ) -> None:
         check.str_param(asset_key, "asset_key")
         check.opt_str_param(data_version, "data_version")
@@ -210,7 +228,7 @@ class PipesMessageHandler:
         self._context.log.log(level, message)
 
     def _handle_log_external_stream(
-        self, stream: Literal["stdout", "stderr"], text: str, extras: Optional[PipesExtras] = None
+        self, stream: Literal["stdout", "stderr"], text: str, extras: PipesExtras | None = None
     ):
         if stream == "stdout":
             sys.stdout.write(text)
@@ -240,6 +258,7 @@ class PipesMessageHandler:
         self._message_reader.on_launched(launched_payload)
 
 
+@public
 @dataclass
 class PipesSession:
     """Object representing a pipes session.
@@ -277,7 +296,7 @@ class PipesSession:
     message_handler: PipesMessageHandler
     context_injector_params: PipesParams
     message_reader_params: PipesParams
-    context: Union[OpExecutionContext, AssetExecutionContext]
+    context: OpExecutionContext | AssetExecutionContext
     created_at: datetime = field(default_factory=datetime.now)
 
     @cached_property
@@ -317,6 +336,51 @@ class PipesSession:
         }
 
     @public
+    @preview
+    def get_per_writer_bootstrap_env_vars(self) -> Sequence[Mapping[str, str]]:
+        """Encode bootstrap params for each external writer as environment variables.
+
+        Most sessions are single-writer and this returns a one-element sequence equivalent to
+        `[get_bootstrap_env_vars()]`. For sessions using :py:class:`PipesCompositeMessageReader`,
+        this returns N per-writer env var mappings, one per underlying reader. Callers that
+        launch multiple external processes that independently report back into a single
+        Dagster session (e.g. Databricks multi-task jobs) should pass each writer's mapping
+        to its corresponding external process.
+        """
+        return [
+            {param_name: encode_param(param_value) for param_name, param_value in params.items()}
+            for params in self._per_writer_bootstrap_params()
+        ]
+
+    @public
+    @preview
+    def get_per_writer_bootstrap_cli_arguments(self) -> Sequence[Mapping[str, str]]:
+        """Per-writer analog of `get_bootstrap_cli_arguments`. See
+        :py:meth:`get_per_writer_bootstrap_env_vars` for semantics.
+        """
+        return [
+            {
+                _env_var_to_cli_argument(param_name): encode_param(param_value)
+                for param_name, param_value in params.items()
+            }
+            for params in self._per_writer_bootstrap_params()
+        ]
+
+    def _per_writer_bootstrap_params(self) -> Sequence[Mapping[str, Any]]:
+        msg_params = self.message_reader_params
+        if PIPES_COMPOSITE_WRITERS_KEY in msg_params:
+            writer_params_list = msg_params[PIPES_COMPOSITE_WRITERS_KEY]
+        else:
+            writer_params_list = [msg_params]
+        return [
+            {
+                DAGSTER_PIPES_CONTEXT_ENV_VAR: self.context_injector_params,
+                DAGSTER_PIPES_MESSAGES_ENV_VAR: writer_params,
+            }
+            for writer_params in writer_params_list
+        ]
+
+    @public
     def get_bootstrap_params(self) -> Mapping[str, Any]:
         """Get the params necessary to bootstrap a launched pipes process. These parameters are typically
         are as environment variable. See `get_bootstrap_env_vars`. It is the context injector's
@@ -336,7 +400,7 @@ class PipesSession:
         self,
         *,
         implicit_materializations: bool = True,
-        metadata: Optional[Mapping[str, MetadataValue]] = None,
+        metadata: Mapping[str, MetadataValue] | None = None,
     ) -> Sequence[PipesExecutionResult]:
         """:py:class:`PipesExecutionResult` objects reported from the external process,
             potentially modified by Pipes.
@@ -408,15 +472,15 @@ class PipesSession:
     ) -> Sequence[PipesExecutionResult]:
         results_with_metadata = []
         for result in results:
-            result = result._replace(metadata={**(result.metadata or {}), **metadata})  # noqa: PLW2901
+            result = result._replace(metadata={**(result.metadata or {}), **metadata})  # noqa: PLW2901  # ty: ignore[invalid-argument-type]
             results_with_metadata.append(result)
 
         return results_with_metadata
 
 
 def build_external_execution_context_data(
-    context: Union[OpExecutionContext, AssetExecutionContext],
-    extras: Optional[PipesExtras],
+    context: OpExecutionContext | AssetExecutionContext,
+    extras: PipesExtras | None,
 ) -> "PipesContextData":
     asset_keys = (
         [_convert_asset_key(key) for key in sorted(context.selected_asset_keys)]
@@ -476,7 +540,7 @@ def _convert_asset_key(asset_key: AssetKey) -> str:
 
 
 def _convert_data_provenance(
-    provenance: Optional[DataProvenance],
+    provenance: DataProvenance | None,
 ) -> Optional["PipesDataProvenance"]:
     return (
         None

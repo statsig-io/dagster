@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from time import sleep
-from typing import AbstractSet, Any, Optional, Union  # noqa: UP035
+from typing import AbstractSet, Any  # noqa: UP035
 
 from typing_extensions import TypedDict
 
@@ -47,7 +47,7 @@ class ExternalSystem:
         self._db = _Database(storage_path)
 
     def materialize(
-        self, asset_spec: AssetInfo, provenance_spec: Optional[ProvenanceSpec]
+        self, asset_spec: AssetInfo, provenance_spec: ProvenanceSpec | None
     ) -> MaterializeResult:
         """Recompute an asset if its provenance is missing or stale.
 
@@ -84,7 +84,7 @@ class ExternalSystem:
             is_memoized = True
         return {"data_version": record.data_version, "is_memoized": is_memoized}
 
-    def observe(self, asset_spec: Union[AssetInfo, SourceAssetInfo]) -> ObserveResult:
+    def observe(self, asset_spec: AssetInfo | SourceAssetInfo) -> ObserveResult:
         """Observe an asset or source asset, returning its current data version.
 
         Args:
@@ -144,7 +144,7 @@ class _Database:
         for k, v in _SOURCE_ASSETS.items():
             path = self.asset_path(k)
             if not os.path.exists(path):
-                with open(self.asset_path(k), "w") as fd:  # source asset
+                with open(self.asset_path(k), "w", encoding="utf-8") as fd:  # source asset
                     record = _DatabaseRecord(v, _get_hash(v))
                     fd.write(json.dumps(asdict(record)))
 
@@ -152,12 +152,12 @@ class _Database:
         return f"{self.storage_path}/{key}.json"
 
     def get(self, key: str) -> _DatabaseRecord:
-        with open(self.asset_path(key)) as fd:
+        with open(self.asset_path(key), encoding="utf-8") as fd:
             return _DatabaseRecord(**json.load(fd))
 
     def has(self, key: str) -> bool:
         return os.path.exists(self.asset_path(key))
 
     def set(self, key: str, record: _DatabaseRecord) -> None:
-        with open(self.asset_path(key), "w") as fd:
+        with open(self.asset_path(key), "w", encoding="utf-8") as fd:
             fd.write(json.dumps(asdict(record)))

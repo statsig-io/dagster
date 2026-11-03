@@ -1,12 +1,15 @@
+import logging
 import sys
 import tempfile
 from abc import ABC, abstractmethod
+from collections.abc import Generator
 from contextlib import contextmanager
 from unittest.mock import patch
 
 import dagster._check as check
 import pytest
 from dagster import file_relative_path
+from dagster._core.errors import DagsterUserCodeUnreachableError
 from dagster._core.instance import DagsterInstance, InstanceType
 from dagster._core.launcher.sync_in_memory_run_launcher import SyncInMemoryRunLauncher
 from dagster._core.run_coordinator import DefaultRunCoordinator
@@ -16,7 +19,7 @@ from dagster._core.storage.root import LocalArtifactStorage
 from dagster._core.storage.runs import InMemoryRunStorage
 from dagster._core.test_utils import instance_for_test
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
-from dagster._core.workspace.context import WorkspaceProcessContext
+from dagster._core.workspace.context import WorkspaceProcessContext, WorkspaceRequestContext
 from dagster._core.workspace.load_target import (
     GrpcServerTarget,
     ModuleTarget,
@@ -32,7 +35,15 @@ from dagster._utils.test.postgres_instance import TestPostgresInstance
 from dagster_graphql import DagsterGraphQLClient
 from dagster_graphql.test.utils import execute_dagster_graphql
 from dagster_shared.ipc import open_ipc_subprocess
-from graphql import DocumentNode, print_ast
+from graphql import print_ast
+
+try:
+    from gql.client import GraphQLRequest
+
+    HAS_GRAPHQL_REQUEST = True
+except ImportError:
+    # gql <3.5.0 doesn't have GraphQLRequest
+    HAS_GRAPHQL_REQUEST = False
 
 
 def get_main_loadable_target_origin():
@@ -75,7 +86,7 @@ def graphql_postgres_instance(
                             "config": {"postgres_url": pg_conn_string},
                         },
                         "scheduler": {
-                            "module": "dagster.utils.test",
+                            "module": "dagster._utils.test",
                             "class": "FilesystemTestScheduler",
                             "config": {"base_dir": temp_dir},
                         },
@@ -114,7 +125,7 @@ class InstanceManagers:
                     temp_dir=temp_dir,
                     overrides={
                         "scheduler": {
-                            "module": "dagster.utils.test",
+                            "module": "dagster._utils.test",
                             "class": "FilesystemTestScheduler",
                             "config": {"base_dir": temp_dir},
                         },
@@ -128,7 +139,8 @@ class InstanceManagers:
                     yield instance
 
         return MarkedManager(
-            _non_launchable_sqlite_instance, [Marks.sqlite_instance, Marks.non_launchable]
+            _non_launchable_sqlite_instance,
+            [Marks.sqlite_instance, Marks.non_launchable],
         )
 
     @staticmethod
@@ -160,7 +172,7 @@ class InstanceManagers:
                     temp_dir=temp_dir,
                     overrides={
                         "scheduler": {
-                            "module": "dagster.utils.test",
+                            "module": "dagster._utils.test",
                             "class": "FilesystemTestScheduler",
                             "config": {"base_dir": temp_dir},
                         },
@@ -182,7 +194,7 @@ class InstanceManagers:
                     temp_dir=temp_dir,
                     overrides={
                         "scheduler": {
-                            "module": "dagster.utils.test",
+                            "module": "dagster._utils.test",
                             "class": "FilesystemTestScheduler",
                             "config": {"base_dir": temp_dir},
                         },
@@ -207,7 +219,7 @@ class InstanceManagers:
                     temp_dir=temp_dir,
                     overrides={
                         "scheduler": {
-                            "module": "dagster.utils.test",
+                            "module": "dagster._utils.test",
                             "class": "FilesystemTestScheduler",
                             "config": {"base_dir": temp_dir},
                         },
@@ -276,7 +288,7 @@ class InstanceManagers:
                     temp_dir=temp_dir,
                     overrides={
                         "scheduler": {
-                            "module": "dagster.utils.test",
+                            "module": "dagster._utils.test",
                             "class": "FilesystemTestScheduler",
                             "config": {"base_dir": temp_dir},
                         },
@@ -317,7 +329,7 @@ class EnvironmentManagers:
                     )
                     if loadable_target_origin.python_file
                     else ModuleTarget(
-                        module_name=loadable_target_origin.module_name,  # pyright: ignore[reportArgumentType]
+                        module_name=loadable_target_origin.module_name,
                         attribute=loadable_target_origin.attribute,
                         working_directory=loadable_target_origin.working_directory,
                         location_name=location_name,
@@ -350,7 +362,7 @@ class EnvironmentManagers:
                     GrpcServerTarget(
                         port=api_client.port,
                         socket=api_client.socket,
-                        host=api_client.host,  # pyright: ignore[reportArgumentType]
+                        host=api_client.host,
                         location_name=location_name,
                     ),
                     version="",
@@ -370,7 +382,7 @@ class EnvironmentManagers:
         def _mgr_fn(instance, read_only):
             loadable_target_origin = target or get_main_loadable_target_origin()
             with safe_tempfile_path() as socket:
-                subprocess_args = [  # pyright: ignore[reportOperatorIssue]
+                subprocess_args = [
                     "dagster",
                     "code-server",
                     "start",
@@ -397,7 +409,10 @@ class EnvironmentManagers:
                     ) as workspace:
                         yield workspace
                 finally:
-                    client.shutdown_server()
+                    try:
+                        client.shutdown_server()
+                    except DagsterUserCodeUnreachableError:
+                        logging.exception("Failed to shut down gRPC server during teardown")
                     server_process.wait(timeout=30)
 
         return MarkedManager(_mgr_fn, [Marks.code_server_cli_grpc_env])
@@ -768,7 +783,10 @@ def manage_graphql_context(context_variant):
 
 class _GraphQLContextTestSuite(ABC):
     @abstractmethod
-    def yield_graphql_context(self, request):
+    @contextmanager
+    def yield_graphql_context(
+        self, class_scoped_context
+    ) -> Generator[WorkspaceRequestContext, None, None]:
         pass
 
     @contextmanager
@@ -837,24 +855,49 @@ def make_graphql_context_test_suite(context_variants):
                 yield graphql_context
 
         @pytest.fixture(name="graphql_context")
-        def yield_graphql_context(self, class_scoped_graphql_context):  # pyright: ignore[reportIncompatibleMethodOverride]
-            instance = class_scoped_graphql_context.instance
+        def graphql_context_fixture(self, class_scoped_graphql_context):
+            with self.yield_graphql_context(class_scoped_graphql_context) as context:
+                yield context
+
+        @pytest.fixture(name="graphql_client")
+        def graphql_client_fixture(self, graphql_context):
+            with self.yield_graphql_client(graphql_context) as client:
+                yield client
+
+        @contextmanager
+        def yield_graphql_context(
+            self, class_scoped_context
+        ) -> Generator[WorkspaceRequestContext, None, None]:
+            instance = class_scoped_context.instance
             instance.wipe()
             instance.wipe_all_schedules()
-            yield class_scoped_graphql_context.create_request_context()
+            with class_scoped_context.create_request_context() as request_context:
+                yield request_context
             # ensure that any runs launched by the test are cleaned up
             # Since launcher is lazy loaded, we don't need to do anyting if it's None
             if instance._run_launcher:  # noqa: SLF001
                 instance._run_launcher.join()  # noqa: SLF001
 
-        @pytest.fixture(name="graphql_client")
-        def yield_graphql_client(self, graphql_context):
+        @contextmanager
+        def yield_graphql_client(self, context) -> Generator[DagsterGraphQLClient, None, None]:
             class MockedGraphQLClient:
-                def execute(self, gql_query: DocumentNode, variable_values=None):
+                def execute(self, gql_query, variable_values=None):
+                    # Handle both gql v3 (DocumentNode) and v4 (GraphQLRequest)
+                    if HAS_GRAPHQL_REQUEST and isinstance(gql_query, GraphQLRequest):
+                        document = gql_query.document
+                        variables = (
+                            variable_values
+                            if variable_values is not None
+                            else gql_query.variable_values
+                        )
+                    else:
+                        document = gql_query
+                        variables = variable_values
+
                     return execute_dagster_graphql(
-                        graphql_context,
-                        print_ast(gql_query),  # convert doc back to str
-                        variable_values,
+                        context,
+                        print_ast(document),  # convert doc back to str
+                        variables,
                     ).data
 
             with patch("dagster_graphql.client.client.Client") as mock_client:

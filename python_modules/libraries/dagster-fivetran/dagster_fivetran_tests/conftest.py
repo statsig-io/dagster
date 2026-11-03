@@ -1,9 +1,11 @@
 from collections.abc import Iterator, Mapping
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 import responses
+from dagster._core.test_utils import instance_for_test
+from dagster._utils.test.definitions import scoped_definitions_load_context
 from dagster_fivetran.resources import (
     FIVETRAN_API_BASE,
     FIVETRAN_API_VERSION,
@@ -58,7 +60,7 @@ SAMPLE_GROUPS = {
 # Taken from Fivetran API documentation
 # https://fivetran.com/docs/rest-api/api-reference/groups/list-all-connectors-in-group
 def list_connectors_for_group_sample(
-    setup_state: str, next_cursor: Optional[str] = None, include_extra_connector: bool = False
+    setup_state: str, next_cursor: str | None = None, include_extra_connector: bool = False
 ) -> Mapping[str, Any]:
     return {
         "code": "Success",
@@ -205,7 +207,10 @@ SAMPLE_DESTINATION_DETAILS = {
 # https://fivetran.com/docs/rest-api/api-reference/connectors/connector-details
 # The sample is parameterized to test the poll method
 def get_sample_connection_details(
-    succeeded_at: str, failed_at: str, paused: bool = False
+    succeeded_at: str,
+    failed_at: str,
+    paused: bool = False,
+    rescheduled_for: str | None = None,
 ) -> Mapping[str, Any]:
     return {
         "code": "Success",
@@ -235,7 +240,7 @@ def get_sample_connection_details(
                 "setup_state": "connected",
                 "sync_state": "scheduled",
                 "is_historical_sync": False,
-                "rescheduled_for": "2024-12-01T15:43:29.013729Z",
+                **({"rescheduled_for": rescheduled_for} if rescheduled_for else {}),
             },
             "daily_sync_time": "14:00",
             "succeeded_at": succeeded_at,
@@ -532,7 +537,11 @@ def group_id_fixture() -> str:
 def fetch_workspace_data_api_mocks_fixture(
     connector_id: str, destination_id: str, group_id: str
 ) -> Iterator[responses.RequestsMock]:
-    with responses.RequestsMock() as response:
+    with (
+        responses.RequestsMock() as response,
+        instance_for_test(),
+        scoped_definitions_load_context(),
+    ):
         response.add(
             method=responses.GET,
             url=f"{FIVETRAN_API_BASE}/{FIVETRAN_API_VERSION}/groups",
@@ -764,6 +773,44 @@ def sync_and_poll_fixture():
             paused_connector_output,
         ]
         mocked_sync_and_poll_legacy_resource.side_effect = [
+            expected_fivetran_output,
+            unexpected_fivetran_output,
+            paused_connector_output,
+        ]
+        yield mocked_function
+
+
+@pytest.fixture(name="resync_and_poll")
+def resync_and_poll_fixture():
+    with (
+        patch("dagster_fivetran.resources.FivetranClient.resync_and_poll") as mocked_function,
+        patch(
+            "dagster_fivetran.resources.FivetranResource.resync_and_poll"
+        ) as mocked_resync_and_poll_legacy_resource,
+    ):
+        # Fivetran output where all resync'd tables match the workspace data that was used to create the assets def
+        expected_fivetran_output = FivetranOutput(
+            connector_details=get_sample_connection_details(
+                succeeded_at=TEST_MAX_TIME_STR, failed_at=TEST_PREVIOUS_MAX_TIME_STR
+            )["data"],
+            schema_config=SAMPLE_SCHEMA_CONFIG_FOR_CONNECTOR["data"],
+        )
+        # Fivetran output where a table is missing and an unexpected table is resync'd,
+        # compared to the workspace data that was used to create the assets def
+        unexpected_fivetran_output = FivetranOutput(
+            connector_details=get_sample_connection_details(
+                succeeded_at=TEST_MAX_TIME_STR, failed_at=TEST_PREVIOUS_MAX_TIME_STR
+            )["data"],
+            schema_config=ALTERED_SAMPLE_SCHEMA_CONFIG_FOR_CONNECTOR["data"],
+        )
+        # resync_and_poll returns None if the connector is paused
+        paused_connector_output = None
+        mocked_function.side_effect = [
+            expected_fivetran_output,
+            unexpected_fivetran_output,
+            paused_connector_output,
+        ]
+        mocked_resync_and_poll_legacy_resource.side_effect = [
             expected_fivetran_output,
             unexpected_fivetran_output,
             paused_connector_output,

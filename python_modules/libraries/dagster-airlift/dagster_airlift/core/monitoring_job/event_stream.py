@@ -1,8 +1,7 @@
 import asyncio
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from itertools import chain
-from typing import Optional, Union
 
 from dagster import (
     AssetMaterialization,
@@ -18,7 +17,7 @@ from dagster._core.events import (
     StepMaterializationData,
 )
 from dagster._core.execution.context.op_execution_context import OpExecutionContext
-from dagster._core.remote_representation.origin import RemoteJobOrigin
+from dagster._core.remote_origin import RemoteJobOrigin
 from dagster._core.storage.dagster_run import DagsterRun, DagsterRunStatus
 from dagster._core.storage.tags import EXTERNAL_JOB_SOURCE_TAG_KEY
 from dagster._core.utils import make_new_run_id
@@ -273,7 +272,7 @@ def _process_completed_runs(
     airflow_instance: AirflowInstance,
     range_start: float,
     range_end: float,
-) -> Iterator[Union[DagRunStarted, DagRunCompleted]]:
+) -> Iterator[DagRunStarted | DagRunCompleted]:
     offset = 0
     dag_ids_to_query = airflow_data.dag_ids_with_mapped_asset_keys | {
         handle.dag_id for handle in airflow_data.airflow_mapped_jobs_by_dag_handle.keys()
@@ -387,9 +386,9 @@ def persist_events(
 def _report_materialization(
     *,
     context: OpExecutionContext,
-    corresponding_run: Optional[DagsterRun],
+    corresponding_run: DagsterRun | None,
     materialization: AssetMaterialization,
-    airflow_event: Union[TaskInstance, DagRun],
+    airflow_event: TaskInstance | DagRun,
 ) -> None:
     if corresponding_run:
         context.instance.report_dagster_event(
@@ -410,7 +409,7 @@ def _report_materialization(
 
 def _get_output_to_asset_key_map(
     context: OpExecutionContext, run: DagsterRun
-) -> dict[AssetKey, str]:
+) -> dict[str, AssetKey]:
     execution_plan_snap = context.instance.get_execution_plan_snapshot(
         check.not_none(run.execution_plan_snapshot_id)
     )
@@ -425,13 +424,13 @@ def _get_output_to_asset_key_map(
 
 def _per_asset_metadata_from_run(
     context: OpExecutionContext, run: DagsterRun
-) -> dict[AssetKey, dict[str, MetadataValue]]:
+) -> Mapping[AssetKey, Mapping[str, MetadataValue]]:
     output_to_key_map = _get_output_to_asset_key_map(context, run)
     conn = context.instance.event_log_storage.get_records_for_run(
         run_id=run.run_id,
         of_type=DagsterEventType.STEP_OUTPUT,
     )
-    per_key_metadata = {}
+    per_key_metadata: dict[AssetKey, Mapping[str, MetadataValue]] = {}
     for event_record in conn.records:
         event = check.not_none(event_record.event_log_entry.dagster_event)
         if event.step_output_data.output_name in output_to_key_map:

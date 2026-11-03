@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 import dagster as dg
 import pytest
@@ -11,7 +11,7 @@ from typing_extensions import Self
 
 
 class InitFailRunLauncher(dg.DefaultRunLauncher, ConfigurableClass):
-    def __init__(self, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, inst_data: ConfigurableClassData | None = None):
         super().__init__()
         self._inst_data = inst_data
         raise Exception("Expected init fail")
@@ -46,7 +46,7 @@ def test_lazy_run_launcher():
 
 
 class InitFailComputeLogManager(NoOpComputeLogManager, ConfigurableClass):
-    def __init__(self, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, inst_data: ConfigurableClassData | None = None):
         super().__init__(inst_data)
         raise Exception("Expected init fail")
 
@@ -72,12 +72,12 @@ def test_lazy_compute_log_manager():
 
 
 class InitFailRunCoordinator(DefaultRunCoordinator, ConfigurableClass):
-    def __init__(self, inst_data: Optional[ConfigurableClassData] = None):
+    def __init__(self, inst_data: ConfigurableClassData | None = None):
         super().__init__(inst_data)
         raise Exception("Expected init fail")
 
     @classmethod
-    def from_config_value(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def from_config_value(  # ty: ignore[invalid-method-override]
         cls, inst_data: ConfigurableClassData, config_value: Mapping[str, Any]
     ) -> Self:
         return cls(inst_data=inst_data)

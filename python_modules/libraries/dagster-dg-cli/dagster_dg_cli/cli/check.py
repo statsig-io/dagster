@@ -1,11 +1,12 @@
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import click
-from dagster_dg_core.config import normalize_cli_config
+import dagster_shared.check as check
+from dagster_dg_core.config import discover_and_validate_config_files, normalize_cli_config
 from dagster_dg_core.context import DgContext
-from dagster_dg_core.shared_options import dg_global_options, dg_path_options
+from dagster_dg_core.shared_options import dg_global_options, dg_path_options, dg_venv_options
 from dagster_dg_core.utils import DgClickCommand, DgClickGroup, exit_with_error, pushd
 from dagster_dg_core.utils.telemetry import cli_telemetry_wrapper
 
@@ -25,13 +26,13 @@ def check_group():
 @check_group.command(name="yaml", cls=DgClickCommand)
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
 @click.option(
-    "--watch", is_flag=True, help="Watch for changes to the component files and re-validate them."
+    "--watch",
+    is_flag=True,
+    help="Watch for changes to the component files and re-validate them.",
 )
 @click.option(
-    "--validate-requirements",
-    "--no-validate-requirements",
-    is_flag=True,
-    default=True,
+    "--validate-requirements/--no-validate-requirements",
+    default=False,
     help="Validate environment variables in requirements for all components in the given module.",
 )
 @dg_global_options
@@ -69,6 +70,60 @@ def check_yaml_command(
             click.get_current_context().exit(1)
 
 
+@check_group.command(name="toml", cls=DgClickCommand)
+@dg_global_options
+@dg_path_options
+@cli_telemetry_wrapper
+def check_toml_command(
+    target_path: Path,
+    **global_options: object,
+) -> None:
+    """Check TOML configuration files (dg.toml, pyproject.toml) for validity."""
+    cli_config = normalize_cli_config(global_options, click.get_current_context())  # noqa: F841
+    click.echo("Checking TOML configuration files...")
+
+    # We can't create a DgContext because that relies on valid config files.
+    result = discover_and_validate_config_files(target_path)
+
+    # root
+    has_errors = False
+    if result.has_root_file:
+        directory_type = check.not_none(result.root_type)
+        click.echo("")
+        click.echo(f"Found {directory_type} configuration file: {result.root_file_path}")
+        if result.root_result.has_errors:
+            has_errors = True
+            click.secho(
+                f"{directory_type.title()} configuration file errors:\n\n{result.root_result.message}",
+                fg="red",
+            )
+        else:
+            click.echo(f"{directory_type.title()} configuration file is valid.")
+        click.echo("")
+
+    if result.has_container_workspace_file:
+        click.echo("")
+        click.echo(f"Found workspace configuration file: {result.container_workspace_file_path}")
+        if result.container_workspace_result.has_errors:
+            has_errors = True
+            click.secho(
+                f"Workspace configuration file errors:\n\n{result.container_workspace_result.message}",
+                fg="red",
+            )
+        else:
+            click.echo("Workspace configuration file is valid.")
+        click.echo("")  # blank line
+
+    if has_errors:
+        click.secho(
+            "One or more TOML configuration files contain errors.",
+            fg="red",
+        )
+        click.get_current_context().exit(1)
+    else:
+        click.echo("All TOML configuration files are valid.")
+
+
 @check_group.command(name="defs", cls=DgClickCommand)
 @click.option(
     "--log-level",
@@ -86,13 +141,6 @@ def check_yaml_command(
     help="Format of the logs for dagster services",
 )
 @click.option(
-    "--verbose",
-    "-v",
-    flag_value=True,
-    default=False,
-    help="Show verbose error messages, including system frames in stack traces.",
-)
-@click.option(
     "--check-yaml/--no-check-yaml",
     flag_value=True,
     help="Whether to schema-check defs.yaml files for the project before loading and checking all definitions.",
@@ -100,15 +148,17 @@ def check_yaml_command(
 )
 @dg_path_options
 @dg_global_options
+@dg_venv_options
 @click.pass_context
 @cli_telemetry_wrapper
 def check_definitions_command(
     context: click.Context,
     log_level: str,
     log_format: str,
-    verbose: bool,
+    verbose: bool,  # from dg_global_options
     target_path: Path,
-    check_yaml: Optional[bool],
+    check_yaml: bool | None,
+    use_active_venv: bool,
     **global_options: Mapping[str, object],
 ) -> None:
     """Loads and validates your Dagster definitions using a Dagster instance.
@@ -137,7 +187,7 @@ def check_definitions_command(
 
     with (
         pushd(dg_context.root_path),
-        create_temp_workspace_file(dg_context) as workspace_file,
+        create_temp_workspace_file(dg_context, use_active_venv) as workspace_file,
     ):
         if check_yaml:
             overall_check_result = True
@@ -154,7 +204,7 @@ def check_definitions_command(
                 )
                 overall_check_result = overall_check_result and check_result
             if not overall_check_result:
-                click.get_current_context().exit(1)
+                context.exit(1)
 
         from dagster._cli.definitions import definitions_validate_command_impl
 

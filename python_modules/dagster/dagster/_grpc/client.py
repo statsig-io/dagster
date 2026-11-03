@@ -3,7 +3,7 @@ import sys
 from collections.abc import AsyncIterable, AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from threading import Event
-from typing import Any, NoReturn, Optional, cast
+from typing import Any, NoReturn, cast
 
 import dagster_shared.seven as seven
 import google.protobuf.message
@@ -15,7 +15,7 @@ import dagster._check as check
 from dagster._core.errors import DagsterUserCodeUnreachableError
 from dagster._core.events import EngineEventData
 from dagster._core.instance import DagsterInstance
-from dagster._core.remote_representation.origin import RemoteRepositoryOrigin
+from dagster._core.remote_origin import RemoteRepositoryOrigin
 from dagster._core.types.loadable_target_origin import LoadableTargetOrigin
 from dagster._grpc.__generated__ import DagsterApiStub, dagster_api_pb2
 from dagster._grpc.server import GrpcServerProcess
@@ -49,6 +49,12 @@ DEFAULT_SCHEDULE_GRPC_TIMEOUT = default_schedule_grpc_timeout()
 DEFAULT_SENSOR_GRPC_TIMEOUT = default_sensor_grpc_timeout()
 DEFAULT_REPOSITORY_GRPC_TIMEOUT = default_repository_grpc_timeout()
 
+# Refreshing component state can hit external APIs (e.g. dbt manifests, Airbyte),
+# so it gets a much higher timeout than the standard request timeout. Any server
+# that proxies this call has to allow at least as long, or it will time out the
+# inner hop before the caller gives up.
+DEFAULT_REFRESH_COMPONENT_STATE_TIMEOUT = 300
+
 
 def client_heartbeat_thread(client: "DagsterGrpcClient", shutdown_event: Event) -> None:
     while True:
@@ -65,11 +71,11 @@ def client_heartbeat_thread(client: "DagsterGrpcClient", shutdown_event: Event) 
 class DagsterGrpcClient:
     def __init__(
         self,
-        port: Optional[int] = None,
-        socket: Optional[str] = None,
+        port: int | None = None,
+        socket: str | None = None,
         host: str = "localhost",
         use_ssl: bool = False,
-        metadata: Optional[Sequence[tuple[str, str]]] = None,
+        metadata: Sequence[tuple[str, str]] | None = None,
     ):
         self.port = check.opt_int_param(port, "port")
 
@@ -136,21 +142,22 @@ class DagsterGrpcClient:
             ("grpc.max_receive_message_length", max_rx_bytes()),
             ("grpc.max_send_message_length", max_send_bytes()),
         ]
-        async with (
-            grpc.aio.secure_channel(
+        if self._use_ssl:
+            assert self._ssl_creds is not None
+            async with grpc.aio.secure_channel(
                 self._server_address,
                 self._ssl_creds,
                 options=options,
                 compression=grpc.Compression.Gzip,
-            )
-            if self._use_ssl
-            else grpc.aio.insecure_channel(
+            ) as channel:
+                yield channel
+        else:
+            async with grpc.aio.insecure_channel(
                 self._server_address,
                 options=options,
                 compression=grpc.Compression.Gzip,
-            )
-        ) as channel:
-            yield channel
+            ) as channel:
+                yield channel
 
     def _get_response(
         self,
@@ -176,7 +183,7 @@ class DagsterGrpcClient:
         self,
         e: Exception,
         timeout: int,
-        custom_timeout_message: Optional[str] = None,
+        custom_timeout_message: str | None = None,
     ) -> NoReturn:
         if isinstance(e, grpc.RpcError):
             if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:  # type: ignore  # (bad stubs)
@@ -196,7 +203,7 @@ class DagsterGrpcClient:
         method: str,
         request_type: type[google.protobuf.message.Message],
         timeout: int = DEFAULT_GRPC_TIMEOUT,
-        custom_timeout_message: Optional[str] = None,
+        custom_timeout_message: str | None = None,
         **kwargs,
     ):
         try:
@@ -211,7 +218,7 @@ class DagsterGrpcClient:
         method: str,
         request_type: type[google.protobuf.message.Message],
         timeout: int = DEFAULT_GRPC_TIMEOUT,
-        custom_timeout_message: Optional[str] = None,
+        custom_timeout_message: str | None = None,
         **kwargs,
     ):
         try:
@@ -426,10 +433,35 @@ class DagsterGrpcClient:
     def reload_code(self, timeout: int) -> dagster_api_pb2.ReloadCodeReply:
         return self._query("ReloadCode", dagster_api_pb2.ReloadCodeRequest, timeout=timeout)
 
+    def refresh_component_state(
+        self,
+        defs_state_keys: Sequence[str],
+        timeout: int = DEFAULT_REFRESH_COMPONENT_STATE_TIMEOUT,
+    ) -> dagster_api_pb2.RefreshComponentStateReply:
+        return self._query(
+            "RefreshComponentState",
+            dagster_api_pb2.RefreshComponentStateRequest,
+            defs_state_keys=list(defs_state_keys),
+            timeout=timeout,
+        )
+
+    def reload_code_with_state(
+        self,
+        serialized_defs_state_info: str,
+        timeout: int = DEFAULT_GRPC_TIMEOUT,
+    ) -> dagster_api_pb2.ReloadCodeWithStateReply:
+        return self._query(
+            "ReloadCodeWithState",
+            dagster_api_pb2.ReloadCodeWithStateRequest,
+            serialized_defs_state_info=serialized_defs_state_info,
+            timeout=timeout,
+        )
+
     def external_repository(
         self,
         remote_repository_origin: RemoteRepositoryOrigin,
         defer_snapshots: bool = False,
+        timeout=DEFAULT_REPOSITORY_GRPC_TIMEOUT,
     ) -> str:
         check.inst_param(
             remote_repository_origin,
@@ -443,6 +475,30 @@ class DagsterGrpcClient:
             # rename this param name
             serialized_repository_python_origin=serialize_value(remote_repository_origin),
             defer_snapshots=defer_snapshots,
+            timeout=timeout,
+        )
+
+        return res.serialized_external_repository_data
+
+    async def gen_external_repository(
+        self,
+        remote_repository_origin: RemoteRepositoryOrigin,
+        defer_snapshots: bool = False,
+        timeout=DEFAULT_REPOSITORY_GRPC_TIMEOUT,
+    ) -> str:
+        check.inst_param(
+            remote_repository_origin,
+            "remote_repository_origin",
+            RemoteRepositoryOrigin,
+        )
+
+        res = await self._gen_query(
+            "ExternalRepository",
+            dagster_api_pb2.ExternalRepositoryRequest,
+            # rename this param name
+            serialized_repository_python_origin=serialize_value(remote_repository_origin),
+            defer_snapshots=defer_snapshots,
+            timeout=timeout,
         )
 
         return res.serialized_external_repository_data
@@ -467,25 +523,6 @@ class DagsterGrpcClient:
             timeout=timeout,
         )
 
-    def streaming_external_repository(
-        self,
-        remote_repository_origin: RemoteRepositoryOrigin,
-        defer_snapshots: bool = False,
-        timeout=DEFAULT_REPOSITORY_GRPC_TIMEOUT,
-    ) -> Iterator[dict]:
-        for res in self._streaming_query(
-            "StreamingExternalRepository",
-            dagster_api_pb2.ExternalRepositoryRequest,
-            # Rename parameter
-            serialized_repository_python_origin=serialize_value(remote_repository_origin),
-            defer_snapshots=defer_snapshots,
-            timeout=timeout,
-        ):
-            yield {
-                "sequence_number": res.sequence_number,
-                "serialized_external_repository_chunk": res.serialized_external_repository_chunk,
-            }
-
     async def gen_streaming_external_repository(
         self,
         remote_repository_origin: RemoteRepositoryOrigin,
@@ -508,7 +545,7 @@ class DagsterGrpcClient:
     def _is_unimplemented_error(self, e: Exception) -> bool:
         return (
             isinstance(e.__cause__, grpc.RpcError)
-            and cast("grpc.RpcError", e.__cause__).code() == grpc.StatusCode.UNIMPLEMENTED
+            and cast("grpc.Call", e.__cause__).code() == grpc.StatusCode.UNIMPLEMENTED
         )
 
     def external_schedule_execution(
@@ -712,10 +749,10 @@ class DagsterGrpcClient:
 
 @contextmanager
 def ephemeral_grpc_api_client(
-    loadable_target_origin: Optional[LoadableTargetOrigin] = None,
+    loadable_target_origin: LoadableTargetOrigin | None = None,
     force_port: bool = False,
     max_retries: int = 10,
-    max_workers: Optional[int] = None,
+    max_workers: int | None = None,
 ) -> Iterator[DagsterGrpcClient]:
     check.opt_inst_param(loadable_target_origin, "loadable_target_origin", LoadableTargetOrigin)
     check.bool_param(force_port, "force_port")

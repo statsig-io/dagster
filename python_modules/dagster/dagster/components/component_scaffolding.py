@@ -1,7 +1,7 @@
 import textwrap
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import click
 import yaml
@@ -20,7 +20,7 @@ from dagster.components.scaffold.scaffold import (
 
 
 class ComponentDumper(yaml.Dumper):
-    def write_line_break(self) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def write_line_break(self) -> None:  # ty: ignore[invalid-method-override]
         # add an extra line break between top-level keys
         if self.indent == 0:
             super().write_line_break()
@@ -33,17 +33,21 @@ class ComponentDumper(yaml.Dumper):
 
 def scaffold_component(
     request: ScaffoldRequest[Any],
-    yaml_attributes: Optional[Mapping[str, Any]] = None,
+    yaml_attributes: Mapping[str, Any] | None = None,
 ) -> None:
     if request.scaffold_format == "yaml":
-        with open(request.target_path / "defs.yaml", "w") as f:
+        mode = "a" if request.append else "w"
+        file_path = request.target_path if request.append else request.target_path / "defs.yaml"
+        with open(file_path, mode) as f:
+            if request.append:
+                f.write("---\n")
             component_data = {"type": request.type_name, "attributes": yaml_attributes or {}}
             yaml.dump(
                 component_data, f, Dumper=ComponentDumper, sort_keys=False, default_flow_style=False
             )
             f.writelines([""])
     elif request.scaffold_format == "python":
-        with open(request.target_path / "component.py", "w") as f:
+        with open(request.target_path / "component.py", "w", encoding="utf-8") as f:
             fqtn = request.type_name
             check.invariant("." in fqtn, "Component must be a fully qualified type name")
             module_path, class_name = (
@@ -53,11 +57,11 @@ def scaffold_component(
             f.write(
                 textwrap.dedent(
                     f"""
-                        from dagster import component, ComponentLoadContext
+                        import dagster as dg
                         from {module_path} import {class_name}
 
-                        @component_instance
-                        def load(context: ComponentLoadContext) -> {class_name}: ...
+                        @dg.component_instance
+                        def load(context: dg.ComponentLoadContext) -> {class_name}: ...
                 """
                 ).lstrip()
             )
@@ -68,9 +72,10 @@ def scaffold_component(
 def scaffold_object(
     path: Path,
     typename: str,
-    json_params: Optional[str],
+    json_params: str | None,
     scaffold_format: str,
-    project_root: Optional[Path],
+    project_root: Path | None,
+    append: bool = False,
 ) -> None:
     from dagster.components.component.component import Component
 
@@ -102,19 +107,22 @@ def scaffold_object(
             scaffold_format=cast("ScaffoldFormatOptions", scaffold_format),
             project_root=project_root,
             params=params_model,
+            append=append,
         ),
     )
 
-    if isinstance(obj, type) and issubclass(obj, Component):
+    if isinstance(obj, type) and issubclass(obj, Component) and not append:
         defs_yaml_path = path / "defs.yaml"
+        defs_yml_path = path / "defs.yml"
         component_py_path = path / "component.py"
-        if not (defs_yaml_path.exists() or component_py_path.exists()):
+        if not (defs_yaml_path.exists() or defs_yml_path.exists() or component_py_path.exists()):
             raise Exception(
-                f"Currently all components require a defs.yaml or component.py file. Please ensure your implementation of scaffold writes this file at {defs_yaml_path} or {component_py_path}."
+                f"Currently all components require a defs.yaml, defs.yml, or component.py file. "
+                f"Please ensure your implementation of scaffold writes this file at {defs_yaml_path} or {component_py_path}."
             )
 
 
-def parse_params_model(obj: object, json_params: Optional[str]) -> BaseModel:
+def parse_params_model(obj: object, json_params: str | None) -> BaseModel:
     scaffolder = get_scaffolder(obj)
 
     if isinstance(scaffolder, ScaffolderUnavailableReason):

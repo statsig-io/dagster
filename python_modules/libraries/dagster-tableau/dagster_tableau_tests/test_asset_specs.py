@@ -1,5 +1,5 @@
+import logging
 import uuid
-from typing import Union
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,7 +7,6 @@ import responses
 from dagster._config.field_utils import EnvVar
 from dagster._core.definitions.assets.definition.asset_spec import AssetSpec
 from dagster._core.test_utils import environ
-from dagster_shared.check import CheckError
 from dagster_tableau import TableauCloudWorkspace, TableauServerWorkspace, load_tableau_asset_specs
 from dagster_tableau.asset_utils import parse_tableau_external_and_materializable_asset_specs
 from dagster_tableau.translator import DagsterTableauTranslator, TableauTranslatorData
@@ -30,7 +29,7 @@ from dagster_tableau_tests.conftest import (
     ],
 )
 def test_fetch_tableau_workspace_data(
-    clazz: Union[type[TableauCloudWorkspace], type[TableauServerWorkspace]],
+    clazz: type[TableauCloudWorkspace] | type[TableauServerWorkspace],
     host_key: str,
     host_value: str,
     site_name: str,
@@ -52,14 +51,15 @@ def test_fetch_tableau_workspace_data(
         host_key: host_value,
     }
 
-    resource = clazz(**resource_args)  # type: ignore
+    resource = clazz(**resource_args)
     resource.build_client()
 
     actual_workspace_data = resource.get_or_fetch_workspace_data()
     assert len(actual_workspace_data.workbooks_by_id) == 1
-    assert len(actual_workspace_data.sheets_by_id) == 2
+    # Hidden sheets are included in sheets_by_id to preserve their data source dependencies
+    assert len(actual_workspace_data.sheets_by_id) == 3
     assert len(actual_workspace_data.dashboards_by_id) == 1
-    assert len(actual_workspace_data.data_sources_by_id) == 2
+    assert len(actual_workspace_data.data_sources_by_id) == 3
 
 
 @responses.activate
@@ -71,7 +71,7 @@ def test_fetch_tableau_workspace_data(
     ],
 )
 def test_invalid_workbook(
-    clazz: Union[type[TableauCloudWorkspace], type[TableauServerWorkspace]],
+    clazz: type[TableauCloudWorkspace] | type[TableauServerWorkspace],
     host_key: str,
     host_value: str,
     site_name: str,
@@ -79,6 +79,7 @@ def test_invalid_workbook(
     get_workbooks: MagicMock,
     get_workbook: MagicMock,
     workbook_id: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     connected_app_client_id = uuid.uuid4().hex
     connected_app_secret_id = uuid.uuid4().hex
@@ -94,22 +95,19 @@ def test_invalid_workbook(
         host_key: host_value,
     }
 
-    resource = clazz(**resource_args)  # type: ignore
+    resource = clazz(**resource_args)
     resource.build_client()
 
-    # Test invalid workbook
+    # An invalid workbook response must not bring down the entire workspace load: it should be
+    # skipped with a warning rather than raising and failing the whole code location.
+    # Clear side_effect first so return_value takes precedence
+    get_workbook.side_effect = None
     get_workbook.return_value = {"data": {"workbooks": None}}
-    with pytest.raises(
-        CheckError, match=f"Invalid data for Tableau workbook for id {workbook_id}."
-    ):
-        resource.get_or_fetch_workspace_data()
+    with caplog.at_level(logging.WARNING):
+        workspace_data = resource.get_or_fetch_workspace_data()
 
-    # Test empty workbook
-    get_workbook.return_value = {"data": {"workbooks": []}}
-    with pytest.raises(
-        Exception, match=f"Could not retrieve data for Tableau workbook for id {workbook_id}."
-    ):
-        resource.get_or_fetch_workspace_data()
+    assert workbook_id not in workspace_data.workbooks_by_id
+    assert "Skipping" in caplog.text
 
 
 @responses.activate
@@ -125,7 +123,7 @@ def test_invalid_workbook(
 @pytest.mark.usefixtures("get_workbooks")
 @pytest.mark.usefixtures("get_workbook")
 def test_translator_spec(
-    clazz: Union[type[TableauCloudWorkspace], type[TableauServerWorkspace]],
+    clazz: type[TableauCloudWorkspace] | type[TableauServerWorkspace],
     host_key: str,
     host_value: str,
     site_name: str,
@@ -154,9 +152,9 @@ def test_translator_spec(
         all_assets = load_tableau_asset_specs(resource)
         all_assets_keys = [asset.key for asset in all_assets]
 
-        # 2 sheet, 1 dashboard and 2 data source as external assets
-        assert len(all_assets) == 5
-        assert len(all_assets_keys) == 5
+        # 2 visible sheets (1 hidden sheet filtered out), 1 dashboard and 3 data sources
+        assert len(all_assets) == 6
+        assert len(all_assets_keys) == 6
 
         # Sanity check outputs, translator tests cover details here
         sheet_asset_spec = next(
@@ -172,23 +170,36 @@ def test_translator_spec(
             if "workbook" in spec.key.path[0] and "dashboard" in spec.key.path[1]
         )
         assert dashboard_asset_spec.key.path == ["test_workbook", "dashboard", "dashboard_sales"]
+        asset_deps_iter = iter(dashboard_asset_spec.deps)
+        assert next(asset_deps_iter).asset_key.path == [
+            "test_workbook",
+            "sheet",
+            "sales",
+        ]
+        assert next(asset_deps_iter).asset_key.path == ["hidden_sheet_datasource"]
 
-        iter_data_source = iter(spec for spec in all_assets if "datasource" in spec.key.path[0])
+        iter_data_source = iter(spec for spec in all_assets if "datasource" in spec.key.path[-1])
         published_data_source_asset_spec = next(iter_data_source)
         assert published_data_source_asset_spec.key.path == ["superstore_datasource"]
         assert published_data_source_asset_spec.metadata == {
             "dagster-tableau/id": TEST_DATA_SOURCE_ID,
             "dagster-tableau/has_extracts": False,
             "dagster-tableau/is_published": True,
+            "dagster/storage_kind": "tableau",
         }
 
         embedded_data_source_asset_spec = next(iter_data_source)
-        assert embedded_data_source_asset_spec.key.path == ["embedded_superstore_datasource"]
+        assert embedded_data_source_asset_spec.key.path == [
+            "test_workbook",
+            "embedded_datasource",
+            "embedded_superstore_datasource",
+        ]
         assert embedded_data_source_asset_spec.metadata == {
             "dagster-tableau/id": TEST_EMBEDDED_DATA_SOURCE_ID,
             "dagster-tableau/has_extracts": True,
             "dagster-tableau/is_published": False,
             "dagster-tableau/workbook_id": TEST_WORKBOOK_ID,
+            "dagster/storage_kind": "tableau",
         }
 
 
@@ -213,7 +224,7 @@ class MyCustomTranslator(DagsterTableauTranslator):
 @pytest.mark.usefixtures("get_workbooks")
 @pytest.mark.usefixtures("get_workbook")
 def test_translator_custom_metadata(
-    clazz: Union[type[TableauCloudWorkspace], type[TableauServerWorkspace]],
+    clazz: type[TableauCloudWorkspace] | type[TableauServerWorkspace],
     host_key: str,
     host_value: str,
     site_name: str,
@@ -247,7 +258,8 @@ def test_translator_custom_metadata(
         assert "custom" in asset_spec.metadata
         assert asset_spec.metadata["custom"] == "metadata"
         assert asset_spec.key.path == ["prefix", "superstore_datasource"]
-        assert asset_spec.tags["dagster/storage_kind"] == "tableau"
+        assert asset_spec.metadata["dagster/storage_kind"] == "tableau"
+        assert asset_spec.kinds == {"tableau", "live", "published datasource"}
 
 
 @responses.activate
@@ -267,7 +279,7 @@ def test_translator_custom_metadata(
 @pytest.mark.usefixtures("get_workbooks")
 @pytest.mark.usefixtures("get_workbook")
 def test_parse_asset_specs(
-    clazz: Union[type[TableauCloudWorkspace], type[TableauServerWorkspace]],
+    clazz: type[TableauCloudWorkspace] | type[TableauServerWorkspace],
     host_key: str,
     host_value: str,
     site_name: str,
@@ -301,7 +313,7 @@ def test_parse_asset_specs(
                 specs=all_assets, include_data_sources_with_extracts=False
             )
         )
-        assert len(external_asset_specs) == 2
+        assert len(external_asset_specs) == 3
         assert len(materializable_asset_specs) == 3
 
         # Data source with extracts are considered as materializable assets
@@ -310,7 +322,7 @@ def test_parse_asset_specs(
                 specs=all_assets, include_data_sources_with_extracts=True
             )
         )
-        assert len(external_asset_specs) == 1
+        assert len(external_asset_specs) == 2
         assert len(materializable_asset_specs) == 4
 
 
@@ -352,7 +364,7 @@ def test_tableau_workbook_selector(
     value: str,
     expected_result_before_selection: int,
     expected_result_after_selection: int,
-    clazz: Union[type[TableauCloudWorkspace], type[TableauServerWorkspace]],
+    clazz: type[TableauCloudWorkspace] | type[TableauServerWorkspace],
     host_key: str,
     host_value: str,
     site_name: str,
@@ -374,7 +386,7 @@ def test_tableau_workbook_selector(
         host_key: host_value,
     }
 
-    resource = clazz(**resource_args)  # type: ignore
+    resource = clazz(**resource_args)
     resource.build_client()
 
     workbook_selector_fn = (

@@ -1,9 +1,9 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from enum import Enum as PyEnum
 from functools import update_wrapper
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, overload
+from typing import TYPE_CHECKING, Any, TypeAlias, Union, overload
 
-from typing_extensions import Self, TypeAlias
+from typing_extensions import Self
 
 import dagster._check as check
 from dagster._annotations import public
@@ -21,6 +21,10 @@ from dagster._core.definitions.job_base import IJob
 from dagster._core.definitions.reconstruct import ReconstructableJob
 from dagster._core.errors import DagsterUnmetExecutorRequirementsError
 from dagster._core.execution.retries import RetryMode, get_retries_config
+from dagster._core.execution.step_dependency_config import (
+    StepDependencyConfig,
+    get_step_dependency_config_field,
+)
 from dagster._core.execution.tags import get_tag_concurrency_limits_config
 
 if TYPE_CHECKING:
@@ -62,6 +66,7 @@ ExecutorCreationFunction: TypeAlias = Callable[["InitExecutorContext"], "Executo
 ExecutorRequirementsFunction: TypeAlias = Callable[[ExecutorConfig], Sequence[ExecutorRequirement]]
 
 
+@public
 class ExecutorDefinition(NamedConfigurableDefinition):
     """An executor is responsible for executing the steps of a job.
 
@@ -82,17 +87,15 @@ class ExecutorDefinition(NamedConfigurableDefinition):
     def __init__(
         self,
         name: str,
-        config_schema: Optional[UserConfigSchema] = None,
-        requirements: Union[
-            ExecutorRequirementsFunction, Optional[Sequence[ExecutorRequirement]]
-        ] = None,
-        executor_creation_fn: Optional[ExecutorCreationFunction] = None,
-        description: Optional[str] = None,
+        config_schema: UserConfigSchema | None = None,
+        requirements: ExecutorRequirementsFunction | Sequence[ExecutorRequirement] | None = None,
+        executor_creation_fn: ExecutorCreationFunction | None = None,
+        description: str | None = None,
     ):
         self._name = check.str_param(name, "name")
         self._requirements_fn: ExecutorRequirementsFunction
         if callable(requirements):
-            self._requirements_fn = requirements
+            self._requirements_fn = requirements  # ty: ignore[invalid-assignment]
         else:
             requirements_lst = check.opt_list_param(
                 requirements, "requirements", of_type=ExecutorRequirement
@@ -112,7 +115,7 @@ class ExecutorDefinition(NamedConfigurableDefinition):
 
     @public
     @property
-    def description(self) -> Optional[str]:
+    def description(self) -> str | None:
         """Description of executor, if provided."""
         return self._description
 
@@ -127,16 +130,16 @@ class ExecutorDefinition(NamedConfigurableDefinition):
 
     @public
     @property
-    def executor_creation_fn(self) -> Optional[ExecutorCreationFunction]:
+    def executor_creation_fn(self) -> ExecutorCreationFunction | None:
         """Callable that takes an :py:class:`InitExecutorContext` and returns an instance of
         :py:class:`Executor`.
         """
         return self._executor_creation_fn
 
     def copy_for_configured(self, name, description, config_schema) -> Self:
-        return ExecutorDefinition(
+        return ExecutorDefinition(  # ty: ignore[invalid-return-type]
             name=name,
-            config_schema=config_schema,  # type: ignore
+            config_schema=config_schema,
             executor_creation_fn=self.executor_creation_fn,
             description=description or self.description,
             requirements=self._requirements_fn,
@@ -157,9 +160,9 @@ class ExecutorDefinition(NamedConfigurableDefinition):
     def configured(
         self,
         config_or_config_fn: Any,
-        name: Optional[str] = None,
-        config_schema: Optional[UserConfigSchema] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        config_schema: UserConfigSchema | None = None,
+        description: str | None = None,
     ) -> Self:
         """Wraps this object in an object of the same type that provides configuration to the inner
         object.
@@ -200,20 +203,17 @@ def executor(name: ExecutorCreationFunction) -> ExecutorDefinition: ...
 
 @overload
 def executor(
-    name: Optional[str] = ...,
-    config_schema: Optional[UserConfigSchema] = ...,
-    requirements: Optional[
-        Union[ExecutorRequirementsFunction, Sequence[ExecutorRequirement]]
-    ] = ...,
+    name: str | None = ...,
+    config_schema: UserConfigSchema | None = ...,
+    requirements: ExecutorRequirementsFunction | Sequence[ExecutorRequirement] | None = ...,
 ) -> "_ExecutorDecoratorCallable": ...
 
 
+@public
 def executor(
-    name: Union[ExecutorCreationFunction, Optional[str]] = None,
-    config_schema: Optional[UserConfigSchema] = None,
-    requirements: Optional[
-        Union[ExecutorRequirementsFunction, Sequence[ExecutorRequirement]]
-    ] = None,
+    name: ExecutorCreationFunction | str | None = None,
+    config_schema: UserConfigSchema | None = None,
+    requirements: ExecutorRequirementsFunction | Sequence[ExecutorRequirement] | None = None,
 ) -> Union[ExecutorDefinition, "_ExecutorDecoratorCallable"]:
     """Define an executor.
 
@@ -230,7 +230,7 @@ def executor(
     if callable(name):
         check.invariant(config_schema is None)
         check.invariant(requirements is None)
-        return _ExecutorDecoratorCallable()(name)
+        return _ExecutorDecoratorCallable()(name)  # ty: ignore[invalid-argument-type]
 
     return _ExecutorDecoratorCallable(
         name=name, config_schema=config_schema, requirements=requirements
@@ -247,7 +247,7 @@ class _ExecutorDecoratorCallable:
         check.callable_param(fn, "fn")
 
         if not self.name:
-            self.name = fn.__name__
+            self.name = fn.__name__  # ty: ignore[unresolved-attribute]
 
         executor_def = ExecutorDefinition(
             name=self.name,
@@ -269,6 +269,9 @@ def _core_in_process_executor_creation(config: ExecutorConfig) -> "InProcessExec
         # shouldn't need to .get() here - issue with defaults in config setup
         retries=RetryMode.from_config(check.dict_elem(config, "retries")),  # type: ignore  # (possible none)
         marker_to_close=config.get("marker_to_close"),  # type: ignore  # (should be str)
+        step_dependency_config=StepDependencyConfig.from_config(
+            check.opt_nullable_dict_elem(config, "step_dependency_config")
+        ),
     )
 
 
@@ -280,6 +283,7 @@ IN_PROC_CONFIG = Field(
             is_required=False,
             description="[DEPRECATED]",
         ),
+        "step_dependency_config": get_step_dependency_config_field(),
     },
     description="Execute all steps in a single process.",
 )
@@ -338,6 +342,9 @@ def _core_multiprocess_executor_creation(config: ExecutorConfig) -> "Multiproces
         retries=RetryMode.from_config(check.dict_elem(config, "retries")),  # type: ignore
         start_method=start_method,
         explicit_forkserver_preload=check.opt_list_elem(start_cfg, "preload_modules", of_type=str),
+        step_dependency_config=StepDependencyConfig.from_config(
+            check.opt_nullable_dict_elem(config, "step_dependency_config")
+        ),
     )
 
 
@@ -391,6 +398,7 @@ MULTI_PROC_CONFIG = Field(
             ),
         ),
         "retries": get_retries_config(),
+        "step_dependency_config": get_step_dependency_config_field(),
     },
     description="Execute each step in an individual process.",
 )

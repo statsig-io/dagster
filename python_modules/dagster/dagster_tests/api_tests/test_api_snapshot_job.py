@@ -3,6 +3,7 @@ import sys
 
 import dagster._check as check
 import pytest
+from dagster import file_relative_path
 from dagster._api.snapshot_job import (
     gen_external_job_subset_grpc,
     sync_get_external_job_subset_grpc,
@@ -12,10 +13,14 @@ from dagster._core.errors import DagsterUserCodeProcessError
 from dagster._core.remote_representation.external import RemoteJob
 from dagster._core.remote_representation.external_data import RemoteJobSubsetResult
 from dagster._core.remote_representation.handle import JobHandle
-from dagster._core.test_utils import environ
+from dagster._core.test_utils import environ, instance_for_test
 from dagster._utils.error import serializable_error_info_from_exc_info
 
-from dagster_tests.api_tests.utils import get_bar_repo_code_location, get_bar_workspace
+from dagster_tests.api_tests.utils import (
+    get_bar_repo_code_location,
+    get_bar_workspace,
+    get_workspace,
+)
 
 
 def _test_job_subset_grpc(job_handle, api_client, op_selection=None, include_parent_snapshot=True):
@@ -47,11 +52,29 @@ def test_job_snapshot_api_grpc(instance):
         remote_job_subset_result = _test_job_subset_grpc(job_handle, api_client)
         assert isinstance(remote_job_subset_result, RemoteJobSubsetResult)
         assert remote_job_subset_result.success is True
-        assert remote_job_subset_result.job_data_snap.name == "foo"  # pyright: ignore[reportOptionalMemberAccess]
+        assert check.not_none(remote_job_subset_result.job_data_snap).name == "foo"
         assert (
             remote_job_subset_result.repository_python_origin
             == code_location.get_repository("bar_repo").handle.repository_python_origin
         )
+
+
+def test_get_multiple_jobs_with_same_name():
+    with instance_for_test() as instance:
+        with get_workspace(
+            instance,
+            python_file=file_relative_path(__file__, "api_tests_repo.py"),
+            attribute=None,
+            location_name="multiple_repos_code_location",
+        ) as workspace:
+            code_location = workspace.get_code_location("multiple_repos_code_location")
+            repo = code_location.get_repository("bar_repo")
+            other_repo = code_location.get_repository("other_repo")
+
+            assert (
+                repo.get_full_job("bar").job_snapshot.snapshot_id
+                != other_repo.get_full_job("bar").job_snapshot.snapshot_id
+            )
 
 
 @pytest.mark.asyncio
@@ -63,7 +86,7 @@ async def test_async_job_snapshot_api_grpc(instance):
         remote_job_subset_result = await _async_test_job_subset_grpc(job_handle, api_client)
         assert isinstance(remote_job_subset_result, RemoteJobSubsetResult)
         assert remote_job_subset_result.success is True
-        assert remote_job_subset_result.job_data_snap.name == "foo"  # pyright: ignore[reportOptionalMemberAccess]
+        assert check.not_none(remote_job_subset_result.job_data_snap).name == "foo"
         assert (
             remote_job_subset_result.repository_python_origin
             == code_location.get_repository("bar_repo").handle.repository_python_origin
@@ -78,20 +101,9 @@ async def test_async_job_snapshot_api_grpc(instance):
 
         assert (
             code_location.get_job(subset_selector).job_snapshot
-            == (await code_location.gen_job(subset_selector)).job_snapshot
-        )
-
-        full_selector = JobSubsetSelector(
-            location_name=code_location.name,
-            repository_name="bar_repo",
-            job_name="foo",
-            op_selection=None,
-            asset_selection=None,
-        )
-
-        assert (
-            code_location.get_job(full_selector).job_snapshot
-            == (await code_location.gen_job(full_selector)).job_snapshot
+            == (
+                await code_location.gen_subset_job(subset_selector, code_location.get_job)
+            ).job_snapshot
         )
 
 
@@ -171,9 +183,10 @@ def test_job_with_valid_subset_snapshot_api_grpc(instance):
         remote_job_subset_result = _test_job_subset_grpc(job_handle, api_client, ["do_something"])
         assert isinstance(remote_job_subset_result, RemoteJobSubsetResult)
         assert remote_job_subset_result.success is True
-        assert remote_job_subset_result.job_data_snap.name == "foo"  # pyright: ignore[reportOptionalMemberAccess]
+        job_data_snap = check.not_none(remote_job_subset_result.job_data_snap)
+        assert job_data_snap.name == "foo"
         assert (
-            remote_job_subset_result.job_data_snap.parent_job  # pyright: ignore[reportOptionalMemberAccess]
+            job_data_snap.parent_job
             == code_location.get_repository("bar_repo").get_full_job("foo").job_snapshot
         )
 
@@ -188,8 +201,9 @@ def test_job_with_valid_subset_snapshot_without_parent_snapshot(instance):
         )
         assert isinstance(remote_job_subset_result, RemoteJobSubsetResult)
         assert remote_job_subset_result.success is True
-        assert remote_job_subset_result.job_data_snap.name == "foo"  # pyright: ignore[reportOptionalMemberAccess]
-        assert not remote_job_subset_result.job_data_snap.parent_job  # pyright: ignore[reportOptionalMemberAccess]
+        job_data_snap = check.not_none(remote_job_subset_result.job_data_snap)
+        assert job_data_snap.name == "foo"
+        assert not job_data_snap.parent_job
 
 
 def test_job_with_invalid_subset_snapshot_api_grpc(instance):
@@ -215,7 +229,7 @@ def test_job_with_invalid_definition_snapshot_api_grpc(instance):
             error_info = serializable_error_info_from_exc_info(sys.exc_info())
             assert (
                 "Input 'some_input' of op 'fail_subset' has no way of being resolved"
-                in error_info.cause.message
+                in check.not_none(error_info.cause).message
             )
 
 
@@ -231,5 +245,5 @@ async def test_async_job_with_invalid_definition_snapshot_api_grpc(instance):
             error_info = serializable_error_info_from_exc_info(sys.exc_info())
             assert (
                 "Input 'some_input' of op 'fail_subset' has no way of being resolved"
-                in error_info.cause.message
+                in check.not_none(error_info.cause).message
             )

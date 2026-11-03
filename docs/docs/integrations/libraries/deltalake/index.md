@@ -1,15 +1,22 @@
 ---
 title: Dagster & Delta Lake
 sidebar_label: Delta Lake
+sidebar_position: 1
 description: Delta Lake is a great storage format for Dagster workflows. With this integration, you can use the Delta Lake I/O Manager to read and write your Dagster assets.
-tags: [dagster-supported, storage]
+tags: [community-supported, storage]
 source: https://github.com/dagster-io/dagster/tree/master/python_modules/libraries/dagster-deltalake
 pypi: https://pypi.org/project/dagster-deltalake/
 sidebar_custom_props:
   logo: images/integrations/deltalake.svg
   community: true
 partnerlink: https://delta.io/
+canonicalUrl: '/integrations/libraries/deltalake'
+slug: '/integrations/libraries/deltalake'
 ---
+
+import CommunityIntegration from '@site/docs/partials/\_CommunityIntegration.md';
+
+<CommunityIntegration />
 
 <p>{frontMatter.description}</p>
 

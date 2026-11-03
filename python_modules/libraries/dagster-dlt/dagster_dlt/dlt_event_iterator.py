@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from typing import Optional, Union
+from typing import TypeAlias
 
 from dagster import AssetMaterialization, MaterializeResult
 from dagster._annotations import public
@@ -9,16 +9,16 @@ from dagster._core.execution.context.op_execution_context import OpExecutionCont
 from dlt import Pipeline
 from typing_extensions import TypeVar
 
-DltEventType = Union[AssetMaterialization, MaterializeResult]
+DltEventType: TypeAlias = AssetMaterialization | MaterializeResult
 T = TypeVar("T", bound=DltEventType)
 
 
 def _fetch_row_count(
     dlt_pipeline: Pipeline,
     table_name: str,
-) -> Optional[int]:
+) -> int | None:
     """Exists mostly for ease of testing."""
-    with dlt_pipeline.sql_client() as client:
+    with dlt_pipeline.sql_client() as client:  # ty: ignore[invalid-context-manager]
         with client.execute_query(
             f"select count(*) as row_count from {table_name}",
         ) as cursor:
@@ -31,23 +31,28 @@ def _fetch_row_count(
 
 def fetch_row_count_metadata(
     materialization: DltEventType,
-    context: Union[OpExecutionContext, AssetExecutionContext],
+    context: OpExecutionContext | AssetExecutionContext,
     dlt_pipeline: Pipeline,
 ) -> TableMetadataSet:
     if not materialization.metadata:
         raise Exception("Missing required metadata to retrieve row count.")
+    storage_kind = dlt_pipeline.destination.destination_name if dlt_pipeline.destination else None
     if context.has_partition_key:
         rows_loaded = materialization.metadata.get("rows_loaded")
         return TableMetadataSet(
-            partition_row_count=rows_loaded.value if rows_loaded else 0  # type: ignore
+            partition_row_count=rows_loaded.value if rows_loaded else 0,  # type: ignore
+            storage_kind=storage_kind,
         )
 
     jobs_metadata = materialization.metadata.get("jobs")
     if not jobs_metadata or not isinstance(jobs_metadata, list):
         raise Exception("Missing jobs metadata to retrieve row count.")
-    table_name = jobs_metadata[0].get("table_name")
+    table_name = jobs_metadata[0].get("table_name")  # ty: ignore[unresolved-attribute]
     try:
-        return TableMetadataSet(row_count=_fetch_row_count(dlt_pipeline, table_name))
+        return TableMetadataSet(
+            row_count=_fetch_row_count(dlt_pipeline, table_name),
+            storage_kind=storage_kind,
+        )
     # Filesystem does not have a SQL client and table might not be found
     except Exception as e:
         context.log.error(
@@ -55,7 +60,7 @@ def fetch_row_count_metadata(
             " will not be included in the event.\n\n"
             f"Exception: {e}"
         )
-        return TableMetadataSet(row_count=None)
+        return TableMetadataSet(row_count=None, storage_kind=storage_kind)
 
 
 class DltEventIterator(Iterator[T]):
@@ -66,7 +71,7 @@ class DltEventIterator(Iterator[T]):
     def __init__(
         self,
         events: Iterator[T],
-        context: Union[OpExecutionContext, AssetExecutionContext],
+        context: OpExecutionContext | AssetExecutionContext,
         dlt_pipeline: Pipeline,
     ) -> None:
         self._inner_iterator = events
@@ -98,7 +103,7 @@ class DltEventIterator(Iterator[T]):
                     dlt_pipeline=self._dlt_pipeline,
                 )
                 if event.metadata:
-                    yield event._replace(metadata={**row_count_metadata, **event.metadata})
+                    yield event._replace(metadata={**row_count_metadata, **event.metadata})  # ty: ignore[invalid-argument-type, invalid-yield]
 
         return DltEventIterator[T](
             _fetch_row_count(),

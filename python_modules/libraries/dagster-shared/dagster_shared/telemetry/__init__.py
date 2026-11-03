@@ -5,9 +5,10 @@ import os
 import platform
 import sys
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from logging.handlers import RotatingFileHandler
-from typing import Callable, NamedTuple, Optional
+from pathlib import Path
+from typing import NamedTuple
 
 import click
 
@@ -18,13 +19,14 @@ MAX_BYTES = 10485760  # 10 MB = 10 * 1024 * 1024 bytes
 DAGSTER_HOME_FALLBACK = "~/.dagster"
 TELEMETRY_STR = ".telemetry"
 INSTANCE_ID_STR = "instance_id"
+USER_ID_STR = "user_id"
 
 KNOWN_CI_ENV_VAR_KEYS = {
     "GITLAB_CI",  # https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
     "GITHUB_ACTION",  # https://docs.github.com/en/actions/learn-github-actions/variables#default-environment-variables
     "BITBUCKET_BUILD_NUMBER",  # https://support.atlassian.com/bitbucket-cloud/docs/variables-and-secrets/
     "JENKINS_URL",  # https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#using-environment-variables
-    "CODEBUILD_BUILD_ID"  # https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
+    "CODEBUILD_BUILD_ID",  # https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
     "CIRCLECI",  # https://circleci.com/docs/variables/#built-in-environment-variables
     "TRAVIS",  # https://docs.travis-ci.com/user/environment-variables/#default-environment-variables
     "BUILDKITE",  # https://buildkite.com/docs/pipelines/environment-variables
@@ -38,7 +40,7 @@ def get_python_version() -> str:
 
 def get_is_known_ci_env() -> bool:
     # Many CI tools will use `CI` key which lets us know for sure it's a CI env
-    if os.environ.get("CI") is True:
+    if os.environ.get("CI"):
         return True
 
     # Otherwise looking for predefined env var keys of known CI tools
@@ -49,7 +51,7 @@ def get_is_known_ci_env() -> bool:
     return False
 
 
-def dagster_home_if_set() -> Optional[str]:
+def dagster_home_if_set() -> str | None:
     dagster_home_path = os.getenv("DAGSTER_HOME")
 
     if not dagster_home_path:
@@ -84,13 +86,24 @@ def get_or_create_dir_from_dagster_home(target_dir: str) -> str:
     return dagster_home_logs_path
 
 
+def get_or_create_user_telemetry_dir() -> str:
+    """Always return ~/.dagster/.telemetry/, ignoring $DAGSTER_HOME.
+
+    This is used for user-level telemetry data (like user_id) that should be
+    consistent across all Dagster instances for a given user.
+    """
+    path = os.path.join(os.path.expanduser(DAGSTER_HOME_FALLBACK), TELEMETRY_STR)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 class TelemetrySettings(NamedTuple):
     dagster_telemetry_enabled: bool
-    instance_id: Optional[str]
-    run_storage_id: Optional[str]
+    instance_id: str | None
+    run_storage_id: str | None
 
 
-def _get_rotating_file_handler(logger: logging.Logger) -> Optional[RotatingFileHandler]:
+def _get_rotating_file_handler(logger: logging.Logger) -> RotatingFileHandler | None:
     return next(
         iter(handler for handler in logger.handlers if isinstance(handler, RotatingFileHandler)),
         None,
@@ -154,6 +167,7 @@ class TelemetryEntry(
             ("event_id", str),
             ("elapsed_time", str),
             ("instance_id", str),
+            ("user_id", str),
             ("metadata", Mapping[str, str]),
             ("python_version", str),
             ("dagster_version", str),
@@ -173,7 +187,8 @@ class TelemetryEntry(
     client_time - Client time
     elapsed_time - Time elapsed between start of function and end of function call
     event_id - Unique id for the event
-    instance_id - Unique id for dagster instance
+    instance_id - Unique id for dagster instance (varies by $DAGSTER_HOME)
+    user_id - Unique id for the user (consistent across all instances, stored in ~/.dagster)
     python_version - Python version
     metadata - More information i.e. pipeline success (boolean)
     version - Schema version
@@ -192,9 +207,10 @@ class TelemetryEntry(
         client_time: str,
         event_id: str,
         instance_id: str,
-        metadata: Optional[Mapping[str, str]] = None,
-        elapsed_time: Optional[str] = None,
-        run_storage_id: Optional[str] = None,
+        user_id: str,
+        metadata: Mapping[str, str] | None = None,
+        elapsed_time: str | None = None,
+        run_storage_id: str | None = None,
     ):
         OS_DESC = platform.platform()
         OS_PLATFORM = platform.system()
@@ -206,6 +222,7 @@ class TelemetryEntry(
             elapsed_time=elapsed_time or "",
             event_id=event_id,
             instance_id=instance_id,
+            user_id=user_id,
             python_version=get_python_version(),
             metadata=metadata or {},
             dagster_version=__version__ or "None",
@@ -219,9 +236,9 @@ class TelemetryEntry(
 def log_telemetry_action(
     get_telemetry_settings: Callable[[], TelemetrySettings],
     action: str,
-    client_time: Optional[datetime.datetime] = None,
-    elapsed_time: Optional[datetime.timedelta] = None,
-    metadata: Optional[Mapping[str, str]] = None,
+    client_time: datetime.datetime | None = None,
+    elapsed_time: datetime.timedelta | None = None,
+    metadata: Mapping[str, str] | None = None,
 ) -> None:
     if client_time is None:
         client_time = datetime.datetime.now()
@@ -239,6 +256,7 @@ def log_telemetry_action(
                 elapsed_time=str(elapsed_time),
                 event_id=str(uuid.uuid4()),
                 instance_id=instance_id,
+                user_id=get_or_set_user_id(),
                 metadata=metadata,
                 run_storage_id=run_storage_id,
             )._asdict()
@@ -249,24 +267,26 @@ def get_telemetry_enabled_from_dagster_yaml() -> bool:
     """Lightweight check to see if telemetry is enabled by checking $DAGSTER_HOME/dagster.yaml,
     without needing to load the entire Dagster instance.
     """
-    import yaml
+    from dagster_shared.yaml_utils import safe_load_yaml
 
     dagster_home_path = dagster_home_if_set()
     if dagster_home_path is None:
         return True
 
-    dagster_yaml_path = os.path.join(dagster_home_path, "dagster.yaml")
-    if not os.path.exists(dagster_yaml_path):
+    dagster_home = Path(dagster_home_path)
+    dagster_yaml_path = dagster_home / "dagster.yaml"
+    if not dagster_yaml_path.exists():
+        dagster_yaml_path = dagster_home / "dagster.yml"
+    if not dagster_yaml_path.exists():
         return True
 
-    with open(dagster_yaml_path, encoding="utf8") as dagster_yaml_file:
-        dagster_yaml_data = yaml.safe_load(dagster_yaml_file)
-        if (
-            dagster_yaml_data
-            and "telemetry" in dagster_yaml_data
-            and "enabled" in dagster_yaml_data["telemetry"]
-        ):
-            return dagster_yaml_data["telemetry"]["enabled"]
+    dagster_yaml_data = safe_load_yaml(dagster_yaml_path.read_text(encoding="utf-8"))
+    if (
+        dagster_yaml_data
+        and "telemetry" in dagster_yaml_data
+        and "enabled" in dagster_yaml_data["telemetry"]
+    ):
+        return dagster_yaml_data["telemetry"]["enabled"]
     return True
 
 
@@ -277,16 +297,66 @@ def get_or_set_instance_id() -> str:
     return instance_id
 
 
-# Gets the instance_id at $DAGSTER_HOME/.telemetry/id.yaml
-def _get_telemetry_instance_id() -> Optional[str]:
+def get_or_set_user_id() -> str:
+    """Get or create a user-level telemetry ID.
+
+    Unlike instance_id which varies by $DAGSTER_HOME, user_id is always stored
+    in ~/.dagster/.telemetry/user_id.yaml to ensure consistency across all
+    Dagster instances for a given user.
+    """
+    user_id = _get_telemetry_user_id()
+    if user_id is None:
+        user_id = _set_telemetry_user_id() or "<<unable_to_set_user_id>>"
+    return user_id
+
+
+def _get_telemetry_user_id() -> str | None:
+    """Gets the user_id from ~/.dagster/.telemetry/user_id.yaml."""
+    from dagster_shared.yaml_utils import safe_load_yaml
+
+    user_id_path = os.path.join(get_or_create_user_telemetry_dir(), "user_id.yaml")
+    if not os.path.exists(user_id_path):
+        return None
+
+    try:
+        with open(user_id_path, encoding="utf8") as user_id_file:
+            user_id_yaml = safe_load_yaml(user_id_file)
+            if (
+                user_id_yaml
+                and USER_ID_STR in user_id_yaml
+                and isinstance(user_id_yaml[USER_ID_STR], str)
+            ):
+                return user_id_yaml[USER_ID_STR]
+    except Exception:
+        pass
+    return None
+
+
+def _set_telemetry_user_id() -> str | None:
+    """Sets the user_id at ~/.dagster/.telemetry/user_id.yaml."""
     import yaml
+
+    user_id_path = os.path.join(get_or_create_user_telemetry_dir(), "user_id.yaml")
+    user_id = str(uuid.uuid4())
+
+    try:
+        with open(user_id_path, "w", encoding="utf8") as user_id_file:
+            yaml.dump({USER_ID_STR: user_id}, user_id_file, default_flow_style=False)
+        return user_id
+    except Exception:
+        return None
+
+
+# Gets the instance_id at $DAGSTER_HOME/.telemetry/id.yaml
+def _get_telemetry_instance_id() -> str | None:
+    from dagster_shared.yaml_utils import safe_load_yaml
 
     telemetry_id_path = os.path.join(get_or_create_dir_from_dagster_home(TELEMETRY_STR), "id.yaml")
     if not os.path.exists(telemetry_id_path):
         return
 
     with open(telemetry_id_path, encoding="utf8") as telemetry_id_file:
-        telemetry_id_yaml = yaml.safe_load(telemetry_id_file)
+        telemetry_id_yaml = safe_load_yaml(telemetry_id_file)
         if (
             telemetry_id_yaml
             and INSTANCE_ID_STR in telemetry_id_yaml
@@ -300,8 +370,8 @@ def _get_telemetry_instance_id() -> Optional[str]:
 def _set_telemetry_instance_id() -> str:
     import yaml
 
-    click.secho(TELEMETRY_TEXT)
-    click.secho(SLACK_PROMPT)
+    click.secho(TELEMETRY_TEXT, err=True)
+    click.secho(SLACK_PROMPT, err=True)
 
     telemetry_id_path = os.path.join(get_or_create_dir_from_dagster_home(TELEMETRY_STR), "id.yaml")
     instance_id = str(uuid.uuid4())
