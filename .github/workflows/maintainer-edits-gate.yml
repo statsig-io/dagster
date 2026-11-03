@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   maintainer-edits-gate:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Check maintainer edit access
         if: github.event_name == 'pull_request_target'
