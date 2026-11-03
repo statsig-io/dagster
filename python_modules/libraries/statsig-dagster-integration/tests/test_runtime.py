@@ -5,6 +5,7 @@ import grpc
 import pytest
 from dagster import DagsterInstance
 from dagster._core.errors import DagsterUserCodeUnreachableError
+from dagster._core.instance.methods.storage_methods import StorageMethods
 from dagster._core.remote_origin import GrpcServerCodeLocationOrigin
 from dagster._core.workspace.context import WorkspaceProcessContext
 from dagster._grpc.__generated__ import dagster_api_pb2
@@ -138,6 +139,49 @@ def test_nested_adapter_install_is_idempotent() -> None:
             storage.daemon_pools(storage.PoolSettings(max_overflow=0)),
         ):
             pass
+
+
+def instance_like(schedule_storage: Mock | None) -> tuple[StorageMethods, Mock]:
+    order = Mock()
+    if schedule_storage is not None:
+        order.attach_mock(schedule_storage.dispose, "schedule_dispose")
+    instance = StorageMethods()
+    instance._local_artifact_storage = order._local_artifact_storage
+    instance._run_storage = order._run_storage
+    instance._event_storage = order._event_storage
+    instance._schedule_storage = schedule_storage
+    return instance, order
+
+
+def test_instance_dispose_adds_schedule_storage_only_inside_adapter() -> None:
+    original = StorageMethods.dispose
+    schedule = Mock()
+    instance, _ = instance_like(schedule)
+    original(instance)
+    schedule.dispose.assert_not_called()
+
+    with storage.daemon_pools():
+        assert StorageMethods.dispose is not original
+        instance, order = instance_like(Mock())
+        StorageMethods.dispose(instance)
+        assert [call[0] for call in order.mock_calls] == [
+            "_local_artifact_storage.dispose",
+            "_run_storage.dispose",
+            "_event_storage.dispose",
+            "schedule_dispose",
+        ]
+        instance, _ = instance_like(None)
+        StorageMethods.dispose(instance)
+    assert StorageMethods.dispose is original
+
+
+def test_instance_dispose_releases_schedule_storage_when_original_raises() -> None:
+    schedule = Mock()
+    instance, order = instance_like(schedule)
+    order._run_storage.dispose.side_effect = RuntimeError("synthetic")
+    with storage.daemon_pools(), pytest.raises(RuntimeError, match="synthetic"):
+        StorageMethods.dispose(instance)
+    schedule.dispose.assert_called_once_with()
 
 
 @pytest.mark.parametrize("module,cls", STORAGES)

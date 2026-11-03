@@ -1,7 +1,7 @@
 # Statsig Dagster integration
 
 Private, explicit integration for official Dagster 1.13.25, webserver 1.13.25 and
-Postgres 0.29.25. Distribution version 1.13.25.2 identifies this integration
+Postgres 0.29.25. Distribution version 1.13.25.3 identifies this integration
 revision; it does not change SDK distribution versions. Importing the package
 never activates adapters. No console scripts shadow upstream entrypoints.
 
@@ -10,6 +10,12 @@ version-guarded daemon/webserver lifecycle. Kelp supplies explicit PoolSettings
 and owns image aliases, coordinator, metrics and company policy. The underlying
 Click commands, run-only telemetry, configured RPC timeouts and webserver storage
 options retain their tested contracts. Environment opt-outs isolate fixtures.
+
+`daemon_pools` gives Postgres run, event and schedule storage a QueuePool (pool
+size 1, bounded overflow, statement timeout) and disposes the engines it replaces.
+Upstream `StorageMethods.dispose` skips schedule storage, so the adapter also wraps
+that method; `DagsterInstance.dispose()` then releases the pooled schedule-storage
+engine. All replacements are restored when the context exits.
 
 Framework modules/tests originate from the committed Kelp checkpoint recorded in
 source-origin.json. Existing immutable configuration dataclasses are preserved as

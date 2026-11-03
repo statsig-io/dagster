@@ -3,11 +3,18 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, closing
+from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
 
 import psycopg2
 import pytest
+from dagster import DagsterInstance
+from dagster._core.instance.types import InstanceType
+from dagster._core.launcher import DefaultRunLauncher
+from dagster._core.run_coordinator import DefaultRunCoordinator
+from dagster._core.storage.noop_compute_log_manager import NoOpComputeLogManager
+from dagster._core.storage.root import LocalArtifactStorage
 from dagster_postgres.run_storage import PostgresRunStorage
 from sqlalchemy import text
 from sqlalchemy.engine import Engine, make_url
@@ -51,6 +58,34 @@ def test_real_constructor_storage_roundtrip_and_disposal(postgres_url: str) -> N
             for store in stores:
                 store.dispose()
         assert connection_count(postgres_url) == 0
+
+
+def test_instance_dispose_releases_pooled_schedule_storage(
+    postgres_url: str, tmp_path: Path
+) -> None:
+    with daemon_pools():
+        stores = [cls(named_url(postgres_url)) for _, cls in STORAGES]
+        event_store, run_store, schedule_store = stores
+        instance = DagsterInstance(
+            instance_type=InstanceType.EPHEMERAL,
+            local_artifact_storage=LocalArtifactStorage(str(tmp_path)),
+            run_storage=run_store,
+            event_storage=event_store,
+            compute_log_manager=NoOpComputeLogManager(),
+            run_coordinator=DefaultRunCoordinator(),
+            run_launcher=DefaultRunLauncher(),
+            schedule_storage=schedule_store,
+        )
+        try:
+            for store in stores:
+                with store._engine.connect() as connection:
+                    connection.execute(text("SELECT 1"))
+            assert connection_count(postgres_url) == 3
+            assert schedule_store._engine.pool.checkedin() == 1
+        finally:
+            instance.dispose()
+        assert connection_count(postgres_url) == 0
+        assert schedule_store._engine.pool.checkedin() == 0
 
 
 def test_concurrent_three_pool_budget_and_checkout_timeout(postgres_url: str) -> None:
