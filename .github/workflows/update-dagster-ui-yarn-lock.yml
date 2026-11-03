@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   update-yarn-lock:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     # Push the lockfile branch and open its update PR.
     permissions:
       contents: write
