@@ -181,6 +181,7 @@ def main() -> None:
                 "/daemon/tests/test_scheduler.py",
                 "/daemon/tests/test_webserver.py",
                 "/daemon/tests/test_recovery.py",
+                "/daemon/tests/test_sensor.py",
             ]
         )
         passed = True
