@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
+from dagster._core.instance.methods.storage_methods import StorageMethods
 from dagster._core.remote_representation.code_location import GrpcServerCodeLocation
 from dagster._daemon import (
     cli as upstream_cli,
@@ -26,6 +27,7 @@ def test_both_image_components_use_adapters_without_emission(
     command: str, settings: PoolSettings
 ) -> None:
     original_query = DagsterGrpcClient._query
+    original_dispose = StorageMethods.dispose
     original_sensor = (
         GrpcServerCodeLocation.get_sensor_execution_data,
         daemon_sensor._evaluate_sensor,
@@ -33,6 +35,7 @@ def test_both_image_components_use_adapters_without_emission(
 
     def official_main() -> None:
         assert DagsterGrpcClient._query is not original_query
+        assert StorageMethods.dispose is not original_dispose
         patched_sensor = (
             GrpcServerCodeLocation.get_sensor_execution_data,
             daemon_sensor._evaluate_sensor,
@@ -66,6 +69,7 @@ def test_both_image_components_use_adapters_without_emission(
         main.assert_called_once()
         profiler.assert_not_called()
     assert DagsterGrpcClient._query is original_query
+    assert StorageMethods.dispose is original_dispose
     assert (
         GrpcServerCodeLocation.get_sensor_execution_data,
         daemon_sensor._evaluate_sensor,
@@ -80,14 +84,15 @@ from dagster._daemon.cli import run_command
 from dagster._daemon import sensor as daemon_sensor
 from dagster._core.remote_representation.code_location import GrpcServerCodeLocation
 from dagster_postgres.run_storage import run_storage
+from dagster._core.instance.methods.storage_methods import StorageMethods
 original = (DagsterGrpcClient._query, WorkspaceProcessContext._load_location,
             run_command.callback, run_storage.create_pg_engine,
-            GrpcServerCodeLocation.get_sensor_execution_data, daemon_sensor._evaluate_sensor)
+            GrpcServerCodeLocation.get_sensor_execution_data, daemon_sensor._evaluate_sensor, StorageMethods.dispose)
 import statsig_dagster_integration
 from statsig_dagster_integration import cli, retries, storage, telemetry
 assert original == (DagsterGrpcClient._query, WorkspaceProcessContext._load_location,
                     run_command.callback, run_storage.create_pg_engine,
-                    GrpcServerCodeLocation.get_sensor_execution_data, daemon_sensor._evaluate_sensor)
+                    GrpcServerCodeLocation.get_sensor_execution_data, daemon_sensor._evaluate_sensor, StorageMethods.dispose)
 """
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=20, check=False

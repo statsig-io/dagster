@@ -5,6 +5,7 @@ from functools import wraps
 from types import ModuleType
 from typing import Concatenate, ParamSpec, TypeVar, cast
 
+from dagster._core.instance.methods.storage_methods import StorageMethods
 from dagster_postgres.auth import PgTokenProvider
 from dagster_postgres.event_log import event_log
 from dagster_postgres.run_storage import run_storage
@@ -127,9 +128,26 @@ def disposal(
     return dispose
 
 
+def instance_disposal(
+    original: Callable[[StorageMethods], None],
+) -> Callable[[StorageMethods], None]:
+    @wraps(original)
+    def dispose(self: StorageMethods) -> None:
+        try:
+            original(self)
+        finally:
+            if self._schedule_storage is not None:
+                self._schedule_storage.dispose()
+
+    return dispose
+
+
 @contextmanager
 def daemon_pools(settings: PoolSettings = DEFAULT_POOL_SETTINGS) -> Iterator[None]:
-    """Process-local adapters preserve constructor timeout and dispose replaced engines."""
+    """Process-local adapters preserve constructor timeout and dispose replaced engines.
+
+    Instance disposal also releases schedule storage.
+    """
     require_supported_versions()
     global _ACTIVE_SETTINGS  # noqa: PLW0603 -- nested contexts must share the same process policy.
     if _ACTIVE_SETTINGS is not None:
@@ -193,4 +211,8 @@ def daemon_pools(settings: PoolSettings = DEFAULT_POOL_SETTINGS) -> Iterator[Non
                 )
             )
             stack.enter_context(replace_attribute(cls, "dispose", disposal(cls.dispose)))
+        # Upstream StorageMethods.dispose skips schedule storage, which would leak its pooled engine.
+        stack.enter_context(
+            replace_attribute(StorageMethods, "dispose", instance_disposal(StorageMethods.dispose))
+        )
         yield
